@@ -1,0 +1,200 @@
+{
+  "mainTabs": {
+    "issues": "Issues",
+    "chat": "Chat",
+    "files": "Files",
+    "dashboard": "Dashboard",
+    "starredArtifacts": "Starred Artifacts",
+    "capabilities": "Capabilities",
+    "market": "Skills Market"
+  },
+  "sidebar": {
+    "allProjects": "All Projects",
+    "projectList": "Project list",
+    "addProject": "Add project",
+    "pinned": "Pinned",
+    "projects": "Projects",
+    "archived": "Archived",
+    "expand": "Expand sidebar",
+    "collapse": "Collapse sidebar",
+    "inbox": "Inbox",
+    "schedule": "Schedule",
+    "dev": "DEV"
+  },
+  "addProject": {
+    "create": "New project…",
+    "import": "Import projects…",
+    "scanning": "Scanning…",
+    "emptyState": "All projects already imported",
+    "browse": "Browse directory…"
+  },
+  "createProject": {
+    "title": "New Project",
+    "description": "Create a new directory as a project.",
+    "location": "Location",
+    "locationPlaceholder": "Select parent directory…",
+    "browse": "Browse",
+    "name": "Project name",
+    "namePlaceholder": "my-project",
+    "pathPreview": "Will create",
+    "create": "Create",
+    "creating": "Creating…",
+    "cancel": "Cancel",
+    "invalidChars": "Name contains invalid characters",
+    "nameTooLong": "Name is too long (max 255 characters)",
+    "dotPrefix": "Name should not start with a dot"
+  },
+  "importDialog": {
+    "title": "Import Projects",
+    "description": "Select which Claude Code projects to import.",
+    "selectAll": "Select All",
+    "selected": "selected",
+    "cancel": "Cancel",
+    "importing": "Importing…",
+    "import": "Import ({{count}})"
+  },
+  "projectActions": {
+    "actions": "Project actions",
+    "pinToTop": "Pin to top",
+    "unpin": "Unpin",
+    "archive": "Archive",
+    "unarchive": "Unarchive",
+    "rename": "Rename",
+    "remove": "Remove",
+    "removeProject": "Remove Project",
+    "removeConfirmMessage": "Remove \"{{projectName}}\" from {{appName}}?",
+    "removeConfirmDetail": "Files on disk are not affected. The project can be re-added at any time.",
+    "pinned": ", pinned",
+    "archivedSuffix": ", archived"
+  },
+  "chatViewMode": {
+    "label": "Chat view mode",
+    "default": "Minimal",
+    "files": "Files"
+  },
+  "mainPanelViews": "Main panel views",
+  "sessionPanel": {
+    "chat": "Chat",
+    "artifacts": "Artifacts",
+    "notes": "Notes",
+    "views": "Session panel views"
+  },
+  "issueViews": {
+    "all": "All",
+    "views": "Issue views",
+    "moreViews": "More views",
+    "createNewView": "Create new view"
+  },
+  "tray": {
+    "openApp": "Open {{appName}}",
+    "noActiveIssues": "No active issues",
+    "needsAttention": "Needs Attention",
+    "errors": "Errors",
+    "active": "Active",
+    "waiting": "Waiting",
+    "more": "+{{count}} more"
+  },
+  "statusBar": {
+    "sessionStats": "Session statistics",
+    "providerModes": {
+      "claude": "Claude",
+      "apiKey": "API Key",
+      "openrouter": "OpenRouter",
+      "custom": "Custom API"
+    },
+    "engineNames": {
+      "claude": "Claude",
+      "codex": "Codex"
+    },
+    "providerVia": "Connected via {{mode}}",
+    "authenticating": "Authenticating...",
+    "notAuthenticated": "Not authenticated — click to configure",
+    "provider": "Provider",
+    "hooksInstalled": "Hooks installed",
+    "hooksNotInstalled": "Hooks not installed",
+    "hooks": "Hooks",
+    "messagingStatus": "Messaging: {{connected}} connected, {{notConnected}} not connected",
+    "messaging": "IM",
+    "terminal": "Terminal"
+  },
+  "stats": {
+    "today": "Today",
+    "cost": "Cost",
+    "tokens": "Tokens",
+    "sessions": "Sessions",
+    "toolCalls": "Tool calls"
+  },
+  "browser": {
+    "profiles": "Browser Profiles",
+    "profilesDesc": "Each profile has isolated cookies and sessions. Login once, reuse forever.",
+    "persistent": "Persistent",
+    "domains": "{{count}} domain(s)",
+    "deleteProfile": "Delete profile",
+    "profileNamePlaceholder": "Profile name (e.g. Twitter, Boss Zhipin)",
+    "allowedDomainsPlaceholder": "Allowed domains (optional, comma-separated)",
+    "createAndOpen": "Create & Open",
+    "enterUrl": "Enter URL...",
+    "selectProfile": "Select a profile to start browsing",
+    "minimize": "Minimize",
+    "minimizeToPip": "Minimize to floating window",
+    "closeBrowser": "Close browser",
+    "closeConfirmTitle": "Close Browser",
+    "closeConfirmMessage": "This will close the browser and discard the current page session. This action cannot be undone.",
+    "closeConfirmAction": "Close",
+    "showChat": "Show Chat",
+    "hideChat": "Hide Chat",
+    "viewport": "Browser viewport",
+    "loadingView": "Loading browser view...",
+    "loadingPage": "Loading...",
+    "cookiePersistence": "Cookie persistence enabled",
+    "activities": {
+      "screenshot": "Taking screenshot",
+      "scrolling": "Scrolling",
+      "clicking": "Clicking",
+      "typing": "Typing",
+      "navigating": "Navigating"
+    },
+    "sourceIssue": "Issue",
+    "sourceChat": "Chat",
+    "sourceBrowser": "Browser",
+    "pip": {
+      "activeBrowsers": "Active Browsers",
+      "typeIssue": "Issue",
+      "typeChat": "Chat",
+      "typeBrowser": "Browser"
+    },
+    "agent": {
+      "title": "Browser Agent",
+      "linkedSession": "Linked Session",
+      "session": "Session",
+      "startingAgent": "Starting agent…",
+      "stopAgent": "Stop agent",
+      "clearChat": "Clear chat",
+      "continueSession": "Continue the session…",
+      "tellAgent": "Tell the agent what to do…",
+      "linkedSessionHint": "Continue your session — messages are sent to the linked session.",
+      "withPageHint": "Ask me to interact with the current page:",
+      "noPageHint": "Tell me what to do — I'll open a browser automatically:",
+      "examples": {
+        "navigate": "Navigate to github.com",
+        "extract": "Extract all visible text",
+        "click": "Click the Sign In button",
+        "screenshot": "Take a screenshot"
+      }
+    }
+  },
+  "commandPalette": {
+    "goIssues": "",
+    "goSessions": "",
+    "goSchedule": "",
+    "goDashboard": "",
+    "goMarket": "",
+    "createIssue": "",
+    "createSchedule": ""
+  },
+  "providerBanner": {
+    "message": "AI engine not configured. Set up your provider to start using Agent features.",
+    "configure": "Configure",
+    "dismiss": "Dismiss"
+  }
+}

@@ -1,0 +1,43 @@
+{
+  "editor": {
+    "saveFile": "保存文件",
+    "emptyStateTitle": "编辑器",
+    "openFilePrompt": "从文件树中打开文件以开始编辑",
+    "emptyStateHint": "提示：点击左侧文件树中的任意文件即可在这里打开。",
+    "modified": "已修改",
+    "openFilesAria": "已打开的文件",
+    "unsavedChanges": "未保存的更改",
+    "closeFile": "关闭 {{name}}",
+    "loadingEditor": "加载编辑器中…",
+    "changedCount_one": "{{count}} 处变更",
+    "changedCount_other": "{{count}} 处变更"
+  },
+  "browser": {
+    "loading": "加载中…",
+    "emptyDirectory": "空文件夹",
+    "fileListAria": "文件列表",
+    "fileGridAria": "文件图标网格",
+    "columns": {
+      "name": "名称",
+      "size": "大小",
+      "modified": "修改时间"
+    },
+    "openFolderAria": "打开文件夹 {{name}}",
+    "openFileAria": "打开文件 {{name}}",
+    "folderMeta": "修改于 {{modified}}",
+    "fileMeta": "{{size}} · {{modified}}",
+    "closePreview": "关闭预览",
+    "unableToRead": "无法读取文件"
+  },
+  "tree": {
+    "aria": "文件树"
+  },
+  "view": {
+    "modeSwitchAria": "文件视图模式",
+    "editorMode": "IDE 编辑器模式",
+    "browserMode": "文件浏览器模式",
+    "selectProject": "选择项目以查看文件",
+    "editorTab": "编辑器",
+    "browserTab": "浏览器"
+  }
+}

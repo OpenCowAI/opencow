@@ -1,0 +1,60 @@
+# Dependencies
+node_modules/
+package-lock.json
+.pnp
+.pnp.js
+.pnpm-store/
+.npm-cache/
+
+# Build
+dist/
+build/
+.next/
+out/
+index.js
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# TypeScript
+*.tsbuildinfo
+
+# Worktrees
+.worktrees/
+.claude/worktrees/
+
+# Internal development
+.specify/
+.opencow/
+.opencow-dev/
+.claude/
+plans/
+docs/
+PLAN.md
+
+# Coverage
+coverage/
+.nyc_output/
+
+# ESLint cache
+.eslintcache
+
+# Logs
+*.log

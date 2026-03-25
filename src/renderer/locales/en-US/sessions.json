@@ -1,0 +1,581 @@
+{
+  "agentSidebar": {
+    "newChat": "New Chat",
+    "newChatAria": "New chat",
+    "newConversation": "New conversation",
+    "claudeCapabilities": "Capabilities",
+    "openCapabilities": "Open Capabilities",
+    "sessions": "Sessions",
+    "noSessionsYet": "No sessions yet",
+    "expand": "Expand sidebar",
+    "collapse": "Collapse sidebar",
+    "deleteSession": "Delete",
+    "deleteSessionAria": "Delete session",
+    "deleteConfirmTitle": "Delete Session",
+    "deleteConfirmMessage": "This session and its conversation history will be permanently deleted.",
+    "allProjects": "All Projects",
+    "filterByProject": "Filter by project"
+  },
+  "agentChat": {
+    "startingAgent": "Starting agent…",
+    "allProjects": "All Projects",
+    "askAnythingGlobal": "Ask anything across all projects…",
+    "askAboutProject": "Ask about {{projectName}}…",
+    "whatCanIHelp": "What can I help you with?",
+    "whatCanIHelpIn": "What can I help you with in",
+    "enterToSend": "Enter",
+    "toSend": " to send · ",
+    "slashForCommands": "/",
+    "forCommands": " for commands",
+    "stopSession": "Stop session",
+    "stopBtn": "Stop",
+    "continueConversation": "Continue the conversation…",
+    "chat": "Chat",
+    "startConversation": "Start a conversation to begin",
+    "suggestions": {
+      "explainCodebase": "Explain this codebase",
+      "helpDebug": "Help me debug an issue",
+      "writeFeature": "Write a new feature",
+      "summarizeProject": "Summarize this project",
+      "findBugs": "Find potential bugs",
+      "suggestImprovements": "Suggest improvements"
+    }
+  },
+  "capabilities": {
+    "loadingCapabilities": "Loading capabilities…",
+    "noCapabilitiesFound": "No capabilities yet",
+    "searchPlaceholder": "Search capabilities...",
+    "searchAria": "Search capabilities",
+    "noResultsFor": "No results for '{{query}}'",
+    "categoryAria": "{{title}} section, {{count}} items",
+    "createCategory": "Create {{title}}",
+    "categoriesAria": "Capability categories",
+    "categoryNavAria": "{{title}}, {{count}} items"
+  },
+  "capabilityCenter": {
+    "title": "Capabilities",
+    "subtitle": "Manage all your agent's capabilities",
+    "welcome": "Manage your agent's skills, commands, rules, and more — all in one place.",
+    "categories": {
+      "skill": "Skills",
+      "command": "Commands",
+      "agent": "Agents",
+      "rule": "Rules",
+      "mcp-server": "MCP Servers",
+      "hook": "Hooks",
+      "plugin": "Plugins",
+      "lsp-server": "LSP Servers"
+    },
+    "importFromClaude": "Import from Claude Code",
+    "importFromCodex": "Import from Codex",
+    "importDetected": "Detected {{count}} importable capabilities",
+    "importDetected_zero": "No importable capabilities found",
+    "createFirst": "Or create your first capability:",
+    "import": "Import",
+    "importTitle": "Import Capabilities",
+    "importTitleClaude": "Import from Claude Code",
+    "importTitleCodex": "Import from Codex",
+    "importTitleFile": "Import from File",
+    "importSourceClaude": "Claude Code CLI",
+    "importSourceClaudeDesc": "Import from Claude Code configuration",
+    "importSourceCodex": "Codex CLI",
+    "importSourceCodexDesc": "Import from Codex configuration",
+    "importSourceFile": "Local File",
+    "importSourceFileDesc": "Import from a file on disk",
+    "importFound": "Found {{count}} capabilities:",
+    "importAlreadyImported": "Already imported",
+    "importSelected": "Import Selected ({{count}})",
+    "importComplete": "Import Complete",
+    "importSuccessCount": "{{count}} imported successfully",
+    "importSkippedCount": "{{count}} skipped (already imported)",
+    "importErrorCount": "{{count}} errors",
+    "importDone": "Done",
+    "importBack": "Back",
+    "importCancel": "Cancel",
+    "importing": "Importing…",
+    "importDiscovering": "Scanning for importable capabilities…",
+    "importDiscoverHint": "This may take a moment...",
+    "importEmptyHint": "Capabilities will appear here once detected in your configuration.",
+    "importSelectedHint": "{{count}} selected",
+    "importSelectAll": "Select all ({{count}})",
+    "importTo": "Import to",
+    "importSuccessSummary": "Successfully imported {{count}} capabilities into your library.",
+    "emptyCategory": {
+      "skill": "No skills yet. Create one to give your agent new abilities.",
+      "command": "No commands yet. Add slash commands your agent can execute.",
+      "rule": "No rules yet. Define guidelines for your agent to follow.",
+      "agent": "No agents yet. Configure specialized agent personas.",
+      "hook": "No hooks yet. Set up event-driven automations.",
+      "mcp-server": "No MCP servers yet. Connect external tool providers."
+    },
+    "emptyState": {
+      "skill": {
+        "description": "Extend your agent's capabilities with custom skills. Define specialized techniques, knowledge, and workflows your agent can leverage.",
+        "cta": "New Skill"
+      },
+      "command": {
+        "description": "Define powerful slash commands for quick access to complex workflows, automations, and specialized operations.",
+        "cta": "New Command"
+      },
+      "agent": {
+        "description": "Configure specialized agent personas with custom models, instructions, and capabilities tailored to different types of tasks.",
+        "cta": "New Agent"
+      },
+      "rule": {
+        "description": "Set behavioral guidelines your agent follows in every conversation. Ensure consistent quality, standards, and patterns.",
+        "cta": "New Rule"
+      },
+      "mcp-server": {
+        "description": "Connect external tool providers through the Model Context Protocol. Extend your agent's reach with databases, APIs, and services.",
+        "cta": "Add Server"
+      },
+      "hook": {
+        "description": "Set up event-driven automations that trigger on specific actions. Run custom scripts before or after key operations.",
+        "cta": "New Hook"
+      }
+    },
+    "categoryGroups": {
+      "capabilities": "Capabilities",
+      "integrations": "Integrations",
+      "extensions": "Extensions"
+    },
+    "newCapability": "New {{category}}",
+    "scope": "Scope",
+    "scopeProject": "Project",
+    "scopeGlobal": "Global",
+    "saveTo": "Save to",
+    "scopeHintGlobal": "Available in all projects",
+    "scopeHintProject": "Only in this project",
+    "noProjectsHint": "No projects available. Switch to Global scope.",
+    "unsavedTitle": "Unsaved changes",
+    "unsavedMessage": "You have unsaved changes. Discard them?",
+    "discard": "Discard",
+    "formSections": {
+      "triggerEvent": "Trigger Event",
+      "executeCommands": "Commands",
+      "connectionConfig": "Connection",
+      "launchArgs": "Arguments",
+      "envVars": "Environment Variables",
+      "templateOptions": "Options"
+    },
+    "mcpTemplates": {
+      "subtitle": "Select a pre-configured template or start from scratch",
+      "confirmVariant": "Continue",
+      "backToTemplates": "Back",
+      "nameHint": "Changing this name may affect tool integration behavior"
+    },
+    "searchOverlay": {
+      "placeholder": "Search capabilities...",
+      "ariaLabel": "Search capabilities",
+      "recentSearches": "Recent",
+      "clearRecent": "Clear",
+      "noResults": "No results for \"{{query}}\""
+    },
+    "filters": {
+      "scopeAll": "All",
+      "allOrigins": "All",
+      "local": "Local",
+      "noFilterResults": "No items match the current filter",
+      "ariaScope": "Filter by scope",
+      "ariaOrigin": "Filter by origin"
+    },
+    "distribution": {
+      "claude": "Claude",
+      "codex": "Codex",
+      "both": "Claude + Codex",
+      "aria": "Published to {{target}}"
+    },
+    "diagnostics": {
+      "title": "{{count}} governance diagnostics",
+      "clear": "Clear"
+    },
+    "governance": {
+      "title": "Governance",
+      "filterAria": "Filter governance engine",
+      "filterAll": "All Engines",
+      "filterClaude": "Claude",
+      "filterCodex": "Codex",
+      "detectDrift": "Detect Drift",
+      "syncDrift": "Sync Drift",
+      "runningDetect": "Detecting…",
+      "runningSync": "Syncing…",
+      "driftStatus": "{{count}} drifted",
+      "noDrift": "No drift detected",
+      "driftFound": "{{count}} drifted distributions found",
+      "syncResult": "Sync complete: {{synced}} synced, {{errors}} errors",
+      "detectFailed": "Detect drift failed: {{message}}",
+      "syncFailed": "Sync failed: {{message}}"
+    }
+  },
+  "capabilityCards": {
+    "origin": {
+      "plugin": "plugin",
+      "other": "other"
+    },
+    "model": "model: {{model}}",
+    "managedRuleCount": "(OpenCow: {{count}})",
+    "customRuleCount": "(Custom: {{count}})",
+    "serverType": "type: {{type}}",
+    "byAuthor": "by {{author}}",
+    "cmdCount": "{{count}} cmds",
+    "skillCount": "{{count}} skills",
+    "agentCount": "{{count}} agents",
+    "hookCount": "{{count}} hooks",
+    "pluginVersion": "v{{version}} · {{author}}",
+    "languages": "Languages: {{languages}}"
+  },
+  "chatHero": {
+    "defaultPlaceholder": "Ask anything…",
+    "inputAria": "Start a conversation with Claude Code agent",
+    "sendAria": "Send message"
+  },
+  "sessionPanel": {
+    "noSessionYet": "No Session Yet",
+    "startSession": "Start Session",
+    "startSessionAria": "Start Session",
+    "composeAndStart": "Compose & Start",
+    "composeAndStartAria": "Compose and start session",
+    "starting": "Starting…",
+    "completed": "Completed",
+    "taskList": "Task list",
+    "jumpToLatest": "Latest",
+    "jumpToLatestAria": "Jump to latest response",
+    "fileDropHint": "Drop files to attach",
+    "fileDropHintSub": "Images, PDFs, and text files will be attached to your message"
+  },
+  "taskWidget": {
+    "state": {
+      "launching": "Launching…",
+      "running": "Running",
+      "completed": "Completed",
+      "failed": "Failed",
+      "interrupted": "Interrupted"
+    },
+    "showLess": "Show less",
+    "showMore": "Show more ({{count}} lines)",
+    "tokens": "{{count}} tokens",
+    "tools": "{{count}} tools"
+  },
+  "sessionStatusBar": {
+    "stopReasons": {
+      "taskCompleted": "Task completed",
+      "turnLimitReached": "Turn limit reached",
+      "stoppedByUser": "Stopped by user",
+      "idle": "Idle"
+    },
+    "errorDetails": "Error Details",
+    "processError": "This error is caused by a process-level corruption and cannot be recovered within the current session. Please restart OpenCow.",
+    "restartApp": "Restart OpenCow",
+    "stopSessionAria": "Stop session",
+    "stopSession": "Stop Session",
+    "retryTooltip": "Resume this session — conversation history is preserved.",
+    "retryAria": "Retry session",
+    "retry": "Retry",
+    "resumeMessage": "Please continue from where you left off.",
+    "newSessionAria": "New session",
+    "newSession": "New Session",
+    "createNewSession": "Create New Session",
+    "archiveNote": "Current session will be archived.",
+    "fromIssue": "From Issue",
+    "blankSession": "Blank Session",
+    "collapseConsole": "Collapse console",
+    "expandConsole": "Expand console"
+  },
+  "sessionHistory": {
+    "tooltip": "Session history",
+    "buttonAria": "View {{count}} archived sessions",
+    "title": "Session History",
+    "description": "Previous sessions for this issue. Click to view, or restore to make current.",
+    "noMessages": "(empty session)",
+    "restoreTooltip": "Make this the current session",
+    "restoreAria": "Restore this session",
+    "restore": "Restore",
+    "viewingArchived": "Viewing archived session (read-only)",
+    "backToCurrent": "Back to current session"
+  },
+  "sessionInput": {
+    "placeholder": "Type a message or attach a file…",
+    "inputAria": "Type a message to send to Claude Code session",
+    "slashCommandAria": "Insert slash command",
+    "sendAria": "Send Message",
+    "stopSessionAria": "Stop session",
+    "stopSessionTooltip": "Click to stop session",
+    "stopConfirmTitle": "Stop this session?",
+    "stopConfirmBtn": "Stop Session"
+  },
+  "contextMention": {
+    "triggerAria": "Add file context",
+    "popoverAria": "Add file context",
+    "searchPlaceholder": "Search files...",
+    "searchAria": "Search project files",
+    "loading": "Loading...",
+    "noResults": "No matching files",
+    "selectedCount": "{{count}} selected",
+    "selectedCount_one": "{{count}} selected",
+    "contextFilesAria": "Context files",
+    "removeFile": "Remove {{name}}",
+    "dropHint": "Release to add context",
+    "dropHintSub": "Files and directories will be added as conversation context",
+    "clearAll": "Clear all"
+  },
+  "streamingFooter": {
+    "statusTexts": [
+      "Reasoning",
+      "Thinking",
+      "Working",
+      "Analyzing",
+      "Processing",
+      "Pondering",
+      "Reflecting",
+      "Considering",
+      "Evaluating",
+      "Pontificating"
+    ]
+  },
+  "queuedMessages": {
+    "messageAria": "Queued message {{index}}",
+    "editAria": "Edit queued message",
+    "confirmEdit": "Confirm edit",
+    "cancelEdit": "Cancel edit",
+    "empty": "(empty)",
+    "imageCount": "{{count}} img",
+    "editMessage": "Edit message",
+    "cancelMessage": "Cancel message",
+    "sending": "Sending…",
+    "queued": "Queued ({{count}})",
+    "queueListAria": "Queued messages",
+    "modeBatch": "Batch",
+    "modeSequential": "Sequential",
+    "dispatchModeAria": "Queue dispatch mode",
+    "reorderAria": "Drag to reorder queued message",
+    "sendingItem": "Sending message {{index}}…",
+    "sequentialTooltip": "Messages will be sent one at a time. Drag to reorder."
+  },
+  "compose": {
+    "placeholder": "Compose your prompt… Use / for commands",
+    "inputAria": "Compose session prompt",
+    "cancelAria": "Cancel compose",
+    "title": "Compose Session Prompt",
+    "useSlash": "Use",
+    "slashSymbol": "/",
+    "forCommandsHint": "for commands"
+  },
+  "askUser": {
+    "sent": "Sent",
+    "confirmBtn": "Confirm"
+  },
+  "notes": {
+    "sentToChat": "Sent to Chat",
+    "notesSentToChat": "{{count}} notes sent to Chat",
+    "switchToChat": "Switch to Chat"
+  },
+  "artifacts": {
+    "unstar": "Unstar",
+    "star": "Star"
+  },
+  "diffChanges": {
+    "allSessionChanges": "All Session Changes",
+    "turnChanges": "Turn Changes",
+    "fileCount_one": "{{count}} file",
+    "fileCount_other": "{{count}} files",
+    "newFiles": "+{{count}} new",
+    "modifiedFiles": "~{{count}} modified",
+    "selectFile": "Select a file to view changes",
+    "noChanges": "No file changes"
+  },
+  "sessionDetail": {
+    "loadingSession": "Loading...",
+    "closePanel": "Close detail panel",
+    "idLabel": "ID",
+    "turnAria": "Turn {{index}}: {{message}}",
+    "toolCount": "{{count}} tools",
+    "fileCount": "{{count}} files",
+    "imageCount": "{{count}} image",
+    "imageCount_plural": "{{count}} images",
+    "imageAlt": "Image {{index}} from turn {{turnIndex}}",
+    "toolCallsAria": "Tool calls",
+    "filesSection": "Files",
+    "turnsCount": "{{count}} turns",
+    "toolCallsCount": "{{count}} tools",
+    "turnsTab": "Turns",
+    "tasksTab": "Tasks",
+    "tasksTabCount": "Tasks ({{count}})",
+    "eventsTab": "Events",
+    "eventsTabCount": "Events ({{count}})",
+    "noConversationData": "No conversation data"
+  },
+  "skillCreator": {
+    "title": "AI Skill Creator",
+    "subtitle": "Describe the skill you want, and AI will help you create it",
+    "aiCreate": "AI Create",
+    "placeholder": "Describe the skill you want to create…",
+    "starting": "Starting AI Skill Creator…",
+    "continuePlaceholder": "Continue refining the skill…",
+    "unsavedTitle": "Discard session?",
+    "unsavedMessage": "The current skill creation session will be lost. Are you sure?",
+    "discard": "Discard",
+    "suggestions": {
+      "codeReview": "Create a code review skill",
+      "testGeneration": "Create a test generation skill",
+      "documentation": "Create a documentation skill"
+    },
+    "preview": {
+      "title": "Skill Preview",
+      "name": "Name",
+      "description": "Description",
+      "body": "Body",
+      "scope": "Save to",
+      "save": "Save Skill",
+      "saving": "Saving…",
+      "saved": "Saved!"
+    }
+  },
+  "capabilityCreator": {
+    "aiCreate": "AI Create",
+    "preview": {
+      "title": "Preview",
+      "name": "Name",
+      "description": "Description",
+      "body": "Body",
+      "scope": "Save to",
+      "model": "Model",
+      "color": "Color",
+      "argumentHint": "Argument Hint",
+      "save": "Save",
+      "saving": "Saving…",
+      "saved": "Saved!",
+      "modelDefault": "Default",
+      "modelSonnet": "Sonnet",
+      "modelOpus": "Opus",
+      "modelHaiku": "Haiku"
+    },
+    "skill": {
+      "title": "AI Skill Creator",
+      "subtitle": "Describe the skill you want, and AI will help you create it",
+      "placeholder": "Describe the skill you want to create…",
+      "starting": "Starting AI Skill Creator…",
+      "continuePlaceholder": "Continue refining the skill…",
+      "unsavedTitle": "Discard session?",
+      "unsavedMessage": "The current skill creation session will be lost. Are you sure?",
+      "discard": "Discard",
+      "suggestions": {
+        "codeReview": "Create a code review skill",
+        "testGeneration": "Create a test generation skill",
+        "documentation": "Create a documentation skill"
+      }
+    },
+    "agent": {
+      "title": "AI Agent Creator",
+      "subtitle": "Describe the agent you want, and AI will help you create it",
+      "placeholder": "Describe the agent persona you want to create…",
+      "starting": "Starting AI Agent Creator…",
+      "continuePlaceholder": "Continue refining the agent…",
+      "unsavedTitle": "Discard session?",
+      "unsavedMessage": "The current agent creation session will be lost. Are you sure?",
+      "discard": "Discard",
+      "suggestions": {
+        "codeReviewer": "Create a code review expert",
+        "apiArchitect": "Create an API architect",
+        "securityAuditor": "Create a security auditor"
+      }
+    },
+    "command": {
+      "title": "AI Command Creator",
+      "subtitle": "Describe the command you want, and AI will help you create it",
+      "placeholder": "Describe the slash command you want to create…",
+      "starting": "Starting AI Command Creator…",
+      "continuePlaceholder": "Continue refining the command…",
+      "unsavedTitle": "Discard session?",
+      "unsavedMessage": "The current command creation session will be lost. Are you sure?",
+      "discard": "Discard",
+      "suggestions": {
+        "codeReview": "Create a /review command",
+        "deployStaging": "Create a /deploy command",
+        "generateTests": "Create a /test-gen command"
+      }
+    },
+    "rule": {
+      "title": "AI Rule Creator",
+      "subtitle": "Describe the rule you want, and AI will help you create it",
+      "placeholder": "Describe the rule or guideline you want to create…",
+      "starting": "Starting AI Rule Creator…",
+      "continuePlaceholder": "Continue refining the rule…",
+      "unsavedTitle": "Discard session?",
+      "unsavedMessage": "The current rule creation session will be lost. Are you sure?",
+      "discard": "Discard",
+      "suggestions": {
+        "codingStandards": "Create TypeScript conventions",
+        "commitFormat": "Create commit message guidelines",
+        "reviewGuidelines": "Create code review standards"
+      }
+    }
+  },
+  "cloneCapabilities": {
+    "title": "Copy Capabilities",
+    "description": "Select capabilities to copy to this project.",
+    "fromProject": "Copy from Project",
+    "fromProjectDesc": "Copy capabilities from an existing project",
+    "sourceProject": "Source Project",
+    "selectProject": "Select a project…",
+    "selectProjectHint": "Select a source project to see its capabilities",
+    "discovering": "Discovering capabilities…",
+    "noCapabilities": "No project-scoped capabilities found",
+    "search": "Search capabilities…",
+    "selectAll": "Select All",
+    "copy": "Copy {{count}} items",
+    "copying": "Copying…",
+    "confirmCopy": "Confirm Copy",
+    "resolveConflicts": "Resolve Conflicts",
+    "conflictDescription": "{{count}} capability(s) already exist in this project.",
+    "conflict": "Conflict",
+    "conflictTooltip": "Already exists in target project",
+    "alreadyExists": "Already exists in target project",
+    "forAllConflicts": "For all conflicts:",
+    "resolutionSkip": "Skip",
+    "resolutionSkipDesc": "Keep existing, don't copy conflicting items",
+    "resolutionOverwrite": "Overwrite",
+    "resolutionOverwriteDesc": "Replace existing with source version",
+    "resolutionRename": "Keep Both",
+    "resolutionRenameDesc": "Copy with a new name (e.g. name-copy)",
+    "success": "Copied {{count}} capabilities successfully",
+    "partial": "{{succeeded}} copied, {{failed}} failed"
+  },
+  "repoSource": {
+    "title": "Repository Sources",
+    "subtitle": "Manage custom skill repositories from GitHub or GitLab",
+    "addTitle": "Add Repository Source",
+    "editTitle": "Edit Repository Source",
+    "url": "Repository URL",
+    "name": "Display Name",
+    "auth": "Authentication",
+    "authNone": "Public",
+    "advanced": "Advanced",
+    "branch": "Branch",
+    "add": "Add",
+    "addFirst": "Add Repository",
+    "emptyTitle": "No repositories yet",
+    "emptyDescription": "Add a GitHub or GitLab repository to browse and install skills from your own sources.",
+    "syncing": "Syncing…",
+    "syncError": "Sync error",
+    "lastSynced": "Synced {{time}}",
+    "neverSynced": "Not synced",
+    "test": "Test Connection",
+    "testOk": "Connection OK",
+    "testFail": "Connection failed",
+    "sync": "Sync",
+    "delete": "Delete",
+    "confirmDelete": "Confirm",
+    "cancelDelete": "No",
+    "errorUrlRequired": "Repository URL is required",
+    "browsing": "Loading capabilities…",
+    "browseError": "Failed to load capabilities",
+    "browseEmpty": "No capabilities found in this repository",
+    "install": "Install",
+    "installTip": "Install",
+    "editTip": "Edit",
+    "testTip": "Test connection",
+    "syncTip": "Sync latest",
+    "deleteTip": "Remove",
+    "capCount": "{{count}} capabilities"
+  }
+}

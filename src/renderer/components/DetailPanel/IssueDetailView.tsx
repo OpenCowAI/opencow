@@ -1,0 +1,1159 @@
+// SPDX-License-Identifier: Apache-2.0
+
+import { useState, useCallback, useMemo, useEffect, useRef } from 'react'
+import { useTranslation } from 'react-i18next'
+import { X, Pencil, Trash2, Check, Calendar, Plus, ArrowUpRight, ChevronDown, ChevronUp, ListTree, Link, FileText } from 'lucide-react'
+import { useBlockBrowserView } from '@/hooks/useBlockBrowserView'
+import type { Artifact } from '@shared/types'
+import { Group as PanelGroup, Panel, Separator as PanelResizeHandle } from 'react-resizable-panels'
+import type { PanelImperativeHandle } from 'react-resizable-panels'
+import { useAppStore } from '../../stores/appStore'
+import { useIssueStore } from '../../stores/issueStore'
+import { selectIssue, deleteIssue } from '../../actions/issueActions'
+import { useCommandStore } from '@/stores/commandStore'
+import { startSession } from '@/actions/commandActions'
+import { cn } from '../../lib/utils'
+import { IssueStatusIcon, IssuePriorityIcon } from '../IssuesView/IssueIcons'
+import { IssueFormModal } from '../IssueForm/IssueFormModal'
+import { PillDropdown, PILL_TRIGGER } from '../ui/PillDropdown'
+import { SessionPanel, type SessionHistoryContext, type SessionPanelCapabilities } from './SessionPanel/SessionPanel'
+import { ComposeView } from './SessionPanel/ComposeView'
+import { SessionContextBar } from './SessionContextBar'
+import { ImageThumbnail } from './ImageThumbnail'
+import { ImageLightbox } from './ImageLightbox'
+import { DropOverlay } from './DropOverlay'
+import { getSessionInputFocus } from '../../lib/sessionInputRegistry'
+import { useSessionHistoryForIssue, selectSessionForIssue } from '../../hooks/useSessionForIssue'
+import { useSessionArchive } from '../../hooks/useSessionArchive'
+import { ProjectScopeProvider } from '../../contexts/ProjectScopeContext'
+import { ContextFilesProvider, useContextFiles } from '../../contexts/ContextFilesContext'
+import { MarkdownContent } from '../ui/MarkdownContent'
+import { issueImagesToAttachments, type ImageAttachment } from '../../lib/attachmentUtils'
+import { isIssueUnread } from '@shared/types'
+import type { IssueStatus, IssuePriority, UserMessageContent } from '@shared/types'
+import { buildIssuePromptText } from '@shared/issuePromptBuilder'
+import { buildIssueSessionPrompt, resolveProjectPath } from '../../lib/issueSessionUtils'
+import { getAppAPI } from '@/windowAPI'
+import { toast } from '@/lib/toast'
+import { createLogger } from '@/lib/logger'
+
+const log = createLogger('IssueDetailView')
+
+// Stable empty array constants — used as selector defaults to avoid
+// creating new array references on every store notification.
+const EMPTY_CHILD_ISSUES: import('@shared/types').IssueSummary[] = []
+
+const STATUS_VALUES: IssueStatus[] = ['backlog', 'todo', 'in_progress', 'done', 'cancelled']
+const STATUS_LABEL_KEYS: Record<IssueStatus, string> = {
+  backlog: 'detail.statusOptions.backlog',
+  todo: 'detail.statusOptions.todo',
+  in_progress: 'detail.statusOptions.inProgress',
+  done: 'detail.statusOptions.done',
+  cancelled: 'detail.statusOptions.cancelled'
+}
+
+const PRIORITY_VALUES: IssuePriority[] = ['urgent', 'high', 'medium', 'low']
+const PRIORITY_LABEL_KEYS: Record<IssuePriority, string> = {
+  urgent: 'detail.priorityOptions.urgent',
+  high: 'detail.priorityOptions.high',
+  medium: 'detail.priorityOptions.medium',
+  low: 'detail.priorityOptions.low'
+}
+
+function DeleteConfirmModal({
+  title,
+  onConfirm,
+  onCancel
+}: {
+  title: string
+  onConfirm: () => void
+  onCancel: () => void
+}): React.JSX.Element {
+  const cancelRef = useRef<HTMLButtonElement>(null)
+
+  useEffect(() => {
+    cancelRef.current?.focus()
+  }, [])
+
+  useEffect(() => {
+    const handleKey = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape') onCancel()
+    }
+    document.addEventListener('keydown', handleKey)
+    return () => document.removeEventListener('keydown', handleKey)
+  }, [onCancel])
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Confirm delete"
+      onClick={(e) => { if (e.target === e.currentTarget) onCancel() }}
+      style={{ overscrollBehavior: 'contain' }}
+    >
+      <div className="bg-[hsl(var(--background))] border border-[hsl(var(--border))] rounded-lg shadow-lg p-4 max-w-sm mx-4">
+        <p className="text-sm text-[hsl(var(--foreground))] mb-3">
+          Delete &quot;{title}&quot;? This cannot be undone.
+        </p>
+        <div className="flex justify-end gap-2">
+          <button
+            ref={cancelRef}
+            onClick={onCancel}
+            className="px-3 py-1.5 text-xs rounded-md text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] hover:bg-[hsl(var(--foreground)/0.04)] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--ring))]"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={onConfirm}
+            className="px-3 py-1.5 text-xs rounded-md bg-red-600 text-white hover:bg-red-700 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500"
+          >
+            Delete
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function IssueImageGallery({ images }: { images: import('@shared/types').IssueImage[] }): React.JSX.Element {
+  const [lightboxIdx, setLightboxIdx] = useState<number | null>(null)
+
+  return (
+    <div>
+      <label className="block text-xs text-[hsl(var(--muted-foreground))] mb-1">Images</label>
+      <div className="flex flex-wrap gap-1.5">
+        {images.map((img, i) => {
+          const dataUri = `data:${img.mediaType};base64,${img.data}`
+          return (
+            <ImageThumbnail
+              key={img.id}
+              src={dataUri}
+              alt={`Attached image ${i + 1}`}
+              onClick={() => setLightboxIdx(i)}
+            />
+          )
+        })}
+      </div>
+      {lightboxIdx !== null && (
+        <ImageLightbox
+          src={`data:${images[lightboxIdx].mediaType};base64,${images[lightboxIdx].data}`}
+          alt={`Attached image ${lightboxIdx + 1}`}
+          onClose={() => setLightboxIdx(null)}
+        />
+      )}
+    </div>
+  )
+}
+
+/**
+ * Drop zone wrapper — detects native drag of file/directory entries from
+ * the sidebar FileTree and forwards them to the ContextFiles context.
+ */
+function ContextFileDragZone({ children, className }: { children: React.ReactNode; className?: string }): React.JSX.Element {
+  const { addFile } = useContextFiles()
+  const [isDragOver, setIsDragOver] = useState(false)
+  const dragCounterRef = useRef(0)
+
+  const handleDragEnter = useCallback((e: React.DragEvent) => {
+    if (e.dataTransfer.types.includes('application/x-opencow-file')) {
+      e.preventDefault()
+      dragCounterRef.current += 1
+      if (dragCounterRef.current === 1) setIsDragOver(true)
+    }
+  }, [])
+
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    if (e.dataTransfer.types.includes('application/x-opencow-file')) {
+      e.preventDefault()
+      e.dataTransfer.dropEffect = 'copy'
+    }
+  }, [])
+
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    if (e.dataTransfer.types.includes('application/x-opencow-file')) {
+      dragCounterRef.current -= 1
+      if (dragCounterRef.current <= 0) {
+        dragCounterRef.current = 0
+        setIsDragOver(false)
+      }
+    }
+  }, [])
+
+  const handleDrop = useCallback(
+    (e: React.DragEvent) => {
+      e.preventDefault()
+      dragCounterRef.current = 0
+      setIsDragOver(false)
+
+      const raw = e.dataTransfer.getData('application/x-opencow-file')
+      if (!raw) return
+
+      try {
+        const data = JSON.parse(raw) as { path: string; name: string; isDirectory: boolean }
+        addFile({ path: data.path, name: data.name, isDirectory: data.isDirectory })
+      } catch {
+        // Ignore malformed data
+      }
+    },
+    [addFile],
+  )
+
+  return (
+    <div
+      className={cn(className, 'relative')}
+      onDragEnter={handleDragEnter}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+    >
+      {children}
+      {isDragOver && <DropOverlay />}
+    </div>
+  )
+}
+
+interface IssueDetailViewProps {
+  issueId: string
+  /** When provided, used instead of `selectIssue(null)` for the close (X) button. */
+  onClose?: () => void
+  /** When provided, used instead of `selectIssue(id)` for sub-issue / parent-issue navigation. */
+  onNavigateToIssue?: (issueId: string) => void
+}
+
+export function IssueDetailView({ issueId, onClose, onNavigateToIssue }: IssueDetailViewProps): React.JSX.Element {
+  const { t } = useTranslation('issues')
+  // Block browser view when delete confirmation modal is open
+  const [confirmDelete, setConfirmDelete] = useState(false)
+  useBlockBrowserView('delete-confirm-modal', confirmDelete)
+  // ── Store subscriptions ────────────────────────────────────────────
+  //
+  // CRITICAL: Only subscribe to the MINIMAL data this component needs.
+  // Broad subscriptions like `(s) => s.issues` or `(s) => s.projects`
+  // cause re-renders on EVERY unrelated store mutation (e.g. loadIssues()
+  // from updateIssue, any project change).  Combined with SessionPanel
+  // not being memoized, this cascade exceeds React's 50-update limit.
+  //
+  // Strategy:
+  //   - Collections (issues, projects): snapshot reads via getState()
+  //   - Keyed caches (childIssuesCache): narrow selector with stable key
+  //   - Actions (functions): direct selector (always stable in Zustand)
+  //   - Issue detail: narrow selector by issueId (already done)
+  // ─────────────────────────────────────────────────────────────────
+
+  // Snapshot read: optional fast-path fallback for instant rendering
+  // while the full issue detail loads. NOT used for existence checks —
+  // the detail cache (via loadIssueDetail API) is the authority for that.
+  const issueSummary = useMemo(
+    () => useIssueStore.getState().issueById[issueId] ?? null,
+    [issueId],
+  )
+
+  // Store action functions — stable references, safe to subscribe
+  const updateIssue = useIssueStore((s) => s.updateIssue)
+  const loadIssueDetail = useIssueStore((s) => s.loadIssueDetail)
+  const stopSession = useCommandStore((s) => s.stopSession)
+  const sendMessage = useCommandStore((s) => s.sendMessage)
+  const resumeSession = useCommandStore((s) => s.resumeSession)
+  const loadChildIssues = useIssueStore((s) => s.loadChildIssues)
+  const markIssueRead = useIssueStore((s) => s.markIssueRead)
+
+  // Tracks whether the API confirmed this issue does not exist.
+  // Distinguished from "not yet loaded" to avoid premature "not found" display.
+  const [loadFailed, setLoadFailed] = useState(false)
+
+  const [showEditModal, setShowEditModal] = useState(false)
+  // Artifact candidates — loaded lazily only when contextRefs include artifacts
+  const [starredArtifacts, setStarredArtifacts] = useState<Artifact[]>([])
+  const [idCopied, setIdCopied] = useState(false)
+  const [descExpanded, setDescExpanded] = useState(false)
+  const [descOverflows, setDescOverflows] = useState(false)
+  const [statusOpen, setStatusOpen] = useState(false)
+  const [priorityOpen, setPriorityOpen] = useState(false)
+  const [isStarting, setIsStarting] = useState(false)
+  const [composeMode, setComposeMode] = useState(false)
+  const [showCreateSubIssueModal, setShowCreateSubIssueModal] = useState(false)
+  const [isConsoleExpanded, setIsConsoleExpanded] = useState(true)
+  const issueInfoPanelRef = useRef<PanelImperativeHandle>(null)
+  const descRef = useRef<HTMLDivElement>(null)
+  const contentRef = useRef<HTMLDivElement>(null)
+  const prevIssueIdRef = useRef(issueId)
+  const focusedIssueIdRef = useRef<string | null>(null)
+  const markingReadRef = useRef(false)
+
+  // NARROW selector: subscribes only to THIS issue's cache entry, not the entire Map.
+  // Critical for eliminating re-renders when OTHER issues are updated.
+  // (Previously subscribed to the whole `issueDetailCache` Map — every updateIssue()
+  // for any issue triggered a re-render here.)
+  const issue = useIssueStore((s) => s.issueDetailCache.get(issueId) ?? null)
+
+  // NOTE: session subscription has been moved INTO SessionPanel (via useSessionByBinding)
+  // so that IssueDetailView does NOT re-render on every streaming message tick.
+  // IssueDetailView no longer imports or calls useSessionForIssue().
+  //
+  // Session history uses `useStoreWithEqualityFn` from `zustand/traditional`
+  // instead of the bound `useAppStore` hook — see useSessionForIssue.ts for details.
+  const archivedSessions = useSessionHistoryForIssue(issueId)
+  const { archiveCurrentSession, restoreSession } = useSessionArchive()
+
+  // --- Archived session viewing (read-only) ---
+  const [viewingArchivedSessionId, setViewingArchivedSessionId] = useState<string | null>(null)
+  // Derived from local state — no store subscription needed.
+  const isViewingArchived = viewingArchivedSessionId !== null
+
+  // Standalone mode: when custom onClose is provided, this component is used
+  // inside a floating overlay (e.g. IssuePreviewOverlay from Starred Artifacts).
+  // In that case we must NOT call selectIssue — which sets detailContext and
+  // causes the main DetailPanel to expand alongside the overlay. Instead we
+  // call loadIssueDetail directly to fetch the full issue data without side-effects.
+  const isStandalone = !!onClose
+
+  // ── Issue detail loading ──────────────────────────────────────────
+  //
+  // Two effects cooperate to guarantee the detail cache is populated:
+  //
+  // 1. **Primary load** (issueId change):
+  //    Fires when the component receives a new issueId (mount, issue
+  //    switch, or project switch restoring a different issueId).
+  //    Resets loadFailed and kicks off loadIssueDetail.
+  //
+  // 2. **Cache-eviction recovery** (issue goes null):
+  //    Fires when navigateToProject clears issueDetailCache while the
+  //    issueId prop stays the same (rare but possible with All Projects).
+  //    Detects issue→null transition and re-triggers loadIssueDetail.
+  //
+  // loadIssueDetail de-duplicates concurrent calls for the same ID, so
+  // even if both effects fire simultaneously only one API call is made.
+  // ─────────────────────────────────────────────────────────────────
+
+  // Primary load: ensure full detail data is loaded for this issue.
+  // In standalone mode we only set selectedIssueId (needed for loadIssueDetail's
+  // race-condition guard) without touching detailContext / _tabDetails.
+  useEffect(() => {
+    if (!issueId) return
+    setLoadFailed(false)
+
+    if (isStandalone) {
+      useAppStore.setState({ selectedIssueId: issueId })
+    }
+
+    // Already cached — no loading needed (loadIssueDetail still fires a
+    // background refresh since it deduplicates, but we're not blocking on it).
+    if (useIssueStore.getState().issueDetailCache.has(issueId)) {
+      loadIssueDetail(issueId) // background refresh
+      return
+    }
+
+    let cancelled = false
+    loadIssueDetail(issueId).then((result) => {
+      if (!cancelled && !result) {
+        setLoadFailed(true)
+      }
+    })
+    return () => { cancelled = true }
+  }, [issueId, isStandalone]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Cache-eviction recovery: when navigateToProject clears issueDetailCache,
+  // the `issue` subscription fires with null. If loadFailed is false (not a
+  // genuine 404), we re-trigger the load to repopulate the cache.
+  useEffect(() => {
+    if (issue !== null || loadFailed || !issueId) return
+
+    let cancelled = false
+    loadIssueDetail(issueId).then((result) => {
+      if (!cancelled && !result) {
+        setLoadFailed(true)
+      }
+    })
+    return () => { cancelled = true }
+  }, [issue, loadFailed, issueId]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Reset transient UI state when switching between issues
+  useEffect(() => {
+    setComposeMode(false)
+    setIsStarting(false)
+    setShowCreateSubIssueModal(false)
+    setIsConsoleExpanded(false)
+    setDescExpanded(false)
+    setViewingArchivedSessionId(null)
+  }, [issueId])
+
+  // Auto-focus Session Console input when switching issues.
+  // Waits until `issue` is loaded (so SessionPanel / SessionInputBar are mounted
+  // and the focus callback is registered) then focuses with a requestAnimationFrame
+  // to allow the TipTap editor one frame to settle after (re-)mount.
+  useEffect(() => {
+    if (!issue || issueId === focusedIssueIdRef.current) return
+    focusedIssueIdRef.current = issueId
+    const raf = requestAnimationFrame(() => {
+      getSessionInputFocus()?.focus()
+    })
+    return () => cancelAnimationFrame(raf)
+  }, [issueId, issue])
+
+  // Content cross-fade: replay CSS animation when issue data arrives for a new issueId.
+  // Uses direct DOM manipulation to avoid key-driven remount of the entire component tree.
+  useEffect(() => {
+    if (prevIssueIdRef.current !== issueId && issue) {
+      const el = contentRef.current
+      if (el) {
+        el.classList.remove('detail-content-enter')
+        void el.offsetWidth // force reflow to restart animation
+        el.classList.add('detail-content-enter')
+      }
+      prevIssueIdRef.current = issueId
+    }
+  }, [issueId, issue])
+
+  // Detect whether description content overflows the collapsed (2-line) height
+  useEffect(() => {
+    const el = descRef.current
+    if (!el) return
+    const check = (): void => {
+      setDescOverflows(el.scrollHeight > el.clientHeight + 1)
+    }
+    check()
+    const ro = new ResizeObserver(check)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [issue?.description, descExpanded])
+
+  // Lazily load artifact metadata for contextRef label resolution
+  useEffect(() => {
+    const hasArtifactRef = issue?.contextRefs?.some((r) => r.type === 'artifact')
+    if (!hasArtifactRef) return
+    getAppAPI()['get-context-candidates']()
+      .then(({ artifacts }) => setStarredArtifacts(artifacts))
+      .catch(() => {})
+  }, [issue?.contextRefs])
+
+  // Reset the marking guard when switching issues so the new issue can be
+  // marked as read immediately (previous async markIssueRead may still be in-flight).
+  useEffect(() => {
+    markingReadRef.current = false
+  }, [issueId])
+
+  // Mark unread issues as read when viewed.
+  // Re-triggers when lastAgentActivityAt changes so that real-time agent
+  // completions are automatically marked as read while the user is watching.
+  //
+  // Guarded by markingReadRef to prevent concurrent markIssueRead calls when
+  // rapid lastAgentActivityAt updates arrive during streaming — markIssueRead
+  // is async (IPC → store update), and overlapping calls can cascade store
+  // mutations that exceed React's maximum update depth.
+  useEffect(() => {
+    if (issue && isIssueUnread(issue) && !markingReadRef.current) {
+      markingReadRef.current = true
+      markIssueRead(issue.id).finally(() => {
+        markingReadRef.current = false
+      })
+    }
+  }, [issue?.id, issue?.lastAgentActivityAt]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Derive from summary (always available for listed issues) so the header
+  // shows the correct title even while full detail is still loading.
+  const isSubIssue = !!(issue?.parentIssueId ?? issueSummary?.parentIssueId)
+
+  // NARROW selector: only re-renders when THIS issue's children change,
+  // not when any child-issue cache entry changes.
+  const childIssues = useIssueStore(
+    useCallback((s) => s.childIssuesCache[issueId] ?? EMPTY_CHILD_ISSUES, [issueId]),
+  )
+
+  // Load child issues for top-level issues
+  useEffect(() => {
+    if (issueId && issue && !issue.parentIssueId) {
+      loadChildIssues(issueId)
+    }
+  }, [issueId, issue?.parentIssueId, loadChildIssues])
+
+  // Derive the project path once — used for session creation and as ambient scope.
+  // Snapshot read: projects rarely change at runtime; no subscription needed.
+  const projectPath = useMemo(
+    () => resolveProjectPath(issue?.projectId, useAppStore.getState().projects),
+    [issue?.projectId],
+  )
+
+  const statusOptions = useMemo(
+    () => STATUS_VALUES.map((v) => ({ value: v, label: t(STATUS_LABEL_KEYS[v]) })),
+    [t],
+  )
+  const priorityOptions = useMemo(
+    () => PRIORITY_VALUES.map((v) => ({ value: v, label: t(PRIORITY_LABEL_KEYS[v]) })),
+    [t],
+  )
+
+  const actionText = t('pleaseWorkOnIssue')
+
+  // ── Session action handlers ─────────────────────────────────────────
+  //
+  // ALL callbacks that need `issue` or `session` read them from the store
+  // at CALL-TIME (via useAppStore.getState()) instead of capturing them
+  // via closure.
+  //
+  // Why: `session` changes reference on every streaming tick (new messages,
+  // token counts); `issue` changes on every detail-cache update.  Closing
+  // over them causes useCallback to recreate → capabilities/sessionHistoryCtx
+  // useMemo invalidation → SessionPanel re-render → Virtuoso re-render →
+  // infinite loop (Maximum update depth exceeded).
+  //
+  // By reading at call-time, all callbacks depend only on stable values
+  // (issueId string, store action refs), keeping the entire `capabilities` and
+  // `sessionHistoryCtx` objects referentially stable during streaming.
+  // ─────────────────────────────────────────────────────────────────────
+
+  const handleCreateSession = useCallback(async () => {
+    const currentIssue = useIssueStore.getState().issueDetailCache.get(issueId)
+    if (!currentIssue) return
+    setIsStarting(true)
+    try {
+      const { prompt, projectPath: resolvedPath } = await buildIssueSessionPrompt(currentIssue, { projects: useAppStore.getState().projects, actionText })
+      await startSession({
+        prompt,
+        origin: { source: 'issue', issueId: currentIssue.id },
+        projectPath: resolvedPath,
+        projectId: currentIssue.projectId ?? undefined,
+      })
+    } catch (err) {
+      log.error('Failed to create session', err)
+      toast(t('sessionPanel.startSessionFailed', { defaultValue: 'Failed to start session' }))
+    } finally {
+      setIsStarting(false)
+    }
+  }, [issueId, actionText, t])
+
+  // Pre-build the initial prompt for ComposeView (Issue title + description + images)
+  const initialPrompt = useMemo(() => {
+    if (!issue) return { text: '', attachments: [] as ImageAttachment[] }
+    const text = buildIssuePromptText(issue, actionText)
+    const attachments = issueImagesToAttachments(issue.images ?? [])
+    return { text, attachments }
+  }, [issue, actionText])
+
+  // Compose mode: start session with user-edited content.
+  // Returns `false` on failure so useMessageComposer preserves editor content.
+  const handleComposeStart = useCallback(async (content: UserMessageContent): Promise<boolean | void> => {
+    const currentIssue = useIssueStore.getState().issueDetailCache.get(issueId)
+    if (!currentIssue) return false
+    const resolvedPath = resolveProjectPath(currentIssue.projectId, useAppStore.getState().projects)
+    setIsStarting(true)
+    try {
+      await startSession({
+        prompt: content,
+        origin: { source: 'issue', issueId: currentIssue.id },
+        projectPath: resolvedPath,
+        projectId: currentIssue.projectId ?? undefined,
+      })
+      setComposeMode(false)
+    } catch (err) {
+      log.error('Failed to start composed session', err)
+      toast(t('sessionPanel.startSessionFailed', { defaultValue: 'Failed to start session' }))
+      return false
+    } finally {
+      setIsStarting(false)
+    }
+  }, [issueId, t])
+
+  const handleStopSession = useCallback(async () => {
+    const currentSession = selectSessionForIssue(issueId)
+    if (!currentSession) return
+    await stopSession(currentSession.id)
+  }, [issueId, stopSession])
+
+  const handleSendMessage = useCallback(async (message: UserMessageContent): Promise<boolean> => {
+    const currentSession = selectSessionForIssue(issueId)
+    if (!currentSession) return false
+    return sendMessage(currentSession.id, message)
+  }, [issueId, sendMessage])
+
+  const handleResumeMessage = useCallback(async (message: UserMessageContent): Promise<boolean> => {
+    const currentSession = selectSessionForIssue(issueId)
+    if (!currentSession) return false
+    return resumeSession(currentSession.id, message)
+  }, [issueId, resumeSession])
+
+  /**
+   * Retry: resume the existing session instead of creating a new one.
+   *
+   * This preserves the full conversation history. We send a short nudge
+   * message so the agent continues from where it left off.
+   *
+   * Falls back to creating a new session only when no session exists yet
+   * (edge case — e.g. the very first session creation itself failed before
+   * the session object was materialised).
+   */
+  const handleRetrySession = useCallback(async () => {
+    const currentSession = selectSessionForIssue(issueId)
+    if (!currentSession) {
+      // No session to resume — fall back to initial creation
+      await handleCreateSession()
+      return
+    }
+    await resumeSession(currentSession.id, t('sessions:sessionStatusBar.resumeMessage'))
+  }, [issueId, resumeSession, handleCreateSession, t])
+
+  /** Stop current session (if active), archive its ID into sessionHistory, then start fresh. */
+  const handleNewSession = useCallback(async () => {
+    const currentIssue = useIssueStore.getState().issueDetailCache.get(issueId)
+    if (!currentIssue) return
+    const currentSession = selectSessionForIssue(issueId)
+    setIsStarting(true)
+    try {
+      await archiveCurrentSession(currentIssue, currentSession)
+      await handleCreateSession()
+    } finally {
+      setIsStarting(false)
+    }
+  }, [issueId, archiveCurrentSession, handleCreateSession])
+
+  /** Stop current session (if active), archive its ID, then clear sessionId so the panel shows the empty "Start Session" state. */
+  const handleNewBlankSession = useCallback(async () => {
+    const currentIssue = useIssueStore.getState().issueDetailCache.get(issueId)
+    if (!currentIssue) return
+    const currentSession = selectSessionForIssue(issueId)
+    setIsStarting(true)
+    try {
+      await archiveCurrentSession(currentIssue, currentSession, { clearSessionId: true })
+    } finally {
+      setIsStarting(false)
+    }
+  }, [issueId, archiveCurrentSession])
+
+  /** Restore an archived session as the current one. */
+  const handleRestoreSession = useCallback(async (targetSessionId: string) => {
+    const currentIssue = useIssueStore.getState().issueDetailCache.get(issueId)
+    if (!currentIssue) return
+    const currentSession = selectSessionForIssue(issueId)
+    setIsStarting(true)
+    try {
+      setViewingArchivedSessionId(null)
+      await restoreSession(currentIssue, currentSession, targetSessionId)
+    } finally {
+      setIsStarting(false)
+    }
+  }, [issueId, restoreSession])
+
+  /** View an archived session in read-only mode. */
+  const handleViewArchivedSession = useCallback((sessionId: string) => {
+    setViewingArchivedSessionId(sessionId)
+  }, [])
+
+  /** Exit archived session view, returning to the current session. */
+  const handleExitArchivedView = useCallback(() => {
+    setViewingArchivedSessionId(null)
+  }, [])
+
+  // ── Stable structured props for SessionPanel ────────────────────────
+  //
+  // Both `capabilities` and `sessionHistoryCtx` are wrapped in useMemo so that
+  // SessionPanel (and its Virtuoso subtree) receive stable references
+  // throughout streaming.  All individual handler deps are stable (see
+  // call-time pattern above), so these useMemos only invalidate on real
+  // semantic changes (e.g. issueId switch, archived sessions list change).
+
+  const capabilities = useMemo<SessionPanelCapabilities>(() => ({
+    create: handleCreateSession,
+    retry: handleRetrySession,
+    stop: handleStopSession,
+    newSession: handleNewSession,
+    newBlankSession: handleNewBlankSession,
+    compose: () => setComposeMode(true),
+    send: handleSendMessage,
+    resume: handleResumeMessage,
+  }), [handleCreateSession, handleRetrySession, handleStopSession, handleNewSession, handleNewBlankSession, handleSendMessage, handleResumeMessage])
+
+  const sessionHistoryCtx = useMemo<SessionHistoryContext | undefined>(
+    () =>
+      archivedSessions.length > 0 || isViewingArchived
+        ? {
+            archivedSessions,
+            onRestore: handleRestoreSession,
+            onView: handleViewArchivedSession,
+            isViewingArchived,
+            onExitView: handleExitArchivedView,
+          }
+        : undefined,
+    [archivedSessions, handleRestoreSession, handleViewArchivedSession, isViewingArchived, handleExitArchivedView],
+  )
+
+  /** Toggle console expand/collapse by resizing the issue info panel. */
+  const handleToggleConsoleExpand = useCallback(() => {
+    const panel = issueInfoPanelRef.current
+    if (!panel) return
+    setIsConsoleExpanded((prev) => {
+      if (prev) {
+        // Collapse console: issue info takes 70%, console shrinks to 30%
+        panel.resize('70%')
+      } else {
+        // Expand console: shrink issue info to just show title + ID area
+        panel.resize('9%')
+      }
+      return !prev
+    })
+  }, [])
+
+  // ── Render gate ──────────────────────────────────────────────────
+  //
+  // Display source priority: full issue (cache) > summary (list fallback).
+  // "Not found" is ONLY shown when loadIssueDetail API confirms non-existence
+  // (loadFailed === true). While loading, a skeleton placeholder is shown
+  // instead — this eliminates the flash of "not found" during project switches
+  // where the issues list is temporarily stale.
+  // ─────────────────────────────────────────────────────────────────
+  const displaySource = issue ?? issueSummary
+
+  if (!displaySource) {
+    if (loadFailed) {
+      return (
+        <div className="flex items-center justify-center h-full text-[hsl(var(--muted-foreground))] text-sm">
+          {t('detail.notFound')}
+        </div>
+      )
+    }
+    // Still loading — show skeleton placeholder
+    return (
+      <div className="h-full flex flex-col overflow-hidden animate-pulse">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-[hsl(var(--border))]">
+          <div className="h-4 w-24 rounded bg-[hsl(var(--muted)/0.3)]" />
+          <div className="flex gap-1">
+            <div className="h-6 w-6 rounded bg-[hsl(var(--muted)/0.2)]" />
+            <div className="h-6 w-6 rounded bg-[hsl(var(--muted)/0.2)]" />
+          </div>
+        </div>
+        <div className="px-4 py-4 space-y-3">
+          <div className="h-5 w-3/4 rounded bg-[hsl(var(--muted)/0.3)]" />
+          <div className="h-3 w-1/2 rounded bg-[hsl(var(--muted)/0.2)]" />
+          <div className="h-3 w-2/3 rounded bg-[hsl(var(--muted)/0.2)]" />
+        </div>
+      </div>
+    )
+  }
+
+  // Derived data — computed from full issue when available, otherwise from summary
+  const displayTitle = displaySource.title
+  const displayStatus = displaySource.status
+  const displayPriority = displaySource.priority
+
+  // Snapshot reads — no subscription needed for display-only lookups.
+  // These recalculate on every render but DON'T subscribe to store changes,
+  // eliminating the cascade from loadIssues() and project mutations.
+  const projectId = displaySource.projectId
+  const projectName = projectId
+    ? (useAppStore.getState().projects.find((p) => p.id === projectId)?.name ?? projectId)
+    : null
+
+  const parentIssueId = displaySource.parentIssueId
+  const parentIssueSummary = isSubIssue && parentIssueId
+    ? useIssueStore.getState().issueById[parentIssueId] ?? null
+    : null
+
+  const handleStatusChange = async (status: IssueStatus): Promise<void> => {
+    if (!issue) return
+    await updateIssue(issue.id, { status })
+  }
+
+  const handlePriorityChange = async (priority: IssuePriority): Promise<void> => {
+    if (!issue) return
+    await updateIssue(issue.id, { priority })
+  }
+
+  const handleDelete = async (): Promise<void> => {
+    if (!issue) return
+    await deleteIssue(issue.id)
+    setConfirmDelete(false)
+  }
+
+  const formatTime = (ts: number): string => {
+    return new Intl.DateTimeFormat(undefined, {
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    }).format(new Date(ts))
+  }
+
+  return (
+    <ContextFilesProvider>
+    <ContextFileDragZone className="h-full flex flex-col overflow-hidden">
+      {/* Ref for CSS animation replay on issue switch — must be a real DOM element */}
+      <div ref={contentRef} className="h-full flex flex-col overflow-hidden">
+      {/* Header — always rendered; action buttons disabled while loading */}
+      <div className="drag-region flex items-center justify-between px-4 py-3 border-b border-[hsl(var(--border))]">
+        <h2 className="text-sm font-semibold text-[hsl(var(--foreground))] truncate">
+          {isSubIssue ? t('detail.subTitle') : t('detail.title')}
+        </h2>
+        <div className="no-drag flex items-center gap-1">
+          {issue ? (
+            <>
+              <button
+                onClick={() => setShowEditModal(true)}
+                className="p-1.5 rounded-md text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] hover:bg-[hsl(var(--foreground)/0.04)] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--ring))]"
+                aria-label="Edit issue"
+              >
+                <Pencil className="w-3.5 h-3.5" aria-hidden="true" />
+              </button>
+              <button
+                onClick={() => setConfirmDelete(true)}
+                className="p-1.5 rounded-md text-[hsl(var(--muted-foreground))] hover:text-red-500 hover:bg-[hsl(var(--foreground)/0.04)] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--ring))]"
+                aria-label="Delete issue"
+              >
+                <Trash2 className="w-3.5 h-3.5" aria-hidden="true" />
+              </button>
+            </>
+          ) : (
+            <>
+              {/* Invisible placeholders to keep header width constant while loading */}
+              <span className="invisible p-1.5" aria-hidden="true"><Pencil className="w-3.5 h-3.5" /></span>
+              <span className="invisible p-1.5" aria-hidden="true"><Trash2 className="w-3.5 h-3.5" /></span>
+            </>
+          )}
+          <button
+            onClick={() => onClose ? onClose() : selectIssue(null)}
+            className="p-1.5 rounded-md text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] hover:bg-[hsl(var(--foreground)/0.04)] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--ring))]"
+            aria-label="Close detail panel"
+          >
+            <X className="w-3.5 h-3.5" aria-hidden="true" />
+          </button>
+        </div>
+      </div>
+
+      {/* Content — unified PanelGroup layout for both loading and loaded states.
+          This eliminates DOM structure changes between skeleton → content transitions,
+          ensuring stable layout and smooth panel resize persistence. */}
+      <PanelGroup orientation="vertical" id="issue-detail-split">
+        <Panel minSize={5} defaultSize={9} panelRef={issueInfoPanelRef} style={{ overflow: 'visible' }} className="relative z-10">
+          <div className="h-full flex flex-col">
+            {/* Non-scrollable header — dropdowns live here so they are never clipped by overflow */}
+            <div className="shrink-0 px-4 pt-4 space-y-2 relative z-10">
+              {/* Parent Issue breadcrumb (compact, for sub-issues only) */}
+              {isSubIssue && parentIssueSummary && (
+                <button
+                  onClick={() => onNavigateToIssue ? onNavigateToIssue(parentIssueId!) : selectIssue(parentIssueId!)}
+                  className="flex items-center gap-1 text-[11px] text-[hsl(var(--primary))] hover:underline transition-colors truncate"
+                >
+                  <ArrowUpRight className="w-3 h-3 shrink-0" aria-hidden="true" />
+                  <span className="truncate">{parentIssueSummary.title}</span>
+                </button>
+              )}
+
+              {/* Title */}
+              <h3 className="text-sm font-semibold text-[hsl(var(--foreground))] leading-snug">{displayTitle}</h3>
+
+              {/* Meta strip: Status | Priority | Labels | Project — all inline */}
+              <div className="flex flex-wrap items-center gap-1.5">
+                {issue ? (
+                  <>
+                    <PillDropdown
+                      open={statusOpen}
+                      onOpenChange={setStatusOpen}
+                      position="below"
+                      trigger={
+                        <button
+                          onClick={() => setStatusOpen((prev) => !prev)}
+                          className={PILL_TRIGGER}
+                          aria-label="Change status"
+                        >
+                          <IssueStatusIcon status={displayStatus} className="w-3.5 h-3.5" />
+                          {statusOptions.find((o) => o.value === displayStatus)?.label ?? displayStatus}
+                        </button>
+                      }
+                    >
+                      {statusOptions.map((opt) => (
+                        <button
+                          key={opt.value}
+                          onClick={() => {
+                            handleStatusChange(opt.value)
+                            setStatusOpen(false)
+                          }}
+                          className={cn(
+                            'w-full flex items-center gap-2 px-3 py-1.5 text-xs text-left transition-colors',
+                            displayStatus === opt.value
+                              ? 'bg-[hsl(var(--primary)/0.08)]'
+                              : 'hover:bg-[hsl(var(--foreground)/0.04)]'
+                          )}
+                        >
+                          <IssueStatusIcon status={opt.value} className="w-3.5 h-3.5" />
+                          <span className="flex-1">{opt.label}</span>
+                          {displayStatus === opt.value && <Check className="w-3 h-3" />}
+                        </button>
+                      ))}
+                    </PillDropdown>
+
+                    <PillDropdown
+                      open={priorityOpen}
+                      onOpenChange={setPriorityOpen}
+                      position="below"
+                      trigger={
+                        <button
+                          onClick={() => setPriorityOpen((prev) => !prev)}
+                          className={PILL_TRIGGER}
+                          aria-label="Change priority"
+                        >
+                          <IssuePriorityIcon priority={displayPriority} className="w-3.5 h-3.5" />
+                          {priorityOptions.find((o) => o.value === displayPriority)?.label ?? displayPriority}
+                        </button>
+                      }
+                    >
+                      {priorityOptions.map((opt) => (
+                        <button
+                          key={opt.value}
+                          onClick={() => {
+                            handlePriorityChange(opt.value)
+                            setPriorityOpen(false)
+                          }}
+                          className={cn(
+                            'w-full flex items-center gap-2 px-3 py-1.5 text-xs text-left transition-colors',
+                            displayPriority === opt.value
+                              ? 'bg-[hsl(var(--primary)/0.08)]'
+                              : 'hover:bg-[hsl(var(--foreground)/0.04)]'
+                          )}
+                        >
+                          <IssuePriorityIcon priority={opt.value} className="w-3.5 h-3.5" />
+                          <span className="flex-1">{opt.label}</span>
+                          {displayPriority === opt.value && <Check className="w-3 h-3" />}
+                        </button>
+                      ))}
+                    </PillDropdown>
+
+                    {/* Labels inline */}
+                    {issue.labels.map((label) => (
+                      <span
+                        key={label}
+                        className="px-1.5 py-0.5 text-[10px] rounded bg-[hsl(var(--muted))] text-[hsl(var(--muted-foreground))]"
+                      >
+                        {label}
+                      </span>
+                    ))}
+                  </>
+                ) : (
+                  <>
+                    {/* Static pills while loading — show summary data without interactive dropdowns */}
+                    <span className="px-1.5 py-0.5 text-[10px] rounded bg-[hsl(var(--muted))] text-[hsl(var(--muted-foreground))]">
+                      <IssueStatusIcon status={displayStatus} className="w-3.5 h-3.5 inline-block mr-1" />
+                      {statusOptions.find((o) => o.value === displayStatus)?.label ?? displayStatus}
+                    </span>
+                    <span className="px-1.5 py-0.5 text-[10px] rounded bg-[hsl(var(--muted))] text-[hsl(var(--muted-foreground))]">
+                      <IssuePriorityIcon priority={displayPriority} className="w-3.5 h-3.5 inline-block mr-1" />
+                      {priorityOptions.find((o) => o.value === displayPriority)?.label ?? displayPriority}
+                    </span>
+                  </>
+                )}
+
+                {/* Project badge inline */}
+                {projectName && (
+                  <span className="px-1.5 py-0.5 text-[10px] rounded bg-[hsl(var(--primary)/0.08)] text-[hsl(var(--accent-foreground))]">
+                    {projectName}
+                  </span>
+                )}
+              </div>
+
+              {/* Git context: branch, worktree, working directory */}
+              <SessionContextBar
+                issueId={issueId}
+                viewingArchivedSessionId={viewingArchivedSessionId}
+                projectPath={projectPath ?? null}
+              />
+
+              {/* Compact ID + timestamps — single line */}
+              {issue && (
+                <div className="flex items-center gap-2 text-[10px] text-[hsl(var(--muted-foreground))]">
+                  <button
+                    onClick={() => {
+                      getAppAPI()['clipboard:write-text'](issue.id)
+                      setIdCopied(true)
+                      setTimeout(() => setIdCopied(false), 1500)
+                    }}
+                    className="font-mono hover:text-[hsl(var(--foreground))] transition-colors cursor-pointer"
+                    title={`ID: ${issue.id}`}
+                    aria-label={`Copy issue ID ${issue.id}`}
+                  >
+                    {idCopied ? t('detail.copied') : `${issue.id.slice(0, 6)}…`}
+                  </button>
+                  <span aria-hidden="true">·</span>
+                  <span className="shrink-0">{formatTime(issue.createdAt)}</span>
+                  <span aria-hidden="true">·</span>
+                  <span className="shrink-0">{t('detail.updatedAt', { time: formatTime(issue.updatedAt) })}</span>
+                </div>
+              )}
+            </div>
+
+            {/* Scrollable body — description, images, sub-issues */}
+            <div className="flex-1 overflow-y-auto px-4 pb-4 pt-2 space-y-2">
+              {issue ? (
+                <>
+                  {/* Description — collapsed to 2 lines by default */}
+                  {issue.description && (
+                    <div className="relative">
+                      <div
+                        ref={descRef}
+                        className={cn(
+                          'prose prose-sm prose-invert max-w-none text-sm text-[hsl(var(--foreground))] overflow-hidden',
+                          !descExpanded && 'max-h-[2.8em]'
+                        )}
+                      >
+                        <MarkdownContent content={issue.description} />
+                      </div>
+                      {/* Gradient fade — only when collapsed and content overflows */}
+                      {!descExpanded && descOverflows && (
+                        <div
+                          className="absolute bottom-0 left-0 right-0 h-4 pointer-events-none"
+                          style={{ background: 'linear-gradient(to top, hsl(var(--background)), transparent)' }}
+                        />
+                      )}
+                      {!descExpanded && descOverflows && (
+                        <div className="flex justify-center mt-0.5">
+                          <button
+                            onClick={() => setDescExpanded(true)}
+                            className="inline-flex items-center gap-0.5 text-[10px] text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] transition-colors"
+                            aria-label="Expand description"
+                          >
+                            {t('detail.showMore')} <ChevronDown className="w-2.5 h-2.5" aria-hidden="true" />
+                          </button>
+                        </div>
+                      )}
+                      {descExpanded && (
+                        <div className="flex justify-center mt-0.5">
+                          <button
+                            onClick={() => setDescExpanded(false)}
+                            className="inline-flex items-center gap-0.5 text-[10px] text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] transition-colors"
+                            aria-label="Collapse description"
+                          >
+                            {t('detail.showLess')} <ChevronUp className="w-2.5 h-2.5" aria-hidden="true" />
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Attached Images */}
+                  {issue.images && issue.images.length > 0 && (
+                    <IssueImageGallery images={issue.images} />
+                  )}
+
+                  {/* Context References */}
+                  {issue.contextRefs && issue.contextRefs.length > 0 && (
+                    <div className="space-y-1">
+                      <div className="flex flex-wrap gap-1.5">
+                        {issue.contextRefs.map((ref) => {
+                          const label = ref.type === 'issue'
+                            ? (useIssueStore.getState().issueById[ref.id]?.title ?? ref.id)
+                            : (starredArtifacts.find((a) => a.id === ref.id)?.title ||
+                               starredArtifacts.find((a) => a.id === ref.id)?.filePath ||
+                               ref.id)
+                          return (
+                            <span
+                              key={ref.id}
+                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs bg-[hsl(var(--foreground)/0.06)] text-[hsl(var(--foreground)/0.65)]"
+                            >
+                              {ref.type === 'issue' ? (
+                                <Link className="w-3 h-3 shrink-0" />
+                              ) : (
+                                <FileText className="w-3 h-3 shrink-0" />
+                              )}
+                              <span className="max-w-[200px] truncate">{label}</span>
+                            </span>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Sub-Issues section (only for top-level issues) */}
+                  {!isSubIssue && (
+                    <div className="space-y-px">
+                      {childIssues.map((child) => (
+                        <button
+                          key={child.id}
+                          onClick={() => onNavigateToIssue ? onNavigateToIssue(child.id) : selectIssue(child.id)}
+                          className="w-full flex items-center gap-2 px-2 py-1 rounded text-left hover:bg-[hsl(var(--foreground)/0.04)] transition-colors"
+                        >
+                          <IssueStatusIcon status={child.status} className="w-3 h-3 shrink-0" />
+                          <span className="flex-1 text-xs truncate text-[hsl(var(--foreground))]">
+                            {child.title}
+                          </span>
+                          <IssuePriorityIcon priority={child.priority} className="w-3 h-3 shrink-0" />
+                        </button>
+                      ))}
+                      {issue.status !== 'done' && (
+                        <button
+                          onClick={() => setShowCreateSubIssueModal(true)}
+                          className="w-full flex items-center gap-2 px-2 py-1 rounded text-left hover:bg-[hsl(var(--foreground)/0.04)] transition-colors group"
+                          aria-label="Add sub-issue"
+                        >
+                          <ListTree className="w-3 h-3 shrink-0 text-[hsl(var(--muted-foreground)/0.5)] group-hover:text-[hsl(var(--muted-foreground))]" aria-hidden="true" />
+                          <span className="flex-1 text-xs text-[hsl(var(--muted-foreground)/0.4)] group-hover:text-[hsl(var(--muted-foreground))]">
+                            {t('detail.addSubIssue')}
+                          </span>
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </>
+              ) : null}
+            </div>
+          </div>
+        </Panel>
+        <PanelResizeHandle className="h-2 flex items-center justify-center group cursor-row-resize focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--ring))]">
+          <div className="h-0.5 w-8 rounded bg-[hsl(var(--border))] group-hover:bg-[hsl(var(--ring))] transition-colors" aria-hidden="true" />
+        </PanelResizeHandle>
+        <Panel minSize={20} defaultSize={75}>
+          {issue ? (
+            <ProjectScopeProvider projectPath={projectPath} projectId={issue.projectId ?? undefined}>
+              {composeMode && !issue?.sessionId ? (
+                <ComposeView
+                  initialPrompt={initialPrompt}
+                  onSubmit={handleComposeStart}
+                  onCancel={() => setComposeMode(false)}
+                />
+              ) : (
+                <SessionPanel
+                  binding={{
+                    kind: 'issue',
+                    issueId,
+                    archivedSessionId: viewingArchivedSessionId,
+                  }}
+                  lifecycle={issue.status === 'done' || issue.status === 'cancelled' ? 'readonly' : 'active'}
+                  isStarting={isStarting}
+                  capabilities={capabilities}
+                  history={sessionHistoryCtx}
+                  isExpanded={isConsoleExpanded}
+                  onToggleExpand={handleToggleConsoleExpand}
+                />
+              )}
+            </ProjectScopeProvider>
+          ) : (
+            <div className="h-full flex items-center justify-center">
+              <div className="text-xs text-[hsl(var(--muted-foreground))] animate-pulse">{t('detail.loading')}</div>
+            </div>
+          )}
+        </Panel>
+      </PanelGroup>
+
+      {/* Edit modal */}
+      {showEditModal && issue && <IssueFormModal issueId={issue.id} defaultProjectId={issue.projectId} onClose={() => setShowEditModal(false)} />}
+
+      {/* Create sub-issue modal */}
+      {showCreateSubIssueModal && issue && (
+        <IssueFormModal
+          defaultProjectId={issue.projectId}
+          parentIssueId={issue.id}
+          onClose={() => {
+            setShowCreateSubIssueModal(false)
+            loadChildIssues(issueId)
+          }}
+        />
+      )}
+
+      {/* Delete confirmation */}
+      {confirmDelete && issue && (
+        <DeleteConfirmModal
+          title={issue.title}
+          onConfirm={handleDelete}
+          onCancel={() => setConfirmDelete(false)}
+        />
+      )}
+    </div>
+    </ContextFileDragZone>
+    </ContextFilesProvider>
+  )
+}

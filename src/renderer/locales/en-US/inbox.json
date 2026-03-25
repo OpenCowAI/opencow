@@ -1,0 +1,32 @@
+{
+  "title": "Inbox",
+  "markAllRead": "Mark All Read",
+  "markAllReadAria": "Mark all messages as read",
+  "noMessagesMatch": "No messages match filters",
+  "noNotifications": "No notifications",
+  "selectMessage": "Select a message to view details",
+  "goToSession": "Go to Session",
+  "goToSessionAria": "Go to session",
+  "goToIssue": "Go to Issue",
+  "goToIssueAria": "Go to issue",
+  "goToSchedule": "Go to Schedule",
+  "goToScheduleAria": "Go to schedule",
+  "rawPayload": "Raw payload",
+  "search": {
+    "placeholder": "Search messages...",
+    "aria": "Search inbox messages",
+    "categoryAria": "Message category filter",
+    "projectAria": "Filter by project",
+    "allProjects": "All Projects"
+  },
+  "tabs": {
+    "all": "All",
+    "events": "Events",
+    "reminders": "Reminders"
+  },
+  "priority": {
+    "high": "High",
+    "normal": "Normal",
+    "low": "Low"
+  }
+}

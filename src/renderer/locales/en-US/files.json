@@ -1,0 +1,43 @@
+{
+  "editor": {
+    "saveFile": "Save File",
+    "emptyStateTitle": "Editor",
+    "openFilePrompt": "Open a file from the tree to start editing",
+    "emptyStateHint": "Tip: click any file in the left tree to open it here.",
+    "modified": "Modified",
+    "openFilesAria": "Open files",
+    "unsavedChanges": "Unsaved changes",
+    "closeFile": "Close {{name}}",
+    "loadingEditor": "Loading editor…",
+    "changedCount_one": "{{count}} changed",
+    "changedCount_other": "{{count}} changed"
+  },
+  "browser": {
+    "loading": "Loading...",
+    "emptyDirectory": "Empty directory",
+    "fileListAria": "File list",
+    "fileGridAria": "File icon grid",
+    "columns": {
+      "name": "Name",
+      "size": "Size",
+      "modified": "Modified"
+    },
+    "openFolderAria": "Open folder {{name}}",
+    "openFileAria": "Open file {{name}}",
+    "folderMeta": "Modified {{modified}}",
+    "fileMeta": "{{size}} · {{modified}}",
+    "closePreview": "Close preview",
+    "unableToRead": "Unable to read file"
+  },
+  "tree": {
+    "aria": "File tree"
+  },
+  "view": {
+    "modeSwitchAria": "Files view mode",
+    "editorMode": "IDE editor mode",
+    "browserMode": "File browser mode",
+    "selectProject": "Select a project to view files",
+    "editorTab": "Editor",
+    "browserTab": "Browser"
+  }
+}

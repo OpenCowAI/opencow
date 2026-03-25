@@ -1,0 +1,466 @@
+{
+  "title": "Settings",
+  "closeAria": "Close settings",
+  "loadingSettings": "Loading settings...",
+  "groups": {
+    "app": "App",
+    "model": "Model",
+    "integrations": "Integrations",
+    "trigger": "Trigger"
+  },
+  "tabs": {
+    "general": "General",
+    "provider": "Provider",
+    "network": "Network",
+    "chat": "Chat",
+    "notifications": "Notifications",
+    "webhooks": "Webhooks",
+    "messaging": "IM Bots",
+    "evose": "EvoseAI"
+  },
+  "general": {
+    "appearance": "Appearance",
+    "colorScheme": "Color Scheme",
+    "neutral": "Neutral",
+    "accent": "Accent",
+    "surfaceTexture": "Surface Texture",
+    "modes": {
+      "system": "System",
+      "systemDesc": "Follow OS preference",
+      "light": "Light",
+      "lightDesc": "Always light mode",
+      "dark": "Dark",
+      "darkDesc": "Always dark mode"
+    },
+    "language": "Language",
+    "languageOptions": {
+      "system": "System (follow OS)",
+      "zh-CN": "简体中文",
+      "en-US": "English"
+    }
+  },
+  "provider": {
+    "title": "Provider",
+    "description": "Configure provider connections separately for Claude and Codex engines. Credentials are encrypted and stored locally.",
+    "engineScope": "Engine Scope",
+    "defaultEngine": "Default Session Engine",
+    "defaultEngineHint": "Used by default for new sessions. You can still override it per session.",
+    "engines": {
+      "claude": "Claude Engine",
+      "codex": "Codex Engine"
+    },
+    "configTitles": {
+      "claude": "Claude Configuration",
+      "codex": "Codex Configuration"
+    },
+    "modes": {
+      "subscription": "Claude Subscription",
+      "subscriptionDesc": "Pro, Max, Team, or Enterprise — login via browser OAuth",
+      "apiKey": "API Key",
+      "apiKeyDesc": "Anthropic Console — pay per API usage",
+      "openrouter": "OpenRouter",
+      "openrouterDesc": "Use Claude via OpenRouter — third-party Anthropic API proxy",
+      "custom": "Custom API",
+      "customDesc": "Any Claude-compatible endpoint — self-hosted proxy or third-party gateway"
+    },
+    "modesCodex": {
+      "openrouter": "OpenRouter",
+      "openrouterDesc": "Use OpenRouter as an OpenAI-compatible backend for Codex",
+      "custom": "Custom OpenAI-Compatible API",
+      "customDesc": "Configure your own OpenAI-compatible gateway (Codex uses Bearer auth)"
+    },
+    "codexHint": "Codex currently supports OpenAI-compatible providers (OpenRouter / Custom API).",
+    "unsupportedModeForEngine": "Mode {{mode}} is not supported for {{engine}}. Please choose a supported mode.",
+    "status": {
+      "connected": "Connected",
+      "authenticating": "Authenticating...",
+      "checking": "Checking status…",
+      "error": "Error",
+      "notConnected": "Not connected"
+    },
+    "engineConfigStatus": {
+      "configured": "Configured",
+      "authenticating": "Authenticating",
+      "notConfigured": "Not configured"
+    },
+    "apiKeyField": "Anthropic API Key",
+    "apiKeyPlaceholder": "sk-ant-api03-...",
+    "saveApiKey": "Save API Key",
+    "getApiKeyFrom": "Get your API key from",
+    "anthropicConsole": "console.anthropic.com",
+    "openrouterApiKey": "OpenRouter API Key",
+    "openrouterApiKeyPlaceholder": "sk-or-v1-...",
+    "openrouterBaseUrl": "Base URL",
+    "openrouterBaseUrlPlaceholder": "https://openrouter.ai/api",
+    "optional": "Optional",
+    "getOpenrouterKeyFrom": "Get your API key from",
+    "customBaseUrl": "Base URL",
+    "customBaseUrlPlaceholder": "https://api.example.com/v1",
+    "customApiKey": "API Key",
+    "customApiKeyPlaceholder": "Your API key",
+    "customAuthStyle": "Auth Style",
+    "customAuthStyle_api_key": "x-api-key",
+    "customAuthStyle_bearer": "Bearer Token",
+    "customAuthStyleCodexFixed": "Codex engine always uses Bearer Token (Authorization: Bearer).",
+    "customAuthStyleHint_api_key": "Key is sent as the x-api-key header (standard Anthropic format).",
+    "customAuthStyleHint_bearer": "Key is sent as Authorization: Bearer (OpenRouter-style).",
+    "defaultModel": "Default Model",
+    "defaultModelPlaceholder": "Select or type a model ID",
+    "defaultModelHint": "Override the default model for all new sessions. Leave blank to use the provider's default.",
+    "defaultReasoningEffort": "Default Reasoning Effort",
+    "defaultReasoningEffortHint": "Applied as Codex model_reasoning_effort for new sessions. Defaults to high; switch when needed.",
+    "reasoningEffortLevels": {
+      "minimal": "minimal",
+      "low": "low",
+      "medium": "medium",
+      "high": "high",
+      "xhigh": "xhigh"
+    },
+    "modeSelectLabel": "Provider Mode",
+    "modeSelectPlaceholder": "Select a mode",
+    "plan": "Plan:",
+    "loginWithClaude": "Login with Claude Account",
+    "waitingForAuth": "Waiting for browser authorization...",
+    "loginHelp": "Opens your browser to sign in with your Claude Pro, Max, Team, or Enterprise account.",
+    "logout": "Logout",
+    "removeKey": "Remove Key",
+    "edit": "Edit",
+    "cancelEdit": "Cancel",
+    "overview": {
+      "title": "Engine Overview",
+      "description": "Check both engine states first, then configure the active engine.",
+      "defaultBadge": "Default",
+      "modeLabel": "Active mode",
+      "defaultModelLabel": "Default model",
+      "notConfigured": "No mode selected",
+      "notSet": "Not set",
+      "configure": "Configure",
+      "configuring": "Configuring"
+    },
+    "selectedEngineTitle": "Configuring {{engine}}",
+    "selectedEngineDescription": "Complete setup for the selected engine step by step.",
+    "steps": {
+      "stepLabel": "Step {{step}}",
+      "modeCredential": {
+        "title": "Choose Mode and Configure Credentials",
+        "description": "Select a provider mode, then enter credentials for that mode.",
+        "empty": "Select a provider mode first."
+      },
+      "mode": {
+        "title": "Choose Provider Mode",
+        "description": "Select how this engine should connect."
+      },
+      "credential": {
+        "title": "Configure Credentials",
+        "description": "Enter and save credentials required by the selected mode.",
+        "empty": "Choose a mode in Step 1 first."
+      },
+      "model": {
+        "title": "Set Default Model (Optional)",
+        "description": "Type a model ID or choose from built-in suggestions.",
+        "empty": "Select a mode before setting a default model."
+      }
+    }
+  },
+  "network": {
+    "title": "Proxy Configuration",
+    "description": "Global proxy for Claude Code sessions and messaging connections.",
+    "protocolHint": "Supports <code>http://</code>, <code>socks5://</code>, <code>socks4://</code> protocols.",
+    "httpsProxy": "HTTPS Proxy",
+    "httpsProxyPlaceholder": "http://127.0.0.1:7890",
+    "httpProxy": "HTTP Proxy",
+    "httpProxyPlaceholder": "http://127.0.0.1:7890",
+    "noProxy": "No Proxy",
+    "noProxyPlaceholder": "localhost,127.0.0.1",
+    "errorMissingScheme": "Must include a scheme, e.g. http:// or socks5://",
+    "errorInvalidUrl": "Invalid URL format"
+  },
+  "command": {
+    "title": "Chat",
+    "description": "Default parameters for new AI sessions (Max Turns currently applies to Claude sessions only).",
+    "defaultEngine": "Default Engine",
+    "engineClaude": "Claude",
+    "engineCodex": "Codex",
+    "maxTurns": "Max Turns",
+    "permissionMode": "Permission Mode",
+    "bypassPermissions": "Bypass Permissions (Default)",
+    "defaultPermission": "Require Approval"
+  },
+  "notifications": {
+    "title": "Notifications",
+    "description": "Control when OpenCow shows desktop notifications.",
+    "enableNotifications": "Enable Notifications",
+    "enableDesc": "Master toggle for all notifications",
+    "onError": "On Error",
+    "onErrorDesc": "Notify when a session encounters an error",
+    "onComplete": "On Complete",
+    "onCompleteDesc": "Notify when a session finishes",
+    "onStatusChange": "On Status Change",
+    "onStatusChangeDesc": "Notify when a session needs attention"
+  },
+  "webhooks": {
+    "title": "Webhooks",
+    "description": "Send event notifications to external services like Lark, Telegram, or custom webhooks.",
+    "addWebhook": "Add Webhook",
+    "noWebhooks": "No webhooks configured",
+    "noWebhooksDesc": "Add a webhook to receive event notifications in Lark, Telegram, or any HTTP endpoint.",
+    "viaProxy": "via proxy",
+    "enableWebhookAria": "Enable webhook",
+    "testWebhookAria": "Test webhook",
+    "editWebhookAria": "Edit webhook",
+    "deleteWebhookAria": "Delete webhook",
+    "chatPrefix": "Chat: {{url}}",
+    "testOk": "OK ({{ms}}ms)",
+    "providers": {
+      "lark": "Lark",
+      "telegram": "Telegram",
+      "custom": "Custom"
+    },
+    "events": {
+      "complete": "Complete",
+      "error": "Error",
+      "waiting": "Waiting",
+      "start": "Start",
+      "task": "Task",
+      "notify": "Notify"
+    },
+    "edit": {
+      "editTitle": "Edit Webhook",
+      "addTitle": "Add Webhook",
+      "closeAria": "Close dialog",
+      "providerLabel": "Provider",
+      "nameLabel": "Name",
+      "namePlaceholder": "e.g. My Team Lark Bot",
+      "subscribedEvents": "Subscribed Events",
+      "selectOneEvent": "Please select at least one event.",
+      "useProxy": "Use Proxy",
+      "useProxyDesc": "Route requests through the global proxy configured in Settings → Network (useful for services like Telegram that require a proxy).",
+      "saveChanges": "Save Changes",
+      "providerDesc": {
+        "lark": "Interactive card via incoming webhook",
+        "telegram": "Markdown messages via Bot API",
+        "custom": "Generic JSON POST to any URL"
+      },
+      "eventLabels": {
+        "complete": "Session Complete",
+        "error": "Session Error",
+        "waiting": "Session Waiting",
+        "start": "Session Start",
+        "task": "Task Completed",
+        "notify": "Notification"
+      },
+      "fields": {
+        "lark": {
+          "url": "Webhook URL",
+          "urlPlaceholder": "https://open.feishu.cn/open-apis/bot/v2/hook/...",
+          "secret": "Signing Secret (optional)",
+          "secretPlaceholder": "Leave empty if signing is not enabled"
+        },
+        "telegram": {
+          "url": "Chat ID",
+          "urlPlaceholder": "-1001234567890",
+          "secret": "Bot Token",
+          "secretPlaceholder": "123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11"
+        },
+        "custom": {
+          "url": "Webhook URL",
+          "urlPlaceholder": "https://example.com/webhook",
+          "secret": "Bearer Token (optional)",
+          "secretPlaceholder": "Used as Authorization: Bearer <token>"
+        }
+      }
+    }
+  },
+  "messaging": {
+    "title": "IM Bots",
+    "description": "Connect Telegram, Feishu, Discord, WeChat — chat with AI from your messaging apps.",
+    "addConnection": "Add Bot",
+    "noConnections": "No messaging connections configured.",
+    "addFirstConnection": "Add your first connection →",
+    "choosePlatform": "Choose a platform",
+    "newConnectionName": "New {{platform}} Connection",
+    "emptyState": {
+      "title": "Connect your first IM bot",
+      "description": "Choose a platform to get started. Setup takes just a few minutes."
+    },
+    "platformDesc": {
+      "telegram": "Connect via Bot Token",
+      "feishu": "Connect via App ID",
+      "discord": "Connect via Bot Token",
+      "weixin": "Connect via QR code scan"
+    },
+    "setupTime": {
+      "fast": "~3 min",
+      "medium": "~5 min"
+    },
+    "configDetails": "Configuration",
+    "advancedOptions": "Advanced Options",
+    "stats": {
+      "received": "Received",
+      "sent": "Sent",
+      "uptime": "Uptime"
+    },
+    "deleteConfirm": "Are you sure you want to delete this connection? This action cannot be undone.",
+    "moreActions": "More actions",
+    "rename": "Rename",
+    "adapterInDev": "Backend adapter is under development. You can pre-configure credentials now — they will be saved and ready when the adapter ships.",
+    "adapterNotReady": "Backend adapter not yet available",
+    "hideSecret": "Hide",
+    "showSecret": "Show",
+    "connectionStatus": {
+      "connected": "Connected",
+      "connecting": "Connecting...",
+      "disconnected": "Disconnected",
+      "error": "Error"
+    },
+    "collapse": "Collapse",
+    "expand": "Expand",
+    "stopConnection": "Stop connection",
+    "startConnection": "Start connection",
+    "enterCredentialsFirst": "Enter credentials first",
+    "deleteConnection": "Delete connection",
+    "stopBeforeDelete": "Stop the connection before deleting",
+    "testConnection": "Test Connection",
+    "testConnected": "✓ Connected",
+    "testFailed": "✗ {{error}}",
+    "allowedUserIds": "Allowed User IDs",
+    "allowedUserIdsPlaceholder": "Comma-separated IDs (leave blank to allow everyone)",
+    "defaultWorkspace": "Default Workspace",
+    "workspaceDesc": "Sessions from this connection use this working directory.",
+    "workspacePlaceholder": "e.g. /Users/me/workspace/project (leave blank for no binding)",
+    "chooseFolder": "Choose folder",
+    "orPickProject": "Or pick a project:",
+    "selectProject": "Select project…",
+    "platforms": {
+      "telegram": "Telegram",
+      "feishu": "Feishu (Lark)",
+      "discord": "Discord",
+      "weixin": "WeChat"
+    },
+    "telegram": {
+      "botToken": "Bot Token",
+      "botTokenPlaceholder": "123456789:ABCDefghijklmnopqrstuvwxyz",
+      "statsReceived": "↓ {{count}} received",
+      "statsSent": "↑ {{count}} sent",
+      "since": "Since {{time}}",
+      "setupGuide": "Setup Guide",
+      "setupGuideAria": "Setup guide",
+      "setupDesc": "Follow these steps to connect your Telegram Bot",
+      "steps": {
+        "createBot": "Create a Bot",
+        "createBotDesc": "Open Telegram, search for @BotFather, and send /newbot to create a new bot.",
+        "copyToken": "Copy Bot Token",
+        "copyTokenDesc": "BotFather will give you an API token. Paste it into the Bot Token field.",
+        "getChatId": "Get Your Chat ID",
+        "getChatIdDesc": "Send a message to your bot, then visit <code>api.telegram.org/bot&lt;TOKEN&gt;/getUpdates</code> to find your chat ID.",
+        "testAndStart": "Test & Start",
+        "testAndStartDesc": "Click Test Connection to verify, then enable the bot to start receiving messages."
+      },
+      "helpCommand": "Once connected, use /help in Telegram to see all available commands."
+    },
+    "feishu": {
+      "environment": "Environment",
+      "domain": {
+        "feishu": "Feishu (China)",
+        "lark": "Lark (International)"
+      },
+      "appId": "App ID",
+      "appIdPlaceholder": "cli_xxxxxxxxxxxx",
+      "appSecret": "App Secret",
+      "appSecretPlaceholder": "Enter your app secret"
+    },
+    "discord": {
+      "botToken": "Bot Token",
+      "botTokenPlaceholder": "MTExxx...xxxx",
+      "guildId": "Guild ID (optional)",
+      "guildIdPlaceholder": "e.g. 123456789012345678 (leave blank for all guilds)"
+    },
+    "weixin": {
+      "botToken": "Bot Token",
+      "botTokenPlaceholder": "Auto-filled after QR code scan",
+      "scanToLogin": "Scan QR code with WeChat to connect",
+      "waitingForScan": "Fetching QR code...",
+      "scanned": "Scanned! Confirm on your phone...",
+      "loginSuccess": "Connected successfully!",
+      "loginFailed": "Login failed: {{error}}",
+      "sessionExpired": "Session expired. Please scan again.",
+      "singleDeviceWarning": "Only one bot session per WeChat account",
+      "grayTestNote": "WeChat ClawBot is in gray-test phase. Ensure your account has access.",
+      "userIdFormat": "User IDs use format: xxx@im.wechat",
+      "rescan": "Re-scan QR code",
+      "cancelScan": "Cancel",
+      "retry": "Try again",
+      "baseUrl": "iLink Server URL (optional)",
+      "statsReceived": "\u2193 {{count}} received",
+      "statsSent": "\u2191 {{count}} sent",
+      "since": "Since {{time}}"
+    },
+    "botCreator": {
+      "title": "AI Bot Setup",
+      "close": "Close",
+      "welcomeTitle": "Set up a new IM bot",
+      "welcomeDescription": "Tell me which platform you'd like to use, and I'll guide you through the setup step by step.",
+      "inputPlaceholder": "Describe the bot you want to set up...",
+      "inputPlaceholderPaused": "Continue the conversation...",
+      "discardTitle": "Discard bot configuration?",
+      "discardMessage": "Your AI-generated bot configuration hasn't been created yet. If you close now, it will be lost.",
+      "discardConfirm": "Discard",
+      "discardCancel": "Keep editing",
+      "suggestion": {
+        "telegram": "Set up a Telegram bot",
+        "feishu": "Set up a Feishu bot",
+        "discord": "Set up a Discord bot",
+        "weixin": "Set up a WeChat bot"
+      },
+      "botCreated": "Bot created: {{name}}",
+      "createFailed": "Failed to create bot",
+      "create": "Create",
+      "creating": "Creating...",
+      "discard": "Discard",
+      "discarded": "Discarded",
+      "created": "Bot created successfully",
+      "confirmationAria": "Bot configuration preview",
+      "allowedUsers": "{{count}} allowed users",
+      "aiSetup": "AI Setup",
+      "aiSetupTooltip": "Use AI to guide you through bot setup step by step",
+      "viewInSettings": "View in Settings",
+      "guide": {
+        "telegram": "{{name}} has been saved. Go to the connection card to enable it, then send /start in Telegram to begin chatting.",
+        "feishu": "{{name}} has been saved. Go to the connection card to enable it, then send a message in your Feishu bot chat to begin.",
+        "discord": "{{name}} has been saved. Go to the connection card to enable it, then mention the bot in a Discord channel to begin.",
+        "weixin": "{{name}} has been saved. Go to the connection card to scan QR code and enable it, then send a message in WeChat to begin."
+      }
+    }
+  },
+  "evose": {
+    "title": "EvoseAI Integration",
+    "website": "evose.ai",
+    "tagline": "Building AI Organizations.",
+    "description": "Evose is where humans and AI agents work together as one team. Build custom AI agents for your needs. Chat, assign, collaborate—just like messaging a teammate.",
+    "apiKey": "API Key",
+    "apiKeyPlaceholder": "Enter EvoseAI API Key",
+    "hideApiKey": "Hide API Key",
+    "showApiKey": "Show API Key",
+    "workspaceIds": "Workspace IDs",
+    "workspaceIdsPlaceholder": "ws-abc123, ws-def456",
+    "endpoint": "Endpoint",
+    "endpointPlaceholder": "https://api-app.evose.ai",
+    "verifyAndFetch": "Verify & Fetch Apps",
+    "connectedApps": "✅ Connected · {{count}} Apps",
+    "agents": "Agents",
+    "workflows": "Workflows",
+    "noAppsFound": "No Apps matching \"{{query}}\" found",
+    "saved": "✅ Saved",
+    "mcpDescription": "Register EvoseAI Agents and Workflows as MCP tools for OpenCow Agent to call directly.",
+    "apiKeyRequired": "API Key is required",
+    "workspaceIdsRequired": "Workspace IDs are required",
+    "connectionFailed": "Connection failed, please check your configuration",
+    "workspaceIdsHint": "Comma-separated, supports multiple workspaces",
+    "advancedOptions": "Advanced options",
+    "endpointHint": "For private deployments. Leave blank to use the default endpoint",
+    "selectAll": "Select all",
+    "selectCurrentResults": "Select all results ({{count}})",
+    "deselectAll": "Deselect all",
+    "searchApps": "Search Apps..."
+  }
+}

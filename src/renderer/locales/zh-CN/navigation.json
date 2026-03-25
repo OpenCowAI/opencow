@@ -1,0 +1,200 @@
+{
+  "mainTabs": {
+    "issues": "任务",
+    "chat": "对话",
+    "files": "文件",
+    "dashboard": "仪表板",
+    "starredArtifacts": "收藏产物",
+    "capabilities": "能力",
+    "market": "技能市场"
+  },
+  "sidebar": {
+    "allProjects": "全部项目",
+    "projectList": "项目列表",
+    "addProject": "添加项目",
+    "pinned": "置顶",
+    "projects": "项目",
+    "archived": "已归档",
+    "expand": "展开侧边栏",
+    "collapse": "收起侧边栏",
+    "inbox": "收件箱",
+    "schedule": "计划",
+    "dev": "DEV"
+  },
+  "addProject": {
+    "create": "新建项目…",
+    "import": "导入 Claude Code 项目…",
+    "scanning": "扫描中…",
+    "emptyState": "所有项目均已导入",
+    "browse": "浏览本地目录…"
+  },
+  "createProject": {
+    "title": "新建项目",
+    "description": "创建一个新目录作为项目。",
+    "location": "位置",
+    "locationPlaceholder": "选择父目录…",
+    "browse": "浏览",
+    "name": "项目名称",
+    "namePlaceholder": "my-project",
+    "pathPreview": "将创建",
+    "create": "创建",
+    "creating": "创建中…",
+    "cancel": "取消",
+    "invalidChars": "名称包含无效字符",
+    "nameTooLong": "名称过长（最多 255 个字符）",
+    "dotPrefix": "名称不应以点号开头"
+  },
+  "importDialog": {
+    "title": "导入 Claude Code 项目",
+    "description": "选择要导入的 Claude Code 项目。",
+    "selectAll": "全选",
+    "selected": "已选",
+    "cancel": "取消",
+    "importing": "导入中…",
+    "import": "导入 ({{count}})"
+  },
+  "projectActions": {
+    "actions": "项目操作",
+    "pinToTop": "置顶",
+    "unpin": "取消置顶",
+    "archive": "归档",
+    "unarchive": "取消归档",
+    "rename": "重命名",
+    "remove": "移除",
+    "removeProject": "移除项目",
+    "removeConfirmMessage": "从 {{appName}} 中移除「{{projectName}}」？",
+    "removeConfirmDetail": "磁盘上的文件不受影响。项目可以随时重新添加。",
+    "pinned": "，已置顶",
+    "archivedSuffix": "，已归档"
+  },
+  "chatViewMode": {
+    "label": "对话视图模式",
+    "default": "简约",
+    "files": "文件"
+  },
+  "mainPanelViews": "主面板视图",
+  "sessionPanel": {
+    "chat": "对话",
+    "artifacts": "产物",
+    "notes": "笔记",
+    "views": "会话面板视图"
+  },
+  "issueViews": {
+    "all": "全部",
+    "views": "任务视图",
+    "moreViews": "更多视图",
+    "createNewView": "创建新视图"
+  },
+  "tray": {
+    "openApp": "打开 {{appName}}",
+    "noActiveIssues": "暂无活跃 Issue",
+    "needsAttention": "需要关注",
+    "errors": "错误",
+    "active": "活跃",
+    "waiting": "等待",
+    "more": "+{{count}} 更多"
+  },
+  "statusBar": {
+    "sessionStats": "会话统计",
+    "providerModes": {
+      "claude": "Claude",
+      "apiKey": "API Key",
+      "openrouter": "OpenRouter",
+      "custom": "自定义 API"
+    },
+    "engineNames": {
+      "claude": "Claude",
+      "codex": "Codex"
+    },
+    "providerVia": "通过 {{mode}} 连接",
+    "authenticating": "认证中…",
+    "notAuthenticated": "未认证 — 点击配置",
+    "provider": "服务商",
+    "hooksInstalled": "Hooks 已安装",
+    "hooksNotInstalled": "Hooks 未安装",
+    "hooks": "Hooks",
+    "messagingStatus": "消息连接：{{connected}} 已连接，{{notConnected}} 未连接",
+    "messaging": "IM",
+    "terminal": "终端"
+  },
+  "stats": {
+    "today": "今日",
+    "cost": "成本",
+    "tokens": "令牌",
+    "sessions": "会话",
+    "toolCalls": "工具调用"
+  },
+  "browser": {
+    "profiles": "浏览器配置",
+    "profilesDesc": "每个配置有独立的 Cookie 和会话。登录一次，永久使用。",
+    "persistent": "持久化",
+    "domains": "{{count}} 个域名",
+    "deleteProfile": "删除配置",
+    "profileNamePlaceholder": "配置名称（如 Twitter、Boss直聘）",
+    "allowedDomainsPlaceholder": "允许域名（可选，逗号分隔）",
+    "createAndOpen": "创建并打开",
+    "enterUrl": "输入 URL…",
+    "selectProfile": "选择配置以开始浏览",
+    "minimize": "收起",
+    "minimizeToPip": "收起为浮动窗口",
+    "closeBrowser": "关闭浏览器",
+    "closeConfirmTitle": "关闭浏览器",
+    "closeConfirmMessage": "将关闭此浏览器并丢失当前页面会话，此操作无法撤销。",
+    "closeConfirmAction": "关闭",
+    "showChat": "显示对话",
+    "hideChat": "隐藏对话",
+    "viewport": "浏览器视口",
+    "loadingView": "加载浏览器视图…",
+    "loadingPage": "加载中…",
+    "cookiePersistence": "Cookie 持久化已启用",
+    "activities": {
+      "screenshot": "正在截图",
+      "scrolling": "正在滚动",
+      "clicking": "正在点击",
+      "typing": "正在输入",
+      "navigating": "正在导航"
+    },
+    "sourceIssue": "Issue",
+    "sourceChat": "对话",
+    "sourceBrowser": "浏览器",
+    "pip": {
+      "activeBrowsers": "活跃浏览器",
+      "typeIssue": "Issue",
+      "typeChat": "对话",
+      "typeBrowser": "浏览器"
+    },
+    "agent": {
+      "title": "浏览器代理",
+      "linkedSession": "关联会话",
+      "session": "会话",
+      "startingAgent": "启动代理中…",
+      "stopAgent": "停止代理",
+      "clearChat": "清除对话",
+      "continueSession": "继续会话…",
+      "tellAgent": "告诉代理要做什么…",
+      "linkedSessionHint": "继续你的会话 — 消息将发送到关联的会话。",
+      "withPageHint": "让我帮你操作当前页面：",
+      "noPageHint": "告诉我要做什么 — 我会自动打开浏览器：",
+      "examples": {
+        "navigate": "导航到 github.com",
+        "extract": "提取所有可见文本",
+        "click": "点击登录按钮",
+        "screenshot": "截取屏幕截图"
+      }
+    }
+  },
+  "commandPalette": {
+    "goIssues": "问题,任务",
+    "goSessions": "会话,对话",
+    "goSchedule": "计划,定时",
+    "goDashboard": "仪表盘,首页",
+    "goMarket": "市场,技能市场",
+    "createIssue": "新建,创建",
+    "createSchedule": "新建计划"
+  },
+  "providerBanner": {
+    "message": "AI 引擎尚未配置。配置 Provider 后即可开始使用 Agent 功能。",
+    "configure": "前往配置",
+    "dismiss": "关闭"
+  }
+}

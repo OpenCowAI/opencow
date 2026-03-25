@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="light dark" />
+    <title>OpenCow</title>
+    <script>
+      // Prevent FOUC: apply theme classes before first paint.
+      // This runs synchronously before stylesheets to avoid a flash of
+      // unstyled/wrong-themed content.
+      ;(function () {
+        try {
+          // Fallback reads legacy 'ccboard-theme' key for users upgrading from pre-rebrand versions
+          var raw = localStorage.getItem('opencow-theme') || localStorage.getItem('ccboard-theme')
+          var cfg = raw ? JSON.parse(raw) : null
+          var scheme = cfg && cfg.scheme ? cfg.scheme : 'zinc'
+          var mode = cfg && cfg.mode ? cfg.mode : 'system'
+          var texture = cfg && cfg.texture ? cfg.texture : 'plain'
+          var html = document.documentElement
+          html.classList.add('theme-' + scheme)
+          html.classList.add('texture-' + texture)
+          if (mode === 'dark') {
+            html.classList.add('dark')
+          } else if (mode === 'system') {
+            if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
+              html.classList.add('dark')
+            }
+          }
+        } catch (e) {
+          var d = document.documentElement
+          d.classList.add('theme-zinc')
+          d.classList.add('texture-plain')
+        }
+      })()
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="./main.tsx"></script>
+  </body>
+</html>

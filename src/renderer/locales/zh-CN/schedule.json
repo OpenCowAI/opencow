@@ -1,0 +1,252 @@
+{
+  "title": "计划",
+  "newSchedule": "新建计划",
+  "noSchedules": "暂无计划",
+  "noSchedulesHint": "创建计划以自动化 Agent 任务",
+  "active": "活跃",
+  "paused": "已暂停",
+  "pipelines": "流水线",
+  "steps": "步",
+  "actions": {
+    "edit": "编辑",
+    "runNow": "立即执行",
+    "pause": "暂停",
+    "resume": "恢复",
+    "delete": "删除"
+  },
+  "form": {
+    "editTitle": "编辑计划",
+    "newTitle": "新建计划",
+    "nameLabel": "名称",
+    "namePlaceholder": "例如：每日代码审查",
+    "descriptionPlaceholder": "添加描述…",
+    "addDescription": "+ 添加描述",
+    "saving": "保存中…",
+    "creating": "创建中…",
+    "saveChanges": "保存更改",
+    "createSchedule": "创建计划",
+    "enterNameToContinue": "输入名称以继续",
+    "contextInjections": "上下文注入",
+    "selected": "已选"
+  },
+  "action": {
+    "typeLabel": "类型",
+    "projectLabel": "项目",
+    "anyProject": "任意项目",
+    "selectProject": "选择项目",
+    "promptTemplate": "提示词模板",
+    "variableHint": "支持 {{date}} {{project}} 变量",
+    "types": {
+      "startSession": "启动会话",
+      "startSessionDesc": "使用提示词启动新的 Claude 会话",
+      "resumeSession": "恢复会话",
+      "resumeSessionDesc": "继续项目中的上一个会话",
+      "createIssue": "创建 Issue",
+      "createIssueDesc": "从模板创建新 Issue",
+      "sendNotification": "发送通知",
+      "sendNotificationDesc": "发送收件箱通知"
+    }
+  },
+  "trigger": {
+    "label": "触发器",
+    "timeBased": "基于时间",
+    "eventBased": "基于事件",
+    "executeAt": "执行于",
+    "pickDateTime": "选择日期和时间",
+    "every": "每隔",
+    "minutes": "分钟",
+    "at": "于",
+    "cronHelp": "分钟 · 小时 · 日 · 月 · 星期",
+    "nextExecution": "下次执行：",
+    "eventType": "事件类型",
+    "events": {
+      "sessionIdle": "会话变为空闲",
+      "sessionError": "会话遇到错误",
+      "issueStatusChange": "Issue 状态变更",
+      "webhookEvent": "Webhook / 钩子事件"
+    },
+    "weekdays": {
+      "sun": "日",
+      "mon": "一",
+      "tue": "二",
+      "wed": "三",
+      "thu": "四",
+      "fri": "五",
+      "sat": "六"
+    },
+    "intervalHint": {
+      "everyNMinutes": "每 {{count}} 分钟运行一次",
+      "everyHour": "每小时运行一次",
+      "everyNHours": "每 {{count}} 小时运行一次",
+      "everyDay": "每天运行一次",
+      "everyNDays": "每 {{count}} 天运行一次"
+    },
+    "nextRun": {
+      "pastWarning": "⚠ 所选时间已过去",
+      "today": "今天",
+      "tomorrow": "明天",
+      "inMinutes": "约 {{count}} 分钟后",
+      "inHours": "约 {{count}} 小时后",
+      "inDays": "约 {{count}} 天后",
+      "format": "{{day}} {{time}}（{{diff}}）"
+    }
+  },
+  "frequency": {
+    "once": "一次",
+    "5min": "5 分钟",
+    "15min": "15 分钟",
+    "30min": "30 分钟",
+    "1hour": "1 小时",
+    "6hours": "6 小时",
+    "daily": "每天",
+    "weekly": "每周"
+  },
+  "contextOptions": {
+    "gitChanges24h": "Git 变更（24h）",
+    "gitLogWeek": "Git 日志（一周）",
+    "openIssues": "未关闭的 Issues",
+    "lastResult": "上次结果",
+    "todayStats": "今日统计",
+    "recentErrors": "最近的错误"
+  },
+  "detail": {
+    "notFound": "未找到该计划",
+    "action": "动作",
+    "priority": "优先级",
+    "executions": "执行次数",
+    "frequency": "频率",
+    "eventTrigger": "事件触发",
+    "recentExecutions": "最近执行",
+    "noExecutions": "暂无执行记录",
+    "nextRun": "下次：{{countdown}}",
+    "statRuns": "执行次数",
+    "statSuccessRate": "成功率",
+    "statAvgDuration": "平均耗时",
+    "sectionTrigger": "触发器",
+    "sectionAction": "动作",
+    "justNow": "刚刚",
+    "minutesAgo": "{{count}} 分钟前",
+    "hoursAgo": "{{count}} 小时前"
+  },
+  "executionDetail": {
+    "title": "执行详情",
+    "timeline": "时间线",
+    "scheduled": "计划时间",
+    "started": "开始时间",
+    "completed": "完成时间",
+    "duration": "耗时",
+    "triggerDetail": "触发详情",
+    "prompt": "提示词",
+    "noPrompt": "未记录提示词",
+    "error": "错误",
+    "usage": "用量",
+    "cost": "费用",
+    "inputTokens": "输入",
+    "outputTokens": "输出",
+    "viewSession": "查看会话",
+    "close": "关闭",
+    "sessionPreviewTitle": "会话",
+    "backToExecution": "返回执行详情",
+    "openFullSession": "在会话中打开",
+    "sessionStarted": "开始时间",
+    "sessionLastActive": "最后活跃",
+    "sessionBranch": "分支",
+    "sessionTasks": "任务",
+    "loadingSession": "加载会话中…",
+    "refresh": "刷新",
+    "noTurns": "未记录对话内容",
+    "sessionNotInStore": "会话尚未被索引",
+    "sessionNotInStoreDesc": "会话文件尚未被发现，请点击刷新重试，或直接在 Sessions 中打开。"
+  },
+  "executionStatus": {
+    "running": "运行中",
+    "success": "成功",
+    "failed": "失败",
+    "skipped": "已跳过",
+    "timeout": "超时",
+    "cancelled": "已取消"
+  },
+  "filter": {
+    "allProjects": "全部",
+    "archivedProjects": "归档项目",
+    "archived": "归档"
+  },
+  "status": {
+    "active": "活跃",
+    "paused": "已暂停",
+    "error": "错误",
+    "completed": "已完成"
+  },
+  "priority": {
+    "critical": "紧急",
+    "high": "高",
+    "normal": "正常",
+    "low": "低"
+  },
+  "triggerType": {
+    "scheduled": "定时触发",
+    "event": "事件触发",
+    "manual": "手动触发",
+    "retry": "重试",
+    "chain": "链式",
+    "catchup": "补偿执行"
+  },
+  "frequencyType": {
+    "once": "单次",
+    "interval": "间隔",
+    "daily": "每天",
+    "weekly": "每周",
+    "biweekly": "双周",
+    "monthly": "每月",
+    "cron": "自定义（Cron）"
+  },
+  "aiCreator": {
+    "title": "AI 创建计划",
+    "inputPlaceholder": "描述你想创建的计划…",
+    "inputPlaceholderPaused": "描述计划或请求调整…",
+    "welcomeTitle": "描述你的计划",
+    "welcomeDescription": "告诉我你想自动化什么，我会帮你配置好计划。",
+    "suggestion": {
+      "codeReview": "每天早上做代码审查",
+      "weeklyReport": "每周生成项目周报",
+      "errorCheck": "每 30 分钟检查错误日志"
+    },
+    "scheduleCreated": "计划已创建",
+    "discardTitle": "放弃 AI 会话？",
+    "discardMessage": "你有一个未确认的计划。关闭将丢弃当前会话。",
+    "discardConfirm": "放弃",
+    "discardCancel": "取消",
+    "close": "关闭",
+    "card": {
+      "discarded": "已放弃",
+      "view": "查看",
+      "editFields": "编辑字段",
+      "discard": "放弃",
+      "discardAria": "放弃计划",
+      "creating": "创建中…",
+      "create": "创建",
+      "createAria": "创建计划",
+      "confirmationAria": "计划确认卡片",
+      "createFailed": "创建计划失败"
+    }
+  },
+  "starred": {
+    "noStarred": "暂无收藏的 Artifacts",
+    "noStarredDesc": "从会话对话中收藏 Artifacts 以便在此快速访问。",
+    "mermaid": "mermaid",
+    "diagramPreview": "图表预览",
+    "contentPreview": "内容预览",
+    "contentUnavailable": "内容不可用（仅编辑过）",
+    "contentUnavailableFull": "内容不可用 — 此 Artifact 仅被编辑过（未记录 Write 操作）。",
+    "clickToPreview": "点击预览",
+    "downloadSvg": "下载 SVG",
+    "downloadSource": "下载 .mmd 源码",
+    "downloadFile": "下载 {{title}}",
+    "starred": "已收藏",
+    "ungrouped": "未分组",
+    "unknownIssue": "未知 Issue",
+    "closeViewer": "关闭查看器",
+    "loadingPreview": "加载预览中…",
+    "issuePreviewAria": "Issue 详情预览"
+  }
+}

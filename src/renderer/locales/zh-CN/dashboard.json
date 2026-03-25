@@ -1,0 +1,29 @@
+{
+  "activity": {
+    "title": "活动",
+    "noData": "暂无活动数据",
+    "aria": "过去一年的会话活动热力图",
+    "session": "个会话",
+    "sessions": "个会话"
+  },
+  "stats": {
+    "totalTasks": "总任务数",
+    "completion": "完成率",
+    "tokensToday": "今日 Tokens",
+    "costToday": "今日费用",
+    "aria": "仪表盘统计",
+    "sessionsLabel": "会话",
+    "statusBreakdown": "会话状态分布",
+    "issueStatusBreakdown": "Issue 状态分布"
+  },
+  "projects": {
+    "title": "热门项目",
+    "aria": "按会话数排名的热门项目",
+    "sessionCount": "{{count}} 个会话"
+  },
+  "recentIssues": {
+    "title": "最近 Issues",
+    "noData": "暂无 Issues",
+    "aria": "最近更新的 Issues"
+  }
+}

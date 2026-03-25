@@ -1,0 +1,108 @@
+/* =================================================================
+ * Git Decoration Colors
+ *
+ * Visual styling for git status in file tree, editor tabs, and
+ * status bar. Uses CSS custom properties for theme awareness.
+ *
+ * Naming: `.text-git-{status}` — matches colorClass values in
+ * gitDecorations.ts.  Colours inspired by VS Code's git decoration
+ * palette, adapted for OpenCow's shadcn/tailwind design system.
+ * ================================================================= */
+
+/* ── Light mode (default) ──────────────────────────────────────── */
+
+:root {
+  --git-modified:  35 80% 50%;    /* warm amber */
+  --git-staged:    142 70% 40%;   /* confident green */
+  --git-partial:   35 80% 50%;    /* same as modified — partially staged */
+  --git-untracked: 142 50% 45%;   /* softer green for new files */
+  --git-deleted:   0 70% 55%;     /* red */
+  --git-renamed:   200 70% 45%;   /* blue */
+  --git-conflict:  0 85% 55%;     /* bright red — demands attention */
+  --git-ignored:   0 0% 60%;      /* muted gray */
+}
+
+/* ── Dark mode ─────────────────────────────────────────────────── */
+
+.dark {
+  --git-modified:  40 85% 65%;    /* warmer amber on dark */
+  --git-staged:    142 55% 55%;   /* brighter green on dark */
+  --git-partial:   40 85% 65%;    /* same as modified */
+  --git-untracked: 142 45% 60%;   /* softer green on dark */
+  --git-deleted:   0 70% 65%;     /* brighter red on dark */
+  --git-renamed:   200 65% 60%;   /* brighter blue on dark */
+  --git-conflict:  0 90% 65%;     /* vivid red on dark */
+  --git-ignored:   0 0% 50%;      /* muted gray on dark */
+}
+
+/* ── Utility classes ───────────────────────────────────────────── */
+
+.text-git-modified  { color: hsl(var(--git-modified)); }
+.text-git-staged    { color: hsl(var(--git-staged)); }
+.text-git-partial   { color: hsl(var(--git-partial)); }
+.text-git-untracked { color: hsl(var(--git-untracked)); }
+.text-git-deleted   { color: hsl(var(--git-deleted)); text-decoration: line-through; }
+.text-git-renamed   { color: hsl(var(--git-renamed)); }
+.text-git-conflict  { color: hsl(var(--git-conflict)); font-weight: 600; }
+.text-git-ignored   { color: hsl(var(--git-ignored)); }
+
+/* =================================================================
+ * Editor Gutter Diff Indicators (Phase 2)
+ *
+ * Monaco `linesDecorationsClassName` renders a thin element between
+ * line numbers and code content.  Background-color provides the
+ * visual indicator — thin vertical bar for added/modified, small
+ * triangle for deleted lines.
+ *
+ * Colours reference existing git CSS variables → automatic
+ * light/dark theme adaptation.
+ * ================================================================= */
+
+/* ── Gutter bar indicators ────────────────────────────────────── */
+
+.git-gutter-added {
+  background: hsl(var(--git-staged));
+  width: 3px !important;
+  margin-left: 3px;
+}
+
+.git-gutter-modified {
+  background: hsl(var(--git-modified));
+  width: 3px !important;
+  margin-left: 3px;
+}
+
+.git-gutter-deleted {
+  /*
+   * Small triangle pointing right, indicating deleted content.
+   * Uses ::after pseudo-element with transform centering —
+   * adapts to any lineHeight without magic numbers.
+   */
+  position: relative !important;
+  background: transparent !important;
+  width: 6px !important;
+  margin-left: 2px;
+}
+
+.git-gutter-deleted::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 0;
+  transform: translateY(-50%);
+  width: 0;
+  height: 0;
+  border-top: 4px solid transparent;
+  border-bottom: 4px solid transparent;
+  border-left: 5px solid hsl(var(--git-deleted));
+}
+
+/* ── Subtle line background highlights ────────────────────────── */
+
+.git-line-added {
+  background: hsl(var(--git-staged) / 0.08);
+}
+
+.git-line-modified {
+  background: hsl(var(--git-modified) / 0.08);
+}

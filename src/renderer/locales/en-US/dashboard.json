@@ -1,0 +1,29 @@
+{
+  "activity": {
+    "title": "Activity",
+    "noData": "No activity data yet",
+    "aria": "Session activity heatmap for the last year",
+    "session": "session",
+    "sessions": "sessions"
+  },
+  "stats": {
+    "totalTasks": "Total Tasks",
+    "completion": "Completion",
+    "tokensToday": "Tokens Today",
+    "costToday": "Cost Today",
+    "aria": "Dashboard statistics",
+    "sessionsLabel": "Sessions",
+    "statusBreakdown": "Session status breakdown",
+    "issueStatusBreakdown": "Issue status breakdown"
+  },
+  "projects": {
+    "title": "Top Projects",
+    "aria": "Top projects ranked by session count",
+    "sessionCount": "{{count}} sessions"
+  },
+  "recentIssues": {
+    "title": "Recent Issues",
+    "noData": "No recent issues",
+    "aria": "Recently updated issues"
+  }
+}

@@ -1,0 +1,154 @@
+{
+  "welcome": {
+    "title": "Welcome to OpenCow",
+    "subtitle": "AI-First autonomous agent platform. One Task. One Agent. Delivered.",
+    "getStarted": "Get Started",
+    "features": {
+      "monitoring": {
+        "title": "Real-Time Monitoring",
+        "desc": "Track all agent sessions and task progress across projects in a unified dashboard."
+      },
+      "notifications": {
+        "title": "Smart Notifications",
+        "desc": "Get notified on task completions, errors, and important events."
+      },
+      "privacy": {
+        "title": "Local & Private",
+        "desc": "Everything runs locally. No data leaves your machine."
+      }
+    }
+  },
+  "prerequisites": {
+    "title": "Environment Check",
+    "statusChecking": "Checking your system environment\u2026",
+    "statusError": "Failed to check environment.",
+    "statusDone": "Here's what we found on your system.",
+    "detecting": "Detecting dependencies\u2026",
+    "errorDetail": "Something went wrong while checking prerequisites.",
+    "tryAgain": "Try again",
+    "optional": "Optional",
+    "claudeOptionalTitle": "Agent CLI is optional.",
+    "claudeOptionalDesc": "You can skip this for now. After installing the Agent CLI later, set up hooks via",
+    "claudeOptionalLink": "Settings \u2192 Install Hooks",
+    "claudeOptionalSuffix": "to enable session monitoring.",
+    "requiredMissingTitle": "Required dependency missing.",
+    "requiredMissingDesc": "Please install the required items above, then click \u201cRe-check\u201d to continue.",
+    "downloadNodejs": "Download Node.js",
+    "recheck": "Re-check"
+  },
+  "disclosure": {
+    "title": "Before We Begin",
+    "subtitle": "Here's exactly what OpenCow will do on your system.",
+    "newFilesCreated": "New Files Created",
+    "opencowDirDesc": "OpenCow data directory for storing events, hooks, and settings.",
+    "eventLoggerDesc": "A lightweight shell script that logs agent events to a local JSONL file.",
+    "configModified": "Configuration Modified",
+    "settingsJsonDesc": "Adds hook entries to the configuration file. Your existing hooks and other settings will",
+    "settingsJsonNot": "not",
+    "settingsJsonSuffix": "be modified.",
+    "hookEventsRegistered": "{{count}} Hook Events Registered",
+    "safeReversibleTitle": "Safe & reversible.",
+    "safeReversibleDesc": "All OpenCow hooks are tagged and can be cleanly removed via",
+    "safeReversibleLink": "Settings \u2192 Uninstall Hooks",
+    "safeReversibleSuffix": "at any time without affecting your other configurations.",
+    "hookEvents": {
+      "SessionStart": "Session starts or resumes",
+      "Stop": "Agent finishes a response",
+      "Notification": "Notification events",
+      "PreToolUse": "Before a tool is used",
+      "PostToolUse": "After a tool is used",
+      "PostToolUseFailure": "When a tool use fails",
+      "TaskCompleted": "Task completion events",
+      "SubagentStart": "Sub-agent starts",
+      "SubagentStop": "Sub-agent stops"
+    }
+  },
+  "install": {
+    "title": "Install Hooks",
+    "statusIdle": "Ready to configure the integration.",
+    "statusSuccess": "All steps completed successfully!",
+    "statusFailed": "Something went wrong during installation.",
+    "statusInProgress": "Configuring the integration\u2026",
+    "preSummary": "Clicking \u201cInstall Now\u201d will:",
+    "preStepCreateDir": "Create {{path}} directory",
+    "preStepWriteScript": "Write the event logger script",
+    "preStepRegisterHooks": "Register {{count}} hooks in {{path}}",
+    "installNow": "Install Now",
+    "proceeding": "Proceeding to next step\u2026",
+    "pleaseWait": "Please wait while hooks are being installed\u2026",
+    "phases": {
+      "creating-dir": "Creating OpenCow data directory",
+      "writing-script": "Writing event logger script",
+      "registering-hooks": "Registering agent event hooks",
+      "verifying": "Verifying installation"
+    }
+  },
+  "providerSetup": {
+    "title": "Connect Your AI Engine",
+    "subtitle": "Choose your AI service and set up the connection.",
+    "recommended": "Recommended",
+    "selectEngine": "Select Engine",
+    "selectMode": "Connection Method",
+    "moreOptions": "More options",
+    "loginWithClaude": "Sign in with Claude",
+    "waitingForAuth": "Waiting for authorization\u2026",
+    "subscriptionHint": "This will open your browser for Claude OAuth sign-in.",
+    "success": {
+      "title": "Connected",
+      "engine": "Engine",
+      "mode": "Method",
+      "status": "Status",
+      "authenticated": "Authenticated",
+      "changeConfig": "Change configuration"
+    },
+    "errors": {
+      "loginFailed": "Connection failed. Please check your credentials and try again."
+    }
+  },
+  "import": {
+    "title": "Import Projects",
+    "subtitle": "Select projects to import into OpenCow.",
+    "scanning": "Scanning projects\u2026",
+    "noProjects": "No importable projects found.",
+    "addLater": "You can add projects later from the sidebar.",
+    "selectAll": "Select All ({{count}})",
+    "selectedCount": "{{count}} selected",
+    "session_one": "{{count}} session",
+    "session_other": "{{count}} sessions",
+    "importing": "Importing\u2026",
+    "importProject_one": "Import {{count}} Project",
+    "importProject_other": "Import {{count}} Projects"
+  },
+  "done": {
+    "title": "You're All Set!",
+    "subtitleWithClaude": "OpenCow is ready. Create tasks, dispatch agents, start delivering.",
+    "subtitleWithoutClaude": "OpenCow is set up. Start creating tasks and dispatching agents anytime.",
+    "providerNotConfigured": "AI engine not configured yet. You can set it up anytime via Settings \u2192 Provider.",
+    "whatsNext": "What's Next",
+    "openApp": "Open OpenCow",
+    "withClaude": {
+      "step1Prefix": "Start using",
+      "step1Command": "OpenCow",
+      "step1Suffix": "\u2014 create a task and your agent will start working automatically.",
+      "step2": "Track all agent progress and deliverables in real time from the dashboard.",
+      "step3Prefix": "Manage settings anytime via",
+      "step3Link": "Settings"
+    },
+    "withoutClaude": {
+      "step1Prefix": "Visit",
+      "step1Link": "OpenCow Docs",
+      "step1Suffix": "to learn how to configure and use autonomous agents.",
+      "step2Prefix": "Set up hooks via",
+      "step2Link": "Settings \u2192 Install Hooks",
+      "step3": "Track all agents, tasks, and deliverables in the dashboard."
+    }
+  },
+  "common": {
+    "back": "Back",
+    "continue": "Continue",
+    "skip": "Skip",
+    "skipForNow": "Skip for now",
+    "retry": "Retry",
+    "stepProgress": "Step {{current}} of {{total}}"
+  }
+}

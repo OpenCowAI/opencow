@@ -1,0 +1,1684 @@
+@import "tailwindcss";
+@import "./themes.css";
+@import "./textures.css";
+@import "./hljs-theme.css";
+@import "./git-decorations.css";
+
+/* Enable class-based dark mode for Tailwind v4.
+   Without this, dark: utilities only work via @media (prefers-color-scheme: dark),
+   but OpenCow toggles a .dark class on <html> instead. */
+@custom-variant dark (&.dark);
+
+@layer base {
+  /* App-specific variables — not part of theme schemes.
+     Theme scheme variables (background, primary, etc.) live in themes.css. */
+  :root {
+    --radius: 0.75rem;
+    --modal-exit-duration: 150ms;
+    --heatmap-empty: 210 17% 93%;
+    --heatmap-l1: 138 55% 72%;
+    --heatmap-l2: 138 55% 51%;
+    --heatmap-l3: 138 56% 40%;
+    --heatmap-l4: 138 58% 27%;
+    --sidebar-background: 0 0% 98%;
+    --sidebar-foreground: 240 5.3% 26.1%;
+    --sidebar-primary: 240 5.9% 10%;
+    --sidebar-primary-foreground: 0 0% 98%;
+    --sidebar-accent: 240 4.8% 95.9%;
+    --sidebar-accent-foreground: 240 5.9% 10%;
+    --sidebar-border: 220 13% 91%;
+  }
+
+  .dark {
+    --sidebar-background: 240 5.9% 10%;
+    --sidebar-foreground: 240 4.8% 95.9%;
+    --sidebar-primary: 224.3 76.3% 48%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 240 3.7% 15.9%;
+    --sidebar-accent-foreground: 240 4.8% 95.9%;
+    --sidebar-border: 240 3.7% 15.9%;
+    --heatmap-empty: 215 14% 13%;
+    --heatmap-l1: 150 60% 16%;
+    --heatmap-l2: 152 100% 21%;
+    --heatmap-l3: 135 55% 40%;
+    --heatmap-l4: 131 69% 52%;
+  }
+}
+
+@layer base {
+  * {
+    border-color: hsl(var(--border));
+  }
+
+  body {
+    background-color: hsl(var(--background));
+    color: hsl(var(--foreground));
+    font-feature-settings: "rlig" 1, "calt" 1;
+  }
+}
+
+/* Native <select> — hide browser chrome, add custom chevron with controlled position */
+select {
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23555' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  background-size: 12px;
+}
+.dark select {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23aaa' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+}
+
+/* macOS window drag regions for titleBarStyle: hiddenInset */
+.drag-region {
+  -webkit-app-region: drag;
+}
+
+.no-drag {
+  -webkit-app-region: no-drag;
+}
+
+/* Onboarding step transition */
+@keyframes onboarding-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.onboarding-step-enter {
+  animation: onboarding-fade-in 0.4s ease-out;
+}
+
+/* Tool pill entrance — subtle fade-in + slide-up when a tool_use block
+   first renders during streaming.  Softens the abrupt layout shift that
+   occurs when a tool_use block is added to the streaming message and
+   Virtuoso's totalListHeightChanged fires an instant corrective scroll.
+   150 ms is fast enough to feel responsive, slow enough to prevent the
+   "pill flash" perception when the pill appears and auto-scroll kicks in. */
+@keyframes tool-pill-enter {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.tool-pill-enter {
+  animation: tool-pill-enter 150ms ease-out;
+}
+
+@keyframes pulse-breathe {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+/* Stop-icon breathing — subtle scale + opacity pulse on the filled square
+   inside the session input stop button, signalling "alive, click to stop". */
+@keyframes stop-icon-breathe {
+  0%, 100% { transform: scale(1); opacity: 0.7; }
+  50%      { transform: scale(1.2); opacity: 1; }
+}
+
+/* Scroll-to-message highlight flash — brief background pulse to confirm
+   which message was scrolled to, especially when it was already visible. */
+@keyframes scroll-flash {
+  0% { background-color: hsl(var(--primary) / 0.12); }
+  100% { background-color: transparent; }
+}
+
+.scroll-flash {
+  animation: scroll-flash 0.8s ease-out;
+}
+
+/* Browser viewport edge breathing glow — active when Agent is streaming */
+@keyframes glow-breathe {
+  0%, 100% {
+    box-shadow:
+      inset -2px 0 8px hsl(var(--ring) / 0.0),
+      -2px 0 12px hsl(var(--ring) / 0.0);
+  }
+  50% {
+    box-shadow:
+      inset -2px 0 8px hsl(var(--ring) / 0.25),
+      -2px 0 16px hsl(var(--ring) / 0.15);
+  }
+}
+
+@keyframes glow-breathe-strong {
+  0%, 100% {
+    box-shadow:
+      inset -3px 0 12px hsl(var(--ring) / 0.0),
+      -3px 0 20px hsl(var(--ring) / 0.0);
+  }
+  50% {
+    box-shadow:
+      inset -3px 0 12px hsl(var(--ring) / 0.45),
+      -3px 0 28px hsl(var(--ring) / 0.25);
+  }
+}
+
+.glow-breathe {
+  animation: glow-breathe 2.4s ease-in-out infinite;
+}
+
+.glow-breathe-strong {
+  animation: glow-breathe-strong 1.8s ease-in-out infinite;
+}
+
+@keyframes highlight-flash {
+  0% { background-color: hsl(var(--ring) / 0.2); }
+  100% { background-color: transparent; }
+}
+
+@keyframes blink {
+  50% { opacity: 0; }
+}
+
+/* Claude Code CLI-style ASCII sparkle spinner
+   Phases: · ✢ ✳ ✶ ✻ ✽ (reverse-mirror: ✻ ✶ ✳ ✢)
+   10 steps total, ~120ms each = 1.2s cycle
+   First/last frames hold ~2× longer for easing feel */
+@keyframes sparkle-chars {
+  0%, 12%   { content: "·"; }
+  13%, 22%  { content: "✢"; }
+  23%, 32%  { content: "✳"; }
+  33%, 42%  { content: "✶"; }
+  43%, 52%  { content: "✻"; }
+  53%, 62%  { content: "✽"; }
+  63%, 72%  { content: "✻"; }
+  73%, 82%  { content: "✶"; }
+  83%, 89%  { content: "✳"; }
+  90%, 99%  { content: "✢"; }
+  100%      { content: "·"; }
+}
+
+.sparkle-spinner::before {
+  content: "·";
+  animation: sparkle-chars 1.2s step-end infinite;
+}
+
+@keyframes streaming-dot-pulse {
+  0%, 80%, 100% {
+    opacity: 0.25;
+    transform: translateY(0);
+  }
+  40% {
+    opacity: 1;
+    transform: translateY(-1px);
+  }
+}
+
+.streaming-dots {
+  display: inline-flex;
+  align-items: flex-end;
+  gap: 0.18rem;
+  margin-left: 0.35rem;
+  vertical-align: baseline;
+}
+
+.streaming-dot {
+  width: 0.24rem;
+  height: 0.24rem;
+  border-radius: 9999px;
+  background-color: currentColor;
+  animation: streaming-dot-pulse 1.05s ease-in-out infinite;
+}
+
+.streaming-dot:nth-child(2) {
+  animation-delay: 0.14s;
+}
+
+.streaming-dot:nth-child(3) {
+  animation-delay: 0.28s;
+}
+
+.highlight-flash {
+  animation: highlight-flash 1.5s ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+
+  .highlight-flash {
+    animation: none;
+    background-color: hsl(var(--ring) / 0.1);
+  }
+
+  .glow-breathe,
+  .glow-breathe-strong {
+    animation: none;
+    box-shadow: inset -2px 0 6px hsl(var(--ring) / 0.15);
+  }
+
+  .tool-pill-enter {
+    animation: none;
+  }
+}
+
+/* TipTap plain-text editor — matches native <textarea> appearance */
+.plain-text-editor.ProseMirror {
+  outline: none;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 0.8125rem; /* 13px */
+  line-height: 1.375rem;
+  color: hsl(var(--foreground));
+  min-height: 1.375rem; /* single-line height */
+  max-height: 8rem;
+  overflow-y: auto;
+}
+
+.plain-text-editor.ProseMirror p {
+  margin: 0;
+}
+
+/* ComposeView: propagate height through the entire chain so the editor
+   fills the available vertical space instead of capping at 8rem.
+   Chain: .compose-editor → .tiptap (EditorContent wrapper) → .ProseMirror */
+.compose-editor,
+.compose-editor .tiptap {
+  height: 100%;
+}
+
+.compose-editor .plain-text-editor.ProseMirror {
+  max-height: none;
+  min-height: 100%;
+  overflow-y: visible; /* outer container handles scrolling */
+}
+
+/* Issue description editor: fills available space with no max-height cap.
+   Chain: .issue-desc-editor → .tiptap → .ProseMirror */
+.issue-desc-editor,
+.issue-desc-editor .tiptap {
+  height: 100%;
+}
+
+.issue-desc-editor .plain-text-editor.ProseMirror {
+  font-size: 0.875rem; /* 14px — text-sm, matches textarea size */
+  max-height: none;
+  min-height: 180px;
+  overflow-y: auto;
+}
+
+/* ChatHeroInput: enlarged editor for the Agent Chat landing page.
+   Upscaled font/height so the input feels like a page-level hero element
+   rather than a compact panel-docked control. */
+.chat-hero-editor .plain-text-editor.ProseMirror {
+  font-size: 0.875rem; /* 14px — text-sm */
+  line-height: 1.5rem; /* leading-6 */
+  min-height: 1.5rem;
+  max-height: 12rem;
+}
+
+.chat-hero-editor .plain-text-editor.ProseMirror p.is-editor-empty:first-child::before {
+  font-size: 0.875rem;
+  line-height: 1.5rem;
+}
+
+.chat-hero-editor .slash-mention {
+  font-size: 0.8125rem;
+  line-height: 1.375rem;
+}
+
+/* Placeholder rendered via CSS pseudo-element (Placeholder extension) */
+.plain-text-editor.ProseMirror p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  float: left;
+  pointer-events: none;
+  height: 0;
+  color: hsl(var(--muted-foreground));
+}
+
+/* Slash-mention chip — inline atom rendered by SlashMentionNode */
+.slash-mention {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 0.375rem;
+  border-radius: 0.25rem;
+  font-size: 0.75rem;
+  line-height: 1.25rem;
+  font-weight: 500;
+  white-space: nowrap;
+  background-color: hsl(var(--accent));
+  color: hsl(var(--accent-foreground));
+  border: 1px solid hsl(var(--border));
+  cursor: default;
+  user-select: all; /* select entire atom on click */
+}
+
+.slash-mention:hover {
+  background-color: hsl(var(--muted));
+}
+
+/* File-mention chip — inline atom rendered by FileMentionNode */
+.file-mention {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.125rem;
+  padding: 0 0.375rem;
+  border-radius: 0.25rem;
+  font-size: 0.75rem;
+  line-height: 1.25rem;
+  font-weight: 500;
+  white-space: nowrap;
+  background-color: hsl(var(--primary) / 0.08);
+  color: hsl(var(--foreground) / 0.75);
+  cursor: default;
+  user-select: all;
+}
+
+.file-mention:hover {
+  background-color: hsl(var(--primary) / 0.14);
+}
+
+/* Queue item inline editor: compact variant for editing queued messages
+   in the queue list.  Smaller font/height than the main input bar so the
+   editor fits comfortably within a queue item row. */
+.queue-item-editor .plain-text-editor.ProseMirror {
+  font-size: 0.75rem; /* 12px — matches queue preview text */
+  line-height: 1.125rem;
+  min-height: 1.125rem;
+  max-height: 4rem;
+  padding: 0.25rem 0.5rem;
+  border: 1px solid hsl(var(--ring));
+  border-radius: 0.375rem;
+  background: hsl(var(--background));
+}
+
+.queue-item-editor .plain-text-editor.ProseMirror:focus {
+  outline: none;
+  box-shadow: 0 0 0 1px hsl(var(--ring));
+}
+
+.queue-item-editor .slash-mention {
+  font-size: 0.625rem; /* 10px — compact */
+  line-height: 1rem;
+  padding: 0 0.25rem;
+}
+
+.queue-item-editor .file-mention {
+  font-size: 0.625rem;
+  line-height: 1rem;
+  padding: 0 0.25rem;
+}
+
+/* ── Premium easing curves ──────────────────────────────────────────────────
+ *
+ * --ease-smooth  = ease-out-quint : fast arrival → long, gentle deceleration.
+ *                  Used for all ENTER animations.  Gives a "silk-glide" feel
+ *                  akin to Apple / Linear / Notion motion language.
+ *
+ * Exit animations keep the built-in `ease-in` — exits should feel quick and
+ * decisive, not lingering.
+ *
+ * Duration tiers (enter only — exits stay at 0.15 s to match JS DURATION):
+ *   Tier 1 — Modal overlay + content : 0.24 s  (major UI event, deliberate)
+ *   Tier 2 — Dropdown / Popover / Panel : 0.2 s  (responsive yet smooth)
+ *   Tier 3 — Toast : 0.28 s  (attention-getting, slightly longer)
+ * ────────────────────────────────────────────────────────────────────────── */
+
+/* Modal overlay & content animations ---------------------------------------- */
+@keyframes modal-overlay-enter {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes modal-overlay-exit {
+  from { opacity: 1; }
+  to   { opacity: 0; }
+}
+
+@keyframes modal-content-enter {
+  from {
+    opacity: 0;
+    transform: scale(0.97) translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+@keyframes modal-content-exit {
+  from {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+  to {
+    opacity: 0;
+    transform: scale(0.97) translateY(6px);
+  }
+}
+
+.modal-overlay-enter {
+  animation: modal-overlay-enter 0.2s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.modal-overlay-exit {
+  animation: modal-overlay-exit var(--modal-exit-duration) ease-in forwards;
+}
+
+.modal-content-enter {
+  animation: modal-content-enter 0.24s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.modal-content-exit {
+  animation: modal-content-exit var(--modal-exit-duration) ease-in forwards;
+}
+
+/* Detail content enter — pure opacity fade, no movement.
+   Used when async-loaded content replaces a skeleton (e.g. IssueDetailView). */
+@keyframes detail-content-enter {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+.detail-content-enter {
+  animation: detail-content-enter 0.2s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* ── Detail panel slide animation ─────────────────────────────────────────
+ *
+ * Two-layer animation for a polished "slide-out" effect when
+ * expanding / collapsing the right-hand detail panel:
+ *
+ *   Layer 1 — Panel flex transition: smooth width interpolation via
+ *             CSS transition on the flex-grow property that
+ *             react-resizable-panels manipulates.
+ *
+ *   Layer 2 — Content translateX: inner content slides in from the right
+ *             to reinforce the "push" feel.
+ *
+ * The transition is guarded by the `.layout-animated` class on the
+ * panel-group to avoid unwanted animation on initial page load, and is
+ * disabled during manual drag-resize operations.
+ * ────────────────────────────────────────────────────────────────────── */
+
+/* Layer 1: panel width via flex-grow transition.
+   All three panels (sidebar, main, detail) participate so that when the
+   detail panel expands/collapses the proportional size redistribution
+   animates consistently — preventing the sidebar from jumping instantly
+   while main/detail transition smoothly (visible as a "shake"). */
+#opencow-layout.layout-animated > #sidebar,
+#opencow-layout.layout-animated > #main,
+#opencow-layout.layout-animated > #detail {
+  transition: flex-grow 0.28s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* Disable flex transition while any separator is being dragged.
+   react-resizable-panels v4.x uses  data-separator="active"  during drag. */
+#opencow-layout.layout-animated:has([data-separator="active"]) > #sidebar,
+#opencow-layout.layout-animated:has([data-separator="active"]) > #main,
+#opencow-layout.layout-animated:has([data-separator="active"]) > #detail {
+  transition: none !important;
+}
+
+/* Layer 2: content slide-in from right */
+@keyframes detail-panel-slide-in {
+  from {
+    opacity: 0;
+    transform: translateX(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.detail-panel-slide-in {
+  animation: detail-panel-slide-in 0.30s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* View-mode switch — subtle fade used when toggling between layout modes
+   (e.g. default ↔ files in ChatView). */
+@keyframes view-switch-enter {
+  from {
+    opacity: 0;
+    transform: scale(0.995);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.view-switch-enter {
+  animation: view-switch-enter 0.18s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* Side-panel slide animations (right-aligned floating panels) */
+@keyframes side-panel-enter {
+  from {
+    opacity: 0;
+    transform: translateX(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes side-panel-exit {
+  from {
+    opacity: 1;
+    transform: translateX(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateX(12px);
+  }
+}
+
+.side-panel-enter {
+  animation: side-panel-enter 0.2s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.side-panel-exit {
+  animation: side-panel-exit 0.15s ease-in forwards;
+}
+
+/* Tray popover animations */
+@keyframes popover-enter {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes popover-exit {
+  from {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.98);
+  }
+}
+
+.popover-enter {
+  animation: popover-enter 0.2s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.popover-exit {
+  animation: popover-exit 0.15s ease-in forwards;
+}
+
+/* PiP float-up animations (bottom-anchored elements) */
+@keyframes pip-float-up {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes pip-float-down {
+  from {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(8px) scale(0.96);
+  }
+}
+
+.pip-enter {
+  animation: pip-float-up 0.28s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.pip-exit {
+  animation: pip-float-down 0.18s ease-in forwards;
+}
+
+/* Toast slide animations */
+@keyframes toast-slide-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes toast-slide-out {
+  from {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(6px) scale(0.97);
+  }
+}
+
+.toast-enter {
+  animation: toast-slide-in 0.28s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.toast-exit {
+  animation: toast-slide-out 0.15s ease-in forwards;
+}
+
+/* Dropdown/popover content animations (PillDropdown) */
+@keyframes dropdown-enter {
+  from {
+    opacity: 0;
+    transform: scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes dropdown-exit {
+  from {
+    opacity: 1;
+    transform: scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: scale(0.97);
+  }
+}
+
+.dropdown-enter {
+  animation: dropdown-enter 0.2s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.dropdown-exit {
+  animation: dropdown-exit 0.15s ease-in forwards;
+}
+
+
+/* Onboarding fade-out */
+@keyframes onboarding-fade-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+.onboarding-exit {
+  animation: onboarding-fade-out 0.3s ease-in forwards;
+}
+
+/* ── Code Editor — transparent Monaco background ─────────────────────────
+ * Let the container's subtle bg-[hsl(var(--foreground)/0.02)] show through.
+ * ────────────────────────────────────────────────────────────────────────── */
+
+.code-editor-surface .monaco-editor,
+.code-editor-surface .monaco-editor .margin,
+.code-editor-surface .monaco-editor-background,
+.code-editor-surface .monaco-editor .inputarea.ime-input {
+  background-color: transparent !important;
+}
+
+/* ── Capability Center — empty state animations ──────────────────────────────
+ *
+ * Design philosophy: Apple-grade ambient presence.
+ *
+ * - Glow-breathe on the icon ring: the page feels *alive*, not static
+ * - Staggered entrance: icon → text → CTA, 3-tier cascade
+ * - Content crossfade: snappy 220ms opacity on category switch
+ * - Reduced-motion: already handled by the blanket rule above
+ * ────────────────────────────────────────────────────────────────────────── */
+
+@keyframes capability-fade-in-up {
+  from {
+    opacity: 0;
+    transform: translateY(14px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* Ambient glow breathing — soft pulsation on the icon ring */
+@keyframes capability-glow-breathe {
+  0%, 100% {
+    opacity: 0.45;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.85;
+    transform: scale(1.06);
+  }
+}
+
+@keyframes capability-content-enter {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+/* Staggered entrance — 3 tiers for icon → text → CTA */
+.capability-stagger-1 {
+  opacity: 0;
+  animation: capability-fade-in-up 0.5s cubic-bezier(0.22, 1, 0.36, 1) 0.04s forwards;
+}
+
+.capability-stagger-2 {
+  opacity: 0;
+  animation: capability-fade-in-up 0.5s cubic-bezier(0.22, 1, 0.36, 1) 0.12s forwards;
+}
+
+.capability-stagger-3 {
+  opacity: 0;
+  animation: capability-fade-in-up 0.5s cubic-bezier(0.22, 1, 0.36, 1) 0.22s forwards;
+}
+
+/* Icon glow ring — continuous breathing */
+.capability-glow-ring {
+  animation: capability-glow-breathe 3.5s ease-in-out infinite;
+}
+
+/* Content area crossfade on category switch */
+.capability-content-enter {
+  animation: capability-content-enter 0.22s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* Inline detail view entrance — subtle slide from right */
+@keyframes capability-detail-enter {
+  from { opacity: 0; transform: translateX(8px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+.capability-detail-enter {
+  animation: capability-detail-enter 0.25s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* Inline edit view entrance — quick crossfade */
+@keyframes capability-edit-enter {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+.capability-edit-enter {
+  animation: capability-edit-enter 0.18s ease-out;
+}
+
+/* Skill preview panel — slide in from right */
+@keyframes skill-preview-enter {
+  from { opacity: 0; transform: translateX(16px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+.skill-preview-enter {
+  animation: skill-preview-enter 0.3s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* ── Market search skeleton & results animations ── */
+
+/* Skeleton shimmer — a gentle left-to-right sweep gradient overlay */
+@keyframes market-skeleton-shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.market-skeleton-bar {
+  background: linear-gradient(
+    90deg,
+    hsl(var(--foreground) / 0.04) 25%,
+    hsl(var(--foreground) / 0.08) 50%,
+    hsl(var(--foreground) / 0.04) 75%
+  );
+  background-size: 200% 100%;
+  animation: market-skeleton-shimmer 1.8s ease-in-out infinite;
+}
+
+/* Skeleton container entrance — fade + subtle upward shift */
+@keyframes market-skeleton-enter {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.market-skeleton-enter {
+  animation: market-skeleton-enter 0.25s ease-out;
+}
+
+/* Search results entrance — crossfade from skeleton position */
+@keyframes market-results-enter {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+.market-results-enter {
+  animation: market-results-enter 0.2s ease-out;
+}
+
+/* ── Install step animations ───────────────────────────────────── */
+
+/* Check icon scale-bounce on step completion */
+@keyframes install-check-enter {
+  0%   { opacity: 0; transform: scale(0.4); }
+  60%  { opacity: 1; transform: scale(1.15); }
+  100% { opacity: 1; transform: scale(1); }
+}
+
+.install-check-enter {
+  animation: install-check-enter 0.3s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* Gentle pulse for the currently active step indicator */
+@keyframes install-step-active {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.5; }
+}
+
+.install-step-active {
+  animation: install-step-active 1.6s ease-in-out infinite;
+}
+
+/* Emerald glow pulse on the success icon */
+@keyframes install-complete-glow {
+  0%   { box-shadow: 0 0 0 0 hsl(142 71% 45% / 0.35); }
+  70%  { box-shadow: 0 0 0 10px hsl(142 71% 45% / 0); }
+  100% { box-shadow: 0 0 0 0 hsl(142 71% 45% / 0); }
+}
+
+.install-complete-glow {
+  animation: install-complete-glow 1.5s ease-out;
+}
+
+/* Subtle horizontal shake on error */
+@keyframes install-error-shake {
+  0%, 100% { transform: translateX(0); }
+  20%      { transform: translateX(-3px); }
+  40%      { transform: translateX(3px); }
+  60%      { transform: translateX(-2px); }
+  80%      { transform: translateX(2px); }
+}
+
+.install-error-shake {
+  animation: install-error-shake 0.4s ease-out;
+}
+
+/* Steps list entrance — fade up from below */
+@keyframes install-steps-enter {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.install-steps-enter {
+  animation: install-steps-enter 0.3s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* Thin progress bar fill — width driven by inline style */
+@keyframes install-bar-indeterminate {
+  0%   { transform: translateX(-100%); }
+  100% { transform: translateX(400%); }
+}
+
+.install-bar-indeterminate {
+  animation: install-bar-indeterminate 1.8s ease-in-out infinite;
+}
+
+/* ── Install success celebration ────────────────────────────────
+ * Precise, minimal but delightful — Apple-level restraint.
+ * Single ring pulse + staggered content entrance.
+ */
+
+/* Ring that pulses outward from the success icon — single ripple */
+@keyframes install-success-ring {
+  0%   { transform: scale(1); opacity: 0.25; }
+  100% { transform: scale(2.6); opacity: 0; }
+}
+
+.install-success-ring {
+  animation: install-success-ring 0.7s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+/* Second ring — slightly delayed for depth */
+.install-success-ring-2 {
+  animation: install-success-ring 0.7s cubic-bezier(0.22, 1, 0.36, 1) 0.12s forwards;
+  opacity: 0;
+}
+
+/* Each content row fades up with a stagger — delay set via inline style */
+@keyframes install-success-item {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.install-success-item {
+  opacity: 0;
+  animation: install-success-item 0.4s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+/* ── Skill detail prose — documentation-grade typography ─────────
+ * Overrides MarkdownContent's compact chat-oriented styles with
+ * generous spacing and visual hierarchy for the skill detail view.
+ *
+ * Modelled after GitHub's markdown rendering:
+ *   - H1/H2 have bottom borders for section separation
+ *   - Ample vertical rhythm between sections
+ *   - Comfortable line-height for reading
+ *   - Clear heading size hierarchy
+ *
+ * Scoped exclusively to .prose-container — zero side effects.
+ *
+ * NOTE: No !important needed — these rules live in the global
+ * (unlayered) scope, which automatically beats Tailwind's
+ * @layer utilities per the CSS cascade spec.
+ */
+
+.prose-container {
+  font-size: 0.9375rem; /* 15px — slightly larger than chat's 14px */
+  line-height: 1.7;
+  color: hsl(var(--foreground));
+  overflow-wrap: break-word;
+  word-break: break-word;
+}
+
+/* Constrain any inline HTML elements (from rehype-raw) within bounds */
+.prose-container div,
+.prose-container section,
+.prose-container article {
+  max-width: 100%;
+}
+
+.prose-container img,
+.prose-container video,
+.prose-container svg {
+  max-width: 100%;
+  height: auto;
+}
+
+/* ─ HTML align attribute (ubiquitous in GitHub READMEs) ─ */
+.prose-container [align="center"] {
+  text-align: center;
+}
+.prose-container [align="right"] {
+  text-align: right;
+}
+
+/* ─ Headings ─ */
+.prose-container h1 {
+  font-size: 1.5rem;
+  font-weight: 600;
+  line-height: 1.3;
+  margin-top: 0;
+  margin-bottom: 1rem;
+  padding-bottom: 0.375rem;
+  border-bottom: 1px solid hsl(var(--border) / 0.4);
+}
+
+.prose-container h2 {
+  font-size: 1.25rem;
+  font-weight: 600;
+  line-height: 1.3;
+  margin-top: 1.5rem;
+  margin-bottom: 0.75rem;
+  padding-bottom: 0.375rem;
+  border-bottom: 1px solid hsl(var(--border) / 0.3);
+}
+
+.prose-container h3 {
+  font-size: 1.0625rem;
+  font-weight: 600;
+  line-height: 1.4;
+  margin-top: 1.25rem;
+  margin-bottom: 0.5rem;
+}
+
+.prose-container h4 {
+  font-size: 0.9375rem;
+  font-weight: 600;
+  margin-top: 1rem;
+  margin-bottom: 0.5rem;
+}
+
+.prose-container h5,
+.prose-container h6 {
+  font-size: 0.875rem;
+  font-weight: 600;
+  margin-top: 0.75rem;
+  margin-bottom: 0.375rem;
+}
+
+/* ─ Paragraphs & inline ─ */
+.prose-container p {
+  font-size: inherit;
+  margin-bottom: 0.875rem;
+  line-height: 1.7;
+}
+
+.prose-container strong {
+  font-weight: 600;
+}
+
+.prose-container a {
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
+}
+
+/* ─ Lists ─ */
+.prose-container ul,
+.prose-container ol {
+  margin-bottom: 0.875rem;
+  padding-left: 1.5rem;
+}
+
+.prose-container li {
+  font-size: inherit;
+  line-height: 1.7;
+  padding-top: 0.125rem;
+  padding-bottom: 0.125rem;
+}
+
+.prose-container li > ul,
+.prose-container li > ol {
+  margin-top: 0.25rem;
+  margin-bottom: 0.25rem;
+}
+
+/* ─ Code ─ */
+.prose-container pre {
+  margin-top: 1rem;
+  margin-bottom: 1rem;
+  border-radius: 0.5rem;
+  font-size: 0.8125rem;
+}
+
+.prose-container code:not(pre code) {
+  font-size: 0.85em;
+  padding: 0.15em 0.4em;
+  border-radius: 0.25rem;
+  background: hsl(var(--muted));
+}
+
+/* ─ Blockquotes ─ */
+.prose-container blockquote {
+  margin: 1rem 0;
+  padding-left: 1rem;
+  border-left-width: 3px;
+  border-color: hsl(var(--border) / 0.6);
+  font-style: italic;
+  color: hsl(var(--muted-foreground));
+}
+
+.prose-container blockquote p {
+  margin-bottom: 0.375rem;
+}
+
+/* ─ Horizontal rules ─ */
+.prose-container hr {
+  margin: 1.5rem 0;
+  border-color: hsl(var(--border) / 0.3);
+}
+
+/* ─ Tables ─ */
+.prose-container table {
+  margin: 1rem 0;
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.prose-container thead {
+  background: hsl(var(--muted) / 0.5);
+}
+
+.prose-container tr {
+  transition: background-color 0.15s;
+}
+
+.prose-container tbody tr:hover {
+  background-color: hsl(var(--muted) / 0.3);
+}
+
+.prose-container th {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  text-transform: none;
+  border-bottom: 1px solid hsl(var(--border) / 0.6);
+}
+
+.prose-container td {
+  font-size: 0.875rem;
+  border-bottom: 1px solid hsl(var(--border) / 0.15);
+}
+
+/* ─ Images ─ */
+/* Standalone / block images — full spacing */
+.prose-container > img,
+.prose-container > p > img:only-child {
+  display: block;
+  margin: 1rem 0;
+  border-radius: 0.5rem;
+}
+
+/* Inline images (badges inside links, etc.) — flow horizontally */
+.prose-container a > img {
+  display: inline;
+  margin: 0.15rem 0.125rem;
+  border-radius: 0.2rem;
+  vertical-align: middle;
+}
+
+/* ─ Task lists (GFM) ─ */
+.prose-container ul:has(> li > input[type="checkbox"]) {
+  list-style: none;
+  padding-left: 0.25rem;
+}
+
+.prose-container li > input[type="checkbox"] {
+  margin-right: 0.5rem;
+  vertical-align: middle;
+}
+
+/* ── TOC scroll offset — breathing room for scrollIntoView ───────────────
+ *
+ * When clicking a TOC entry, scrollIntoView({ block: 'start' }) aligns the
+ * heading flush with the container's top edge.  scroll-margin-top adds
+ * visual breathing room so the heading sits comfortably below the edge
+ * (and below the search bar overlay when it's open).
+ *
+ * Scoped to headings with an [id] attribute — only TOC-linked headings
+ * generated by makeHeading() carry IDs.
+ * ────────────────────────────────────────────────────────────────────────── */
+
+h1[id], h2[id], h3[id], h4[id], h5[id], h6[id] {
+  scroll-margin-top: 1rem;
+}
+
+/* ── Text search — CSS Custom Highlight API ─────────────────────────────
+ *
+ * Used by useTextSearch hook + TextSearchBar for in-content Ctrl/Cmd+F.
+ * Two highlight layers:
+ *   - text-search-match   : all matches (semi-transparent yellow)
+ *   - text-search-current : the focused/active match (opaque orange)
+ *
+ * Specificity: the current-match rule is declared after the all-match rule,
+ * so it naturally wins for the overlapping range.
+ * ────────────────────────────────────────────────────────────────────────── */
+
+::highlight(text-search-match) {
+  background-color: hsl(48 96% 53% / 0.3);
+  color: inherit;
+}
+
+::highlight(text-search-current) {
+  background-color: hsl(24 95% 53% / 0.5);
+  color: inherit;
+}
+
+/* Search bar slide-in animation */
+@keyframes search-bar-enter {
+  from {
+    opacity: 0;
+    transform: translateY(-8px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.search-bar-enter {
+  animation: search-bar-enter 0.2s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* ── BrowserSheet slide animations ── */
+
+@keyframes sheet-slide-in {
+  from {
+    transform: translateY(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+@keyframes sheet-slide-out {
+  from {
+    transform: translateY(0);
+    opacity: 1;
+  }
+  to {
+    transform: translateY(100%);
+    opacity: 0.5;
+  }
+}
+
+/* ── Splash Screen ──────────────────────────────────────────────────────
+ *
+ * Three-phase cinematic startup animation:
+ *   Phase 1 — Logo Materialize (step 1)
+ *   Phase 2 — Greeting + System Boot (steps 2-3)
+ *   Phase 3 — Reveal (appReady → fade out)
+ *
+ * Animation orchestration: JS-driven via `.splash-in` class addition.
+ *   CSS defines the "how" (keyframes, easing, duration).
+ *   JavaScript controls the "when" (adds .splash-in at scheduled times).
+ *
+ * Why not CSS animation-delay?
+ *   CSS animation clocks start from DOM insertion time, but the user's
+ *   visible timeline starts from Electron's window display (ready-to-show).
+ *   In dev mode the gap between these moments causes early animations to
+ *   play "in the dark" — appearing stuck or already completed.
+ *   JS-driven timing (double rAF + setTimeout) starts AFTER the first
+ *   visible paint, eliminating the gap entirely.
+ *
+ * Naming: all rules prefixed with `splash-` to avoid collisions.
+ * Easing: cubic-bezier(0.22, 1, 0.36, 1) = ease-out-quint (silk-glide).
+ * Performance: GPU-composited only (transform + opacity).
+ * ────────────────────────────────────────────────────────────────────── */
+
+/* ── Overlay container ── */
+.splash-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: hsl(var(--background));
+}
+
+.splash-overlay.splash-exit {
+  animation: splash-reveal 0.7s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+/* ── Ambient glow ── */
+.splash-ambient {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  opacity: 0;
+}
+
+.splash-ambient.splash-in {
+  animation: splash-ambient-in 2s ease-out forwards;
+}
+
+.splash-ambient::before {
+  content: '';
+  position: absolute;
+  width: 550px;
+  height: 550px;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: radial-gradient(
+    circle,
+    hsl(43 85% 55% / 0.10) 0%,
+    hsl(43 70% 45% / 0.05) 35%,
+    hsl(210 60% 50% / 0.03) 55%,
+    transparent 70%
+  );
+  border-radius: 50%;
+  animation: splash-glow-breathe 4s ease-in-out infinite;
+}
+
+.splash-ambient::after {
+  content: '';
+  position: absolute;
+  width: 300px;
+  height: 300px;
+  top: 45%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: radial-gradient(
+    circle,
+    hsl(210 85% 58% / 0.06) 0%,
+    transparent 60%
+  );
+  border-radius: 50%;
+  animation: splash-glow-breathe 5s ease-in-out 0.5s infinite;
+}
+
+/* ── Particle field (CSS compositor-thread animation) ──
+   Each .splash-firefly is promoted to its own GPU compositor layer via
+   `will-change`. Animations use only compositor-eligible properties
+   (transform, opacity) — they run on the compositor thread, completely
+   independent of the main JS thread. React mounting, style recalc,
+   layout, and effects have ZERO impact on particle smoothness.
+
+   Three keyframe variants (a/b/c) assigned via :nth-child provide
+   organic variety without extra JS logic or class names. Per-particle
+   CSS custom properties (--dx1, --dy1, --dx2, --dy2, --peak) set via
+   inline styles create unique drift paths and opacity ranges. */
+
+.splash-particles {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 1.5s ease-out;
+}
+
+.splash-particles.splash-in {
+  opacity: 1;
+}
+
+.splash-firefly {
+  position: absolute;
+  border-radius: 50%;
+  will-change: transform, opacity;
+  animation-timing-function: ease-in-out;
+  animation-iteration-count: infinite;
+  animation-fill-mode: both;
+  /* animation-name assigned by :nth-child below;
+     animation-duration and animation-delay set via inline style */
+}
+
+/* Assign three keyframe variants for organic motion variety */
+.splash-firefly:nth-child(3n + 1) { animation-name: splash-firefly-a; }
+.splash-firefly:nth-child(3n + 2) { animation-name: splash-firefly-b; }
+.splash-firefly:nth-child(3n)     { animation-name: splash-firefly-c; }
+
+/* ── Center layout ── */
+.splash-center {
+  position: relative;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+/* ── Logo ── */
+.splash-logo-wrapper {
+  position: relative;
+  width: 140px;
+  height: 140px;
+  opacity: 0;
+  transform: scale(0.6);
+}
+
+.splash-logo-wrapper.splash-in {
+  animation: splash-logo-materialize 1s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+.splash-logo-img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  filter: drop-shadow(0 0 28px hsl(43 85% 55% / 0.4));
+  /* Breathing: gentle scale + glow pulse on compositor thread */
+  animation: splash-logo-breathe 3s ease-in-out 1s infinite;
+  will-change: transform, filter;
+}
+
+/* Rings: no animation by default; triggered when logo gets .splash-in */
+.splash-ring {
+  position: absolute;
+  border-radius: 50%;
+  border: 1px solid hsl(43 85% 55% / 0.2);
+  opacity: 0;
+}
+
+.splash-ring:nth-child(1) {
+  inset: -18px;
+}
+
+.splash-ring:nth-child(2) {
+  inset: -36px;
+  border-color: hsl(43 70% 50% / 0.12);
+}
+
+.splash-ring:nth-child(3) {
+  inset: -56px;
+  border-color: hsl(210 60% 55% / 0.08);
+}
+
+/* Ring animations start when the logo entrance is triggered.
+   Delays are RELATIVE to the .splash-in class addition (not DOM insertion). */
+.splash-logo-wrapper.splash-in .splash-ring:nth-child(1) {
+  animation: splash-ring-pulse 2.8s ease-out 0.6s forwards;
+}
+
+.splash-logo-wrapper.splash-in .splash-ring:nth-child(2) {
+  animation: splash-ring-pulse 2.8s ease-out 0.9s forwards;
+}
+
+.splash-logo-wrapper.splash-in .splash-ring:nth-child(3) {
+  animation: splash-ring-pulse 2.8s ease-out 1.2s forwards;
+}
+
+/* ── Greeting ── */
+.splash-greeting {
+  margin-top: 30px;
+  text-align: center;
+  opacity: 0;
+  transform: translateY(10px);
+}
+
+.splash-greeting.splash-in {
+  animation: splash-text-up 0.8s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+.splash-greeting-time {
+  font-size: 14px;
+  font-weight: 400;
+  letter-spacing: 0.03em;
+  color: hsl(var(--muted-foreground));
+  margin-bottom: 8px;
+}
+
+.splash-greeting-message {
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: hsl(var(--foreground) / 0.88);
+}
+
+/* ── Boot status ── */
+.splash-boot-status {
+  margin-top: 36px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  opacity: 0;
+  transform: translateY(10px);
+}
+
+.splash-boot-status.splash-in {
+  animation: splash-text-up 0.6s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+.splash-progress-track {
+  width: 180px;
+  height: 2px;
+  background: hsl(var(--foreground) / 0.05);
+  border-radius: 1px;
+  overflow: hidden;
+  position: relative;
+}
+
+.splash-progress-fill {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, hsl(43 60% 35%), hsl(43 85% 55%), hsl(43 90% 65%));
+  border-radius: 1px;
+  transform-origin: left;
+  transform: scaleX(0);
+}
+
+/* Progress fill animates when boot status becomes visible.
+   Small delay (0.2s) lets the container's text-up animation settle first. */
+.splash-boot-status.splash-in .splash-progress-fill {
+  animation: splash-progress 1.8s cubic-bezier(0.22, 1, 0.36, 1) 0.2s forwards;
+}
+
+.splash-boot-text {
+  font-size: 11px;
+  font-weight: 400;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: hsl(var(--muted-foreground) / 0.6);
+}
+
+/* ── Footer ── */
+/* NOTE: Uses left:0 + right:0 + text-align:center instead of
+   transform:translateX(-50%) to avoid conflict with the text-up animation
+   (CSS animations replace the entire `transform` property). */
+.splash-footer {
+  position: fixed;
+  bottom: 44px;
+  left: 0;
+  right: 0;
+  z-index: 10;
+  text-align: center;
+  opacity: 0;
+  transform: translateY(10px);
+}
+
+.splash-footer.splash-in {
+  animation: splash-text-up 0.8s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+.splash-quote {
+  font-size: 12px;
+  font-weight: 300;
+  letter-spacing: 0.03em;
+  color: hsl(var(--muted-foreground) / 0.4);
+  font-style: italic;
+  max-width: 400px;
+  margin: 0 auto;
+}
+
+.splash-brand {
+  position: fixed;
+  bottom: 20px;
+  left: 0;
+  right: 0;
+  z-index: 10;
+  text-align: center;
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: hsl(var(--muted-foreground) / 0.25);
+  opacity: 0;
+  transform: translateY(10px);
+}
+
+.splash-brand.splash-in {
+  animation: splash-text-up 0.6s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+/* ── Keyframes ── */
+
+@keyframes splash-ambient-in {
+  to { opacity: 1; }
+}
+
+@keyframes splash-glow-breathe {
+  0%, 100% { transform: translate(-50%, -50%) scale(1); opacity: 0.7; }
+  50% { transform: translate(-50%, -50%) scale(1.12); opacity: 1; }
+}
+
+@keyframes splash-logo-materialize {
+  0% { opacity: 0; transform: scale(0.6); filter: blur(10px); }
+  50% { opacity: 1; transform: scale(1.05); filter: blur(0px); }
+  100% { opacity: 1; transform: scale(1); filter: blur(0px); }
+}
+
+/* Breathing: gentle scale pulse + glow intensity shift.
+   Uses compositor-eligible properties (transform, filter).
+   1s delay in animation-delay lets materialize finish first. */
+@keyframes splash-logo-breathe {
+  0%, 100% {
+    transform: scale(1);
+    filter: drop-shadow(0 0 28px hsl(43 85% 55% / 0.4));
+  }
+  50% {
+    transform: scale(1.05);
+    filter: drop-shadow(0 0 40px hsl(43 85% 55% / 0.6));
+  }
+}
+
+@keyframes splash-ring-pulse {
+  0% { opacity: 0; transform: scale(0.85); }
+  25% { opacity: 0.5; }
+  100% { opacity: 0; transform: scale(1.6); }
+}
+
+@keyframes splash-text-up {
+  0% { opacity: 0; transform: translateY(10px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes splash-progress {
+  0% { transform: scaleX(0); }
+  100% { transform: scaleX(1); }
+}
+
+@keyframes splash-reveal {
+  0% { opacity: 1; }
+  100% { opacity: 0; pointer-events: none; visibility: hidden; }
+}
+
+/* ── Firefly particle keyframe variants ──
+   Three distinct drift paths create organic variety.
+   All use compositor-eligible properties only (transform, opacity).
+   CSS custom properties (--dx1, --dy1, --dx2, --dy2, --peak) are
+   set per-particle via inline styles for unique motion paths. */
+
+/* Variant A — wide arc: right-up → left-down → right-up */
+@keyframes splash-firefly-a {
+  0%       { transform: translate(0, 0); opacity: 0; }
+  8%       { opacity: var(--peak, 0.6); }
+  25%      { transform: translate(var(--dx1), calc(var(--dy1) * 0.6)); opacity: var(--peak, 0.6); }
+  45%      { transform: translate(calc(var(--dx2) * 0.4), var(--dy1)); opacity: calc(var(--peak, 0.6) * 0.55); }
+  65%      { transform: translate(var(--dx2), calc(var(--dy2) * 0.7)); opacity: var(--peak, 0.6); }
+  85%      { transform: translate(calc(var(--dx1) * 0.3), var(--dy2)); opacity: calc(var(--peak, 0.6) * 0.4); }
+  100%     { transform: translate(0, 0); opacity: 0; }
+}
+
+/* Variant B — S-curve: left → right → left with upward drift */
+@keyframes splash-firefly-b {
+  0%       { transform: translate(0, 0); opacity: 0; }
+  10%      { opacity: var(--peak, 0.6); }
+  30%      { transform: translate(var(--dx2), calc(var(--dy1) * 0.5)); opacity: calc(var(--peak, 0.6) * 0.7); }
+  50%      { transform: translate(calc(var(--dx1) * -0.5), var(--dy1)); opacity: var(--peak, 0.6); }
+  70%      { transform: translate(var(--dx1), calc(var(--dy2) * 0.8)); opacity: calc(var(--peak, 0.6) * 0.6); }
+  90%      { transform: translate(calc(var(--dx2) * 0.2), var(--dy2)); opacity: calc(var(--peak, 0.6) * 0.3); }
+  100%     { transform: translate(0, 0); opacity: 0; }
+}
+
+/* Variant C — diagonal sweep: rising diagonally with counter-sway */
+@keyframes splash-firefly-c {
+  0%       { transform: translate(0, 0); opacity: 0; }
+  12%      { opacity: calc(var(--peak, 0.6) * 0.8); }
+  28%      { transform: translate(calc(var(--dx1) * 0.7), calc(var(--dy2) * 0.35)); opacity: var(--peak, 0.6); }
+  48%      { transform: translate(var(--dx2), calc(var(--dy1) * 0.8)); opacity: calc(var(--peak, 0.6) * 0.5); }
+  68%      { transform: translate(calc(var(--dx1) * -0.4), var(--dy2)); opacity: var(--peak, 0.6); }
+  88%      { transform: translate(calc(var(--dx2) * 0.6), calc(var(--dy2) * 0.5)); opacity: calc(var(--peak, 0.6) * 0.35); }
+  100%     { transform: translate(0, 0); opacity: 0; }
+}

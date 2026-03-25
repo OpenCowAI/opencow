@@ -1,0 +1,580 @@
+{
+  "agentSidebar": {
+    "newChat": "新建对话",
+    "newChatAria": "新建对话",
+    "newConversation": "新的对话",
+    "claudeCapabilities": "能力",
+    "openCapabilities": "打开能力",
+    "sessions": "会话",
+    "noSessionsYet": "暂无会话",
+    "expand": "展开侧栏",
+    "collapse": "收起侧栏",
+    "deleteSession": "删除",
+    "deleteSessionAria": "删除会话",
+    "deleteConfirmTitle": "删除会话",
+    "deleteConfirmMessage": "此会话及其对话历史将被永久删除。",
+    "allProjects": "所有项目",
+    "filterByProject": "按项目过滤"
+  },
+  "agentChat": {
+    "startingAgent": "启动智能体中…",
+    "allProjects": "所有项目",
+    "askAnythingGlobal": "跨所有项目提问…",
+    "askAboutProject": "关于 {{projectName}} 的提问…",
+    "whatCanIHelp": "有什么可以帮助你的？",
+    "whatCanIHelpIn": "关于",
+    "enterToSend": "Enter",
+    "toSend": " 发送 · ",
+    "slashForCommands": "/",
+    "forCommands": " 使用命令",
+    "stopSession": "停止会话",
+    "stopBtn": "停止",
+    "continueConversation": "继续对话…",
+    "chat": "对话",
+    "startConversation": "开始对话以继续",
+    "suggestions": {
+      "explainCodebase": "解释这个代码库",
+      "helpDebug": "帮我调试一个问题",
+      "writeFeature": "编写一个新功能",
+      "summarizeProject": "总结这个项目",
+      "findBugs": "查找潜在 Bug",
+      "suggestImprovements": "建议改进方案"
+    }
+  },
+  "capabilities": {
+    "loadingCapabilities": "加载能力中…",
+    "noCapabilitiesFound": "还没有能力",
+    "searchPlaceholder": "搜索能力…",
+    "searchAria": "搜索能力",
+    "noResultsFor": "未找到 '{{query}}' 的结果",
+    "categoryAria": "{{title}} 分区，{{count}} 项",
+    "createCategory": "创建 {{title}}",
+    "categoriesAria": "能力分类",
+    "categoryNavAria": "{{title}}，{{count}} 项"
+  },
+  "capabilityCenter": {
+    "title": "能力",
+    "subtitle": "管理智能体的所有能力",
+    "welcome": "在一处管理你的智能体技能、命令、规则等所有能力。",
+    "categories": {
+      "skill": "技能",
+      "command": "命令",
+      "agent": "智能体",
+      "rule": "规则",
+      "mcp-server": "MCP 服务器",
+      "hook": "钩子",
+      "plugin": "插件",
+      "lsp-server": "LSP 服务器"
+    },
+    "importFromClaude": "从 Claude Code 导入",
+    "importFromCodex": "从 Codex 导入",
+    "importDetected": "发现 {{count}} 个可导入的能力",
+    "importDetected_zero": "未发现可导入的能力",
+    "createFirst": "或者创建你的第一个能力：",
+    "import": "导入",
+    "importTitle": "导入能力",
+    "importTitleClaude": "从 Claude Code 导入",
+    "importTitleCodex": "从 Codex 导入",
+    "importTitleFile": "从本地文件导入",
+    "importSourceClaude": "Claude Code CLI",
+    "importSourceClaudeDesc": "从 Claude Code 配置中导入",
+    "importSourceCodex": "Codex CLI",
+    "importSourceCodexDesc": "从 Codex 配置中导入",
+    "importSourceFile": "本地文件",
+    "importSourceFileDesc": "从磁盘上的文件导入",
+    "importFound": "发现 {{count}} 个能力：",
+    "importAlreadyImported": "已导入",
+    "importSelected": "导入所选 ({{count}})",
+    "importComplete": "导入完成",
+    "importSuccessCount": "{{count}} 个导入成功",
+    "importSkippedCount": "{{count}} 个已跳过（已导入过）",
+    "importErrorCount": "{{count}} 个错误",
+    "importDone": "完成",
+    "importBack": "返回",
+    "importCancel": "取消",
+    "importing": "导入中…",
+    "importDiscovering": "正在扫描可导入的能力…",
+    "importDiscoverHint": "这可能需要一点时间…",
+    "importEmptyHint": "检测到配置中的能力后将显示在此处。",
+    "importSelectedHint": "已选 {{count}} 项",
+    "importSelectAll": "全选 ({{count}})",
+    "importTo": "导入到",
+    "importSuccessSummary": "已成功导入 {{count}} 个能力到你的能力库。",
+    "emptyCategory": {
+      "skill": "还没有技能。创建一个来扩展你的智能体的能力。",
+      "command": "还没有命令。添加斜杠命令让你的智能体可以执行。",
+      "rule": "还没有规则。定义你的智能体应遵循的准则。",
+      "agent": "还没有智能体。配置专门的智能体角色。",
+      "hook": "还没有钩子。设置事件驱动的自动化。",
+      "mcp-server": "还没有 MCP 服务器。连接外部工具提供者。"
+    },
+    "emptyState": {
+      "skill": {
+        "description": "通过自定义技能扩展你的智能体能力。定义专业技术、知识和工作流程，让你的智能体更加强大。",
+        "cta": "新建技能"
+      },
+      "command": {
+        "description": "定义强大的斜杠命令，快速访问复杂工作流程、自动化和专业操作。",
+        "cta": "新建命令"
+      },
+      "agent": {
+        "description": "配置专门的智能体角色，使用自定义模型、指令和能力，针对不同类型的任务量身定制。",
+        "cta": "新建智能体"
+      },
+      "rule": {
+        "description": "设定你的智能体在每次对话中遵循的行为准则。确保一致的质量、标准和模式。",
+        "cta": "新建规则"
+      },
+      "mcp-server": {
+        "description": "通过模型上下文协议连接外部工具提供者。让你的智能体可以使用数据库、API 和各类服务。",
+        "cta": "添加服务器"
+      },
+      "hook": {
+        "description": "设置在特定操作触发时运行的事件驱动自动化。在关键操作前后运行自定义脚本。",
+        "cta": "新建钩子"
+      }
+    },
+    "categoryGroups": {
+      "capabilities": "核心能力",
+      "integrations": "集成",
+      "extensions": "扩展"
+    },
+    "newCapability": "新建{{category}}",
+    "scope": "范围",
+    "scopeProject": "项目",
+    "scopeGlobal": "全局",
+    "saveTo": "保存到",
+    "scopeHintGlobal": "所有项目可用",
+    "scopeHintProject": "仅此项目可用",
+    "noProjectsHint": "暂无可用项目，请切换至全局范围。",
+    "unsavedTitle": "未保存的更改",
+    "unsavedMessage": "你有未保存的更改，要丢弃吗？",
+    "discard": "丢弃",
+    "formSections": {
+      "triggerEvent": "触发事件",
+      "executeCommands": "执行命令",
+      "connectionConfig": "连接配置",
+      "launchArgs": "启动参数",
+      "envVars": "环境变量",
+      "templateOptions": "选项"
+    },
+    "mcpTemplates": {
+      "subtitle": "选择预设模板或从头开始配置",
+      "confirmVariant": "继续",
+      "backToTemplates": "返回",
+      "nameHint": "修改此名称可能影响工具集成行为"
+    },
+    "searchOverlay": {
+      "placeholder": "搜索能力...",
+      "ariaLabel": "搜索能力",
+      "recentSearches": "最近搜索",
+      "clearRecent": "清除",
+      "noResults": "未找到 \"{{query}}\" 相关结果"
+    },
+    "filters": {
+      "scopeAll": "全部",
+      "allOrigins": "全部",
+      "local": "自定义",
+      "noFilterResults": "没有匹配当前过滤条件的项目",
+      "ariaScope": "按范围过滤",
+      "ariaOrigin": "按来源过滤"
+    },
+    "distribution": {
+      "claude": "Claude",
+      "codex": "Codex",
+      "both": "Claude + Codex",
+      "aria": "已发布到 {{target}}"
+    },
+    "diagnostics": {
+      "title": "{{count}} 条治理诊断",
+      "clear": "清除"
+    },
+    "governance": {
+      "title": "治理",
+      "filterAria": "按治理引擎过滤",
+      "filterAll": "全部引擎",
+      "filterClaude": "Claude",
+      "filterCodex": "Codex",
+      "detectDrift": "检测漂移",
+      "syncDrift": "同步漂移",
+      "runningDetect": "检测中…",
+      "runningSync": "同步中…",
+      "driftStatus": "{{count}} 条漂移",
+      "noDrift": "未检测到漂移",
+      "driftFound": "发现 {{count}} 条漂移分发",
+      "syncResult": "同步完成：{{synced}} 成功，{{errors}} 错误",
+      "detectFailed": "检测漂移失败：{{message}}",
+      "syncFailed": "同步失败：{{message}}"
+    }
+  },
+  "capabilityCards": {
+    "origin": {
+      "plugin": "插件",
+      "other": "其他"
+    },
+    "model": "模型: {{model}}",
+    "managedRuleCount": "(OpenCow: {{count}})",
+    "customRuleCount": "(自定义: {{count}})",
+    "serverType": "类型: {{type}}",
+    "byAuthor": "作者: {{author}}",
+    "cmdCount": "{{count}} 个命令",
+    "skillCount": "{{count}} 个技能",
+    "agentCount": "{{count}} 个智能体",
+    "hookCount": "{{count}} 个钩子",
+    "pluginVersion": "v{{version}} · {{author}}",
+    "languages": "语言: {{languages}}"
+  },
+  "chatHero": {
+    "defaultPlaceholder": "随便问…",
+    "inputAria": "开始与 Claude Code 智能体的对话",
+    "sendAria": "发送消息"
+  },
+  "sessionPanel": {
+    "noSessionYet": "暂无会话",
+    "startSession": "启动会话",
+    "startSessionAria": "启动会话",
+    "composeAndStart": "编写并启动",
+    "composeAndStartAria": "编写并启动会话",
+    "starting": "启动中…",
+    "completed": "已完成",
+    "taskList": "任务列表",
+    "jumpToLatest": "最新",
+    "jumpToLatestAria": "跳转到最新回复",
+    "fileDropHint": "松手附加文件",
+    "fileDropHintSub": "支持图片、PDF 和文本文件"
+  },
+  "taskWidget": {
+    "state": {
+      "launching": "启动中…",
+      "running": "运行中",
+      "completed": "已完成",
+      "failed": "失败",
+      "interrupted": "已中断"
+    },
+    "showLess": "收起",
+    "showMore": "展开更多（{{count}} 行）",
+    "tokens": "{{count}} tokens",
+    "tools": "{{count}} 个工具"
+  },
+  "sessionStatusBar": {
+    "stopReasons": {
+      "taskCompleted": "任务完成",
+      "turnLimitReached": "已达轮次上限",
+      "stoppedByUser": "用户已停止",
+      "idle": "空闲"
+    },
+    "errorDetails": "错误详情",
+    "processError": "此错误由进程级损坏导致，无法在当前会话中恢复。请重启 OpenCow。",
+    "restartApp": "重启 OpenCow",
+    "stopSessionAria": "停止会话",
+    "stopSession": "停止会话",
+    "retryTooltip": "恢复此会话 — 对话历史将保留。",
+    "retryAria": "重试会话",
+    "retry": "重试",
+    "resumeMessage": "请从上次中断的地方继续。",
+    "newSessionAria": "新建会话",
+    "newSession": "新建会话",
+    "createNewSession": "创建新会话",
+    "archiveNote": "当前会话将被归档。",
+    "fromIssue": "从 Issue 创建",
+    "blankSession": "空白会话",
+    "collapseConsole": "折叠控制台",
+    "expandConsole": "展开控制台"
+  },
+  "sessionHistory": {
+    "tooltip": "会话历史",
+    "buttonAria": "查看 {{count}} 个已归档会话",
+    "title": "会话历史",
+    "description": "此任务的历史会话。点击查看，或恢复为当前会话。",
+    "noMessages": "（空会话）",
+    "restoreTooltip": "恢复为当前会话",
+    "restoreAria": "恢复此会话",
+    "restore": "恢复",
+    "viewingArchived": "正在查看已归档会话（只读）",
+    "backToCurrent": "返回当前会话"
+  },
+  "sessionInput": {
+    "placeholder": "输入消息或附加文件…",
+    "inputAria": "向 Claude Code 会话发送消息",
+    "slashCommandAria": "插入斜杠命令",
+    "sendAria": "发送消息",
+    "stopSessionAria": "停止会话",
+    "stopSessionTooltip": "点击停止会话",
+    "stopConfirmTitle": "停止当前会话？",
+    "stopConfirmBtn": "停止会话"
+  },
+  "contextMention": {
+    "triggerAria": "添加文件上下文",
+    "popoverAria": "添加文件上下文",
+    "searchPlaceholder": "搜索文件…",
+    "searchAria": "搜索项目文件",
+    "loading": "加载中…",
+    "noResults": "没有匹配的文件",
+    "selectedCount": "已选择 {{count}} 个",
+    "selectedCount_one": "已选择 {{count}} 个",
+    "contextFilesAria": "上下文文件",
+    "removeFile": "移除 {{name}}",
+    "dropHint": "松手添加上下文",
+    "dropHintSub": "文件和目录将作为对话上下文添加",
+    "clearAll": "全部清除"
+  },
+  "streamingFooter": {
+    "statusTexts": [
+      "推理中",
+      "思考中",
+      "工作中",
+      "分析中",
+      "处理中",
+      "沉思中",
+      "反思中",
+      "考虑中",
+      "评估中",
+      "深思中"
+    ]
+  },
+  "queuedMessages": {
+    "messageAria": "队列消息 {{index}}",
+    "editAria": "编辑队列消息",
+    "confirmEdit": "确认编辑",
+    "cancelEdit": "取消编辑",
+    "empty": "（空）",
+    "imageCount": "{{count}} 张图片",
+    "editMessage": "编辑消息",
+    "cancelMessage": "取消消息",
+    "sending": "发送中…",
+    "queued": "队列中 ({{count}})",
+    "queueListAria": "队列消息",
+    "modeBatch": "批量",
+    "modeSequential": "逐条",
+    "dispatchModeAria": "队列发送模式",
+    "reorderAria": "拖拽排序队列消息",
+    "sendingItem": "正在发送消息 {{index}}…",
+    "sequentialTooltip": "消息将逐条发送。可拖拽排序。"
+  },
+  "compose": {
+    "placeholder": "编写提示词… 使用 / 调用命令",
+    "inputAria": "编写会话提示词",
+    "cancelAria": "取消编写",
+    "title": "编写会话提示词",
+    "useSlash": "使用",
+    "slashSymbol": "/",
+    "forCommandsHint": "调用命令"
+  },
+  "askUser": {
+    "sent": "已发送",
+    "confirmBtn": "确认"
+  },
+  "notes": {
+    "sentToChat": "已发送到对话",
+    "notesSentToChat": "{{count}} 条笔记已发送到对话",
+    "switchToChat": "切换到对话"
+  },
+  "artifacts": {
+    "unstar": "取消收藏",
+    "star": "收藏"
+  },
+  "diffChanges": {
+    "allSessionChanges": "所有会话变更",
+    "turnChanges": "轮次变更",
+    "fileCount": "{{count}} 个文件",
+    "newFiles": "+{{count}} 新增",
+    "modifiedFiles": "~{{count}} 修改",
+    "selectFile": "选择文件查看变更",
+    "noChanges": "没有文件变更"
+  },
+  "sessionDetail": {
+    "loadingSession": "加载中…",
+    "closePanel": "关闭详情面板",
+    "idLabel": "ID",
+    "turnAria": "第 {{index}} 轮: {{message}}",
+    "toolCount": "{{count}} 个工具",
+    "fileCount": "{{count}} 个文件",
+    "imageCount": "{{count}} 张图片",
+    "imageCount_plural": "{{count}} 张图片",
+    "imageAlt": "第 {{turnIndex}} 轮的图片 {{index}}",
+    "toolCallsAria": "工具调用",
+    "filesSection": "文件",
+    "turnsCount": "{{count}} 轮",
+    "toolCallsCount": "{{count}} 个工具",
+    "turnsTab": "对话轮次",
+    "tasksTab": "任务",
+    "tasksTabCount": "任务 ({{count}})",
+    "eventsTab": "事件",
+    "eventsTabCount": "事件 ({{count}})",
+    "noConversationData": "无对话数据"
+  },
+  "skillCreator": {
+    "title": "AI 技能创建",
+    "subtitle": "描述你想要的技能，AI 将帮你创建",
+    "aiCreate": "AI 创建",
+    "placeholder": "描述你想创建的技能…",
+    "starting": "正在启动 AI 技能创建…",
+    "continuePlaceholder": "继续完善技能…",
+    "unsavedTitle": "放弃会话？",
+    "unsavedMessage": "当前技能创建会话将会丢失，确定要放弃吗？",
+    "discard": "放弃",
+    "suggestions": {
+      "codeReview": "创建代码审查技能",
+      "testGeneration": "创建测试生成技能",
+      "documentation": "创建文档生成技能"
+    },
+    "preview": {
+      "title": "技能预览",
+      "name": "名称",
+      "description": "描述",
+      "body": "内容",
+      "scope": "保存到",
+      "save": "保存技能",
+      "saving": "保存中…",
+      "saved": "已保存!"
+    }
+  },
+  "capabilityCreator": {
+    "aiCreate": "AI 创建",
+    "preview": {
+      "title": "预览",
+      "name": "名称",
+      "description": "描述",
+      "body": "内容",
+      "scope": "保存到",
+      "model": "模型",
+      "color": "颜色",
+      "argumentHint": "参数提示",
+      "save": "保存",
+      "saving": "保存中…",
+      "saved": "已保存!",
+      "modelDefault": "默认",
+      "modelSonnet": "Sonnet",
+      "modelOpus": "Opus",
+      "modelHaiku": "Haiku"
+    },
+    "skill": {
+      "title": "AI 技能创建",
+      "subtitle": "描述你想要的技能，AI 将帮你创建",
+      "placeholder": "描述你想创建的技能…",
+      "starting": "正在启动 AI 技能创建…",
+      "continuePlaceholder": "继续完善技能…",
+      "unsavedTitle": "放弃会话？",
+      "unsavedMessage": "当前技能创建会话将会丢失，确定要放弃吗？",
+      "discard": "放弃",
+      "suggestions": {
+        "codeReview": "创建代码审查技能",
+        "testGeneration": "创建测试生成技能",
+        "documentation": "创建文档生成技能"
+      }
+    },
+    "agent": {
+      "title": "AI 智能体创建",
+      "subtitle": "描述你想要的智能体角色，AI 将帮你创建",
+      "placeholder": "描述你想创建的智能体角色…",
+      "starting": "正在启动 AI 智能体创建…",
+      "continuePlaceholder": "继续完善智能体…",
+      "unsavedTitle": "放弃会话？",
+      "unsavedMessage": "当前智能体创建会话将会丢失，确定要放弃吗？",
+      "discard": "放弃",
+      "suggestions": {
+        "codeReviewer": "创建代码审查专家",
+        "apiArchitect": "创建 API 架构师",
+        "securityAuditor": "创建安全审计员"
+      }
+    },
+    "command": {
+      "title": "AI 命令创建",
+      "subtitle": "描述你想要的命令，AI 将帮你创建",
+      "placeholder": "描述你想创建的斜杠命令…",
+      "starting": "正在启动 AI 命令创建…",
+      "continuePlaceholder": "继续完善命令…",
+      "unsavedTitle": "放弃会话？",
+      "unsavedMessage": "当前命令创建会话将会丢失，确定要放弃吗？",
+      "discard": "放弃",
+      "suggestions": {
+        "codeReview": "创建 /review 命令",
+        "deployStaging": "创建 /deploy 命令",
+        "generateTests": "创建 /test-gen 命令"
+      }
+    },
+    "rule": {
+      "title": "AI 规则创建",
+      "subtitle": "描述你想要的规则，AI 将帮你创建",
+      "placeholder": "描述你想创建的规则或准则…",
+      "starting": "正在启动 AI 规则创建…",
+      "continuePlaceholder": "继续完善规则…",
+      "unsavedTitle": "放弃会话？",
+      "unsavedMessage": "当前规则创建会话将会丢失，确定要放弃吗？",
+      "discard": "放弃",
+      "suggestions": {
+        "codingStandards": "创建 TypeScript 编码规范",
+        "commitFormat": "创建提交信息规范",
+        "reviewGuidelines": "创建代码审查标准"
+      }
+    }
+  },
+  "cloneCapabilities": {
+    "title": "复制能力",
+    "description": "选择要复制到此项目的能力。",
+    "fromProject": "从项目复制",
+    "fromProjectDesc": "从现有项目中复制能力",
+    "sourceProject": "来源项目",
+    "selectProject": "选择项目…",
+    "selectProjectHint": "选择来源项目以查看其能力",
+    "discovering": "正在发现能力…",
+    "noCapabilities": "未找到项目级别的能力",
+    "search": "搜索能力…",
+    "selectAll": "全选",
+    "copy": "复制 {{count}} 项",
+    "copying": "复制中…",
+    "confirmCopy": "确认复制",
+    "resolveConflicts": "解决冲突",
+    "conflictDescription": "有 {{count}} 个能力在目标项目中已存在。",
+    "conflict": "冲突",
+    "conflictTooltip": "在目标项目中已存在",
+    "alreadyExists": "在目标项目中已存在",
+    "forAllConflicts": "对所有冲突：",
+    "resolutionSkip": "跳过",
+    "resolutionSkipDesc": "保留现有的，不复制冲突项",
+    "resolutionOverwrite": "覆盖",
+    "resolutionOverwriteDesc": "用来源版本替换现有版本",
+    "resolutionRename": "同时保留",
+    "resolutionRenameDesc": "以新名称复制（如 name-copy）",
+    "success": "成功复制 {{count}} 个能力",
+    "partial": "{{succeeded}} 个已复制，{{failed}} 个失败"
+  },
+  "repoSource": {
+    "title": "仓库源",
+    "subtitle": "管理来自 GitHub 或 GitLab 的自定义技能仓库",
+    "addTitle": "添加仓库源",
+    "editTitle": "编辑仓库源",
+    "url": "仓库 URL",
+    "name": "显示名称",
+    "auth": "身份认证",
+    "authNone": "公开",
+    "advanced": "高级选项",
+    "branch": "分支",
+    "add": "添加",
+    "addFirst": "添加仓库",
+    "emptyTitle": "暂无仓库",
+    "emptyDescription": "添加 GitHub 或 GitLab 仓库，从自有源中浏览和安装技能。",
+    "syncing": "同步中…",
+    "syncError": "同步错误",
+    "lastSynced": "已同步 {{time}}",
+    "neverSynced": "未同步",
+    "test": "测试连接",
+    "testOk": "连接成功",
+    "testFail": "连接失败",
+    "sync": "同步",
+    "delete": "删除",
+    "confirmDelete": "确认",
+    "cancelDelete": "取消",
+    "errorUrlRequired": "仓库 URL 不能为空",
+    "browsing": "加载能力列表…",
+    "browseError": "加载能力列表失败",
+    "browseEmpty": "此仓库中未发现任何能力",
+    "install": "安装",
+    "installTip": "安装",
+    "editTip": "编辑",
+    "testTip": "测试连接",
+    "syncTip": "同步最新",
+    "deleteTip": "移除",
+    "capCount": "{{count}} 个能力"
+  }
+}

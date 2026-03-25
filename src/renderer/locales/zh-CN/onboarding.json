@@ -1,0 +1,154 @@
+{
+  "welcome": {
+    "title": "欢迎使用 OpenCow",
+    "subtitle": "AI-First 自主 Agent 平台。一个任务，一个 Agent，交付到位。",
+    "getStarted": "开始使用",
+    "features": {
+      "monitoring": {
+        "title": "实时监控",
+        "desc": "在统一仪表盘中管理所有 Agent 会话与任务进度。"
+      },
+      "notifications": {
+        "title": "智能通知",
+        "desc": "在任务完成、错误和重要事件时获得通知。"
+      },
+      "privacy": {
+        "title": "本地且私密",
+        "desc": "所有数据均在本地运行，不会离开你的设备。"
+      }
+    }
+  },
+  "prerequisites": {
+    "title": "环境检测",
+    "statusChecking": "正在检查系统环境…",
+    "statusError": "环境检查失败。",
+    "statusDone": "以下是在你的系统上检测到的结果。",
+    "detecting": "正在检测依赖项…",
+    "errorDetail": "检查前置条件时出现问题。",
+    "tryAgain": "重试",
+    "optional": "可选",
+    "claudeOptionalTitle": "Agent CLI 是可选的。",
+    "claudeOptionalDesc": "你可以先跳过此项。稍后安装 Agent CLI 后，通过",
+    "claudeOptionalLink": "设置 → 安装 Hooks",
+    "claudeOptionalSuffix": "启用会话监控。",
+    "requiredMissingTitle": "缺少必要的依赖项。",
+    "requiredMissingDesc": "请安装上方的必要项，然后点击\u201c重新检查\u201d继续。",
+    "downloadNodejs": "下载 Node.js",
+    "recheck": "重新检查"
+  },
+  "disclosure": {
+    "title": "开始之前",
+    "subtitle": "以下是 OpenCow 将在你的系统上执行的操作。",
+    "newFilesCreated": "新建文件",
+    "opencowDirDesc": "用于存储事件、钩子和设置的 OpenCow 数据目录。",
+    "eventLoggerDesc": "一个轻量级的 Shell 脚本，将 Agent 事件记录到本地 JSONL 文件中。",
+    "configModified": "修改配置",
+    "settingsJsonDesc": "向配置文件添加钩子条目。你现有的钩子和其他设置",
+    "settingsJsonNot": "不会",
+    "settingsJsonSuffix": "被修改。",
+    "hookEventsRegistered": "{{count}} 个 Hook 事件已注册",
+    "safeReversibleTitle": "安全且可撤销。",
+    "safeReversibleDesc": "所有 OpenCow 钩子均已标记，可随时通过",
+    "safeReversibleLink": "设置 → 卸载 Hooks",
+    "safeReversibleSuffix": "干净卸载，不会影响你的其他配置。",
+    "hookEvents": {
+      "SessionStart": "会话启动或恢复",
+      "Stop": "Agent 完成一次响应",
+      "Notification": "通知事件",
+      "PreToolUse": "工具使用前",
+      "PostToolUse": "工具使用后",
+      "PostToolUseFailure": "工具使用失败时",
+      "TaskCompleted": "任务完成事件",
+      "SubagentStart": "子代理启动",
+      "SubagentStop": "子代理停止"
+    }
+  },
+  "install": {
+    "title": "安装 Hooks",
+    "statusIdle": "已准备好配置集成环境。",
+    "statusSuccess": "所有步骤均已成功完成！",
+    "statusFailed": "安装过程中出现问题。",
+    "statusInProgress": "正在配置集成环境…",
+    "preSummary": "点击\u201c立即安装\u201d将会：",
+    "preStepCreateDir": "创建 {{path}} 目录",
+    "preStepWriteScript": "写入事件记录脚本",
+    "preStepRegisterHooks": "在 {{path}} 中注册 {{count}} 个钩子",
+    "installNow": "立即安装",
+    "proceeding": "正在进入下一步…",
+    "pleaseWait": "正在安装钩子，请稍候…",
+    "phases": {
+      "creating-dir": "正在创建 OpenCow 数据目录",
+      "writing-script": "正在写入事件记录脚本",
+      "registering-hooks": "正在注册 Agent 事件钩子",
+      "verifying": "正在验证安装"
+    }
+  },
+  "providerSetup": {
+    "title": "连接你的 AI 引擎",
+    "subtitle": "选择你要使用的 AI 服务并完成配置。",
+    "recommended": "推荐",
+    "selectEngine": "选择引擎",
+    "selectMode": "连接方式",
+    "moreOptions": "更多选项",
+    "loginWithClaude": "使用 Claude 登录",
+    "waitingForAuth": "等待授权中…",
+    "subscriptionHint": "这将打开浏览器进行 Claude OAuth 授权。",
+    "success": {
+      "title": "已连接",
+      "engine": "引擎",
+      "mode": "方式",
+      "status": "状态",
+      "authenticated": "已认证",
+      "changeConfig": "更换配置"
+    },
+    "errors": {
+      "loginFailed": "连接失败，请检查你的凭证后重试。"
+    }
+  },
+  "import": {
+    "title": "导入项目",
+    "subtitle": "选择要导入到 OpenCow 的项目。",
+    "scanning": "正在扫描项目…",
+    "noProjects": "未找到可导入的项目。",
+    "addLater": "你可以稍后从侧边栏添加项目。",
+    "selectAll": "全选 ({{count}})",
+    "selectedCount": "已选择 {{count}} 个",
+    "session_one": "{{count}} 个会话",
+    "session_other": "{{count}} 个会话",
+    "importing": "正在导入…",
+    "importProject_one": "导入 {{count}} 个项目",
+    "importProject_other": "导入 {{count}} 个项目"
+  },
+  "done": {
+    "title": "一切就绪！",
+    "subtitleWithClaude": "OpenCow 已就绪。创建任务，派遣 Agent，开始交付。",
+    "subtitleWithoutClaude": "OpenCow 已设置完成。你可以随时开始创建任务和派遣 Agent。",
+    "providerNotConfigured": "AI 引擎尚未配置。你可以随时通过 设置 → Provider 完成配置。",
+    "whatsNext": "下一步",
+    "openApp": "打开 OpenCow",
+    "withClaude": {
+      "step1Prefix": "开始使用",
+      "step1Command": "OpenCow",
+      "step1Suffix": "— 创建任务，Agent 将自动开始执行。",
+      "step2": "在仪表盘中实时查看所有 Agent 的进度与交付结果。",
+      "step3Prefix": "随时通过",
+      "step3Link": "设置"
+    },
+    "withoutClaude": {
+      "step1Prefix": "访问",
+      "step1Link": "OpenCow 文档",
+      "step1Suffix": "了解如何配置和使用自主 Agent。",
+      "step2Prefix": "通过",
+      "step2Link": "设置 → 安装 Hooks",
+      "step3": "在仪表盘中管理所有 Agent、任务和交付结果。"
+    }
+  },
+  "common": {
+    "back": "返回",
+    "continue": "继续",
+    "skip": "跳过",
+    "skipForNow": "暂时跳过",
+    "retry": "重试",
+    "stepProgress": "第 {{current}} 步，共 {{total}} 步"
+  }
+}

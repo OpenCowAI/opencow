@@ -1,0 +1,32 @@
+{
+  "title": "收件箱",
+  "markAllRead": "全部已读",
+  "markAllReadAria": "将所有消息标记为已读",
+  "noMessagesMatch": "没有匹配筛选条件的消息",
+  "noNotifications": "暂无通知",
+  "selectMessage": "选择一条消息以查看详情",
+  "goToSession": "前往会话",
+  "goToSessionAria": "前往会话",
+  "goToIssue": "前往问题",
+  "goToIssueAria": "前往问题",
+  "goToSchedule": "前往计划",
+  "goToScheduleAria": "前往计划",
+  "rawPayload": "原始数据",
+  "search": {
+    "placeholder": "搜索消息…",
+    "aria": "搜索收件箱消息",
+    "categoryAria": "消息分类筛选",
+    "projectAria": "按项目筛选",
+    "allProjects": "所有项目"
+  },
+  "tabs": {
+    "all": "全部",
+    "events": "事件",
+    "reminders": "提醒"
+  },
+  "priority": {
+    "high": "高",
+    "normal": "普通",
+    "low": "低"
+  }
+}

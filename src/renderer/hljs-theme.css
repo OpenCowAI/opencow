@@ -1,0 +1,191 @@
+/*
+ * Syntax highlighting theme for highlight.js (via rehype-highlight).
+ *
+ * Two-tone approach:
+ *   - Light mode: GitHub-inspired palette
+ *   - Dark mode (.dark): GitHub Dark Dimmed inspired palette
+ *
+ * The .hljs background is transparent so the existing Tailwind
+ * <pre>/<code> backgrounds remain in control.
+ */
+
+/* ── Shared base ────────────────────────────────────────────────── */
+.hljs {
+  background: transparent;
+}
+
+/* ── Light mode ─────────────────────────────────────────────────── */
+:root .hljs {
+  color: #24292f;
+}
+
+:root .hljs-comment,
+:root .hljs-quote {
+  color: #6e7781;
+  font-style: italic;
+}
+
+:root .hljs-keyword,
+:root .hljs-selector-tag,
+:root .hljs-meta .hljs-keyword {
+  color: #cf222e;
+}
+
+:root .hljs-tag,
+:root .hljs-name {
+  color: #116329;
+}
+
+:root .hljs-attribute {
+  color: #0550ae;
+}
+
+:root .hljs-string,
+:root .hljs-addition {
+  color: #0a3069;
+}
+
+:root .hljs-number,
+:root .hljs-literal {
+  color: #0550ae;
+}
+
+:root .hljs-built_in,
+:root .hljs-type,
+:root .hljs-params {
+  color: #953800;
+}
+
+:root .hljs-title,
+:root .hljs-section {
+  color: #0550ae;
+  font-weight: 600;
+}
+
+:root .hljs-symbol,
+:root .hljs-bullet {
+  color: #0550ae;
+}
+
+:root .hljs-variable,
+:root .hljs-template-variable {
+  color: #953800;
+}
+
+:root .hljs-selector-class,
+:root .hljs-selector-id {
+  color: #6639ba;
+}
+
+:root .hljs-deletion {
+  color: #82071e;
+  background-color: #ffebe9;
+}
+
+:root .hljs-addition {
+  background-color: #dafbe1;
+}
+
+:root .hljs-meta {
+  color: #1f2328;
+}
+
+:root .hljs-meta .hljs-string {
+  color: #0a3069;
+}
+
+:root .hljs-emphasis {
+  font-style: italic;
+}
+
+:root .hljs-strong {
+  font-weight: 700;
+}
+
+/* ── Dark mode ──────────────────────────────────────────────────── */
+.dark .hljs {
+  color: #adbac7;
+}
+
+.dark .hljs-comment,
+.dark .hljs-quote {
+  color: #768390;
+  font-style: italic;
+}
+
+.dark .hljs-keyword,
+.dark .hljs-selector-tag,
+.dark .hljs-meta .hljs-keyword {
+  color: #f47067;
+}
+
+.dark .hljs-tag,
+.dark .hljs-name {
+  color: #8ddb8c;
+}
+
+.dark .hljs-attribute {
+  color: #6cb6ff;
+}
+
+.dark .hljs-string,
+.dark .hljs-addition {
+  color: #96d0ff;
+}
+
+.dark .hljs-number,
+.dark .hljs-literal {
+  color: #6cb6ff;
+}
+
+.dark .hljs-built_in,
+.dark .hljs-type,
+.dark .hljs-params {
+  color: #dcbdfb;
+}
+
+.dark .hljs-title,
+.dark .hljs-section {
+  color: #6cb6ff;
+  font-weight: 600;
+}
+
+.dark .hljs-symbol,
+.dark .hljs-bullet {
+  color: #6cb6ff;
+}
+
+.dark .hljs-variable,
+.dark .hljs-template-variable {
+  color: #f69d50;
+}
+
+.dark .hljs-selector-class,
+.dark .hljs-selector-id {
+  color: #dcbdfb;
+}
+
+.dark .hljs-deletion {
+  color: #f47067;
+  background-color: rgba(244, 112, 103, 0.15);
+}
+
+.dark .hljs-addition {
+  background-color: rgba(87, 171, 90, 0.15);
+}
+
+.dark .hljs-meta {
+  color: #adbac7;
+}
+
+.dark .hljs-meta .hljs-string {
+  color: #96d0ff;
+}
+
+.dark .hljs-emphasis {
+  font-style: italic;
+}
+
+.dark .hljs-strong {
+  font-weight: 700;
+}

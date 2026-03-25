@@ -1,0 +1,466 @@
+{
+  "title": "设置",
+  "closeAria": "关闭设置",
+  "loadingSettings": "加载设置中…",
+  "groups": {
+    "app": "应用",
+    "model": "模型",
+    "integrations": "集成",
+    "trigger": "触发"
+  },
+  "tabs": {
+    "general": "通用",
+    "provider": "服务商",
+    "network": "网络",
+    "chat": "对话",
+    "notifications": "通知",
+    "webhooks": "Webhooks",
+    "messaging": "IM 机器人",
+    "evose": "EvoseAI"
+  },
+  "general": {
+    "appearance": "外观",
+    "colorScheme": "配色方案",
+    "neutral": "中性色",
+    "accent": "强调色",
+    "surfaceTexture": "表面纹理",
+    "modes": {
+      "system": "跟随系统",
+      "systemDesc": "跟随操作系统偏好",
+      "light": "浅色",
+      "lightDesc": "始终使用浅色模式",
+      "dark": "深色",
+      "darkDesc": "始终使用深色模式"
+    },
+    "language": "语言",
+    "languageOptions": {
+      "system": "跟随系统",
+      "zh-CN": "简体中文",
+      "en-US": "English"
+    }
+  },
+  "provider": {
+    "title": "服务商",
+    "description": "分别配置 OpenCow 在 Claude / Codex 引擎下的服务商连接方式。凭据已加密并存储在本地。",
+    "engineScope": "配置引擎",
+    "defaultEngine": "默认会话引擎",
+    "defaultEngineHint": "新建会话时默认使用该引擎。可在会话级别覆盖。",
+    "engines": {
+      "claude": "Claude 引擎",
+      "codex": "Codex 引擎"
+    },
+    "configTitles": {
+      "claude": "Claude 配置",
+      "codex": "Codex 配置"
+    },
+    "modes": {
+      "subscription": "Claude 订阅",
+      "subscriptionDesc": "Pro、Max、Team 或 Enterprise — 通过浏览器 OAuth 登录",
+      "apiKey": "API Key",
+      "apiKeyDesc": "Anthropic Console — 按 API 用量付费",
+      "openrouter": "OpenRouter",
+      "openrouterDesc": "通过 OpenRouter 使用 Claude — 第三方 Anthropic API 代理",
+      "custom": "自定义 API",
+      "customDesc": "任意 Claude 兼容接口 — 自托管代理或第三方网关"
+    },
+    "modesCodex": {
+      "openrouter": "OpenRouter",
+      "openrouterDesc": "通过 OpenRouter 为 Codex 提供 OpenAI 兼容 API",
+      "custom": "自定义 OpenAI 兼容 API",
+      "customDesc": "配置你自己的 OpenAI 兼容网关（Codex 使用 Bearer 认证）"
+    },
+    "codexHint": "Codex 引擎当前支持 OpenAI 兼容服务商（OpenRouter / 自定义 API）。",
+    "unsupportedModeForEngine": "当前模式 {{mode}} 不适用于 {{engine}}，请切换到该引擎支持的模式。",
+    "status": {
+      "connected": "已连接",
+      "authenticating": "认证中…",
+      "checking": "检查状态…",
+      "error": "错误",
+      "notConnected": "未连接"
+    },
+    "engineConfigStatus": {
+      "configured": "已配置",
+      "authenticating": "认证中",
+      "notConfigured": "未配置"
+    },
+    "apiKeyField": "Anthropic API Key",
+    "apiKeyPlaceholder": "sk-ant-api03-...",
+    "saveApiKey": "保存 API Key",
+    "getApiKeyFrom": "在此获取 API Key：",
+    "anthropicConsole": "console.anthropic.com",
+    "openrouterApiKey": "OpenRouter API Key",
+    "openrouterApiKeyPlaceholder": "sk-or-v1-...",
+    "openrouterBaseUrl": "Base URL",
+    "openrouterBaseUrlPlaceholder": "https://openrouter.ai/api",
+    "optional": "可选",
+    "getOpenrouterKeyFrom": "在此获取 API Key：",
+    "customBaseUrl": "Base URL",
+    "customBaseUrlPlaceholder": "https://api.example.com/v1",
+    "customApiKey": "API Key",
+    "customApiKeyPlaceholder": "你的 API Key",
+    "customAuthStyle": "认证方式",
+    "customAuthStyle_api_key": "x-api-key",
+    "customAuthStyle_bearer": "Bearer Token",
+    "customAuthStyleCodexFixed": "Codex 引擎固定使用 Bearer Token（Authorization: Bearer）。",
+    "customAuthStyleHint_api_key": "Key 通过 x-api-key 请求头传递（标准 Anthropic 格式）。",
+    "customAuthStyleHint_bearer": "Key 通过 Authorization: Bearer 传递（OpenRouter 风格）。",
+    "defaultModel": "默认模型",
+    "defaultModelPlaceholder": "选择或输入模型 ID",
+    "defaultModelHint": "覆盖所有新会话的默认模型。留空则使用服务商默认模型。",
+    "defaultReasoningEffort": "默认思考强度",
+    "defaultReasoningEffortHint": "用于 Codex 新会话的 model_reasoning_effort。默认 high，可按需切换。",
+    "reasoningEffortLevels": {
+      "minimal": "minimal（最轻）",
+      "low": "low（低）",
+      "medium": "medium（中）",
+      "high": "high（高）",
+      "xhigh": "xhigh（最高）"
+    },
+    "modeSelectLabel": "服务商模式",
+    "modeSelectPlaceholder": "请选择模式",
+    "plan": "套餐：",
+    "loginWithClaude": "使用 Claude 账号登录",
+    "waitingForAuth": "等待浏览器授权中…",
+    "loginHelp": "在浏览器中使用 Claude Pro、Max、Team 或 Enterprise 账号登录。",
+    "logout": "退出登录",
+    "removeKey": "移除 Key",
+    "edit": "编辑",
+    "cancelEdit": "取消",
+    "overview": {
+      "title": "引擎总览",
+      "description": "先确认两个引擎的连接状态，再进入当前引擎配置。",
+      "defaultBadge": "默认",
+      "modeLabel": "当前模式",
+      "defaultModelLabel": "默认模型",
+      "notConfigured": "未选择模式",
+      "notSet": "未设置",
+      "configure": "配置此引擎",
+      "configuring": "正在配置"
+    },
+    "selectedEngineTitle": "正在配置：{{engine}}",
+    "selectedEngineDescription": "按步骤完成当前引擎设置，保存后即时生效。",
+    "steps": {
+      "stepLabel": "步骤 {{step}}",
+      "modeCredential": {
+        "title": "选择模式并配置凭据",
+        "description": "先选择服务商模式，再填写该模式所需认证信息。",
+        "empty": "请先选择服务商模式。"
+      },
+      "mode": {
+        "title": "选择服务商模式",
+        "description": "为当前引擎选择连接模式。"
+      },
+      "credential": {
+        "title": "配置凭据",
+        "description": "填写并保存该模式所需的认证信息。",
+        "empty": "请先在步骤 1 选择模式。"
+      },
+      "model": {
+        "title": "设置默认模型（可选）",
+        "description": "可填写模型 ID，也可从内置建议中选择。",
+        "empty": "请先完成模式选择后再设置默认模型。"
+      }
+    }
+  },
+  "network": {
+    "title": "代理配置",
+    "description": "全局代理配置，同时作用于 Claude Code 会话和 IM 连接。",
+    "protocolHint": "支持 <code>http://</code>、<code>socks5://</code>、<code>socks4://</code> 协议。",
+    "httpsProxy": "HTTPS 代理",
+    "httpsProxyPlaceholder": "http://127.0.0.1:7890",
+    "httpProxy": "HTTP 代理",
+    "httpProxyPlaceholder": "http://127.0.0.1:7890",
+    "noProxy": "不使用代理",
+    "noProxyPlaceholder": "localhost,127.0.0.1",
+    "errorMissingScheme": "必须包含协议头，例如 http:// 或 socks5://",
+    "errorInvalidUrl": "无效的 URL 格式"
+  },
+  "command": {
+    "title": "对话设置",
+    "description": "新建 AI 会话时的默认参数（最大轮次目前仅对 Claude 生效）。",
+    "defaultEngine": "默认引擎",
+    "engineClaude": "Claude",
+    "engineCodex": "Codex",
+    "maxTurns": "最大轮次",
+    "permissionMode": "权限模式",
+    "bypassPermissions": "跳过权限（默认）",
+    "defaultPermission": "需要审批"
+  },
+  "notifications": {
+    "title": "通知",
+    "description": "控制 OpenCow 何时显示桌面通知。",
+    "enableNotifications": "启用通知",
+    "enableDesc": "所有通知的总开关",
+    "onError": "出错时",
+    "onErrorDesc": "会话遇到错误时通知",
+    "onComplete": "完成时",
+    "onCompleteDesc": "会话完成时通知",
+    "onStatusChange": "状态变更时",
+    "onStatusChangeDesc": "会话需要注意时通知"
+  },
+  "webhooks": {
+    "title": "Webhooks",
+    "description": "向 Lark、Telegram 或自定义 Webhook 等外部服务发送事件通知。",
+    "addWebhook": "添加 Webhook",
+    "noWebhooks": "尚未配置 Webhook",
+    "noWebhooksDesc": "添加 Webhook 以在 Lark、Telegram 或任何 HTTP 端点接收事件通知。",
+    "viaProxy": "经代理",
+    "enableWebhookAria": "启用 Webhook",
+    "testWebhookAria": "测试 Webhook",
+    "editWebhookAria": "编辑 Webhook",
+    "deleteWebhookAria": "删除 Webhook",
+    "chatPrefix": "Chat: {{url}}",
+    "testOk": "OK ({{ms}}ms)",
+    "providers": {
+      "lark": "飞书",
+      "telegram": "Telegram",
+      "custom": "自定义"
+    },
+    "events": {
+      "complete": "完成",
+      "error": "错误",
+      "waiting": "等待",
+      "start": "开始",
+      "task": "任务",
+      "notify": "通知"
+    },
+    "edit": {
+      "editTitle": "编辑 Webhook",
+      "addTitle": "添加 Webhook",
+      "closeAria": "关闭对话框",
+      "providerLabel": "服务商",
+      "nameLabel": "名称",
+      "namePlaceholder": "例如：我的团队飞书机器人",
+      "subscribedEvents": "订阅事件",
+      "selectOneEvent": "请至少选择一个事件。",
+      "useProxy": "使用代理",
+      "useProxyDesc": "通过设置 → 网络中配置的全局代理发送请求（适用于需要代理的服务，如 Telegram）。",
+      "saveChanges": "保存更改",
+      "providerDesc": {
+        "lark": "通过 Incoming Webhook 发送交互卡片",
+        "telegram": "通过 Bot API 发送 Markdown 消息",
+        "custom": "向任意 URL 发送 JSON POST 请求"
+      },
+      "eventLabels": {
+        "complete": "会话完成",
+        "error": "会话错误",
+        "waiting": "会话等待",
+        "start": "会话开始",
+        "task": "任务完成",
+        "notify": "通知"
+      },
+      "fields": {
+        "lark": {
+          "url": "Webhook URL",
+          "urlPlaceholder": "https://open.feishu.cn/open-apis/bot/v2/hook/...",
+          "secret": "签名密钥（可选）",
+          "secretPlaceholder": "未启用签名验证时留空"
+        },
+        "telegram": {
+          "url": "Chat ID",
+          "urlPlaceholder": "-1001234567890",
+          "secret": "Bot Token",
+          "secretPlaceholder": "123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11"
+        },
+        "custom": {
+          "url": "Webhook URL",
+          "urlPlaceholder": "https://example.com/webhook",
+          "secret": "Bearer Token（可选）",
+          "secretPlaceholder": "用作 Authorization: Bearer <token>"
+        }
+      }
+    }
+  },
+  "messaging": {
+    "title": "IM 机器人",
+    "description": "连接 Telegram、Discord、微信、飞书，直接从聊天应用与 AI 对话。",
+    "addConnection": "添加机器人",
+    "noConnections": "尚未配置消息连接。",
+    "addFirstConnection": "添加你的第一个连接 →",
+    "choosePlatform": "选择平台",
+    "newConnectionName": "新建 {{platform}} 连接",
+    "emptyState": {
+      "title": "连接你的第一个 IM 机器人",
+      "description": "选择一个平台开始，只需几分钟即可完成配置。"
+    },
+    "platformDesc": {
+      "telegram": "通过 Bot Token 连接",
+      "feishu": "通过 App ID 连接",
+      "discord": "通过 Bot Token 连接",
+      "weixin": "扫码连接个人微信"
+    },
+    "setupTime": {
+      "fast": "~3 分钟",
+      "medium": "~5 分钟"
+    },
+    "configDetails": "配置详情",
+    "advancedOptions": "高级选项",
+    "stats": {
+      "received": "已接收",
+      "sent": "已发送",
+      "uptime": "运行时长"
+    },
+    "deleteConfirm": "确定要删除此连接吗？此操作无法撤销。",
+    "moreActions": "更多操作",
+    "rename": "重命名",
+    "adapterInDev": "后端适配器开发中。你可以先预配置凭证 — 适配器上线后即可使用。",
+    "adapterNotReady": "后端适配器尚未就绪",
+    "hideSecret": "隐藏",
+    "showSecret": "显示",
+    "connectionStatus": {
+      "connected": "已连接",
+      "connecting": "连接中…",
+      "disconnected": "未连接",
+      "error": "错误"
+    },
+    "collapse": "收起",
+    "expand": "展开",
+    "stopConnection": "停止连接",
+    "startConnection": "启动连接",
+    "enterCredentialsFirst": "请先输入凭证",
+    "deleteConnection": "删除连接",
+    "stopBeforeDelete": "请先停止连接再删除",
+    "testConnection": "测试连接",
+    "testConnected": "✓ 已连接",
+    "testFailed": "✗ {{error}}",
+    "allowedUserIds": "允许的用户 ID",
+    "allowedUserIdsPlaceholder": "逗号分隔的 ID（留空允许所有人）",
+    "defaultWorkspace": "默认工作目录",
+    "workspaceDesc": "来自此连接的会话将使用此工作目录。",
+    "workspacePlaceholder": "例如 /Users/me/workspace/project（留空不绑定）",
+    "chooseFolder": "选择文件夹",
+    "orPickProject": "或选择项目：",
+    "selectProject": "选择项目…",
+    "platforms": {
+      "telegram": "Telegram",
+      "feishu": "飞书（Lark）",
+      "discord": "Discord",
+      "weixin": "微信"
+    },
+    "telegram": {
+      "botToken": "Bot Token",
+      "botTokenPlaceholder": "123456789:ABCDefghijklmnopqrstuvwxyz",
+      "statsReceived": "↓ 收到 {{count}} 条",
+      "statsSent": "↑ 发送 {{count}} 条",
+      "since": "自 {{time}} 以来",
+      "setupGuide": "设置指南",
+      "setupGuideAria": "设置指南",
+      "setupDesc": "按以下步骤连接你的 Telegram 机器人",
+      "steps": {
+        "createBot": "创建机器人",
+        "createBotDesc": "打开 Telegram，搜索 @BotFather，发送 /newbot 创建新机器人。",
+        "copyToken": "复制 Bot Token",
+        "copyTokenDesc": "BotFather 会给你一个 API Token，将其粘贴到 Bot Token 字段中。",
+        "getChatId": "获取 Chat ID",
+        "getChatIdDesc": "向你的机器人发送一条消息，然后访问 <code>api.telegram.org/bot&lt;TOKEN&gt;/getUpdates</code> 查找你的 Chat ID。",
+        "testAndStart": "测试并启动",
+        "testAndStartDesc": "点击「测试连接」验证配置，然后启用机器人开始接收消息。"
+      },
+      "helpCommand": "连接后，在 Telegram 中使用 /help 查看所有可用命令。"
+    },
+    "feishu": {
+      "environment": "环境",
+      "domain": {
+        "feishu": "飞书（国内）",
+        "lark": "Lark（国际）"
+      },
+      "appId": "App ID",
+      "appIdPlaceholder": "cli_xxxxxxxxxxxx",
+      "appSecret": "App Secret",
+      "appSecretPlaceholder": "输入应用的 App Secret"
+    },
+    "discord": {
+      "botToken": "Bot Token",
+      "botTokenPlaceholder": "MTExxx...xxxx",
+      "guildId": "Guild ID（可选）",
+      "guildIdPlaceholder": "例如 123456789012345678（留空表示所有 Guild）"
+    },
+    "weixin": {
+      "botToken": "Bot Token",
+      "botTokenPlaceholder": "扫码后自动填入",
+      "scanToLogin": "使用微信扫描二维码连接",
+      "waitingForScan": "正在获取二维码...",
+      "scanned": "已扫码，请在手机上确认...",
+      "loginSuccess": "连接成功！",
+      "loginFailed": "登录失败：{{error}}",
+      "sessionExpired": "会话已过期，请重新扫码。",
+      "singleDeviceWarning": "一个微信号同时只能有一个 Bot 连接",
+      "grayTestNote": "微信 ClawBot 目前处于灰测阶段，请确认你的微信号已获得资格。",
+      "userIdFormat": "用户 ID 格式：xxx@im.wechat",
+      "rescan": "重新扫码",
+      "cancelScan": "取消",
+      "retry": "重试",
+      "baseUrl": "iLink 服务器地址（可选）",
+      "statsReceived": "↓ 收到 {{count}} 条",
+      "statsSent": "↑ 发送 {{count}} 条",
+      "since": "自 {{time}} 以来"
+    },
+    "botCreator": {
+      "title": "AI 机器人配置",
+      "close": "关闭",
+      "welcomeTitle": "配置新的 IM 机器人",
+      "welcomeDescription": "告诉我你想使用哪个平台，我会一步步引导你完成配置。",
+      "inputPlaceholder": "描述你想配置的机器人...",
+      "inputPlaceholderPaused": "继续对话...",
+      "discardTitle": "放弃机器人配置？",
+      "discardMessage": "你的 AI 生成的机器人配置尚未创建。关闭后将丢失。",
+      "discardConfirm": "放弃",
+      "discardCancel": "继续编辑",
+      "suggestion": {
+        "telegram": "配置 Telegram 机器人",
+        "feishu": "配置飞书机器人",
+        "discord": "配置 Discord 机器人",
+        "weixin": "配置微信机器人"
+      },
+      "botCreated": "机器人已创建：{{name}}",
+      "createFailed": "创建机器人失败",
+      "create": "创建",
+      "creating": "创建中...",
+      "discard": "放弃",
+      "discarded": "已放弃",
+      "created": "机器人创建成功",
+      "confirmationAria": "机器人配置预览",
+      "allowedUsers": "{{count}} 个允许的用户",
+      "aiSetup": "AI 配置",
+      "aiSetupTooltip": "使用 AI 一步步引导你完成机器人配置",
+      "viewInSettings": "在设置中查看",
+      "guide": {
+        "telegram": "{{name}} 已保存。前往连接卡片启用它，然后在 Telegram 中发送 /start 开始对话。",
+        "feishu": "{{name}} 已保存。前往连接卡片启用它，然后在飞书机器人聊天中发送消息即可开始。",
+        "discord": "{{name}} 已保存。前往连接卡片启用它，然后在 Discord 频道中 @机器人 即可开始。",
+        "weixin": "{{name}} 已保存。前往连接卡片扫码并启用它，然后在微信中发送消息即可开始。"
+      }
+    }
+  },
+  "evose": {
+    "title": "EvoseAI 集成",
+    "website": "evose.ai",
+    "tagline": "构建 AI 组织。",
+    "description": "Evose 是人类和 AI Agent 协同工作的平台。构建满足你需求的自定义 AI Agent。聊天、分配、协作 — 就像给队友发消息一样。",
+    "apiKey": "API Key",
+    "apiKeyPlaceholder": "输入 EvoseAI API Key",
+    "hideApiKey": "隐藏 API Key",
+    "showApiKey": "显示 API Key",
+    "workspaceIds": "Workspace IDs",
+    "workspaceIdsPlaceholder": "ws-abc123, ws-def456",
+    "endpoint": "Endpoint",
+    "endpointPlaceholder": "https://api-app.evose.ai",
+    "verifyAndFetch": "验证并拉取 Apps",
+    "connectedApps": "✅ 已连接 · 共 {{count}} 个 Apps",
+    "agents": "Agents",
+    "workflows": "Workflows",
+    "noAppsFound": "未找到匹配 \"{{query}}\" 的 Apps",
+    "saved": "✅ 已保存",
+    "mcpDescription": "将 EvoseAI Agents 和 Workflows 注册为 MCP 工具，供 OpenCow Agent 直接调用。",
+    "apiKeyRequired": "API Key 不能为空",
+    "workspaceIdsRequired": "Workspace IDs 不能为空",
+    "connectionFailed": "连接失败，请检查配置",
+    "workspaceIdsHint": "英文逗号分隔，支持多个工作空间",
+    "advancedOptions": "高级选项",
+    "endpointHint": "支持私有化部署，留空使用默认地址",
+    "selectAll": "全选",
+    "selectCurrentResults": "全选当前结果 ({{count}} 项)",
+    "deselectAll": "取消全选",
+    "searchApps": "搜索 App…"
+  }
+}

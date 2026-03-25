@@ -1,0 +1,173 @@
+// SPDX-License-Identifier: Apache-2.0
+
+/**
+ * SessionContext — read-only dependency aggregate for SDK event handlers.
+ *
+ * All fields are `readonly`. Mutable state lives inside:
+ *   - `StreamState` (streaming message tracking + throttle)
+ *   - `SessionTimerScope` (lifecycle-bound timers)
+ *   - `ToolProgressRelay` (per-session progress routing)
+ *   - `DispatchThrottle` (IPC dispatch coalescing for high-frequency events)
+ *
+ * Lifecycle callbacks (`isSessionAlive`, `persistSession`, `onStreamStarted`)
+ * are closures injected by the orchestrator — SessionContext never imports
+ * store or session-map types.
+ *
+ * Each handler receives `(msg, ctx)` and accesses dependencies through `ctx`.
+ * This eliminates closure-captured variables and makes handlers independently testable.
+ */
+
+import type { ManagedSession } from './managedSession'
+import type { SessionTimerScope } from './sessionTimerScope'
+import type { StreamState } from './streamState'
+import type { ToolProgressRelay } from '../utils/toolProgressRelay'
+import type { DataBusEvent } from '../../src/shared/types'
+import { DispatchThrottle } from './dispatchThrottle'
+
+// TODO: Extract Dispatch to a shared types module (e.g. electron/types.ts)
+// so it can be reused across orchestrator, context, and handlers.
+type Dispatch = (event: DataBusEvent) => void
+
+export interface SessionContextParams {
+  session: ManagedSession
+  dispatch: Dispatch
+  timers: SessionTimerScope
+  stream: StreamState
+  relay: ToolProgressRelay
+  /** Guard: returns true if this session handle is still active. */
+  isSessionAlive: () => boolean
+  /** Persist the current session state. Async, fire-and-forget. */
+  persistSession: () => Promise<void>
+  /** Called on successful SDK stream start (init message). */
+  onStreamStarted: () => void
+  /**
+   * Called when a `result` SDK event is processed and the session enters
+   * a terminal state (idle or error).
+   *
+   * Enables immediate execution-status updates for schedule-backed sessions
+   * without waiting for the SDK child process to exit. The SDK keeps its
+   * MessageQueue open for multi-turn conversations, so `lifecycleDone` may
+   * never resolve for non-interactive sessions — this callback bridges
+   * the gap.
+   */
+  onResultReceived: () => void
+}
+
+export class SessionContext {
+  readonly sessionId: string
+  readonly session: ManagedSession
+  readonly dispatch: Dispatch
+  readonly timers: SessionTimerScope
+  readonly stream: StreamState
+  readonly relay: ToolProgressRelay
+  readonly throttle: DispatchThrottle
+  readonly isSessionAlive: () => boolean
+  readonly persistSession: () => Promise<void>
+  readonly onStreamStarted: () => void
+  readonly onResultReceived: () => void
+
+  constructor(params: SessionContextParams) {
+    this.sessionId = params.session.id
+    this.session = params.session
+    this.dispatch = params.dispatch
+    this.timers = params.timers
+    this.stream = params.stream
+    this.relay = params.relay
+    this.isSessionAlive = params.isSessionAlive
+    this.persistSession = params.persistSession
+    this.onStreamStarted = params.onStreamStarted
+    this.onResultReceived = params.onResultReceived
+
+    this.throttle = new DispatchThrottle({
+      onFlushMessage: () => {
+        // Dispatch the streaming message by its tracked ID when available.
+        // This is more correct than dispatchLastMessage() because system
+        // events (task_started, hook_started) may have been appended after
+        // the streaming message, making getLastMessage() return the wrong
+        // message. See BUG-1 analysis in the dispatch throttle design doc.
+        const streamingId = this.stream.streamingMessageId
+        if (streamingId) {
+          this.dispatchMessageById(streamingId)
+        } else {
+          this.dispatchLastMessage()
+        }
+      },
+      onFlushSession: () => this.dispatchSessionUpdated(),
+    })
+  }
+
+  /**
+   * Dispatch the last message to the renderer.
+   * O(1) — uses `getLastMessage()` instead of full `getInfo()` copy.
+   */
+  dispatchLastMessage(): void {
+    const msg = this.session.getLastMessage()
+    if (msg) {
+      this.dispatch({
+        type: 'command:session:message',
+        payload: {
+          sessionId: this.sessionId,
+          origin: this.session.origin,
+          message: msg,
+        },
+      })
+    }
+  }
+
+  /**
+   * Dispatch a specific message by ID.
+   * O(n) in worst case (find by ID), but avoids full getInfo() copy.
+   */
+  dispatchMessageById(messageId: string): void {
+    const msg = this.session.getMessageById(messageId)
+    if (msg) {
+      this.dispatch({
+        type: 'command:session:message',
+        payload: {
+          sessionId: this.sessionId,
+          origin: this.session.origin,
+          message: msg,
+        },
+      })
+    }
+  }
+
+  /**
+   * Dispatch a relay progress update for a specific message.
+   *
+   * Semantically identical to `dispatchMessageById` but marks the event as
+   * `isRelayProgress: true`. This flag enables differentiated routing:
+   *   - Renderer: processes normally (Evose progress card)
+   *   - Telegram: routes to `handleEvoseProgress` (lightweight placeholder update)
+   *
+   * Used by `registerEvoseRelay` as the throttled onFlush callback.
+   */
+  dispatchRelayProgress(messageId: string): void {
+    const msg = this.session.getMessageById(messageId)
+    if (!msg) return
+    this.dispatch({
+      type: 'command:session:message',
+      payload: {
+        sessionId: this.sessionId,
+        origin: this.session.origin,
+        message: msg,
+        isRelayProgress: true,
+      },
+    })
+  }
+
+  /** Dispatch a session:updated event with full session info snapshot. */
+  dispatchSessionUpdated(): void {
+    this.dispatch({
+      type: 'command:session:updated',
+      payload: this.session.snapshot(),
+    })
+  }
+
+  /** Session end: cancel all timers, clear relay and throttle. */
+  dispose(): void {
+    this.throttle.dispose()
+    this.timers.dispose()
+    this.relay.clear()
+  }
+}

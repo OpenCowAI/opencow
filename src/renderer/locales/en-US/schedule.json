@@ -1,0 +1,252 @@
+{
+  "title": "Schedule",
+  "newSchedule": "New Schedule",
+  "noSchedules": "No schedules yet",
+  "noSchedulesHint": "Create a schedule to automate Agent tasks",
+  "active": "Active",
+  "paused": "Paused",
+  "pipelines": "Pipelines",
+  "steps": "steps",
+  "actions": {
+    "edit": "Edit",
+    "runNow": "Run now",
+    "pause": "Pause",
+    "resume": "Resume",
+    "delete": "Delete"
+  },
+  "form": {
+    "editTitle": "Edit Schedule",
+    "newTitle": "New Schedule",
+    "nameLabel": "Name",
+    "namePlaceholder": "e.g. Daily code review",
+    "descriptionPlaceholder": "Add a description…",
+    "addDescription": "+ Add description",
+    "saving": "Saving…",
+    "creating": "Creating…",
+    "saveChanges": "Save Changes",
+    "createSchedule": "Create Schedule",
+    "enterNameToContinue": "Enter a name to continue",
+    "contextInjections": "Context injections",
+    "selected": "selected"
+  },
+  "action": {
+    "typeLabel": "Type",
+    "projectLabel": "Project",
+    "anyProject": "Any project",
+    "selectProject": "Select project",
+    "promptTemplate": "Prompt template",
+    "variableHint": "Supports {{date}} {{project}} variables",
+    "types": {
+      "startSession": "Start Session",
+      "startSessionDesc": "Start a new Claude session with a prompt",
+      "resumeSession": "Resume Session",
+      "resumeSessionDesc": "Continue the last session in the project",
+      "createIssue": "Create Issue",
+      "createIssueDesc": "Create a new issue from a template",
+      "sendNotification": "Send Notification",
+      "sendNotificationDesc": "Send an inbox notification"
+    }
+  },
+  "trigger": {
+    "label": "Trigger",
+    "timeBased": "Time-based",
+    "eventBased": "Event-based",
+    "executeAt": "Execute at",
+    "pickDateTime": "Pick date & time",
+    "every": "Every",
+    "minutes": "minutes",
+    "at": "At",
+    "cronHelp": "minute · hour · day-of-month · month · day-of-week",
+    "nextExecution": "Next execution:",
+    "eventType": "Event type",
+    "events": {
+      "sessionIdle": "Session becomes idle",
+      "sessionError": "Session encounters error",
+      "issueStatusChange": "Issue status changes",
+      "webhookEvent": "Webhook / hook event"
+    },
+    "weekdays": {
+      "sun": "Sun",
+      "mon": "Mon",
+      "tue": "Tue",
+      "wed": "Wed",
+      "thu": "Thu",
+      "fri": "Fri",
+      "sat": "Sat"
+    },
+    "intervalHint": {
+      "everyNMinutes": "Runs every {{count}} minutes",
+      "everyHour": "Runs every hour",
+      "everyNHours": "Runs every {{count}} hours",
+      "everyDay": "Runs every day",
+      "everyNDays": "Runs every {{count}} days"
+    },
+    "nextRun": {
+      "pastWarning": "⚠ Selected time has passed",
+      "today": "Today",
+      "tomorrow": "Tomorrow",
+      "inMinutes": "in ~{{count}} min",
+      "inHours": "in ~{{count}} hr",
+      "inDays": "in ~{{count}} days",
+      "format": "{{day}} {{time}} ({{diff}})"
+    }
+  },
+  "frequency": {
+    "once": "Once",
+    "5min": "5 min",
+    "15min": "15 min",
+    "30min": "30 min",
+    "1hour": "1 hour",
+    "6hours": "6 hours",
+    "daily": "Daily",
+    "weekly": "Weekly"
+  },
+  "contextOptions": {
+    "gitChanges24h": "Git changes (24h)",
+    "gitLogWeek": "Git log (week)",
+    "openIssues": "Open issues",
+    "lastResult": "Last result",
+    "todayStats": "Today's stats",
+    "recentErrors": "Recent errors"
+  },
+  "detail": {
+    "notFound": "Schedule not found",
+    "action": "Action",
+    "priority": "Priority",
+    "executions": "Executions",
+    "frequency": "Frequency",
+    "eventTrigger": "Event trigger",
+    "recentExecutions": "Recent executions",
+    "noExecutions": "No executions yet",
+    "nextRun": "Next: {{countdown}}",
+    "statRuns": "Total runs",
+    "statSuccessRate": "Success rate",
+    "statAvgDuration": "Avg duration",
+    "sectionTrigger": "Trigger",
+    "sectionAction": "Action",
+    "justNow": "Just now",
+    "minutesAgo": "{{count}}m ago",
+    "hoursAgo": "{{count}}h ago"
+  },
+  "executionDetail": {
+    "title": "Execution Detail",
+    "timeline": "Timeline",
+    "scheduled": "Scheduled",
+    "started": "Started",
+    "completed": "Completed",
+    "duration": "Duration",
+    "triggerDetail": "Trigger Detail",
+    "prompt": "Prompt",
+    "noPrompt": "No prompt recorded",
+    "error": "Error",
+    "usage": "Usage",
+    "cost": "Cost",
+    "inputTokens": "Input",
+    "outputTokens": "Output",
+    "viewSession": "View Session",
+    "close": "Close",
+    "sessionPreviewTitle": "Session",
+    "backToExecution": "Back to Execution",
+    "openFullSession": "Open in Sessions",
+    "sessionStarted": "Started",
+    "sessionLastActive": "Last active",
+    "sessionBranch": "Branch",
+    "sessionTasks": "Tasks",
+    "loadingSession": "Loading session…",
+    "refresh": "Refresh",
+    "noTurns": "No conversation turns recorded",
+    "sessionNotInStore": "Session not yet indexed",
+    "sessionNotInStoreDesc": "The session file hasn't been discovered yet. Try refreshing, or open it directly in the Sessions tab."
+  },
+  "executionStatus": {
+    "running": "Running",
+    "success": "Success",
+    "failed": "Failed",
+    "skipped": "Skipped",
+    "timeout": "Timed out",
+    "cancelled": "Cancelled"
+  },
+  "filter": {
+    "allProjects": "All Projects",
+    "archivedProjects": "Archived projects",
+    "archived": "Archived"
+  },
+  "status": {
+    "active": "Active",
+    "paused": "Paused",
+    "error": "Error",
+    "completed": "Completed"
+  },
+  "priority": {
+    "critical": "Critical",
+    "high": "High",
+    "normal": "Normal",
+    "low": "Low"
+  },
+  "triggerType": {
+    "scheduled": "Scheduled",
+    "event": "Event",
+    "manual": "Manual",
+    "retry": "Retry",
+    "chain": "Chain",
+    "catchup": "Catchup"
+  },
+  "frequencyType": {
+    "once": "One-time",
+    "interval": "Interval",
+    "daily": "Daily",
+    "weekly": "Weekly",
+    "biweekly": "Biweekly",
+    "monthly": "Monthly",
+    "cron": "Custom (Cron)"
+  },
+  "aiCreator": {
+    "title": "AI Create Schedule",
+    "inputPlaceholder": "Describe the schedule...",
+    "inputPlaceholderPaused": "Describe the schedule or ask to adjust...",
+    "welcomeTitle": "Describe your schedule",
+    "welcomeDescription": "Tell me what you want to automate and I'll set up a schedule for you.",
+    "suggestion": {
+      "codeReview": "Daily morning code review",
+      "weeklyReport": "Weekly project report",
+      "errorCheck": "Check error logs every 30 min"
+    },
+    "scheduleCreated": "Schedule created",
+    "discardTitle": "Discard AI session?",
+    "discardMessage": "You have an unconfirmed schedule. Closing will discard the session.",
+    "discardConfirm": "Discard",
+    "discardCancel": "Cancel",
+    "close": "Close",
+    "card": {
+      "discarded": "discarded",
+      "view": "View",
+      "editFields": "Edit fields",
+      "discard": "Discard",
+      "discardAria": "Discard schedule",
+      "creating": "Creating…",
+      "create": "Create",
+      "createAria": "Create schedule",
+      "confirmationAria": "Schedule confirmation card",
+      "createFailed": "Failed to create schedule"
+    }
+  },
+  "starred": {
+    "noStarred": "No starred artifacts",
+    "noStarredDesc": "Star artifacts from session conversations to keep them here for quick access.",
+    "mermaid": "mermaid",
+    "diagramPreview": "Diagram preview",
+    "contentPreview": "Content preview",
+    "contentUnavailable": "Content unavailable (edited only)",
+    "contentUnavailableFull": "Content unavailable — this artifact was only edited (no Write operation recorded).",
+    "clickToPreview": "Click to preview",
+    "downloadSvg": "Download SVG",
+    "downloadSource": "Download .mmd source",
+    "downloadFile": "Download {{title}}",
+    "starred": "starred",
+    "ungrouped": "Ungrouped",
+    "unknownIssue": "Unknown Issue",
+    "closeViewer": "Close viewer",
+    "loadingPreview": "Loading preview…",
+    "issuePreviewAria": "Issue detail preview"
+  }
+}

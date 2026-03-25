@@ -1,0 +1,564 @@
+// SPDX-License-Identifier: Apache-2.0
+
+/**
+ * createServices — centralised factory for all database-dependent services.
+ *
+ * Encapsulates the entire Phase 0 → Phase 0.7 initialisation sequence:
+ *   Phase 0:   SQLite database
+ *   Phase 0.5: Core stores + services (inbox, issues, projects, browser, terminal)
+ *   Phase 0.6: Schedule engine (triggers, pipeline, middlewares, resolvers)
+ *   Phase 0.7: NativeCapabilities (browser, Evose, issue, project, HTML, interaction)
+ *
+ * Design:
+ *   - All cross-service references are resolved locally (no module-level nullables).
+ *   - Side-effects (capability watching, toggle migration, auto-import) fire-and-forget.
+ *   - The returned `AppServices` object contains every service reference that the
+ *     caller (main.ts) needs for IPC, event wiring, startup, and shutdown.
+ */
+
+import { dirname, join } from 'path'
+import { existsSync } from 'fs'
+import { copyFile, mkdir } from 'fs/promises'
+import { InboxService } from '../services/inboxService'
+import { InboxStore } from '../services/inboxStore'
+import { IssueService } from '../services/issueService'
+import { IssueContextRefStore } from '../services/issueContextRefStore'
+import { IssueStore } from '../services/issueStore'
+import { IssueViewService } from '../services/issueViewService'
+import { IssueViewStore } from '../services/issueViewStore'
+import { SessionOrchestrator } from '../command/sessionOrchestrator'
+import { CodexNativeBridgeManager } from '../command/codexNativeBridgeManager'
+import { ManagedSessionStore } from '../services/managedSessionStore'
+import { CredentialStore } from '../services/provider/credentialStore'
+import { ProviderService } from '../services/provider/providerService'
+import { BrowserStore } from '../browser/browserStore'
+import { BrowserService } from '../browser/browserService'
+import { TerminalService } from '../terminal/terminalService'
+import { resolveCwd as resolveTerminalCwd } from '../terminal/shellResolver'
+import { ProjectStore } from '../services/projectStore'
+import { ProjectService } from '../services/projectService'
+import { ArtifactStore } from '../services/artifactStore'
+import { ArtifactService } from '../services/artifactService'
+import { NoteStore } from '../services/noteStore'
+import { CapabilityCenter } from '../services/capabilityCenter'
+import { PackageStore } from '../services/capabilityCenter/packageStore'
+import { PackageRegistry } from '../services/capabilityCenter/packageRegistry'
+import { PackageService } from '../services/capabilityCenter/packageService'
+import { MarketplaceService } from '../services/marketplace'
+import { RepoAnalyzer } from '../services/marketplace/agentAnalyzer'
+import { RepoSourceRegistry } from '../services/marketplace/repoSourceRegistry'
+import { GitService } from '../services/git/gitService'
+import { GitCommandExecutor } from '../services/git/gitCommandExecutor'
+import { EvoseService } from '../services/evoseService'
+import { ScheduleStore } from '../services/scheduleStore'
+import { PipelineStore } from '../services/pipelineStore'
+import { ExecutionStore } from '../services/executionStore'
+import { ScheduleService } from '../services/schedule/scheduleService'
+import { BiweeklyCalculator } from '../services/schedule/biweeklyCalculator'
+import { ExecutionPipeline } from '../services/schedule/executionPipeline'
+import { TriggerRegistry } from '../services/schedule/triggerRegistry'
+import { TimeResolver } from '../services/schedule/timeResolver'
+import { EventListener } from '../services/schedule/eventListener'
+import { RetryScheduler } from '../services/schedule/retryScheduler'
+import { ChainResolver } from '../services/schedule/chainResolver'
+import { NotificationEmitter } from '../services/schedule/notificationEmitter'
+import { ConcurrencyGuard } from '../services/schedule/middlewares/concurrencyGuard'
+import { WorkModeGuard } from '../services/schedule/middlewares/workModeGuard'
+import { ContextResolver } from '../services/schedule/middlewares/contextResolver'
+import { ActionExecutor } from '../services/schedule/middlewares/actionExecutor'
+import { ResultRecorder } from '../services/schedule/middlewares/resultRecorder'
+import { GitDiffInjector } from '../services/schedule/contextInjectors/gitDiffInjector'
+import { LastResultInjector } from '../services/schedule/contextInjectors/lastResultInjector'
+import { IssuesInjector } from '../services/schedule/contextInjectors/issuesInjector'
+import { StatsInjector } from '../services/schedule/contextInjectors/statsInjector'
+import { HookEventMatcher } from '../services/schedule/matchers/hookEventMatcher'
+import { IssueStatusMatcher } from '../services/schedule/matchers/issueStatusMatcher'
+import { SessionErrorMatcher } from '../services/schedule/matchers/sessionErrorMatcher'
+import { SessionIdleMatcher } from '../services/schedule/matchers/sessionIdleMatcher'
+import { BrowserNativeCapability } from '../nativeCapabilities/browser/browserNativeCapability'
+import { IssueNativeCapability } from '../nativeCapabilities/issueNativeCapability'
+import { ProjectNativeCapability } from '../nativeCapabilities/projectNativeCapability'
+import { HtmlNativeCapability } from '../nativeCapabilities/htmlNativeCapability'
+import { InteractionNativeCapability } from '../nativeCapabilities/interaction/interactionNativeCapability'
+import { EvoseNativeCapability } from '../nativeCapabilities/evose/evoseNativeCapability'
+import { ScheduleNativeCapability } from '../nativeCapabilities/scheduleNativeCapability'
+import { initDatabase } from '../database/db'
+import { focusMainWindow } from '../window/windowManager'
+import { createLogger } from '../platform/logger'
+import { buildEventSubscriptionPolicy } from '../events/eventSubscriptionPolicy'
+import type { DataBus } from '../core/dataBus'
+import type { SettingsService } from '../services/settingsService'
+import type { NativeCapabilityRegistry } from '../nativeCapabilities/registry'
+import type { PendingQuestionRegistry } from '../nativeCapabilities/interaction/pendingQuestionRegistry'
+import type { ProxyFetchFactory } from '../network'
+import type { DataPaths } from '../platform/dataPaths'
+import type { DatabaseService } from '../database/db'
+import type { AppSettings, ContextInjectionType, ContextInjector } from '../../src/shared/types'
+
+const log = createLogger('ServiceFactory')
+
+// ── Types ────────────────────────────────────────────────────────────────────
+
+export interface ServiceFactoryDeps {
+  bus: DataBus
+  settingsService: SettingsService
+  proxyFetchFactory: ProxyFetchFactory
+  dataPaths: DataPaths
+  appSettings: AppSettings
+  nativeCapabilityRegistry: NativeCapabilityRegistry
+  pendingQuestionRegistry: PendingQuestionRegistry
+}
+
+/** All services created during Phase 0–0.7, returned for wiring in main.ts. */
+export interface AppServices {
+  database: DatabaseService
+  inboxService: InboxService
+  issueService: IssueService
+  contextRefStore: IssueContextRefStore
+  issueViewService: IssueViewService
+  orchestrator: SessionOrchestrator
+  projectService: ProjectService
+  artifactService: ArtifactService
+  browserService: BrowserService
+  terminalService: TerminalService
+  capabilityCenter: CapabilityCenter
+  packageService: PackageService
+  scheduleService: ScheduleService
+  timeResolver: TimeResolver
+  retryScheduler: RetryScheduler
+  eventListener: EventListener
+  executionStore: ExecutionStore
+  noteStore: NoteStore
+  providerService: ProviderService
+  marketplaceService: MarketplaceService
+  repoSourceRegistry: RepoSourceRegistry
+  gitService: GitService
+}
+
+// ── Factory ──────────────────────────────────────────────────────────────────
+
+/**
+ * Create and wire all database-dependent services.
+ *
+ * This is a "mostly-pure" factory: deterministic service creation with a few
+ * fire-and-forget side-effects (capability watching, toggle migration, auto-import)
+ * that are safe to run during startup.
+ */
+export async function createAppServices(deps: ServiceFactoryDeps): Promise<AppServices> {
+  const {
+    bus,
+    settingsService,
+    proxyFetchFactory,
+    dataPaths,
+    appSettings,
+    nativeCapabilityRegistry,
+    pendingQuestionRegistry,
+  } = deps
+  const startedAt = Date.now()
+  log.info('Service factory started', {
+    databasePath: dataPaths.database,
+    capabilitiesPath: dataPaths.capabilities,
+  })
+
+  // ── Phase 0: Initialise SQLite database ──────────────────────────────
+  await mkdir(dirname(dataPaths.database), { recursive: true })
+  const database = await initDatabase(dataPaths.database)
+  log.info('Service factory phase complete: database initialized', {
+    durationMs: Date.now() - startedAt,
+    databasePath: dataPaths.database,
+  })
+
+  // ── Phase 0.5: Create database-dependent services ────────────────────
+
+  // Named store instances shared across services (enables ProjectService cascade delete)
+  const inboxStore = new InboxStore(database.db)
+  const issueStore = new IssueStore(database.db)
+  const artifactStore = new ArtifactStore(database.db)
+  const scheduleStore = new ScheduleStore(database.db)
+  const pipelineStore = new PipelineStore(database.db)
+  const executionStore = new ExecutionStore(database.db)
+  const managedSessionStore = new ManagedSessionStore(database.db)
+
+  // Forward-declare for circular references (schedule engine ↔ services)
+  // eslint-disable-next-line prefer-const
+  let projectService!: ProjectService
+  // eslint-disable-next-line prefer-const
+  let scheduleService!: ScheduleService
+  let orchestrator!: SessionOrchestrator
+
+  const inboxService = new InboxService({
+    dispatch: (e) => bus.dispatch(e),
+    getState: () => bus.getState(),
+    store: inboxStore,
+    getEventSubscriptionPolicy: () =>
+      buildEventSubscriptionPolicy(settingsService.getEventSubscriptionSettings()),
+    resolveManagedSession: async (sessionRefs) => {
+      if (orchestrator) return orchestrator.getSessionByRefs(sessionRefs)
+      return managedSessionStore.findBySessionRefs(sessionRefs)
+    },
+    resolveIssueBySessionRefs: (sessionIds) => issueStore.findLatestSummaryBySessionIds(sessionIds),
+    resolveScheduleIdBySessionRefs: async (sessionIds) => {
+      const execution = await executionStore.findLatestBySessionIds(sessionIds)
+      return execution?.scheduleId ?? null
+    },
+  })
+
+  const issueService = new IssueService({
+    store: issueStore,
+    dispatch: (e) => bus.dispatch(e),
+  })
+  const contextRefStore = new IssueContextRefStore(database.db)
+  const issueViewService = new IssueViewService(new IssueViewStore(database.db))
+
+  const claudeCredentialStore = new CredentialStore(dataPaths.credentials)
+  const codexCredentialsPath = join(dataPaths.root, 'credentials-codex.enc')
+  if (!existsSync(codexCredentialsPath) && existsSync(dataPaths.credentials)) {
+    try {
+      await copyFile(dataPaths.credentials, codexCredentialsPath)
+      log.info('Seeded codex credential store from legacy shared credential file')
+    } catch (err) {
+      log.warn('Failed to seed codex credential store from legacy file', err)
+    }
+  }
+  const codexCredentialStore = new CredentialStore(codexCredentialsPath)
+  const providerService = new ProviderService({
+    dispatch: (e) => bus.dispatch(e),
+    credentialStoreByEngine: {
+      claude: claudeCredentialStore,
+      codex: codexCredentialStore,
+    },
+    getProviderSettings: () => settingsService.getProviderSettings(),
+    focusApp: focusMainWindow,
+  })
+
+  // BrowserService is created before SessionOrchestrator so the orchestrator can
+  // hold a reference and release per-session browser views when sessions stop.
+  const browserService = new BrowserService({
+    dispatch: (e) => bus.dispatch(e),
+    store: new BrowserStore(database.db),
+  })
+
+  // TerminalService — PTY lifecycle management
+  // Uses lazy projectService lookup so projects resolve at call-time (not creation-time).
+  const terminalService = new TerminalService({
+    dispatch: (e) => bus.dispatch(e),
+    resolveCwd: (scope) =>
+      resolveTerminalCwd(scope, (id) => {
+        const project = bus.getState().projects.find((p) => p.id === id)
+        return project?.path ?? null
+      }),
+  })
+
+  // ── Project Store (needed by Capability Center for projectId resolution) ──
+  const projectStore = new ProjectStore(database.db)
+
+  // ── Package Service (DB-backed package lifecycle) ──────────────────────
+  const resolveProjectPath = async (projectId: string) => {
+    const project = await projectStore.getById(projectId)
+    return project?.canonicalPath ?? null
+  }
+  const packageStore = new PackageStore(dataPaths.capabilities)
+  const packageRegistry = new PackageRegistry(database.db)
+  const packageService = new PackageService({
+    packageStore,
+    packageRegistry,
+    dataBus: bus,
+    resolveProjectPath,
+  })
+  // Reconcile filesystem ↔ DB on startup (clean stale staging dirs, backfill, prune orphans)
+  packageService.startupReconcile()
+    .catch((err) => log.warn('Package startup reconcile failed', err))
+
+  // ── Capability Center (v3.1 M4) ────────────────────────────────────────
+  // Manages Skills / Agents / Commands / Rules / Hooks / MCP Servers
+  const capabilityCenter = new CapabilityCenter({
+    globalCapabilitiesRoot: dataPaths.capabilities,
+    db: database.db,
+    dataBus: bus,
+    resolveProjectPath,
+    packageService,
+    getEvoseSettings: () => settingsService.getSettings().evose,
+  })
+  capabilityCenter.startWatching()
+  capabilityCenter.startDriftCheck()
+  // Auto-import global Claude Code capabilities on startup (fire-and-forget).
+  // Project-level auto-import is deferred to first getSnapshot(projectId) call.
+  capabilityCenter.autoImport()
+    .catch((err) => log.warn('Startup auto-import failed', err))
+  // Backfill distribution records for previously imported Claude Code items
+  // so they correctly show "Published · In sync" instead of "Not published".
+  capabilityCenter.backfillDistributionRecords()
+    .catch((err) => log.warn('Distribution backfill failed', err))
+
+  // ── Marketplace Service ─────────────────────────────────────────────
+  const repoAnalyzer = new RepoAnalyzer({
+    getProviderEnv: () => providerService.getProviderEnv('claude'),
+    getProxyEnv: () => settingsService.getProxyEnv(),
+  })
+
+  const marketplaceService = new MarketplaceService({
+    importer: {
+      async importItems(items, target) {
+        return capabilityCenter.importItems(
+          items.map((item) => ({ ...item })),
+          { scope: target.scope, projectId: target.projectId },
+        )
+      },
+    },
+    packageInstaller: {
+      async installPackage(params) {
+        return packageService.install(params)
+      },
+    },
+    repoAnalyzer,
+    dispatch: (e) => bus.dispatch(e),
+  })
+
+  // ── Repo Source Registry ───────────────────────────────────────────
+  const repoCredentialStore = new CredentialStore<Record<string, string>>(deps.dataPaths.repoSourceCredentials)
+  const repoSourceRegistry = new RepoSourceRegistry({
+    db: database.db,
+    credentialStore: repoCredentialStore,
+    marketplaceService,
+  })
+  // Restore all registered repo sources as dynamic MarketplaceProviders
+  repoSourceRegistry.restoreProviders()
+    .catch((err) => log.warn('Failed to restore repo source providers', err))
+
+  // M6-3: one-time toggle migration (best-effort, never blocks startup)
+  import('../services/capabilityCenter/toggleMigration')
+    .then((m) => m.runToggleMigration(database.db))
+    .then((result) => {
+      if (!result.skipped) {
+        log.info(`Toggle migration complete: ${result.migrated} capabilities migrated`)
+      }
+    })
+    .catch((err) => log.warn('Toggle migration skipped due to error', err))
+
+  // nativeCapabilityRegistry is created at module level, so it's available here.
+  // No lazy getter needed — the registry instance exists before orchestrator creation.
+  const codexNativeBridgeManager = new CodexNativeBridgeManager(nativeCapabilityRegistry)
+  orchestrator = new SessionOrchestrator({
+    dispatch: (e) => bus.dispatch(e),
+    getProxyEnv: () => settingsService.getProxyEnv(),
+    getProviderEnv: (engineKind) => providerService.getProviderEnv(engineKind),
+    getCodexAuthConfig: (engineKind) => providerService.getCodexAuthConfig(engineKind),
+    getProviderDefaultModel: (engineKind) =>
+      settingsService.getProviderSettings().byEngine[engineKind]?.defaultModel,
+    getProviderDefaultReasoningEffort: (engineKind) =>
+      settingsService.getProviderSettings().byEngine[engineKind]?.defaultReasoningEffort,
+    getActiveProviderMode: (engineKind) =>
+      settingsService.getProviderSettings().byEngine[engineKind]?.activeMode ?? null,
+    getCommandDefaults: () => settingsService.getCommandDefaults(),
+    store: managedSessionStore,
+    nativeCapabilityRegistry,
+    codexNativeBridgeManager,
+    browserService,
+    pendingQuestionRegistry,
+    capabilityCenter,
+    gitCommandExecutor: new GitCommandExecutor(),
+  })
+
+  // Late-bind orchestrator to marketplace service (marketplace is created before orchestrator)
+  marketplaceService.setOrchestrator(orchestrator)
+
+  projectService = new ProjectService({
+    store: projectStore,
+    issueStore,
+    artifactStore,
+    scheduleStore,
+    pipelineStore,
+    inboxStore,
+    packageService,
+  })
+
+  const artifactService = new ArtifactService({
+    store: artifactStore,
+    dispatch: (e) => bus.dispatch(e),
+    resolveProjectId: async (projectPath) => {
+      const project = await projectStore.findByCanonicalPath(projectPath)
+      return project?.id ?? null
+    },
+  })
+
+  const noteStore = new NoteStore(database.db)
+
+  // ── Phase 0.6: Schedule engine ──────────────────────────────────────
+  const biweeklyCalculator = new BiweeklyCalculator()
+
+  // Context injectors
+  const contextInjectors = new Map<ContextInjectionType, ContextInjector>()
+  contextInjectors.set('git_diff_24h', new GitDiffInjector({ projectStore }))
+  contextInjectors.set('last_execution_result', new LastResultInjector(executionStore))
+  contextInjectors.set('open_issues', new IssuesInjector({
+    list: (filter) => issueService.listIssues(filter),
+  }))
+  contextInjectors.set('today_stats', new StatsInjector({
+    getLatest: () => bus.getState().stats,
+  }))
+
+  // Middlewares
+  const concurrencyGuard = new ConcurrencyGuard({
+    executionStore,
+    maxConcurrent: appSettings.schedule.maxConcurrentExecutions,
+  })
+  const workModeGuard = new WorkModeGuard({ calculator: biweeklyCalculator })
+  const contextResolver = new ContextResolver({ injectors: contextInjectors, projectStore })
+  const actionExecutor = new ActionExecutor({
+    sessionOrchestrator: orchestrator,
+    issueService,
+    projectStore,
+    // webhookService and inboxService don't yet implement the *Like interfaces
+    // (dispatchEvent / createScheduleNotification). Pass undefined; the executor
+    // guards every call with `if (this.deps.*)`.
+    webhookService: undefined,
+    inboxService: undefined,
+  })
+  const resultRecorder = new ResultRecorder({
+    scheduleStore,
+    executionStore,
+    dispatch: (e) => bus.dispatch(e),
+    sessionOrchestrator: orchestrator,
+  })
+
+  // Execution pipeline
+  const executionPipeline = new ExecutionPipeline()
+  executionPipeline
+    .use(concurrencyGuard)
+    .use(workModeGuard)
+    .use(contextResolver)
+    .use(actionExecutor)
+    .use(resultRecorder)
+
+  // Trigger registry
+  const triggerRegistry = new TriggerRegistry()
+  triggerRegistry.register(new HookEventMatcher())
+  triggerRegistry.register(new IssueStatusMatcher())
+  triggerRegistry.register(new SessionErrorMatcher())
+  triggerRegistry.register(new SessionIdleMatcher())
+  log.info('Service factory phase complete: schedule engine wired', {
+    maxConcurrentExecutions: appSettings.schedule.maxConcurrentExecutions,
+    middlewares: [concurrencyGuard.name, workModeGuard.name, contextResolver.name, actionExecutor.name, resultRecorder.name],
+    contextInjectors: [...contextInjectors.keys()],
+    triggerMatchers: triggerRegistry.getAll().map((matcher) => matcher.type),
+  })
+
+  // Retry, chain, notification
+  const retryScheduler = new RetryScheduler({
+    scheduleStore,
+    onTrigger: (event) => scheduleService.handleTrigger(event),
+  })
+  const chainResolver = new ChainResolver({
+    pipelineStore,
+    onTrigger: (event) => scheduleService.handleTrigger(event),
+  })
+  const notificationEmitter = new NotificationEmitter({
+    // inboxService and webhookService don't yet implement *Like interfaces.
+    // The emitter guards all calls with optional chaining (?.).
+    inboxService: undefined,
+    webhookService: undefined,
+    dispatch: (e) => bus.dispatch(e),
+  })
+
+  // Time resolver & event listener
+  const timeResolver = new TimeResolver({
+    store: scheduleStore,
+    onTrigger: (event) => scheduleService.handleTrigger(event),
+  })
+  const eventListener = new EventListener({
+    registry: triggerRegistry,
+    store: scheduleStore,
+    onTrigger: (event) => scheduleService.handleTrigger(event),
+  })
+
+  // Schedule service (wires all sub-components)
+  scheduleService = new ScheduleService({
+    scheduleStore,
+    pipelineStore,
+    executionStore,
+    pipeline: executionPipeline,
+    retryScheduler,
+    chainResolver,
+    notificationEmitter,
+    dispatch: (e) => bus.dispatch(e),
+  })
+
+  // ── Phase 0.7: NativeCapabilities — OpenCow built-in abilities ──────────────
+  nativeCapabilityRegistry.register(
+    new BrowserNativeCapability({
+      browserService,
+      bus,
+    })
+  )
+
+  // Evose NativeCapability — exposes Evose Agents & Workflows as MCP tools to Claude.
+  // settingsService.load() was called before factory invocation, so getSettings() is safe.
+  // getProxyFetch is a lazy getter — called per-request so proxy changes take effect immediately.
+  const evoseService = new EvoseService({
+    settingsService,
+    getProxyFetch: () => proxyFetchFactory.getStandardFetch(),
+  })
+  nativeCapabilityRegistry.register(new EvoseNativeCapability(evoseService, settingsService))
+
+  // Issue NativeCapability — exposes Issue CRUD as MCP tools to Claude.
+  nativeCapabilityRegistry.register(new IssueNativeCapability({ issueService }))
+
+  // Project NativeCapability — exposes Project read-only queries as MCP tools to Claude.
+  // Write operations (create/delete/archive) intentionally omitted — belong in UI.
+  nativeCapabilityRegistry.register(new ProjectNativeCapability({
+    projectService,
+    issueService,
+  }))
+
+  // HTML NativeCapability — gen_html tool for browser-style HTML preview in session console.
+  // Content stays in memory; download is optional via the preview dialog.
+  nativeCapabilityRegistry.register(new HtmlNativeCapability())
+
+  // Interaction NativeCapability — ask_user_question MCP tool (replaces SDK built-in AskUserQuestion).
+  // The tool handler blocks until the user answers via the interactive card or direct input.
+  nativeCapabilityRegistry.register(new InteractionNativeCapability({
+    registry: pendingQuestionRegistry,
+    dispatch: (e) => bus.dispatch(e),
+    enterQuestionState: (sessionId) => orchestrator.enterQuestionState(sessionId),
+    exitQuestionState: (sessionId) => orchestrator.exitQuestionState(sessionId),
+  }))
+
+  // Schedule NativeCapability — exposes Schedule CRUD + pause/resume as MCP tools to Claude.
+  // Enables conversational schedule management: "Create a daily report at 9am".
+  nativeCapabilityRegistry.register(new ScheduleNativeCapability({ scheduleService }))
+  log.info('Service factory phase complete: native capabilities registered', {
+    capabilities: ['browser', 'evose', 'issue', 'project', 'html', 'interaction', 'schedule'],
+  })
+
+  const gitService = new GitService({
+    dispatch: (event) => bus.dispatch(event),
+  })
+  log.info('Service factory completed', {
+    durationMs: Date.now() - startedAt,
+  })
+
+  return {
+    database,
+    inboxService,
+    issueService,
+    contextRefStore,
+    issueViewService,
+    orchestrator,
+    projectService,
+    artifactService,
+    browserService,
+    terminalService,
+    capabilityCenter,
+    packageService,
+    scheduleService,
+    timeResolver,
+    retryScheduler,
+    eventListener,
+    executionStore,
+    noteStore,
+    providerService,
+    marketplaceService,
+    repoSourceRegistry,
+    gitService,
+  }
+}

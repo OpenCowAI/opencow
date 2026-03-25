@@ -1,0 +1,292 @@
+/* =================================================================
+ * OpenCow Surface Texture System
+ *
+ * Implements the third axis of the theme system:
+ *   Mode (light/dark/system) × Scheme (10 palettes) × Texture (plain/glass)
+ *
+ * Architecture:
+ *   - [data-surface] attribute marks elements as texture-aware surfaces
+ *   - .texture-glass on <html> activates glass behavior
+ *   - .texture-plain on <html> is inert (zero visual/performance cost)
+ *   - Each surface declares its own semantic color via --_surface-color
+ *   - Elevation levels (raised/floating/modal/overlay) control glass intensity
+ *
+ * In plain mode, [data-surface] produces no visual effect at all.
+ * In glass mode, background-color is overlaid with a semi-transparent version,
+ * backdrop-filter adds blur, and background-image renders a diagonal shimmer.
+ * ================================================================= */
+
+/* =================================================================
+ * Section 1: Glass Texture Variables
+ *
+ * All variables use the --tex-* namespace to avoid collision with
+ * color scheme variables (--background, --card, etc.).
+ *
+ * Per-elevation opacity/blur/shimmer values scale with depth:
+ *   raised (shallow) → floating → modal → overlay (deep)
+ * ================================================================= */
+
+/* --- Glass: Light Mode ------------------------------------------- */
+
+.texture-glass {
+  /* Elevation 1: Raised — slightly more opaque in light mode for hover contrast */
+  --tex-raised-opacity: 0.84;
+  --tex-raised-blur: 10px;
+  --tex-raised-shimmer: 0.05;
+
+  /* Elevation 2: Floating — clear separation from ground */
+  --tex-floating-opacity: 0.74;
+  --tex-floating-blur: 16px;
+  --tex-floating-shimmer: 0.07;
+
+  /* Elevation 3: Modal — opaque (no backdrop-filter, see Section 2 comment) */
+  --tex-modal-opacity: 0.96;
+  --tex-modal-blur: 0px;   /* retained for variable completeness; not applied */
+  --tex-modal-shimmer: 0.06;
+
+  /* Elevation 4: Overlay — maximum glass for system-level surfaces */
+  --tex-overlay-opacity: 0.60;
+  --tex-overlay-blur: 24px;
+  --tex-overlay-shimmer: 0.10;
+
+  /* Ground gradient: gives transparent surfaces something to "see through" to */
+  --tex-ground-gradient:
+    radial-gradient(
+      ellipse at 30% 20%,
+      hsl(var(--primary) / 0.03) 0%,
+      transparent 60%
+    ),
+    radial-gradient(
+      ellipse at 80% 80%,
+      hsl(var(--accent) / 0.04) 0%,
+      transparent 50%
+    );
+}
+
+/* --- Glass: Dark Mode -------------------------------------------- */
+
+.dark.texture-glass {
+  /* Lower opacity + stronger blur to maintain readability on dark bg */
+  --tex-raised-opacity: 0.60;
+  --tex-raised-blur: 12px;
+  --tex-raised-shimmer: 0.03;
+
+  --tex-floating-opacity: 0.50;
+  --tex-floating-blur: 18px;
+  --tex-floating-shimmer: 0.04;
+
+  --tex-modal-opacity: 0.92;
+  --tex-modal-blur: 0px;   /* retained for variable completeness; not applied */
+  --tex-modal-shimmer: 0.03;
+
+  --tex-overlay-opacity: 0.40;
+  --tex-overlay-blur: 26px;
+  --tex-overlay-shimmer: 0.06;
+
+  --tex-ground-gradient:
+    radial-gradient(
+      ellipse at 30% 20%,
+      hsl(var(--primary) / 0.02) 0%,
+      transparent 60%
+    ),
+    radial-gradient(
+      ellipse at 80% 80%,
+      hsl(var(--accent) / 0.03) 0%,
+      transparent 50%
+    );
+}
+
+/* =================================================================
+ * Section 2: Surface Behavior + Shimmer
+ *
+ * [data-surface] is a non-invasive overlay:
+ *   - Plain mode: no CSS rules match, so the component background is shown
+ *   - Glass mode: background-color is overridden with a semi-transparent
+ *     version of --_surface-color, backdrop-filter adds blur, and
+ *     background-image renders a diagonal shimmer gradient.
+ *
+ * Shimmer is merged into background-image (not a ::before pseudo-element)
+ * to avoid injecting position:relative, which would change containing
+ * blocks and break absolute-positioned children (dropdowns, popovers).
+ *
+ * Components KEEP their original background / border / shadow classes.
+ *
+ * CSS specificity: .texture-glass [data-surface="..."] = 0-2-0,
+ * which beats a single-class utility selector at 0-1-0.
+ * ================================================================= */
+
+/* --- Elevation 1: Raised ---------------------------------------- */
+
+.texture-glass [data-surface="raised"] {
+  background-color: hsl(var(--_surface-color) / var(--tex-raised-opacity));
+  background-image: linear-gradient(
+    135deg,
+    hsl(0 0% 100% / var(--tex-raised-shimmer)) 0%,
+    hsl(0 0% 100% / calc(var(--tex-raised-shimmer) * 0.4)) 30%,
+    transparent 55%
+  );
+  -webkit-backdrop-filter: blur(var(--tex-raised-blur));
+  backdrop-filter: blur(var(--tex-raised-blur));
+}
+
+/* --- Elevation 2: Floating -------------------------------------- */
+
+.texture-glass [data-surface="floating"] {
+  background-color: hsl(var(--_surface-color) / var(--tex-floating-opacity));
+  background-image: linear-gradient(
+    135deg,
+    hsl(0 0% 100% / var(--tex-floating-shimmer)) 0%,
+    hsl(0 0% 100% / calc(var(--tex-floating-shimmer) * 0.4)) 30%,
+    transparent 55%
+  );
+  -webkit-backdrop-filter: blur(var(--tex-floating-blur));
+  backdrop-filter: blur(var(--tex-floating-blur));
+}
+
+/* --- Elevation 3: Modal ----------------------------------------- */
+/*
+ * NO backdrop-filter on modal surfaces.
+ *
+ * Chromium's backdrop-filter re-evaluates (re-samples the backdrop)
+ * whenever ANY scrollable content exists in the same compositing subtree.
+ * Six different compositor layer isolation strategies (will-change,
+ * contain:paint, isolation:isolate, sibling promotion) all failed to
+ * prevent this — it is a platform-level limitation, not a layering bug.
+ *
+ * Modal surfaces are 96%/92% opaque (light/dark), so the blur effect
+ * was barely perceptible anyway.  Removing it eliminates scroll-driven
+ * flicker with zero visual regression.
+ *
+ * Overlay surfaces (60%/40% opaque, no scrollable children) KEEP their
+ * backdrop-filter where the glass effect is actually visible.
+ */
+
+.texture-glass [data-surface="modal"] {
+  background-color: hsl(var(--_surface-color) / var(--tex-modal-opacity));
+  background-image: linear-gradient(
+    135deg,
+    hsl(0 0% 100% / var(--tex-modal-shimmer)) 0%,
+    hsl(0 0% 100% / calc(var(--tex-modal-shimmer) * 0.4)) 30%,
+    transparent 55%
+  );
+  /* backdrop-filter intentionally omitted — see comment above */
+}
+
+/* --- Elevation 4: Overlay --------------------------------------- */
+
+.texture-glass [data-surface="overlay"] {
+  background-color: hsl(var(--_surface-color) / var(--tex-overlay-opacity));
+  background-image: linear-gradient(
+    135deg,
+    hsl(0 0% 100% / var(--tex-overlay-shimmer)) 0%,
+    hsl(0 0% 100% / calc(var(--tex-overlay-shimmer) * 0.4)) 30%,
+    transparent 55%
+  );
+  -webkit-backdrop-filter: blur(var(--tex-overlay-blur));
+  backdrop-filter: blur(var(--tex-overlay-blur));
+}
+
+/* =================================================================
+ * Section 2b: GPU Compositor Layer Stability for Overlay Surfaces
+ *
+ * Overlay surfaces (command palette, system overlays) retain
+ * backdrop-filter because they are highly transparent (60%/40%)
+ * and typically have no scrollable children.
+ *
+ * `will-change: transform` makes Chromium's GPU layer promotion
+ * explicit and permanent, preventing heuristic demotion when a
+ * parent animation ends (which would remove the animation-driven
+ * `transform` and collapse the layer).
+ *
+ * Modal surfaces no longer need this — their backdrop-filter was
+ * removed entirely (see Section 2, Elevation 3 comment).
+ * ================================================================= */
+
+.texture-glass [data-surface="overlay"] {
+  will-change: transform;
+}
+
+/* =================================================================
+ * Section 3: Glow Effect (Interactive Surfaces)
+ *
+ * Optional data-surface-glow attribute adds hover/focus light halo.
+ * Uses the --ring color from the active scheme for consistency.
+ * ================================================================= */
+
+.texture-glass [data-surface-glow] {
+  transition: box-shadow 0.2s ease-out;
+}
+
+.texture-glass [data-surface-glow]:hover {
+  box-shadow:
+    0 0 16px hsl(var(--ring) / 0.06),
+    0 0 32px hsl(var(--ring) / 0.03);
+}
+
+.texture-glass [data-surface-glow]:focus-visible {
+  box-shadow:
+    0 0 20px hsl(var(--ring) / 0.10),
+    0 0 40px hsl(var(--ring) / 0.05);
+}
+
+/* =================================================================
+ * Section 4: Ground Enhancement
+ *
+ * In glass mode, the app root background gets a subtle radial gradient
+ * using the primary/accent colors of the active scheme. This gives transparent
+ * surfaces something meaningful to see through — without it,
+ * semi-transparent on a solid color just looks like a lighter shade.
+ * ================================================================= */
+
+.texture-glass [data-surface="ground"] {
+  background-image: var(--tex-ground-gradient);
+}
+
+/* =================================================================
+ * Section 5: Texture Transition
+ *
+ * Smooth animation when switching between plain and glass textures.
+ *
+ * Only background-color is transitioned. backdrop-filter is deliberately
+ * excluded: its transition declaration causes Chromium's GPU compositor
+ * to maintain animation bookkeeping on every [data-surface] element,
+ * which leads to compositing layer thrashing and visible flicker when
+ * scrolling inside glass-mode surfaces (modals, floating panels).
+ *
+ * The instant backdrop-filter change (none → blur) is imperceptible
+ * because the concurrent background-color transition masks it.
+ * ================================================================= */
+
+[data-surface] {
+  transition: background-color 0.3s ease-out;
+}
+
+/* =================================================================
+ * Section 6: Anti-nesting Guard
+ *
+ * backdrop-filter bleeds through all layers below. When a modal (glass)
+ * opens over a sidebar (glass), the blur from the modal would double-blur
+ * the sidebar. The .surface-backdrop-isolate class on the overlay
+ * backdrop creates a compositing boundary that flattens lower layers.
+ * ================================================================= */
+
+.texture-glass .surface-backdrop-isolate {
+  isolation: isolate;
+}
+
+/* =================================================================
+ * Section 7: Reduced Motion
+ *
+ * Disable texture transitions for users who prefer reduced motion.
+ * Static glass effects (blur, transparency) are preserved.
+ * ================================================================= */
+
+@media (prefers-reduced-motion: reduce) {
+  [data-surface] {
+    transition: none;
+  }
+
+  .texture-glass [data-surface-glow] {
+    transition: none;
+  }
+}

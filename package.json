@@ -1,0 +1,185 @@
+{
+  "name": "opencow",
+  "productName": "OpenCow",
+  "version": "0.3.0",
+  "description": "Task-driven autonomous AI agent platform",
+  "main": "./out/main/index.js",
+  "scripts": {
+    "predev": "pnpm exec electron-rebuild -f -w better-sqlite3,node-pty",
+    "dev": "ulimit -n 10240 2>/dev/null; electron-vite dev",
+    "dev:wt": "node scripts/dev-worktree.mjs",
+    "build": "electron-vite build",
+    "preview": "OPENCOW_ENV=production electron-vite preview",
+    "typecheck:node": "tsc --noEmit -p tsconfig.node.json",
+    "typecheck:web": "tsc --noEmit -p tsconfig.web.json",
+    "typecheck": "npm run typecheck:node && npm run typecheck:web",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write .",
+    "pretest": "bash scripts/rebuild-better-sqlite3.sh node",
+    "test": "vitest run",
+    "pretest:watch": "bash scripts/rebuild-better-sqlite3.sh node",
+    "test:watch": "vitest",
+    "package": "electron-vite build && electron-builder --mac --dir",
+    "package:dmg": "electron-vite build && electron-builder --mac",
+    "postinstall": "bash scripts/patch-electron-name.sh",
+    "check:brand": "node scripts/check-brand.mjs"
+  },
+  "keywords": [
+    "claude-code",
+    "task-management",
+    "electron"
+  ],
+  "author": "OpenCow Contributors",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/OpenCowAI/opencow.git"
+  },
+  "homepage": "https://github.com/OpenCowAI/opencow",
+  "bugs": {
+    "url": "https://github.com/OpenCowAI/opencow/issues"
+  },
+  "engines": {
+    "node": ">=18",
+    "pnpm": ">=9"
+  },
+  "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "^0.2.83",
+    "@dnd-kit/core": "^6.3.1",
+    "@dnd-kit/sortable": "^10.0.0",
+    "@dnd-kit/utilities": "^3.2.2",
+    "@iarna/toml": "^2.2.5",
+    "@larksuiteoapi/node-sdk": "^1.59.0",
+    "@monaco-editor/react": "^4.7.0",
+    "@nivo/bar": "^0.99.0",
+    "@nivo/calendar": "^0.99.0",
+    "@nivo/core": "^0.99.0",
+    "@openai/codex-sdk": "^0.115.0",
+    "@tailwindcss/vite": "^4.2.0",
+    "@tiptap/core": "^3.20.0",
+    "@tiptap/extension-document": "^3.20.0",
+    "@tiptap/extension-hard-break": "^3.20.0",
+    "@tiptap/extension-history": "^3.20.0",
+    "@tiptap/extension-paragraph": "^3.20.0",
+    "@tiptap/extension-placeholder": "^3.20.0",
+    "@tiptap/extension-text": "^3.20.0",
+    "@tiptap/pm": "^3.20.0",
+    "@tiptap/react": "^3.20.0",
+    "@tiptap/suggestion": "^3.20.0",
+    "@xterm/addon-fit": "^0.11.0",
+    "@xterm/addon-web-links": "^0.12.0",
+    "@xterm/addon-webgl": "^0.19.0",
+    "@xterm/xterm": "^6.0.0",
+    "beautiful-mermaid": "^1.0.2",
+    "better-sqlite3": "^12.6.2",
+    "chokidar": "^5.0.0",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "discord.js": "^14.25.1",
+    "grammy": "^1.40.1",
+    "highlight.js": "^11.11.1",
+    "i18next": "^25.8.13",
+    "kysely": "^0.28.11",
+    "lucide-react": "^0.575.0",
+    "monaco-editor": "^0.55.1",
+    "nanoid": "^5.1.6",
+    "node-pty": "^1.1.0",
+    "qrcode": "^1.5.4",
+    "react": "^19.2.4",
+    "react-day-picker": "^9.14.0",
+    "react-dom": "^19.2.4",
+    "react-i18next": "^16.5.4",
+    "react-markdown": "^10.1.0",
+    "react-resizable-panels": "^4.6.5",
+    "react-virtuoso": "^4.18.3",
+    "rehype-highlight": "^7.0.2",
+    "rehype-raw": "^7.0.0",
+    "remark-gfm": "^4.0.1",
+    "socks": "^2.8.7",
+    "tailwind-merge": "^3.5.0",
+    "tailwindcss": "^4.2.0",
+    "tippy.js": "^6.3.7",
+    "undici": "^7.24.0",
+    "ws": "^8.19.0",
+    "yaml": "^2.8.3",
+    "zustand": "^5.0.11"
+  },
+  "build": {
+    "appId": "com.opencow.app",
+    "productName": "OpenCow",
+    "publish": null,
+    "asar": true,
+    "asarUnpack": [
+      "**/node_modules/@anthropic-ai/**",
+      "**/node_modules/@openai/**",
+      "**/node_modules/better-sqlite3/**",
+      "**/node_modules/node-pty/**"
+    ],
+    "extraResources": [
+      {
+        "from": "resources/tray.png",
+        "to": "tray.png"
+      },
+      {
+        "from": "resources/tray@2x.png",
+        "to": "tray@2x.png"
+      },
+      {
+        "from": "resources/icon.png",
+        "to": "icon.png"
+      }
+    ],
+    "mac": {
+      "icon": "resources/icon.icns",
+      "extendInfo": {
+        "SoftResourceLimits": {
+          "NumberOfFiles": 10240
+        }
+      }
+    },
+    "win": {
+      "icon": "resources/icon.png"
+    },
+    "linux": {
+      "icon": "resources/icon.png"
+    }
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "electron",
+      "esbuild",
+      "better-sqlite3",
+      "node-pty"
+    ]
+  },
+  "devDependencies": {
+    "@electron-toolkit/preload": "^3.0.2",
+    "@electron-toolkit/utils": "^4.0.0",
+    "@electron/rebuild": "^4.0.3",
+    "@eslint/js": "^10.0.1",
+    "@modelcontextprotocol/sdk": "^1.27.1",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
+    "@testing-library/user-event": "^14.6.1",
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/node": "^25.3.0",
+    "@types/qrcode": "^1.5.6",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^5.1.4",
+    "electron": "^40.6.0",
+    "electron-builder": "^26.8.1",
+    "electron-vite": "^5.0.0",
+    "eslint": "^10.0.1",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-react-hooks": "^7.0.1",
+    "jsdom": "^28.1.0",
+    "prettier": "^3.8.1",
+    "react-grab": "^0.1.19",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.57.0",
+    "vite": "^7.3.1",
+    "vitest": "^4.0.18"
+  }
+}
