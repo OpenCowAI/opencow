@@ -12,7 +12,7 @@
 
 面向任务驱动的开源自主 AI 平台。<br/>
 每个任务自动变成独立 Agent — 方案、报告、功能、审计<br/>
-并行交付。适用于每个团队。100% 本地运行。
+并行交付。适用于每个团队。
 
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![Electron](https://img.shields.io/badge/Electron-40-47848F?logo=electron&logoColor=white)](https://www.electronjs.org/)
@@ -127,7 +127,7 @@
 | | 原则 | 含义 |
 |:---:|:----------|:-------------|
 | **1:1** | 任务 &rarr; Agent | 一个任务，一个 Agent。完整上下文、完整追溯、零歧义。 |
-| **100%** | 本地 & 隐私 | 一切运行在你的本地机器上。零遥测、零云端。你的数据永远不会离开。 |
+| ✅ | 本地 & 隐私 | 一切运行在你的本地机器上。零遥测、零云端。你的数据永远不会离开。 |
 | **15+** | 并行 Agent | 同时交付 15+ 个任务。挂起和恢复任何 Agent 而不丢失上下文。 |
 | **4 层** | 深度上下文引擎 | 每个 Agent 继承组织知识、项目上下文、团队标准和任务专属指令。 |
 

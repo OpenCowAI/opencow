@@ -12,7 +12,7 @@
 
 The open-source platform for task-driven autonomous AI.<br/>
 Every task becomes an autonomous agent — campaigns, reports, features, audits<br/>
-ship in parallel. For every team. 100% local.
+ship in parallel. For every team.
 
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![Electron](https://img.shields.io/badge/Electron-40-47848F?logo=electron&logoColor=white)](https://www.electronjs.org/)
@@ -127,7 +127,7 @@ The design decisions that define OpenCow.
 | | Principle | What it means |
 |:---:|:----------|:-------------|
 | **1:1** | Task &rarr; Agent | One task, one agent. Full context. Full traceability. Zero ambiguity. |
-| **100%** | Local & Private | Everything runs on your machine. Zero telemetry. Zero cloud. Your data never leaves. |
+| ✅ | Local & Private | Everything runs on your machine. Zero telemetry. Zero cloud. Your data never leaves. |
 | **15+** | Parallel Agents | Deliver 15+ tasks simultaneously. Suspend and resume any agent without losing context. |
 | **4-Layer** | Deep Context Engine | Every agent inherits organizational knowledge, project context, team standards, and task-specific instructions. |
 
