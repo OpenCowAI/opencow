@@ -92,6 +92,7 @@ export function DiffViewerDialog({
       if (requestId !== fullLoadRequestId.current) return
       setFullError(err instanceof Error ? err.message : 'Failed to load file')
     } finally {
+      // eslint-disable-next-line no-unsafe-finally
       if (requestId !== fullLoadRequestId.current) return
       setFullLoading(false)
     }

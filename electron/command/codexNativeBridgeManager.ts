@@ -245,7 +245,7 @@ export class CodexNativeBridgeManager {
       return require.resolve(specifier)
     } catch (err) {
       const details = err instanceof Error ? err.message : String(err)
-      throw new Error(`Failed to resolve bridge dependency "${specifier}": ${details}`)
+      throw new Error(`Failed to resolve bridge dependency "${specifier}": ${details}`, { cause: err })
     }
   }
 

@@ -22,6 +22,7 @@ import { SessionChatLayout } from '@/components/ChatView/SessionChatLayout'
 import type {
   MarketSkillSummary,
   MarketInstallResult,
+  MarketInstallPreview,
   ManagedCapabilityCategory,
 } from '@shared/types'
 import type { InstallProgress, InstallStep } from '@/hooks/useMarketInstall'
@@ -326,13 +327,11 @@ export function InstallDialog({
                 <h3 className="text-sm font-semibold truncate">
                   {dialogPhase === 'installing'
                     ? `Installing ${skill.name}…`
-                    : dialogPhase === 'analyzing'
-                      ? (analysis.error ? `Install ${skill.name}` : `Analyzing ${skill.name}…`)
-                      : dialogPhase === 'preview'
-                        ? `Install ${skill.name}`
-                        : dialogPhase === 'error'
-                          ? 'Installation failed'
-                          : skill.name}
+                    : dialogPhase === 'preview'
+                      ? `Install ${skill.name}`
+                      : dialogPhase === 'error'
+                        ? 'Installation failed'
+                        : skill.name}
                 </h3>
                 <div className="flex items-center gap-2 mt-0.5">
                   <span className="text-[11px] text-[hsl(var(--muted-foreground)/0.6)]">
@@ -572,7 +571,7 @@ export function InstallDialog({
                   </div>
                   <button
                     type="button"
-                    onClick={() => { analysis.reset(); skill && analysis.startAnalysis(skill.slug, skill.marketplaceId) }}
+                    onClick={() => { analysis.reset(); if (skill) analysis.startAnalysis(skill.slug, skill.marketplaceId) }}
                     className="inline-flex items-center gap-1 px-2 py-1 text-[10px] font-medium rounded-lg border border-amber-500/20 text-amber-600/80 hover:bg-amber-500/8 transition-colors shrink-0"
                   >
                     <RotateCcw className="h-2.5 w-2.5" />
@@ -646,10 +645,10 @@ export function InstallDialog({
                 </button>
                 <button
                   type="button"
-                  onClick={() => onInstall(scope, analysis.preview.isMultiCapability ? (namespacePrefix || defaultPrefix) : undefined)}
+                  onClick={() => onInstall(scope, analysis.preview?.isMultiCapability ? (namespacePrefix || defaultPrefix) : undefined)}
                   disabled={
-                    analysis.preview.probeStatus === 'degraded' ||
-                    (analysis.preview.isMultiCapability && !namespacePrefix && !defaultPrefix)
+                    analysis.preview?.probeStatus === 'degraded' ||
+                    (analysis.preview?.isMultiCapability && !namespacePrefix && !defaultPrefix)
                   }
                   className="px-3 py-1.5 text-sm rounded-lg font-medium bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))] hover:opacity-90 transition-colors outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--ring))] disabled:opacity-40 disabled:cursor-not-allowed"
                 >

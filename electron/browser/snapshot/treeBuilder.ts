@@ -230,6 +230,7 @@ export function buildTree(nodes: CdpAXNode[]): {
  * Invisible/whitespace characters to strip from StaticText names.
  * Ported from Agent-Browser snapshot.rs.
  */
+// eslint-disable-next-line no-misleading-character-class
 const INVISIBLE_CHARS = /[\uFEFF\u200B\u200C\u200D\u2060\u00A0]/g
 
 /**

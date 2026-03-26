@@ -18,6 +18,7 @@ export default tseslint.config(
       'coverage/**',
       '*.config.{js,mjs,cjs,ts}',
       'scripts/**',
+      'index.js',
     ],
   },
 

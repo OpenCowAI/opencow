@@ -501,13 +501,14 @@ function TaskHeader({
 /** The prompt sent to the sub-agent — always available, shown first in expanded view. */
 function TaskPrompt({ prompt }: { prompt: string }): React.JSX.Element | null {
   const { t } = useTranslation('sessions')
+  const [promptExpanded, setPromptExpanded] = useState(false)
+
   if (!prompt) return null
 
   // Collapse long prompts — show first N lines with expand toggle
   const PROMPT_PREVIEW_LINES = 8
   const lines = prompt.split('\n')
   const isLong = lines.length > PROMPT_PREVIEW_LINES
-  const [promptExpanded, setPromptExpanded] = useState(false)
   const displayText = promptExpanded ? prompt : lines.slice(0, PROMPT_PREVIEW_LINES).join('\n')
 
   return (

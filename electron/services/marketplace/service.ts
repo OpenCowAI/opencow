@@ -179,7 +179,7 @@ export class MarketplaceService {
    * This setter allows wiring the dependency once the orchestrator is ready.
    */
   setOrchestrator(orchestrator: SessionOrchestrator): void {
-    (this as { orchestrator?: SessionOrchestrator }).orchestrator = orchestrator
+    (this as unknown as { orchestrator?: SessionOrchestrator }).orchestrator = orchestrator
   }
 
   /** Built-in provider set for production use. */
@@ -412,7 +412,7 @@ export class MarketplaceService {
       origin: { source: 'market-analyzer', slug, marketplaceId },
       systemPrompt: prepared.systemPrompt,
       maxTurns: prepared.maxTurns,
-      customMcpServers: { 'repo-analyzer': prepared.mcpServerConfig },
+      customMcpServers: { 'repo-analyzer': prepared.mcpServerConfig as Record<string, unknown> },
       onComplete: (result) => this.handleAnalysisComplete(sessionId, result),
     }
 
@@ -602,7 +602,7 @@ export class MarketplaceService {
 
       const analysisResult = await this.repoAnalyzer!.analyze({
         repoDir,
-        cacheKey: { slug, version: detail.version },
+        cacheKey: { slug, version: detail.version ?? '' },
         marketDetail: {
           name: detail.name,
           description: detail.description,
@@ -657,7 +657,7 @@ export class MarketplaceService {
       // ── Cancellation takes priority — propagate to caller ──
       if (isCancellationError(signal, err)) {
         this.emitAnalyzeProgress(slug, 'cancelled', 'Analysis cancelled')
-        throw new Error('Analysis cancelled by user')
+        throw new Error('Analysis cancelled by user', { cause: err })
       }
 
       // ── Non-cancel error — classify and fall back to probe ──
@@ -823,7 +823,7 @@ export class MarketplaceService {
       repoDir,
       cacheKey: {
         slug: params.slug,
-        version: detail.version,
+        version: detail.version ?? '',
       },
       marketDetail: {
         name: detail.name,

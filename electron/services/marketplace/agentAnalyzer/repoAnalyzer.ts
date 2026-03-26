@@ -156,7 +156,7 @@ export class RepoAnalyzer {
 
     // 2. Build tool context for MCP server creation
     const toolContext: NativeCapabilityToolContext = {
-      session: { sessionId: `analysis-${Date.now()}`, projectId: null },
+      session: { sessionId: `analysis-${Date.now()}`, projectId: null, originSource: 'market-analyzer' },
       relay: new ToolProgressRelay(),
     }
 
@@ -274,7 +274,7 @@ export class RepoAnalyzer {
     // Build tool context — RepoAnalyzerCapability ignores context fields
     // (its toolConfigs uses `_context`), but the interface requires them.
     const toolContext: NativeCapabilityToolContext = {
-      session: { sessionId: `analysis-${Date.now()}`, projectId: null },
+      session: { sessionId: `analysis-${Date.now()}`, projectId: null, originSource: 'market-analyzer' },
       relay: new ToolProgressRelay(),
     }
 
@@ -362,13 +362,14 @@ export class RepoAnalyzer {
     } catch (err) {
       // ── Cancellation takes priority over timeout ──
       if (signal?.aborted) {
-        throw new Error('Analysis cancelled')
+        throw new Error('Analysis cancelled', { cause: err })
       }
       // If the error is from our timeout close(), wrap it with context
       if (timedOut) {
         throw new Error(
           `Analysis of ${params.cacheKey.slug} timed out after ${ANALYSIS_TIMEOUT_MS / 1000}s. `
           + 'The repository may be too large or complex for automated analysis.',
+          { cause: err },
         )
       }
       log.error(`Agent analysis failed for ${params.cacheKey.slug}`, err)

@@ -232,7 +232,7 @@ export function applyConversationDomainEffects(params: {
         const finalBlocks = toManagedContentBlocks(effect.payload.blocks)
         const streamId = ctx.stream.finalizeStreaming()
 
-        let targetMessageId: string | null = null
+        let targetMessageId: string | null = null // eslint-disable-line no-useless-assignment
         if (streamId) {
           ctx.session.finalizeStreamingMessage(streamId)
           if (finalBlocks.length > 0) {

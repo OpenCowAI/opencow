@@ -412,6 +412,7 @@ export function InlineCapabilityDetail({
       if (requestId !== bundleFileLoadRequestId.current) return
       setBundleFileContent('// Failed to load file content')
     } finally {
+      // eslint-disable-next-line no-unsafe-finally
       if (requestId !== bundleFileLoadRequestId.current) return
       setBundleFileLoading(false)
     }

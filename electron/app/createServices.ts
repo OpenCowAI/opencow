@@ -184,6 +184,7 @@ export async function createAppServices(deps: ServiceFactoryDeps): Promise<AppSe
   let projectService!: ProjectService
   // eslint-disable-next-line prefer-const
   let scheduleService!: ScheduleService
+  // eslint-disable-next-line prefer-const
   let orchestrator!: SessionOrchestrator
 
   const inboxService = new InboxService({
@@ -362,6 +363,7 @@ export async function createAppServices(deps: ServiceFactoryDeps): Promise<AppSe
   // Late-bind orchestrator to marketplace service (marketplace is created before orchestrator)
   marketplaceService.setOrchestrator(orchestrator)
 
+  // eslint-disable-next-line prefer-const
   projectService = new ProjectService({
     store: projectStore,
     issueStore,
