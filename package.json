@@ -137,7 +137,7 @@
     ],
     "mac": {
       "icon": "resources/icon.icns",
-      "x64ArchFiles": "Contents/Resources/app.asar.unpacked/**/*.node",
+      "x64ArchFiles": "Contents/Resources/app.asar.unpacked/**",
       "target": [
         {
           "target": "dmg",
