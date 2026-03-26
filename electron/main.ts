@@ -46,6 +46,7 @@ import type { AppServices } from './app/createServices'
 import { TrayIssueService } from './services/trayIssueService'
 import type { ThemeConfig } from '../src/shared/types'
 import type { SessionOrchestrator } from './command/sessionOrchestrator'
+import { UpdateCheckerService } from './services/update'
 
 function toThemeSource(theme: ThemeConfig): 'system' | 'light' | 'dark' {
   return theme.mode === 'system' ? 'system' : theme.mode
@@ -204,6 +205,13 @@ const proxyFetchFactory = new ProxyFetchFactory({
     const s = settingsService.getSettings()
     return s.proxy.httpsProxy || s.proxy.httpProxy || null
   },
+})
+
+// ── UpdateChecker — GitHub Release version check ─────────────────────────────
+const updateChecker = new UpdateCheckerService({
+  bus,
+  getFetch: () => proxyFetchFactory.getStandardFetch(),
+  getUpdateSettings: () => settingsService.getSettings().updates,
 })
 
 // Webhook service — external event notifications (Lark, Telegram, custom)
@@ -526,6 +534,7 @@ app.whenReady().then(async () => {
     gitService,
     getProxyFetch: () => proxyFetchFactory.getStandardFetch(),
     onQuit: requestQuit,
+    updateChecker,
   })
   connectBusToIPC(bus)
   log.info('IPC handlers registered and DataBus bridge connected')
@@ -539,6 +548,7 @@ app.whenReady().then(async () => {
   // Once sources finish they dispatch DataBus events that fill the UI.
   // ═══════════════════════════════════════════════════════════════════════
   trayManager.updateLocale(resolveLocale(appSettings.language, app.getLocale()))
+  trayManager.setUpdateChecker(updateChecker)
   trayManager.create()
 
   // Power Monitor: suspend/resume schedule engine
@@ -553,6 +563,8 @@ app.whenReady().then(async () => {
     timeResolver.catchUpMissedExecutions().catch((err) => {
       log.error('Failed to catch up missed executions after resume', err)
     })
+    // Re-check for updates after system resume
+    updateChecker.onSystemResume()
   })
 
   createWindow()
@@ -641,6 +653,9 @@ app.whenReady().then(async () => {
     log.error('Failed to auto-start IM bots', err)
   })
 
+  // ── Start update checker (deferred 30s first check) ──────────────────
+  updateChecker.start()
+
   // ── Fire-and-forget background tasks ─────────────────────────────────
   // Artifact backfill — extract artifacts from existing sessions (non-blocking)
   setImmediate(() => {
@@ -674,6 +689,8 @@ app.on('before-quit', (event) => {
 
   event.preventDefault()
   isShuttingDown = true
+
+  updateChecker.stop()
 
   executeShutdown({
     trayManager,

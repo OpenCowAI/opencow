@@ -31,6 +31,7 @@ import { useInboxStore } from '@/stores/inboxStore'
 import { useNoteStore } from '@/stores/noteStore'
 import { useMessagingStore } from '@/stores/messagingStore'
 import { useGitStore } from '@/stores/gitStore'
+import { useUpdateStore } from '@/stores/updateStore'
 import { toast } from '@/lib/toast'
 import type { DataBusEvent, SessionSnapshot, ManagedSessionMessage } from '@shared/types'
 import { getOriginIssueId } from '@shared/types'
@@ -500,6 +501,13 @@ export function useAppBootstrap(): void {
         case 'git:status-changed': {
           const { projectPath, snapshot } = event.payload
           useGitStore.getState().setGitStatus(projectPath, snapshot)
+          break
+        }
+
+        // ── Update checker events ──
+
+        case 'update:check-result': {
+          useUpdateStore.getState().onCheckResult(event.payload)
           break
         }
 

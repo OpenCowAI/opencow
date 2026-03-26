@@ -32,7 +32,7 @@ import {
 
 // ─── Types ────────────────────────────────────────────────────────────
 
-export type SettingsTab = 'general' | 'provider' | 'network' | 'command' | 'notifications' | 'webhooks' | 'messaging' | 'evose'
+export type SettingsTab = 'general' | 'provider' | 'network' | 'command' | 'notifications' | 'webhooks' | 'messaging' | 'evose' | 'updates'
 
 interface SetProviderStatusInput {
   status: ProviderStatus | null

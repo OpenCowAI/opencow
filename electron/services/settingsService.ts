@@ -6,6 +6,7 @@ import { dirname } from 'path'
 import {
   type AIEngineKind,
   DEFAULT_EVOSE_SETTINGS,
+  DEFAULT_UPDATE_SETTINGS,
   type AppSettings,
   type CommandDefaults,
   type EvoseAppConfig,
@@ -23,6 +24,8 @@ import {
   type TelegramConnection,
   type ThemeConfig,
   type ThemeMode,
+  type UpdateCheckInterval,
+  type UpdateSettings,
   type WebhookEndpoint,
 } from '../../src/shared/types'
 import { toTelegramBotEntry } from './telegramBot/converters'
@@ -78,6 +81,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   },
   evose: DEFAULT_EVOSE_SETTINGS,
   language: 'system',
+  updates: DEFAULT_UPDATE_SETTINGS,
 }
 
 export class SettingsService {
@@ -231,6 +235,7 @@ export class SettingsService {
       },
       evose: mergeEvoseSettings(p.evose),
       language: p.language ?? DEFAULT_SETTINGS.language,
+      updates: mergeUpdateSettings(p.updates),
     }
   }
 }
@@ -512,6 +517,22 @@ function normalizeEvoseAppConfig(raw: unknown): EvoseAppConfig {
     enabled:     r['enabled'] === true,
     description: typeof r['description'] === 'string'  ? r['description'] : undefined,
     avatar:      typeof r['avatar'] === 'string'       ? r['avatar']      : undefined,
+  }
+}
+
+// ── Update settings helpers ────────────────────────────────────────────────────
+
+const VALID_UPDATE_INTERVALS = new Set<UpdateCheckInterval>(['1h', '4h', '12h', '24h'])
+
+function mergeUpdateSettings(raw: unknown): UpdateSettings {
+  const r = (raw ?? {}) as Partial<UpdateSettings>
+  return {
+    autoCheckUpdates: typeof r.autoCheckUpdates === 'boolean'
+      ? r.autoCheckUpdates
+      : DEFAULT_UPDATE_SETTINGS.autoCheckUpdates,
+    updateCheckInterval: VALID_UPDATE_INTERVALS.has(r.updateCheckInterval as UpdateCheckInterval)
+      ? r.updateCheckInterval as UpdateCheckInterval
+      : DEFAULT_UPDATE_SETTINGS.updateCheckInterval,
   }
 }
 

@@ -16,7 +16,8 @@
     "notifications": "Notifications",
     "webhooks": "Webhooks",
     "messaging": "IM Bots",
-    "evose": "EvoseAI"
+    "evose": "EvoseAI",
+    "updates": "Updates"
   },
   "general": {
     "appearance": "Appearance",
@@ -462,5 +463,20 @@
     "selectCurrentResults": "Select all results ({{count}})",
     "deselectAll": "Deselect all",
     "searchApps": "Search Apps..."
+  },
+  "updates": {
+    "title": "Updates",
+    "description": "Configure how OpenCow checks for new versions via GitHub Releases.",
+    "autoCheck": "Automatically check for updates",
+    "autoCheckDesc": "Periodically check GitHub Releases for new versions.",
+    "checkInterval": "Check Interval",
+    "currentVersion": "Current version",
+    "lastChecked": "Last checked",
+    "intervals": {
+      "1h": "1 hour",
+      "4h": "4 hours",
+      "12h": "12 hours",
+      "24h": "24 hours"
+    }
   }
 }

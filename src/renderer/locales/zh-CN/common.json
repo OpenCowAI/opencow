@@ -125,5 +125,20 @@
     "viewOnGithub": "GitHub",
     "license": "Apache 2.0 许可证",
     "copyright": "© {{year}} OpenCow 贡献者"
+  },
+  "update": {
+    "available": "{{name}} v{{version}} 已发布！",
+    "viewRelease": "查看发布说明",
+    "download": "下载",
+    "dismiss": "忽略",
+    "upToDate": "已是最新版本",
+    "lastChecked": "上次检查: {{time}}",
+    "checking": "正在检查更新...",
+    "checkNow": "检查更新",
+    "newVersion": "v{{version}} 已发布",
+    "timeJustNow": "刚刚",
+    "timeMinutesAgo": "{{count}}分钟前",
+    "timeHoursAgo": "{{count}}小时前",
+    "timeDaysAgo": "{{count}}天前"
   }
 }

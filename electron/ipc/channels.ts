@@ -98,6 +98,13 @@ function isEvoseSettingsChanged(previous: AppSettings, next: AppSettings): boole
   return JSON.stringify(previous.evose) !== JSON.stringify(next.evose)
 }
 
+function isUpdateSettingsChanged(previous: AppSettings, next: AppSettings): boolean {
+  return (
+    previous.updates.autoCheckUpdates !== next.updates.autoCheckUpdates ||
+    previous.updates.updateCheckInterval !== next.updates.updateCheckInterval
+  )
+}
+
 export interface IPCDeps {
   bus: DataBus
   onboarding: OnboardingStore
@@ -132,6 +139,8 @@ export interface IPCDeps {
   getProxyFetch?: () => typeof globalThis.fetch
   /** Custom quit handler for double-press confirmation. */
   onQuit?: () => void
+  /** UpdateChecker for manual "Check for Updates" IPC. */
+  updateChecker?: import('../services/update').UpdateCheckerService
 }
 
 /* ------------------------------------------------------------------ */
@@ -860,6 +869,11 @@ export function registerIPCHandlers(deps: IPCDeps): void {
         deps.trayManager?.updateLocale(locale)
       }
 
+      // Detect update settings change → reschedule periodic check timer
+      if (deps.updateChecker && isUpdateSettingsChanged(oldSettings, updated)) {
+        deps.updateChecker.reschedule()
+      }
+
       bus.dispatch({ type: 'settings:updated', payload: updated })
       if (evoseSettingsChanged) {
         // Evose apps are projected as runtime skills in CapabilityCenter snapshot.
@@ -867,6 +881,19 @@ export function registerIPCHandlers(deps: IPCDeps): void {
         bus.dispatch({ type: 'capabilities:changed', payload: {} })
       }
       return updated
+    })
+  }
+
+  // --- Update checker handler ---
+  // The renderer's primary update flow uses DataBus events (dispatched by
+  // UpdateCheckerService.performCheck()). The IPC return value is intentionally
+  // null — the renderer ignores it and relies on the `update:check-result`
+  // DataBus event handled in useAppBootstrap → updateStore.onCheckResult().
+  if (deps.updateChecker) {
+    const updateChecker = deps.updateChecker
+    registerHandler('check-for-updates', async () => {
+      await updateChecker.checkNow()
+      return null
     })
   }
 

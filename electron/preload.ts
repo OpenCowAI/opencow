@@ -54,6 +54,8 @@ const invokeChannels: (keyof IPCChannels)[] = [
   // Settings
   'get-settings',
   'update-settings',
+  // Update checker
+  'check-for-updates',
   // Command Phase
   'command:start-session',
   'command:send-message',

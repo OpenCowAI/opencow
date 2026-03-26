@@ -6,6 +6,7 @@ import { Dialog } from '@/components/ui/Dialog'
 import { useAppStore } from '@/stores/appStore'
 import { APP_NAME, APP_VERSION } from '@shared/appIdentity'
 import appIcon from '@/assets/app-icon.png'
+import { UpdateStatus } from './UpdateStatus'
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -69,6 +70,9 @@ export function AboutDialog(): React.JSX.Element | null {
         <p className="mt-0.5 text-xs text-[hsl(var(--muted-foreground))]">
           {t('about.version', { version: APP_VERSION })}
         </p>
+
+        {/* Update status */}
+        <UpdateStatus />
 
         {/* Description */}
         <p className="mt-3 text-sm text-[hsl(var(--muted-foreground))] leading-relaxed max-w-[280px]">

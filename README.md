@@ -79,9 +79,9 @@ Real-time dashboard. Track every agent's progress and actions. Approve deliverab
 <td>
 
 ### Work from Anywhere
-Dispatch agents from Telegram, Discord, or Lark. Schedule recurring workflows. Get notified via webhooks.
+Dispatch agents from Telegram, Discord, WeChat, or Lark. Schedule recurring workflows. Get notified via webhooks.
 
-`3 IM platforms` · `Natural language` · `7 schedule types`
+`4 IM platforms` · `Natural language` · `7 schedule types`
 
 </td>
 </tr>
@@ -335,13 +335,7 @@ Please read **[CONTRIBUTING.md](CONTRIBUTING.md)** for the full guide on code st
 
 <div align="center">
 
-<a href="https://star-history.com/#OpenCowAI/opencow&Date">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=OpenCowAI/opencow&type=Date&theme=dark" />
-    <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=OpenCowAI/opencow&type=Date" />
-    <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=OpenCowAI/opencow&type=Date" />
-  </picture>
-</a>
+<a href="https://www.star-history.com/?repos=OpenCowAI%2Fopencow&type=date&legend=top-left"> <picture>   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/image?repos=OpenCowAI/opencow&type=date&theme=dark&legend=top-left" />   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/image?repos=OpenCowAI/opencow&type=date&legend=top-left" />   <img alt="Star History Chart" src="https://api.star-history.com/image?repos=OpenCowAI/opencow&type=date&legend=top-left" /> </picture></a>
 
 </div>
 

@@ -79,9 +79,9 @@
 <td>
 
 ### 随时随地工作
-通过 Telegram、Discord 或飞书派发 Agent。设置定期自动化工作流。通过 Webhook 接收通知。
+通过 Telegram、Discord、微信或飞书派发 Agent。设置定期自动化工作流。通过 Webhook 接收通知。
 
-`3 个 IM 平台` · `自然语言` · `7 种调度类型`
+`4 个 IM 平台` · `自然语言` · `7 种调度类型`
 
 </td>
 </tr>
@@ -335,13 +335,7 @@ git checkout -b feat/my-feature
 
 <div align="center">
 
-<a href="https://star-history.com/#OpenCowAI/opencow&Date">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=OpenCowAI/opencow&type=Date&theme=dark" />
-    <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=OpenCowAI/opencow&type=Date" />
-    <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=OpenCowAI/opencow&type=Date" />
-  </picture>
-</a>
+<a href="https://www.star-history.com/?repos=OpenCowAI%2Fopencow&type=date&legend=top-left"> <picture>   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/image?repos=OpenCowAI/opencow&type=date&theme=dark&legend=top-left" />   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/image?repos=OpenCowAI/opencow&type=date&legend=top-left" />   <img alt="Star History Chart" src="https://api.star-history.com/image?repos=OpenCowAI/opencow&type=date&legend=top-left" /> </picture></a>
 
 </div>
 

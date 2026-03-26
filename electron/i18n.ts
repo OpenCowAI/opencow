@@ -25,6 +25,8 @@ export function getMenuLabels(locale: SupportedLocale): Record<string, string> {
       trayQuit:     '退出',
       trayTooltip:  '会话监控',
       quitConfirm: '再按一次 ⌘Q 退出',
+      trayUpdateAvailable: '有新版本可用',
+      trayCheckForUpdates: '检查更新…',
     },
     'en-US': {
       appMenu:      APP_NAME,
@@ -42,6 +44,8 @@ export function getMenuLabels(locale: SupportedLocale): Record<string, string> {
       trayQuit:     'Quit',
       trayTooltip:  'Session Monitor',
       quitConfirm: 'Press ⌘Q again to quit',
+      trayUpdateAvailable: 'Update Available',
+      trayCheckForUpdates: 'Check for Updates…',
     },
   }
   return labels[locale]

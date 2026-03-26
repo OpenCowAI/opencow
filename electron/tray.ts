@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-import { Tray, Menu, nativeImage, app } from 'electron'
+import { Tray, Menu, nativeImage, app, shell } from 'electron'
 import { join } from 'path'
 import { existsSync, readFileSync } from 'fs'
 import type { DataBus } from './core/dataBus'
@@ -9,6 +9,7 @@ import { getMenuLabels } from './i18n'
 import { TrayPopoverWindow } from './trayPopoverWindow'
 import { focusMainWindow as focusMainWin } from './window/windowManager'
 import type { TrayIssueService } from './services/trayIssueService'
+import type { UpdateCheckerService } from './services/update'
 import type { TrayIssueItem } from '@shared/types'
 import { createLogger } from './platform/logger'
 
@@ -48,6 +49,9 @@ export class TrayManager {
   private readonly onQuit: () => void
   private currentLocale: SupportedLocale = 'en-US'
   private trayIssueService: TrayIssueService | null = null
+  private updateChecker: UpdateCheckerService | null = null
+  /** URL to latest release page — set when an update is detected. */
+  private latestReleaseUrl: string | null = null
   /** Cached tray items — updated on DataBus events, served to popover on demand. */
   private cachedTrayItems: TrayIssueItem[] = []
   /** Debounce timer for refreshTrayItems — coalesces rapid DataBus events. */
@@ -63,6 +67,11 @@ export class TrayManager {
   /** Inject the TrayIssueService after construction (avoids circular deps). */
   setTrayIssueService(service: TrayIssueService): void {
     this.trayIssueService = service
+  }
+
+  /** Inject the UpdateCheckerService for tray menu integration. */
+  setUpdateChecker(checker: UpdateCheckerService): void {
+    this.updateChecker = checker
   }
 
   /** Returns the TrayPopoverWindow instance (for IPC handler wiring). */
@@ -124,23 +133,48 @@ export class TrayManager {
       this.popover?.toggle()
     })
 
-    // Right click → minimal native fallback menu (uses currentLocale dynamically)
+    // Right click → native fallback menu with update status (uses currentLocale dynamically)
     this.tray.on('right-click', () => {
       if (!this.tray) return
       const m = getMenuLabels(this.currentLocale)
-      const contextMenu = Menu.buildFromTemplate([
+      const template: Electron.MenuItemConstructorOptions[] = [
         { label: this.appDisplayName, enabled: false },
         { type: 'separator' },
+      ]
+
+      // Update items (dynamic based on state)
+      if (this.latestReleaseUrl) {
+        template.push({
+          label: `↑ ${m.trayUpdateAvailable}`,
+          click: () => { void shell.openExternal(this.latestReleaseUrl!) },
+        })
+        template.push({ type: 'separator' })
+      }
+
+      template.push(
         { label: m.trayOpen, click: () => this.focusMainWindow() },
+        {
+          label: m.trayCheckForUpdates,
+          click: () => { void this.updateChecker?.checkNow() },
+        },
         { type: 'separator' },
         { label: m.trayQuit, click: () => this.onQuit() },
-      ])
+      )
+
+      const contextMenu = Menu.buildFromTemplate(template)
       this.tray.popUpContextMenu(contextMenu)
     })
 
     // Update tray title + issue items when state changes
     this.refreshTrayItems().catch((err) => log.error('Failed initial tray refresh', err))
     this.unsubscribe = this.bus.onBroadcast((event) => {
+      // Track update availability for tray menu
+      if (event.type === 'update:check-result') {
+        this.latestReleaseUrl = event.payload.status === 'available'
+          ? event.payload.releaseUrl
+          : null
+      }
+
       // Only recompute on events that can affect tray data.
       // Note: 'sessions:updated' is intentionally excluded — it reflects file-system
       // session scans, not managed session state changes.

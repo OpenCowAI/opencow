@@ -25,6 +25,7 @@ import { BrowserSheet } from '@/components/BrowserSheet/BrowserSheet'
 import { BrowserPiPTrigger } from '@/components/BrowserPiP/BrowserPiPTrigger'
 import { TerminalPanel } from '@/components/TerminalSheet/TerminalSheet'
 import { SplashScreen } from '@/components/SplashScreen/SplashScreen'
+import { UpdateBanner } from '@/components/Update/UpdateBanner'
 
 // ── Constants ────────────────────────────────────────────────────────
 
@@ -300,6 +301,8 @@ function AppLayout(): React.JSX.Element {
 
   return (
     <div data-surface="ground" className="flex flex-col h-screen bg-[hsl(var(--background))] text-[hsl(var(--foreground))]">
+      {/* ── Update notification banner (top of window) ── */}
+      <UpdateBanner />
       {/* ── Content area: horizontal panel layout (flat structure, no nesting) ── */}
       <Group
         id="opencow-layout"

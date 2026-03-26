@@ -16,7 +16,8 @@
     "notifications": "通知",
     "webhooks": "Webhooks",
     "messaging": "IM 机器人",
-    "evose": "EvoseAI"
+    "evose": "EvoseAI",
+    "updates": "更新"
   },
   "general": {
     "appearance": "外观",
@@ -462,5 +463,20 @@
     "selectCurrentResults": "全选当前结果 ({{count}} 项)",
     "deselectAll": "取消全选",
     "searchApps": "搜索 App…"
+  },
+  "updates": {
+    "title": "更新",
+    "description": "配置 OpenCow 如何通过 GitHub Releases 检查新版本。",
+    "autoCheck": "自动检查更新",
+    "autoCheckDesc": "定期通过 GitHub Releases 检查是否有新版本。",
+    "checkInterval": "检查间隔",
+    "currentVersion": "当前版本",
+    "lastChecked": "上次检查",
+    "intervals": {
+      "1h": "1 小时",
+      "4h": "4 小时",
+      "12h": "12 小时",
+      "24h": "24 小时"
+    }
   }
 }

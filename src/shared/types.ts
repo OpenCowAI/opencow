@@ -184,6 +184,8 @@ export interface IPCChannels {
   'install-hooks': { args: []; return: boolean }
   'uninstall-hooks': { args: []; return: boolean }
   'get-hooks-status': { args: []; return: boolean }
+  // Update checker
+  'check-for-updates': { args: []; return: UpdateCheckResult | null }
   'pin-project': { args: [projectId: string]; return: Project }
   'unpin-project': { args: [projectId: string]; return: Project }
   'archive-project': { args: [projectId: string]; return: Project }
@@ -1890,6 +1892,8 @@ export type DataBusEvent =
   // Package lifecycle events (emitted by PackageService on install/uninstall)
   | { type: 'package:installed'; payload: { prefix: string; scope: string } }
   | { type: 'package:uninstalled'; payload: { prefix: string; scope: string } }
+  // Update checker
+  | { type: 'update:check-result'; payload: UpdateCheckResult }
   // UI-only events (main → renderer, not persisted in DataBus)
   | { type: 'ui:toast'; payload: { message: string; duration?: number } }
   | { type: 'menu:about' }
@@ -3198,6 +3202,41 @@ export interface ProviderSettings {
   byEngine: Record<AIEngineKind, ProviderEngineSettings>
 }
 
+// === Update Settings ===
+
+/** How often to check for updates via GitHub Releases. */
+export type UpdateCheckInterval = '1h' | '4h' | '12h' | '24h'
+
+export interface UpdateSettings {
+  /** Whether to automatically check for updates on startup and periodically. */
+  autoCheckUpdates: boolean
+  /** Interval between automatic update checks. */
+  updateCheckInterval: UpdateCheckInterval
+}
+
+export const DEFAULT_UPDATE_SETTINGS: UpdateSettings = {
+  autoCheckUpdates: true,
+  updateCheckInterval: '4h',
+}
+
+/** Result of a GitHub Releases update check, dispatched via DataBus. */
+export type UpdateCheckResult =
+  | {
+      status: 'available'
+      currentVersion: string
+      latestVersion: string
+      releaseUrl: string
+      releaseNotes: string
+      publishedAt: string
+      downloadUrl: string | null
+      checkedAt: string
+    }
+  | {
+      status: 'up-to-date'
+      currentVersion: string
+      checkedAt: string
+    }
+
 // === Settings ===
 
 export interface AppSettings {
@@ -3211,6 +3250,7 @@ export interface AppSettings {
   schedule: ScheduleSettings
   evose: EvoseSettings
   language: LanguagePref
+  updates: UpdateSettings
 }
 
 // === Session Notes ===

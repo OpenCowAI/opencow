@@ -23,6 +23,10 @@
     "test:watch": "vitest",
     "package": "electron-vite build && electron-builder --mac --dir",
     "package:dmg": "electron-vite build && electron-builder --mac",
+    "package:dmg:arm64": "electron-vite build && electron-builder --mac --arm64",
+    "package:dmg:x64": "electron-vite build && electron-builder --mac --x64",
+    "package:dmg:universal": "electron-vite build && electron-builder --mac --universal",
+    "package:dmg:all": "electron-vite build && electron-builder --mac --arm64 --x64",
     "postinstall": "bash scripts/patch-electron-name.sh",
     "check:brand": "node scripts/check-brand.mjs"
   },
@@ -133,6 +137,16 @@
     ],
     "mac": {
       "icon": "resources/icon.icns",
+      "target": [
+        {
+          "target": "dmg",
+          "arch": ["arm64", "x64"]
+        },
+        {
+          "target": "zip",
+          "arch": ["arm64", "x64"]
+        }
+      ],
       "extendInfo": {
         "SoftResourceLimits": {
           "NumberOfFiles": 10240

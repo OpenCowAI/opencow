@@ -1,0 +1,75 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+# Only one release build at a time; never cancel an in-flight release.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    name: Build & Release
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # ── Version validation ────────────────────────────────────────────
+      # Ensure the git tag matches the version declared in package.json.
+      # Prevents accidental releases with mismatched version numbers.
+      - name: Validate tag matches package.json version
+        run: |
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          PKG_VERSION=$(node -p "require('./package.json').version")
+          if [ "$TAG_VERSION" != "$PKG_VERSION" ]; then
+            echo "::error::Tag version ($TAG_VERSION) does not match package.json version ($PKG_VERSION)"
+            exit 1
+          fi
+          echo "VERSION=$TAG_VERSION" >> "$GITHUB_ENV"
+
+      # ── Quality gates ─────────────────────────────────────────────────
+      - run: pnpm lint
+      - run: pnpm typecheck
+      - run: pnpm test
+
+      # ── Build ─────────────────────────────────────────────────────────
+      # Vite build (main + preload + renderer)
+      - run: pnpm build
+
+      # Electron Builder — produces DMG + ZIP for macOS (universal binary)
+      - name: Build Electron App
+        run: npx electron-builder --mac --universal
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # ── Publish ───────────────────────────────────────────────────────
+      # Upload only installer artifacts (DMG + ZIP). Blockmap files are
+      # excluded — they are only needed by electron-updater (Phase 3).
+      # The *.dmg.zip (DMG archive) is excluded via negation pattern.
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: OpenCow v${{ env.VERSION }}
+          files: |
+            dist/*.dmg
+            dist/*-mac.zip
+          generate_release_notes: true
+          draft: false
+          prerelease: ${{ contains(github.ref, '-beta') || contains(github.ref, '-alpha') || contains(github.ref, '-rc') }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

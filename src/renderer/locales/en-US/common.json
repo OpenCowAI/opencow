@@ -125,5 +125,20 @@
     "viewOnGithub": "GitHub",
     "license": "Apache 2.0 License",
     "copyright": "© {{year}} OpenCow Contributors"
+  },
+  "update": {
+    "available": "{{name}} v{{version}} is available!",
+    "viewRelease": "View Release",
+    "download": "Download",
+    "dismiss": "Dismiss",
+    "upToDate": "You're up to date",
+    "lastChecked": "Last checked: {{time}}",
+    "checking": "Checking for updates...",
+    "checkNow": "Check for Updates",
+    "newVersion": "v{{version}} is available",
+    "timeJustNow": "just now",
+    "timeMinutesAgo": "{{count}}m ago",
+    "timeHoursAgo": "{{count}}h ago",
+    "timeDaysAgo": "{{count}}d ago"
   }
 }
