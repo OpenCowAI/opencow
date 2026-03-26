@@ -3,7 +3,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { z } from 'zod/v4'
-import { CodexNativeBridgeManager } from '../../../electron/command/codexNativeBridgeManager'
+import {
+  CodexNativeBridgeManager,
+  normalizeBridgeModulePathForExternalNode,
+} from '../../../electron/command/codexNativeBridgeManager'
 import { ToolProgressRelay } from '../../../electron/utils/toolProgressRelay'
 import { MCP_SERVER_BASE_NAME } from '../../../src/shared/appIdentity'
 
@@ -354,6 +357,25 @@ describe('CodexNativeBridgeManager', () => {
     })
 
     expect(serverConfigMap).toBeUndefined()
+  })
+
+  it('rewrites bridge module paths from app.asar to app.asar.unpacked when available', () => {
+    const resolvedPath = 'Resources/app.asar/node_modules/pkg/index.js'
+    const unpackedPath = 'Resources/app.asar.unpacked/node_modules/pkg/index.js'
+
+    const actual = normalizeBridgeModulePathForExternalNode(
+      resolvedPath,
+      (candidatePath) => candidatePath === unpackedPath,
+    )
+
+    expect(actual).toBe(unpackedPath)
+  })
+
+  it('throws an actionable error when bridge module remains inside app.asar', () => {
+    const resolvedPath = 'Resources/app.asar/node_modules/pkg/index.js'
+    expect(() => normalizeBridgeModulePathForExternalNode(resolvedPath, () => false)).toThrow(
+      /Ensure electron-builder asarUnpack includes this dependency\./,
+    )
   })
 
   it('returns 403 for list-tools with invalid token', async () => {

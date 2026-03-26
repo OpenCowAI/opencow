@@ -56,6 +56,7 @@
     "@dnd-kit/utilities": "^3.2.2",
     "@iarna/toml": "^2.2.5",
     "@larksuiteoapi/node-sdk": "^1.59.0",
+    "@modelcontextprotocol/sdk": "^1.28.0",
     "@monaco-editor/react": "^4.7.0",
     "@nivo/bar": "^0.99.0",
     "@nivo/calendar": "^0.99.0",
@@ -108,6 +109,7 @@
     "undici": "^7.24.0",
     "ws": "^8.19.0",
     "yaml": "^2.8.3",
+    "zod": "^4.3.6",
     "zustand": "^5.0.11"
   },
   "build": {
@@ -117,9 +119,11 @@
     "asar": true,
     "asarUnpack": [
       "**/node_modules/@anthropic-ai/**",
+      "**/node_modules/@modelcontextprotocol/**",
       "**/node_modules/@openai/**",
       "**/node_modules/better-sqlite3/**",
-      "**/node_modules/node-pty/**"
+      "**/node_modules/node-pty/**",
+      "**/node_modules/zod/**"
     ],
     "extraResources": [
       {
@@ -196,7 +200,6 @@
     "@electron-toolkit/utils": "^4.0.0",
     "@electron/rebuild": "^4.0.3",
     "@eslint/js": "^10.0.1",
-    "@modelcontextprotocol/sdk": "^1.28.0",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
     "@testing-library/user-event": "^14.6.1",

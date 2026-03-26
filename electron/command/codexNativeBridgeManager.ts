@@ -4,6 +4,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import path from 'node:path'
 import os from 'node:os'
 import fs from 'node:fs/promises'
+import { existsSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
 import { createLogger } from '../platform/logger'
 import type { NativeCapabilityRegistry } from '../nativeCapabilities/registry'
@@ -76,6 +77,28 @@ function optionalNonEmptyString(value: unknown): string | undefined {
 
 function resolveBridgeCommandDefault(): string | null {
   return resolveNodeExecutableForChildProcess()
+}
+
+function toAsarUnpackedPath(filePath: string): string {
+  if (!filePath.includes('app.asar') || filePath.includes('app.asar.unpacked')) {
+    return filePath
+  }
+  return filePath.replace('app.asar', 'app.asar.unpacked')
+}
+
+export function normalizeBridgeModulePathForExternalNode(
+  filePath: string,
+  fileExists: (candidatePath: string) => boolean = existsSync,
+): string {
+  const unpacked = toAsarUnpackedPath(filePath)
+  if (unpacked === filePath) return filePath
+  if (!fileExists(unpacked)) {
+    throw new Error(
+      `Bridge dependency resolved inside app.asar, but unpacked file was not found at ${unpacked}. ` +
+        'Ensure electron-builder asarUnpack includes this dependency.',
+    )
+  }
+  return unpacked
 }
 
 /**
@@ -242,7 +265,8 @@ export class CodexNativeBridgeManager {
 
   private resolveBridgeModulePath(specifier: string): string {
     try {
-      return require.resolve(specifier)
+      const resolved = require.resolve(specifier)
+      return normalizeBridgeModulePathForExternalNode(resolved)
     } catch (err) {
       const details = err instanceof Error ? err.message : String(err)
       throw new Error(`Failed to resolve bridge dependency "${specifier}": ${details}`, { cause: err })
