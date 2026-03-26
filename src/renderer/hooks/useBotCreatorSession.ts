@@ -45,6 +45,7 @@ export interface BotCreatorSessionHandle {
   isPaused: boolean
   state: ManagedSessionState | null
   parsedBot: ParsedBotOutput | null
+  parsedOutput: ParsedBotOutput | null
   sendOrQueue: (message: UserMessageContent) => Promise<boolean>
   stop: () => void
   messageQueue: UseMessageQueueReturn
@@ -82,7 +83,7 @@ export function useBotCreatorSession(
   const creator = useCreatorSession<ParsedBotOutput>(creatorConfig)
 
   return useMemo<BotCreatorSessionHandle>(
-    () => ({ ...creator, parsedBot: creator.parsedOutput }),
+    () => ({ ...creator, parsedBot: creator.parsedOutput, parsedOutput: creator.parsedOutput }),
     [creator]
   )
 }

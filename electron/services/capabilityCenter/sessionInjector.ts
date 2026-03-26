@@ -121,7 +121,7 @@ export async function buildCapabilityPlan(params: {
   skills = distributionResult.skills
 
   const agent = agentName
-    ? snapshot.agents.find((entry) => entry.name === agentName && entry.enabled)
+    ? snapshot.agents.find((entry) => entry.name === agentName && entry.enabled) ?? null
     : null
 
   const explicitSkillNames = new Set(request.activation?.explicitSkillNames ?? [])

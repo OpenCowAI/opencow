@@ -4,6 +4,7 @@ import fs from 'node:fs/promises'
 import path from 'node:path'
 import {
   fileAccessSuccess,
+  type FileAccessFailure,
   type FileAccessResult,
 } from '@shared/fileAccess'
 import type {
@@ -297,6 +298,6 @@ export class FileContentAccessService {
   }
 }
 
-export function isFileAccessFailure<T>(result: FileAccessResult<T>): result is { ok: false } {
+export function isFileAccessFailure<T>(result: FileAccessResult<T>): result is FileAccessFailure {
   return !result.ok
 }

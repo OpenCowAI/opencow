@@ -25,7 +25,7 @@ import { EditStreamingStrategy } from './streaming/editStrategy'
 import { DraftStreamingStrategy } from './streaming/draftStrategy'
 import { snapToGraphemeBoundary } from '@shared/unicode'
 import { findActiveIMSession, routeIMMessage } from '../messaging/sessionRouter'
-import { executeCommand, type CommandResult, type CommandContext } from '../messaging/commandHandler'
+import { executeCommand, resolveSessionId, type CommandResult, type CommandContext } from '../messaging/commandHandler'
 
 const log = createLogger('TelegramBot')
 
@@ -247,7 +247,7 @@ export class TelegramBotService {
         const sessionId = ctx.match![1]
         // Extract chatId early — ctx type narrows inside conditional branches
         const cbChatId = String(ctx.callbackQuery.message?.chat?.id ?? 0)
-        const fullId = await this.resolveSessionId(sessionId)
+        const fullId = await resolveSessionId(sessionId, this.deps.orchestrator)
         if (fullId) {
           await this.deps.orchestrator.stopSession(fullId)
           // Release any in-flight placeholder for this chat so the next request

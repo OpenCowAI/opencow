@@ -401,7 +401,7 @@ export class StateRepository {
       .where((eb) =>
         eb.or([
           eb('target_path', '=', oldPortable),
-          eb('target_path', 'like', sql`${likePattern} escape '\\'`),
+          eb('target_path', 'like', sql<string>`${likePattern} escape '\\'`),
         ]),
       )
       .execute()
@@ -507,7 +507,7 @@ export class StateRepository {
         content_hash: params.contentHash,
         snapshot: params.snapshot,
         created_at: Date.now(),
-      })
+      } as unknown as import('../../database/types').CapabilityVersionTable)
       .execute()
   }
 

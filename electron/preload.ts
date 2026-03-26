@@ -255,4 +255,4 @@ api['terminal:onOutput'] = (terminalId: string, callback: (data: string) => void
   return () => ipcRenderer.removeListener(channel, handler)
 }
 
-contextBridge.exposeInMainWorld(APP_WINDOW_KEY, api as OpenCowAPI)
+contextBridge.exposeInMainWorld(APP_WINDOW_KEY, api as unknown as OpenCowAPI)

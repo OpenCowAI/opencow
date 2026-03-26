@@ -207,7 +207,7 @@ function mapToCapabilityOutput(
   for (const field of template.frontmatterFields) {
     const value = attributes[field.key]
     if (typeof value === 'string') {
-      ;(result as Record<string, unknown>)[field.outputField] = value.trim()
+      ;(result as unknown as Record<string, unknown>)[field.outputField] = value.trim()
     }
   }
 

@@ -34,8 +34,8 @@ export interface EngineBootstrapDeps {
 }
 
 export interface BootstrapLogger {
-  info: (...args: unknown[]) => void
-  warn: (...args: unknown[]) => void
+  info: (message: string, ...args: unknown[]) => void
+  warn: (message: string, ...args: unknown[]) => void
 }
 
 export interface BuildEngineBootstrapOptionsInput {

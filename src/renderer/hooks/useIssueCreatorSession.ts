@@ -47,6 +47,7 @@ export interface IssueCreatorSessionHandle {
   isPaused: boolean
   state: ManagedSessionState | null
   parsedIssue: ParsedIssueOutput | null
+  parsedOutput: ParsedIssueOutput | null
   sendOrQueue: (message: UserMessageContent) => Promise<boolean>
   stop: () => void
   messageQueue: UseMessageQueueReturn
@@ -105,6 +106,7 @@ export function useIssueCreatorSession(
       isPaused: handle.isPaused,
       state: handle.state,
       parsedIssue: handle.parsedOutput,
+      parsedOutput: handle.parsedOutput,
       sendOrQueue: handle.sendOrQueue,
       stop: handle.stop,
       messageQueue: handle.messageQueue,

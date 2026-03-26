@@ -938,9 +938,9 @@ export class CapabilityCenter {
 
     // First publish — create distribution record
     const targetType = resolveDistributionTargetType({ engineKind: 'claude', scope })
-    const target: DistributionTarget = scope === 'project' && projectPath
+    const target = (scope === 'project' && projectPath
       ? { type: targetType, projectPath }
-      : { type: targetType }
+      : { type: targetType }) as DistributionTarget
 
     await this.distributionPipeline.publish({ category, name, target })
     log.debug(`Auto-published ${category}/${name} to ${target.type}`)

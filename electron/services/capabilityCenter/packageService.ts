@@ -398,9 +398,9 @@ export class PackageService {
     scope: 'global' | 'project',
     projectId: string,
   ): Promise<void> {
-    let entries: Awaited<ReturnType<typeof fs.readdir>>
+    let entries: import('node:fs').Dirent[]
     try {
-      entries = await fs.readdir(packagesRoot, { withFileTypes: true })
+      entries = await fs.readdir(packagesRoot, { withFileTypes: true }) as unknown as import('node:fs').Dirent[]
     } catch {
       return // Directory doesn't exist — nothing to reconcile
     }
@@ -577,9 +577,9 @@ async function collectFiles(dir: string, base?: string): Promise<FileEntry[]> {
   const entries: FileEntry[] = []
   const baseDir = base ?? dir
 
-  let dirEntries: Awaited<ReturnType<typeof fs.readdir>>
+  let dirEntries: import('node:fs').Dirent[]
   try {
-    dirEntries = await fs.readdir(dir, { withFileTypes: true })
+    dirEntries = await fs.readdir(dir, { withFileTypes: true }) as unknown as import('node:fs').Dirent[]
   } catch {
     return entries
   }

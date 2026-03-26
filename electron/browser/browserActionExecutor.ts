@@ -551,7 +551,7 @@ export class BrowserActionExecutor {
     const effectiveTimeoutMs = this.resolveTimeoutMs(timeoutMs, context, method)
     let timer: ReturnType<typeof setTimeout> | null = null
     const t0 = Date.now()
-    let abortCleanup: (() => void) | null = null
+    let abortCleanup: (() => void) | null = null // eslint-disable-line prefer-const
     log.debug(`cdp(): sending "${method}" (timeout=${effectiveTimeoutMs}ms)`)
 
     try {
@@ -592,7 +592,8 @@ export class BrowserActionExecutor {
       throw this.classifyError(err, method)
     } finally {
       if (timer !== null) clearTimeout(timer)
-      if (abortCleanup) abortCleanup()
+      const cleanup = abortCleanup as (() => void) | null
+      if (cleanup) cleanup()
     }
   }
 

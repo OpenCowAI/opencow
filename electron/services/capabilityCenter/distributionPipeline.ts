@@ -470,14 +470,14 @@ export class DistributionPipeline {
       }
       const baseDir = target.type === 'codex-global'
         ? path.join(os.homedir(), '.agents')
-        : path.join(target.projectPath, '.agents')
+        : path.join((target as { projectPath: string }).projectPath, '.agents')
       return path.join(baseDir, 'skills', name, SKILL_BUNDLE_FILENAME)
     }
 
     const baseDir =
       target.type === 'claude-code-global'
         ? path.join(os.homedir(), '.claude')
-        : path.join(target.projectPath, '.claude')
+        : path.join((target as { projectPath: string }).projectPath, '.claude')
 
     switch (category) {
       case 'skill':

@@ -200,7 +200,7 @@ export class FeishuBotService {
       // Try to get bot info to verify credentials
       const resp = await testClient.contact.user.get({
         path: { user_id: config.appId },
-        params: { user_id_type: 'app_id' },
+        params: { user_id_type: 'app_id' as unknown as 'user_id' },
       })
 
       // Even if the user lookup fails, getting a non-auth error means creds are valid
@@ -471,7 +471,7 @@ export class FeishuBotService {
     const chatId = this.extractChatId(_origin)
     if (!chatId || !this.client) return
 
-    if (!('content' in message)) return
+    if (!('content' in message) || message.role !== 'assistant') return
     const blocks = message.content
     const textContent = extractTextFromBlocks(blocks)
 

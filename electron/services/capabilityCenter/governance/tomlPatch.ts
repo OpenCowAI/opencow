@@ -22,7 +22,7 @@ export function parseTomlConfig(content: string): TomlObject {
 }
 
 export function stringifyTomlConfig(config: TomlObject): string {
-  const output = TOML.stringify(config)
+  const output = TOML.stringify(config as unknown as Parameters<typeof TOML.stringify>[0])
   return output.endsWith('\n') ? output : `${output}\n`
 }
 

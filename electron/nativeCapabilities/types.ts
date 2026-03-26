@@ -83,6 +83,7 @@ export const NATIVE_CAPABILITY_CATEGORIES = [
   'interaction',
   'schedules',
   'evose',
+  'repo-analyzer',
 ] as const
 
 export type NativeCapabilityCategory = (typeof NATIVE_CAPABILITY_CATEGORIES)[number]

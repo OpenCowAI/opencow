@@ -690,11 +690,9 @@ export class ImportPipeline {
   private async recordDistributionIfImportedFromEngine(item: ImportableItem, target: ImportTarget): Promise<void> {
     if (item.sourceType !== 'claude-code' && item.sourceType !== 'codex') return
 
-    const engineKind = item.sourceType === 'codex' ? 'codex' : 'claude'
-    const targetType = resolveDistributionTargetType({
-      engineKind,
-      scope: item.sourceScope,
-    })
+    const targetType = item.sourceType === 'codex'
+      ? resolveDistributionTargetType({ engineKind: 'codex', scope: item.sourceScope })
+      : resolveDistributionTargetType({ engineKind: 'claude', scope: item.sourceScope })
 
     // Compute content hash from the stored copy (not the source file, which may
     // differ by the time we read it again — the store copy is the authoritative one).
@@ -1150,11 +1148,11 @@ export class ImportPipeline {
       if (!seen.has(key)) {
         seen.add(key)
         const content = await safeReadFile(skillPath)
-        const { attributes } = content ? parseFrontmatter(content) : { attributes: {} }
+        const { attributes } = content ? parseFrontmatter(content) : { attributes: {} as Record<string, unknown> }
         items.push({
           name,
           category: 'skill',
-          description: (attributes['description'] as string) ?? '',
+          description: ((attributes as Record<string, unknown>)['description'] as string) ?? '',
           sourcePath: skillPath,
           sourceType: 'file',
           alreadyImported: existsCache.has(key),

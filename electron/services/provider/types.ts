@@ -59,6 +59,7 @@ export interface StoredCredentials {
   apiKey?: string
   openrouter?: OpenRouterCredential
   custom?: CustomCredential
+  [key: string]: unknown
 }
 
 // ── Provider Adapter Interface ──────────────────────────────────────

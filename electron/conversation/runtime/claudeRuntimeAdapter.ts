@@ -4,6 +4,7 @@ import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk'
 import { normalizeContentBlocks, ensureThinkingBlocksFirst, type SDKContentBlock } from '../../command/contentBlocks'
 import type { EngineRuntimeEvent, RuntimeModelUsage, RuntimeResultOutcome, RuntimeTurnUsage } from './events'
 import { toConversationContentBlocks } from './contentBlockMapper'
+import type { ConversationContentBlock } from '../domain/content'
 
 interface RawUsage {
   input_tokens?: number

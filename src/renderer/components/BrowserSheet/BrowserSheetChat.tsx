@@ -34,7 +34,7 @@ import { ConnectedContentViewer } from '../DetailPanel/SessionPanel/ConnectedCon
 import { SessionStateIndicator } from '../DetailPanel/SessionStatusCard'
 import { useSessionMessages } from '@/hooks/useSessionMessages'
 import { useMessageQueue } from '@/hooks/useMessageQueue'
-import type { BrowserSource, BrowserPageInfoPayload, ManagedSessionState, UserMessageContent } from '@shared/types'
+import type { AIEngineKind, BrowserSource, BrowserPageInfoPayload, ManagedSessionState, UserMessageContent } from '@shared/types'
 import { getAppAPI } from '@/windowAPI'
 
 // ─── System Prompt (standalone mode only) ────────────────────────────────
@@ -88,7 +88,7 @@ function useAgentSessionData(agentSessionId: string | null): {
   state: ManagedSessionState | null
   activity: string | null
   error: string | null
-  engineKind: string | undefined
+  engineKind: AIEngineKind | undefined
 } {
   const sessionData = useCommandStore((s) =>
     agentSessionId ? s.sessionById[agentSessionId] : null,
@@ -103,7 +103,7 @@ function useAgentSessionData(agentSessionId: string | null): {
     state: sessionData?.state ?? optimisticState,
     activity: sessionData?.activity ?? null,
     error: sessionData?.error ?? null,
-    engineKind: sessionData?.engineKind,
+    engineKind: sessionData?.engineKind as AIEngineKind | undefined,
   }
 }
 

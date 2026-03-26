@@ -45,6 +45,7 @@ export interface ScheduleCreatorSessionHandle {
   isPaused: boolean
   state: ManagedSessionState | null
   parsedSchedule: ParsedScheduleOutput | null
+  parsedOutput: ParsedScheduleOutput | null
   sendOrQueue: (message: UserMessageContent) => Promise<boolean>
   stop: () => void
   messageQueue: UseMessageQueueReturn
@@ -84,7 +85,7 @@ export function useScheduleCreatorSession(
   const creator = useCreatorSession<ParsedScheduleOutput>(creatorConfig)
 
   return useMemo<ScheduleCreatorSessionHandle>(
-    () => ({ ...creator, parsedSchedule: creator.parsedOutput }),
+    () => ({ ...creator, parsedSchedule: creator.parsedOutput, parsedOutput: creator.parsedOutput }),
     [creator]
   )
 }

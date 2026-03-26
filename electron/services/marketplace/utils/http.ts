@@ -58,7 +58,7 @@ export async function fetchWithTimeout(
 // ─── Standard response factories ────────────────────────────
 // Eliminates duplicated object literals across every adapter's search().
 
-const EMPTY_RESULTS = { items: [] as const, total: 0, hasMore: false } as const
+const EMPTY_RESULTS = { items: [] as never[], total: 0 as const, hasMore: false as const }
 
 /** Canonical rate-limited response — shared by all adapters. */
 export const RATE_LIMITED_RESPONSE: MarketplaceSearchResponse = {

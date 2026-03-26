@@ -160,7 +160,7 @@ export class DiscordBotService {
         ],
         // Inject undici Dispatcher for REST API calls (native discord.js support)
         ...(restAgent ? { rest: { agent: restAgent } } : {}),
-      })
+      } as import('discord.js').ClientOptions)
 
       // Register ready handler
       this.client.once(Events.ClientReady, (readyClient) => {
@@ -231,7 +231,7 @@ export class DiscordBotService {
       const testClient = new Client({
         intents: [GatewayIntentBits.Guilds],
         ...(restAgent ? { rest: { agent: restAgent } } : {}),
-      })
+      } as import('discord.js').ClientOptions)
 
       await testClient.login(config.botToken)
 
@@ -446,7 +446,7 @@ export class DiscordBotService {
     const channelId = this.extractChannelId(_origin)
     if (!channelId || !this.client) return
 
-    if (!('content' in message)) return
+    if (!('content' in message) || message.role !== 'assistant') return
     const blocks = message.content
     const textContent = extractTextFromBlocks(blocks)
 

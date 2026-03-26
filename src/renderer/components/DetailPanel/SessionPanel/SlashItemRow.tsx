@@ -59,7 +59,7 @@ function AppAvatar({
         src={avatarUrl}
         alt=""
         className="w-5 h-5 shrink-0 rounded-full object-cover"
-        onError={() => setFailedUrl(avatarUrl)}
+        onError={() => setFailedUrl(avatarUrl ?? null)}
       />
     )
   }

@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
+export type CodexConfigValue = string | number | boolean | CodexConfigValue[] | { [key: string]: CodexConfigValue }
 export type CodexConfigObject = Record<string, unknown>
 
 export interface CodexMcpServerConfig {

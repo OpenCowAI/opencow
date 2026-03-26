@@ -21,6 +21,7 @@ import type {
   DataBusEvent,
   IMOrchestratorDeps,
   ImageBlock,
+  ContentBlock,
 } from '../../../src/shared/types'
 import type { WeixinOrigin } from '../messaging/types'
 import type { WeixinBotEntry, WeixinBotStatus, WeixinMessage } from './types'
@@ -179,7 +180,7 @@ export class WeixinBotService {
     // Skip streaming partials — iLink has no "edit message" API, so sending
     // every intermediate chunk would flood the user with ~200 messages per
     // response. We wait for the finalized message (isStreaming=false).
-    if (message.isStreaming) return
+    if ('isStreaming' in message && message.isStreaming) return
     await this.relayToUser(origin, message)
   }
 
@@ -189,7 +190,7 @@ export class WeixinBotService {
     _sessionId: string,
   ): Promise<void> {
     // Skip streaming partials for the same reason as handleAssistantMessage.
-    if (message.isStreaming) return
+    if ('isStreaming' in message && message.isStreaming) return
     await this.relayToUser(origin, message)
   }
 
@@ -204,9 +205,10 @@ export class WeixinBotService {
   private async relayToUser(origin: SessionOrigin, message: ManagedSessionMessage): Promise<void> {
     if (origin.source !== 'weixin') return
 
+    if (!('content' in message)) return
     const blocks = message.content
     const text = extractTextFromBlocks(blocks)
-    const imageBlocks = blocks.filter((b): b is ImageBlock => b.type === 'image')
+    const imageBlocks = blocks.filter((b: ContentBlock): b is ImageBlock => b.type === 'image')
 
     // Send text first (if any)
     if (text) {

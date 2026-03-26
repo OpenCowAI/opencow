@@ -623,7 +623,7 @@ export class CodexQueryLifecycle implements SessionLifecycle {
       ...(options.apiKey ? { apiKey: options.apiKey } : {}),
       ...(options.baseUrl ? { baseUrl: options.baseUrl } : {}),
       ...(options.pathOverride ? { codexPathOverride: options.pathOverride } : {}),
-      ...(sanitizedConfig ? { config: sanitizedConfig } : {}),
+      ...(sanitizedConfig ? { config: sanitizedConfig as Record<string, CodexConfigValue> } : {}),
     })
 
     const threadOptions = {
