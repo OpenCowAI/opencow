@@ -4,6 +4,25 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.3.1] - 2026-03-26
+
+### Added
+- GitHub Release update checker with automatic and manual update checking
+- In-app update notification banner with dismiss-per-version persistence
+- Update status widget in About dialog (checking/up-to-date/available states)
+- Updates section in Settings with auto-check toggle and interval configuration
+- Release CI workflow for automated macOS builds and GitHub Release publishing
+- 42 new tests for semver parsing, asset matching, and update store
+
+### Changed
+- Decomposed monolithic updateChecker into modular service architecture
+- macOS app icon now uses rounded-rect shape for proper Dock rendering
+
+### Fixed
+- Check for Updates button now works (added IPC channel to preload whitelist)
+- Settings shows explicit feedback when already up to date after manual check
+- Tray menu state properly clears when no update is available
+
 ## [0.3.0] - 2026-03-26
 
 ### Added
