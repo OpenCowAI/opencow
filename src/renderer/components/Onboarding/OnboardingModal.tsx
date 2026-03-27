@@ -103,8 +103,8 @@ export function OnboardingModal(): React.JSX.Element | null {
         exiting && 'onboarding-exit pointer-events-none',
       )}
     >
-      {/* Language switcher — top-right corner */}
-      <div className="absolute top-4 right-4 z-10">
+      {/* Language switcher — top-right corner, pushed down to clear macOS traffic-light drag region */}
+      <div className="no-drag absolute top-10 right-6 z-10" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
         <OnboardingLanguageSwitcher />
       </div>
 
