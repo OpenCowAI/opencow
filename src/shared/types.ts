@@ -637,6 +637,25 @@ export interface IPCChannels {
   'terminal:get-info': { args: [scope: TerminalScope]; return: TerminalInfo | null }
   'terminal:list': { args: []; return: TerminalInfo[] }
   'terminal:replay': { args: [id: string]; return: string }
+  // ── Memory ────────────────────────────────────────────────────────
+  'memory:list': { args: [params: MemoryListParams]; return: MemoryItem[] }
+  'memory:get': { args: [id: string]; return: MemoryItem | null }
+  'memory:search': { args: [params: MemorySearchParams]; return: MemoryItem[] }
+  'memory:create': { args: [input: MemoryCreateInput]; return: MemoryItem }
+  'memory:update': { args: [id: string, patch: MemoryUpdateInput]; return: MemoryItem | null }
+  'memory:delete': { args: [id: string]; return: void }
+  'memory:archive': { args: [id: string]; return: void }
+  'memory:bulk-delete': { args: [ids: string[]]; return: void }
+  'memory:bulk-archive': { args: [ids: string[]]; return: void }
+  'memory:confirm': { args: [id: string]; return: MemoryItem }
+  'memory:reject': { args: [id: string]; return: void }
+  'memory:edit-and-confirm': { args: [id: string, content: string]; return: MemoryItem }
+  'memory:confirm-merge': { args: [pendingId: string, targetId: string]; return: MemoryItem }
+  'memory:reject-merge': { args: [pendingId: string]; return: void }
+  'memory:stats': { args: [projectId?: string]; return: MemoryStats }
+  'memory:get-settings': { args: [projectId?: string]; return: MemorySettings }
+  'memory:update-settings': { args: [projectId: string | null, settings: Partial<MemorySettings>]; return: MemorySettings }
+  'memory:export': { args: [format: 'json' | 'markdown', scope?: MemoryScope]; return: string }
 }
 
 // IPC_EVENT_CHANNEL is centrally maintained in appIdentity.ts; a mapped type is used here
@@ -674,7 +693,7 @@ export type SessionsViewMode = 'grid' | 'list'
  * These represent content views that belong to a project and should
  * be remembered/restored when the user returns from a global view.
  */
-export type ProjectTab = 'dashboard' | 'issues' | 'chat' | 'starred' | 'capabilities'
+export type ProjectTab = 'dashboard' | 'issues' | 'chat' | 'starred' | 'capabilities' | 'memories'
 
 /**
  * Full navigation tab union — includes both project-scoped tabs
@@ -902,6 +921,7 @@ export type DetailContext =
     }
   | { type: 'schedule'; scheduleId: string }
   | { type: 'pipeline'; pipelineId: string }
+  | { type: 'memory'; memoryId: string }
 
 // === Capability Form Data (per-type payloads) ===
 
@@ -1897,6 +1917,13 @@ export type DataBusEvent =
   // UI-only events (main → renderer, not persisted in DataBus)
   | { type: 'ui:toast'; payload: { message: string; duration?: number } }
   | { type: 'menu:about' }
+  // Memory events
+  | { type: 'memory:extracted'; payload: { items: MemoryItem[]; source: MemorySource } }
+  | { type: 'memory:confirmed'; payload: { item: MemoryItem; by: 'user' | 'auto' } }
+  | { type: 'memory:rejected'; payload: { id: string } }
+  | { type: 'memory:updated'; payload: { item: MemoryItem } }
+  | { type: 'memory:merge-proposed'; payload: { pendingId: string; targetId: string; oldContent: string; newContent: string; category: MemoryCategory; source: MemorySource } }
+  | { type: 'memory:deleted'; payload: { id: string } }
 
 // === DataBus AppState ===
 
@@ -3931,4 +3958,143 @@ export const SCHEDULE_LIMITS = {
   maxExecutionTimeMs: 600_000,
   maxDailyExecutions: 500,
   maxRetries: 5
+} as const
+
+// ═══════════════════════════════════════════════════════════════════
+// Memory System
+// ═══════════════════════════════════════════════════════════════════
+
+export type MemoryScope = 'user' | 'project'
+
+export type MemoryCategory =
+  // User dimension
+  | 'preference'
+  | 'background'
+  | 'behavior'
+  | 'workflow'
+  // Knowledge dimension
+  | 'fact'
+  | 'opinion'
+  | 'domain_knowledge'
+  | 'decision'
+  // Project dimension
+  | 'project_context'
+  | 'requirement'
+  | 'convention'
+  | 'lesson_learned'
+
+export type MemorySource =
+  | 'session'
+  | 'issue'
+  | 'issue_session'
+  | 'review_session'
+  | 'schedule'
+  | 'capability'
+  | 'user_explicit'
+  | 'ai_synthesis'
+
+export type MemoryStatus = 'pending' | 'confirmed' | 'rejected' | 'archived'
+
+export interface MemoryItem {
+  id: string
+  scope: MemoryScope
+  projectId: string | null
+  content: string
+  category: MemoryCategory
+  tags: string[]
+  confidence: number
+  source: MemorySource
+  sourceId: string | null
+  reasoning: string | null
+  status: MemoryStatus
+  confirmedBy: 'user' | 'auto' | null
+  version: number
+  previousId: string | null
+  accessCount: number
+  lastAccessedAt: number | null
+  expiresAt: number | null
+  createdAt: number
+  updatedAt: number
+}
+
+export interface MemoryListParams {
+  scope?: MemoryScope
+  projectId?: string
+  category?: MemoryCategory
+  status?: MemoryStatus
+  source?: MemorySource
+  sortBy?: 'updated_at' | 'created_at' | 'confidence' | 'access_count'
+  sortOrder?: 'asc' | 'desc'
+  limit?: number
+  offset?: number
+}
+
+export interface MemorySearchParams {
+  query: string
+  scope?: MemoryScope
+  projectId?: string
+  category?: MemoryCategory
+  status?: MemoryStatus
+  limit?: number
+}
+
+export interface MemoryCreateInput {
+  scope: MemoryScope
+  projectId?: string | null
+  content: string
+  category: MemoryCategory
+  tags?: string[]
+  confidence?: number
+  source: MemorySource
+  sourceId?: string | null
+  reasoning?: string | null
+}
+
+export interface MemoryUpdateInput {
+  content?: string
+  category?: MemoryCategory
+  scope?: MemoryScope
+  projectId?: string | null
+  tags?: string[]
+  confidence?: number
+  status?: MemoryStatus
+}
+
+export interface MemoryStats {
+  total: number
+  active: number
+  archived: number
+  pending: number
+  byCategory: Record<string, number>
+  byScope: { user: number; project: number }
+  avgConfidence: number
+  recentWeekAdded: number
+}
+
+export interface MemorySettings {
+  enabled: boolean
+  autoConfirm: boolean
+  confirmTimeoutSeconds: number
+  extractionDelaySeconds: number
+  extractionSources: MemorySource[]
+  maxMemories: number
+  autoArchiveDays: number
+}
+
+export const MEMORY_DEFAULTS: MemorySettings = {
+  enabled: true,
+  autoConfirm: false,
+  confirmTimeoutSeconds: 10,
+  extractionDelaySeconds: 15,
+  extractionSources: ['session', 'issue', 'issue_session', 'review_session'],
+  maxMemories: 100,
+  autoArchiveDays: 90,
+}
+
+export const MEMORY_LIMITS = {
+  maxUserMemories: 200,
+  maxProjectMemories: 100,
+  minConfidence: 0.5,
+  maxContentLength: 500,
+  maxTags: 10,
 } as const

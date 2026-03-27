@@ -6,7 +6,8 @@
     "app": "应用",
     "model": "模型",
     "integrations": "集成",
-    "trigger": "触发"
+    "trigger": "触发",
+    "features": "功能"
   },
   "tabs": {
     "general": "通用",
@@ -17,7 +18,8 @@
     "webhooks": "Webhooks",
     "messaging": "IM 机器人",
     "evose": "EvoseAI",
-    "updates": "更新"
+    "updates": "更新",
+    "memory": "记忆"
   },
   "general": {
     "appearance": "外观",

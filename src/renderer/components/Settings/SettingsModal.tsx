@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useState, useEffect } from 'react'
-import { Monitor, Globe, MessageSquare, Bot, Bell, Webhook, Shield, X, Blocks, RefreshCw } from 'lucide-react'
+import { Monitor, Globe, MessageSquare, Bot, Bell, Webhook, Shield, X, Blocks, RefreshCw, Brain } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { Dialog } from '@/components/ui/Dialog'
 import { useSettingsStore, type SettingsTab } from '@/stores/settingsStore'
@@ -15,6 +15,7 @@ import { WebhooksSection } from './WebhooksSection'
 import { MessagingSection } from './MessagingSection'
 import { EvoseSection } from './EvoseSection'
 import { UpdateSection } from './UpdateSection'
+import { MemorySection } from './MemorySection'
 
 interface TabItem {
   id: SettingsTab
@@ -55,6 +56,12 @@ const TAB_GROUPS: TabGroup[] = [
     tabs: [
       { id: 'notifications', labelKey: 'tabs.notifications', icon: <Bell className="h-4 w-4" aria-hidden="true" /> },
       { id: 'webhooks', labelKey: 'tabs.webhooks', icon: <Webhook className="h-4 w-4" aria-hidden="true" /> },
+    ],
+  },
+  {
+    labelKey: 'groups.features',
+    tabs: [
+      { id: 'memory', labelKey: 'tabs.memory', icon: <Brain className="h-4 w-4" aria-hidden="true" /> },
     ],
   },
 ]
@@ -138,6 +145,7 @@ export function SettingsModal(): React.JSX.Element | null {
             {activeTab === 'messaging' && <MessagingSection />}
             {activeTab === 'evose' && <EvoseSection />}
             {activeTab === 'updates' && <UpdateSection />}
+            {activeTab === 'memory' && <MemorySection />}
           </div>
         </div>
       )}

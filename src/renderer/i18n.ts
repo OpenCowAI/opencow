@@ -37,6 +37,9 @@ import enUSSchedule from './locales/en-US/schedule.json'
 import enUSDashboard from './locales/en-US/dashboard.json'
 import enUSSettings from './locales/en-US/settings.json'
 import enUSOnboarding from './locales/en-US/onboarding.json'
+import enUSMemory from './locales/en-US/memory.json'
+
+import zhCNMemory from './locales/zh-CN/memory.json'
 
 const NS = [
   'common',
@@ -49,6 +52,7 @@ const NS = [
   'dashboard',
   'settings',
   'onboarding',
+  'memory',
 ] as const
 
 /**
@@ -90,6 +94,7 @@ export function initI18n(): void {
         dashboard: zhCNDashboard,
         settings: zhCNSettings,
         onboarding: zhCNOnboarding,
+        memory: zhCNMemory,
       },
       'en-US': {
         common: enUSCommon,
@@ -102,6 +107,7 @@ export function initI18n(): void {
         dashboard: enUSDashboard,
         settings: enUSSettings,
         onboarding: enUSOnboarding,
+        memory: enUSMemory,
       },
     },
     interpolation: { escapeValue: false },

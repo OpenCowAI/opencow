@@ -48,6 +48,9 @@ import { MarketplaceService } from '../services/marketplace'
 import { RepoAnalyzer } from '../services/marketplace/agentAnalyzer'
 import { RepoSourceRegistry } from '../services/marketplace/repoSourceRegistry'
 import { GitService } from '../services/git/gitService'
+import { createMemoryStorage } from '../memory/storage'
+import { MemoryService } from '../memory/memoryService'
+import { RECENT_MESSAGE_WINDOW, MAX_SESSION_CONTENT_LENGTH } from '../memory/constants'
 import { GitCommandExecutor } from '../services/git/gitCommandExecutor'
 import { EvoseService } from '../services/evoseService'
 import { ScheduleStore } from '../services/scheduleStore'
@@ -133,6 +136,7 @@ export interface AppServices {
   marketplaceService: MarketplaceService
   repoSourceRegistry: RepoSourceRegistry
   gitService: GitService
+  memoryService: MemoryService
 }
 
 // ── Factory ──────────────────────────────────────────────────────────────────
@@ -186,6 +190,8 @@ export async function createAppServices(deps: ServiceFactoryDeps): Promise<AppSe
   let scheduleService!: ScheduleService
   // eslint-disable-next-line prefer-const
   let orchestrator!: SessionOrchestrator
+  // eslint-disable-next-line prefer-const
+  let memoryService!: MemoryService
 
   const inboxService = new InboxService({
     dispatch: (e) => bus.dispatch(e),
@@ -358,6 +364,13 @@ export async function createAppServices(deps: ServiceFactoryDeps): Promise<AppSe
     pendingQuestionRegistry,
     capabilityCenter,
     gitCommandExecutor: new GitCommandExecutor(),
+    getMemoryContext: async (projectId: string | null) => {
+      try {
+        return await memoryService.getContextForSession({ projectId })
+      } catch {
+        return null
+      }
+    },
   })
 
   // Late-bind orchestrator to marketplace service (marketplace is created before orchestrator)
@@ -539,6 +552,38 @@ export async function createAppServices(deps: ServiceFactoryDeps): Promise<AppSe
     durationMs: Date.now() - startedAt,
   })
 
+  // ── Phase 0.8: Memory System ───────────────────────────────────────────
+
+  const memoryStorage = createMemoryStorage({ type: 'sqlite', db: database.db })
+  memoryService = new MemoryService({
+    bus,
+    store: memoryStorage,
+    extractorDeps: {
+      getProviderEnv: () => providerService.getProviderEnv('claude'),
+      getProxyEnv: () => settingsService.getProxyEnv(),
+    },
+    getSessionContent: async (sessionId: string) => {
+      const session = await orchestrator.getFullSession(sessionId)
+      if (!session?.messages?.length) return null
+
+      const recent = session.messages.slice(-RECENT_MESSAGE_WINDOW)
+      const lines: string[] = []
+      for (const msg of recent) {
+        if (msg.role !== 'user' && msg.role !== 'assistant') continue
+        const role = msg.role === 'user' ? 'User' : 'Assistant'
+        for (const block of msg.content) {
+          // Only extract text blocks — tool calls and results are procedural noise
+          // that wastes the token budget and has no memory extraction value
+          if ('text' in block && typeof block.text === 'string') {
+            lines.push(`${role}: ${block.text}`)
+          }
+        }
+      }
+      return lines.join('\n').slice(0, MAX_SESSION_CONTENT_LENGTH) || null
+    },
+  })
+  memoryService.initialize()
+
   return {
     database,
     inboxService,
@@ -562,5 +607,6 @@ export async function createAppServices(deps: ServiceFactoryDeps): Promise<AppSe
     marketplaceService,
     repoSourceRegistry,
     gitService,
+    memoryService,
   }
 }

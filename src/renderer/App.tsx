@@ -25,6 +25,7 @@ import { BrowserSheet } from '@/components/BrowserSheet/BrowserSheet'
 import { BrowserPiPTrigger } from '@/components/BrowserPiP/BrowserPiPTrigger'
 import { TerminalPanel } from '@/components/TerminalSheet/TerminalSheet'
 import { SplashScreen } from '@/components/SplashScreen/SplashScreen'
+import { MemoryToast } from '@/components/memory/MemoryToast'
 
 // ── Constants ────────────────────────────────────────────────────────
 
@@ -230,7 +231,7 @@ function AppLayout(): React.JSX.Element {
     const panel = detailPanelRef.current
     if (!panel) return
 
-    const size = isInbox ? '60%' : detailContext?.type === 'session' ? '42%' : '50%'
+    const size = isInbox ? '60%' : detailContext?.type === 'session' ? '42%' : detailContext?.type === 'memory' ? '35%' : '50%'
 
     if (showDetail) {
       panel.expand()
@@ -410,6 +411,7 @@ export function App(): React.JSX.Element {
 
       {/* Toaster always visible (even during splash for error toasts) */}
       <Toaster />             {/* z: 60 */}
+      <MemoryToast />         {/* z: 50 */}
     </ErrorBoundary>
   )
 }

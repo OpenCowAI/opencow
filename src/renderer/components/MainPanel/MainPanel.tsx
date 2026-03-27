@@ -9,13 +9,14 @@ import { ChatView } from '@/components/ChatView/ChatView'
 import { CapabilitiesView } from '@/components/ChatView/CapabilitiesView'
 import { StarredArtifactsView } from '@/components/StarredArtifactsView/StarredArtifactsView'
 import { ScheduleView } from '@/components/ScheduleView/ScheduleView'
+import { MemoryView } from '@/components/MemoryView/MemoryView'
 import { KeepAliveTab } from '@/components/ui/KeepAliveTab'
 import { PillDropdown } from '@/components/ui/PillDropdown'
 import { ProviderBanner } from './ProviderBanner'
 import { getChatInputFocus } from '@/lib/chatInputRegistry'
 import type { MainTab } from '@shared/types'
 import { cn } from '@/lib/utils'
-import { CircleDot, MessageSquare, LayoutDashboard, Star, EllipsisVertical, Blocks } from 'lucide-react'
+import { CircleDot, MessageSquare, LayoutDashboard, Star, EllipsisVertical, Blocks, Brain } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 
 // Core tabs — Files has been moved into ChatView's view mode toggle
@@ -69,7 +70,7 @@ function MorePopover(): React.JSX.Element {
   }, [setActiveTab])
 
   // Highlight trigger when any More-menu tab is active
-  const isMoreTabActive = activeTab === 'dashboard' || activeTab === 'starred' || activeTab === 'capabilities'
+  const isMoreTabActive = activeTab === 'dashboard' || activeTab === 'starred' || activeTab === 'capabilities' || activeTab === 'memories'
 
   return (
     <PillDropdown
@@ -98,6 +99,7 @@ function MorePopover(): React.JSX.Element {
       <MoreMenuItem icon={Star} label={t('mainTabs.starredArtifacts')} tab="starred" activeTab={activeTab} onSelect={handleSelect} />
       <div className="my-1 h-px bg-[hsl(var(--border))]" role="separator" />
       <MoreMenuItem icon={Blocks} label={t('mainTabs.capabilities')} tab="capabilities" activeTab={activeTab} onSelect={handleSelect} />
+      <MoreMenuItem icon={Brain} label={t('mainTabs.memories')} tab="memories" activeTab={activeTab} onSelect={handleSelect} />
     </PillDropdown>
   )
 }
@@ -221,6 +223,9 @@ export function MainPanel(): React.JSX.Element {
       </KeepAliveTab>
       <KeepAliveTab active={activeTab === 'capabilities'}>
         <CapabilitiesView />
+      </KeepAliveTab>
+      <KeepAliveTab active={activeTab === 'memories'}>
+        <MemoryView />
       </KeepAliveTab>
     </div>
   )

@@ -41,6 +41,8 @@ import * as m037 from './037_create_project_external_mappings'
 import * as m038 from './038_backfill_project_external_mappings_from_claude'
 import * as m039 from './039_add_inbox_navigation_target'
 import * as m040 from './040_add_managed_session_ref_index'
+import * as m041 from './041_create_memory_tables'
+import * as m042 from './042_add_memory_extraction_delay'
 
 /**
  * Compile-time migration provider.
@@ -95,6 +97,8 @@ class CodeMigrationProvider implements MigrationProvider {
       '038_backfill_project_external_mappings_from_claude': m038,
       '039_add_inbox_navigation_target': m039,
       '040_add_managed_session_ref_index': m040,
+      '041_create_memory_tables': m041,
+      '042_add_memory_extraction_delay': m042,
     }
   }
 }

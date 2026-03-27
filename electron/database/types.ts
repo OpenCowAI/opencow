@@ -300,6 +300,53 @@ export interface CapabilityVersionTable {
   created_at: number
 }
 
+// ─── Memories ──────────────────────────────────────────────────────────
+
+export interface MemoryTable {
+  id: string
+  scope: string // 'user' | 'project'
+  project_id: string | null
+  content: string
+  category: string // MemoryCategory
+  tags: string // JSON array: string[]
+  confidence: number
+  source: string // MemorySource
+  source_id: string | null
+  reasoning: string | null
+  status: string // MemoryStatus
+  confirmed_by: string | null // 'user' | 'auto'
+  version: number
+  previous_id: string | null
+  access_count: number
+  last_accessed_at: number | null
+  expires_at: number | null
+  created_at: number
+  updated_at: number
+}
+
+export interface MemoryHistoryTable {
+  id: string
+  memory_id: string
+  event: string // 'created' | 'updated' | 'confirmed' | 'rejected' | 'archived' | 'deleted' | 'merged'
+  previous_content: string | null
+  new_content: string | null
+  actor: string // 'user' | 'auto' | 'ai_synthesis' | 'system'
+  source: string | null
+  created_at: number
+}
+
+export interface MemorySettingsTable {
+  project_id: string // '' for global defaults
+  enabled: number // 0 | 1
+  auto_confirm: number // 0 | 1
+  confirm_timeout_seconds: number
+  extraction_delay_seconds: number
+  extraction_sources: string // JSON array: MemorySource[]
+  max_memories: number
+  auto_archive_days: number
+  updated_at: number
+}
+
 // ─── Database schema ─────────────────────────────────────────────────────
 
 export interface Database {
@@ -325,6 +372,9 @@ export interface Database {
   installed_packages: InstalledPackageTable
   repo_sources: RepoSourceTable
   repo_source_sync: RepoSourceSyncTable
+  memories: MemoryTable
+  memory_history: MemoryHistoryTable
+  memory_settings: MemorySettingsTable
 }
 
 // ─── Installed Packages ──────────────────────────────────────────────────

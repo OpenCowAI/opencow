@@ -6,7 +6,8 @@
     "app": "App",
     "model": "Model",
     "integrations": "Integrations",
-    "trigger": "Trigger"
+    "trigger": "Trigger",
+    "features": "Features"
   },
   "tabs": {
     "general": "General",
@@ -17,7 +18,8 @@
     "webhooks": "Webhooks",
     "messaging": "IM Bots",
     "evose": "EvoseAI",
-    "updates": "Updates"
+    "updates": "Updates",
+    "memory": "Memory"
   },
   "general": {
     "appearance": "Appearance",

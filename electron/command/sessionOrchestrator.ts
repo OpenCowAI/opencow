@@ -103,6 +103,8 @@ export interface OrchestratorDeps {
   codexNativeBridgeManager?: CodexNativeBridgeManager
   /** Optional EngineBootstrapRegistry — engine-specific lifecycle option policy. */
   engineBootstrapRegistry?: EngineBootstrapRegistry
+  /** Optional memory context provider — injects persistent memories into system prompt. */
+  getMemoryContext?: (projectId: string | null) => Promise<{ formatted: string; memories: Array<{ id: string }> } | null>
 }
 
 // Re-export for downstream consumers (e.g. marketplace service)
@@ -561,9 +563,21 @@ export class SessionOrchestrator {
     // Build the layer object now; L3 (session) and L4 (capability) may be
     // adjusted later by the CapabilityCenter. The final string is composed
     // ONCE via composeSystemPrompt() after all adjustments are applied.
+    // Resolve memory context (fire-and-forget on failure)
+    let memoryPrompt: string | undefined
+    if (this.deps.getMemoryContext) {
+      try {
+        const mc = await this.deps.getMemoryContext(config.projectId ?? null)
+        if (mc?.formatted) memoryPrompt = mc.formatted
+      } catch {
+        // Memory injection failure is non-fatal
+      }
+    }
+
     let promptLayers: SystemPromptLayers = {
       identity: getIdentityPrompt(),
       context: config.contextSystemPrompt,
+      memory: memoryPrompt,
       base: getBaseSystemPrompt(config.origin.source),
       session: config.systemPrompt,
     }

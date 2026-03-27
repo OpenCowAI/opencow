@@ -141,6 +141,7 @@ export interface IPCDeps {
   onQuit?: () => void
   /** UpdateChecker for manual "Check for Updates" IPC. */
   updateChecker?: import('../services/update').UpdateCheckerService
+  memoryService?: import('../memory/memoryService').MemoryService
 }
 
 /* ------------------------------------------------------------------ */
@@ -1406,6 +1407,29 @@ export function registerIPCHandlers(deps: IPCDeps): void {
     registerHandler('tray-popover:resize', (height) => {
       tray.popoverWindow?.resize(height)
     })
+  }
+
+  // ── Memory ──────────────────────────────────────────────────────
+  const memoryService = deps.memoryService
+  if (memoryService) {
+    registerHandler('memory:list', (params) => memoryService.list(params))
+    registerHandler('memory:get', (id) => memoryService.get(id))
+    registerHandler('memory:search', (params) => memoryService.search(params))
+    registerHandler('memory:create', (input) => memoryService.create(input))
+    registerHandler('memory:update', (id, patch) => memoryService.update(id, patch))
+    registerHandler('memory:delete', (id) => memoryService.delete(id))
+    registerHandler('memory:archive', (id) => memoryService.archive(id))
+    registerHandler('memory:bulk-delete', (ids) => memoryService.bulkDelete(ids))
+    registerHandler('memory:bulk-archive', (ids) => memoryService.bulkArchive(ids))
+    registerHandler('memory:confirm', (id) => memoryService.confirm(id, 'user'))
+    registerHandler('memory:reject', (id) => memoryService.reject(id))
+    registerHandler('memory:edit-and-confirm', (id, content) => memoryService.editAndConfirm(id, content))
+    registerHandler('memory:confirm-merge', (pendingId, targetId) => memoryService.confirmMerge(pendingId, targetId))
+    registerHandler('memory:reject-merge', (pendingId) => memoryService.rejectMerge(pendingId))
+    registerHandler('memory:stats', (projectId?) => memoryService.getStats(projectId))
+    registerHandler('memory:get-settings', (projectId?) => memoryService.getSettings(projectId))
+    registerHandler('memory:update-settings', (projectId, settings) => memoryService.updateSettings(projectId, settings))
+    registerHandler('memory:export', (format, scope?) => memoryService.export(format, scope))
   }
 }
 

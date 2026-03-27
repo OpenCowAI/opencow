@@ -120,7 +120,7 @@ export interface ProjectViewState {
  * Chat tab has sub-tab slots (conversation & sessions) to avoid state
  * collision when switching between them.
  */
-export type DetailSlotKey = 'dashboard' | 'issues' | 'chat.conversation' | 'chat.sessions' | 'capabilities' | 'schedule' | 'starred'
+export type DetailSlotKey = 'dashboard' | 'issues' | 'chat.conversation' | 'chat.sessions' | 'capabilities' | 'schedule' | 'starred' | 'memories'
 
 /** All detail slots initialised to null. Frozen to prevent accidental mutation of the shared baseline. */
 export const EMPTY_TAB_DETAILS = Object.freeze<Record<DetailSlotKey, DetailContext | null>>({
@@ -131,6 +131,7 @@ export const EMPTY_TAB_DETAILS = Object.freeze<Record<DetailSlotKey, DetailConte
   capabilities: null,
   schedule: null,
   starred: null,
+  memories: null,
 })
 
 /**
@@ -152,6 +153,8 @@ function resolveSlotForContext(ctx: DetailContext): DetailSlotKey {
       return 'schedule'
     case 'pipeline':
       return 'schedule'
+    case 'memory':
+      return 'memories'
     default: {
       const _exhaustive: never = ctx
       throw new Error(`Unhandled DetailContext type: ${(_exhaustive as DetailContext).type}`)
@@ -182,6 +185,7 @@ function activeSlotForTab(tab: MainTab, chatSubTab: ChatSubTab): DetailSlotKey {
     case 'starred':      return 'starred'
     case 'capabilities': return 'capabilities'
     case 'schedule':     return 'schedule'
+    case 'memories':     return 'memories'
     default: {
       const _exhaustive: never = tab
       throw new Error(`Unhandled MainTab: ${_exhaustive}`)

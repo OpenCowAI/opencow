@@ -32,6 +32,7 @@ import { useNoteStore } from '@/stores/noteStore'
 import { useMessagingStore } from '@/stores/messagingStore'
 import { useGitStore } from '@/stores/gitStore'
 import { useUpdateStore } from '@/stores/updateStore'
+import { useMemoryStore } from '@/stores/memoryStore'
 import { toast } from '@/lib/toast'
 import type { DataBusEvent, SessionSnapshot, ManagedSessionMessage } from '@shared/types'
 import { getOriginIssueId } from '@shared/types'
@@ -521,6 +522,51 @@ export function useAppBootstrap(): void {
 
         case 'menu:about': {
           s.openAboutDialog()
+          break
+        }
+
+        // ── Memory events ──
+
+        case 'memory:extracted': {
+          const { items } = event.payload
+          if (Array.isArray(items) && items.length > 0) {
+            useMemoryStore.getState().addPendingMemories(items)
+          }
+          break
+        }
+        case 'memory:merge-proposed': {
+          const { pendingId, targetId, oldContent, newContent, category } = event.payload
+          if (typeof pendingId === 'string' && typeof targetId === 'string') {
+            useMemoryStore.getState().addPendingMerge({ pendingId, targetId, oldContent, newContent, category })
+          }
+          break
+        }
+        case 'memory:confirmed': {
+          const { item } = event.payload
+          if (item && typeof item.id === 'string') {
+            useMemoryStore.getState().onMemoryConfirmed(item)
+          }
+          break
+        }
+        case 'memory:rejected': {
+          const { id } = event.payload
+          if (typeof id === 'string') {
+            useMemoryStore.getState().onMemoryRejected(id)
+          }
+          break
+        }
+        case 'memory:updated': {
+          const { item } = event.payload
+          if (item && typeof item.id === 'string') {
+            useMemoryStore.getState().onMemoryUpdated(item)
+          }
+          break
+        }
+        case 'memory:deleted': {
+          const { id } = event.payload
+          if (typeof id === 'string') {
+            useMemoryStore.getState().onMemoryDeleted(id)
+          }
           break
         }
       }

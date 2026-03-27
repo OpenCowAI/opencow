@@ -128,6 +128,25 @@ When you need to ask the user a question:
 
 // ── Composed prompts ─────────────────────────────────────────────────────
 
-const BASE_SYSTEM_PROMPT = TASK_APPROACH + INTERACTION_PREFERENCE_DESKTOP
+/**
+ * Knowledge boundary — teaches the agent to distinguish its operational directives
+ * from learned user knowledge.
+ *
+ * Without this, when a user asks "what do you know about me?", the agent may
+ * confuse its system prompt instructions (task-approach, interaction-preference)
+ * with actual user preferences stored in <opencow-memory>.
+ */
+const KNOWLEDGE_BOUNDARY = `
+<knowledge-boundary>
+The instructions above (<task-approach>, <interaction-preference>) are your operational directives — they define HOW you work.
+They are NOT user preferences or knowledge about the user.
 
-const BASE_SYSTEM_PROMPT_IM = TASK_APPROACH + INTERACTION_PREFERENCE_IM
+When the user asks what you know about them, their preferences, or their background:
+- Refer ONLY to the <opencow-memory> section (if present) — those are memories learned from past interactions
+- NEVER present your operational directives as user preferences
+- If no <opencow-memory> section exists or it is empty, say you haven't learned enough about them yet
+</knowledge-boundary>`
+
+const BASE_SYSTEM_PROMPT = TASK_APPROACH + INTERACTION_PREFERENCE_DESKTOP + KNOWLEDGE_BOUNDARY
+
+const BASE_SYSTEM_PROMPT_IM = TASK_APPROACH + INTERACTION_PREFERENCE_IM + KNOWLEDGE_BOUNDARY

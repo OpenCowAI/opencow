@@ -11,6 +11,7 @@
  *
  *   L0  identity     — Brand identity (ALWAYS present)
  *   L1  context      — Issue contextRefs, file changes, review diffs
+ *   L1.5 memory      — Persistent user/project memories (cross-session context)
  *   L2  base         — Domain-agnostic behavioral directives
  *   L3  session      — Per-session: custom prompt, agent persona, or creator
  *   L4  capability   — Skills + Rules (XML-wrapped fragments)
@@ -32,6 +33,8 @@ export interface SystemPromptLayers {
   identity: string
   /** L1 — Contextual background (issue refs, file changes, etc.) */
   context?: string
+  /** L1.5 — Persistent user/project memories (cross-session context) */
+  memory?: string
   /** L2 — Domain-agnostic behavioral directives (skipped for specialized origins) */
   base?: string
   /** L3 — Per-session prompt (custom, agent persona, or creator role) */
@@ -52,6 +55,7 @@ export function composeSystemPrompt(layers: SystemPromptLayers): string {
   return [
     layers.identity,
     layers.context,
+    layers.memory,
     layers.base,
     layers.session,
     layers.capability,

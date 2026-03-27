@@ -221,6 +221,25 @@ const invokeChannels: (keyof IPCChannels)[] = [
   'terminal:get-info',
   'terminal:list',
   'terminal:replay',
+  // Memory
+  'memory:list',
+  'memory:get',
+  'memory:search',
+  'memory:create',
+  'memory:update',
+  'memory:delete',
+  'memory:archive',
+  'memory:bulk-delete',
+  'memory:bulk-archive',
+  'memory:confirm',
+  'memory:reject',
+  'memory:edit-and-confirm',
+  'memory:confirm-merge',
+  'memory:reject-merge',
+  'memory:stats',
+  'memory:get-settings',
+  'memory:update-settings',
+  'memory:export',
 ]
 
 const eventChannels: (keyof IPCEventChannels)[] = [

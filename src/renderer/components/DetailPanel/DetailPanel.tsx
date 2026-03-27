@@ -7,6 +7,7 @@ import { CapabilityEditView } from './CapabilityEditView'
 import { IssueDetailView } from './IssueDetailView'
 import { ScheduleDetailView } from './ScheduleDetailView'
 import { PipelineDetailView } from './PipelineDetailView'
+import { MemoryDetailView } from './MemoryDetailView'
 import type { DetailContext } from '@shared/types'
 
 /** Exhaustive type guard — will cause a compile error if a new variant is added without handling */
@@ -63,6 +64,8 @@ function renderContext(ctx: DetailContext): React.JSX.Element {
       return <ScheduleDetailView scheduleId={ctx.scheduleId} />
     case 'pipeline':
       return <PipelineDetailView pipelineId={ctx.pipelineId} />
+    case 'memory':
+      return <MemoryDetailView memoryId={ctx.memoryId} />
     default:
       return assertNever(ctx)
   }

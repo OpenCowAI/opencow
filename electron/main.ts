@@ -496,7 +496,7 @@ app.whenReady().then(async () => {
     orchestrator, projectService, artifactService, browserService, terminalService,
     capabilityCenter, packageService, scheduleService, timeResolver,
     eventListener, executionStore, noteStore, providerService,
-    marketplaceService, repoSourceRegistry, gitService,
+    marketplaceService, repoSourceRegistry, gitService, memoryService,
   } = svc
 
   // Wire up TrayIssueService for issue-centric tray popover data
@@ -540,6 +540,7 @@ app.whenReady().then(async () => {
     marketplaceService,
     repoSourceRegistry,
     gitService,
+    memoryService,
     getProxyFetch: () => proxyFetchFactory.getStandardFetch(),
     onQuit: requestQuit,
     updateChecker,
