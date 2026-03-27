@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useTranslation } from 'react-i18next'
-import { Monitor, Bell, Shield, Sparkles } from 'lucide-react'
+import { Monitor, Bell, Shield } from 'lucide-react'
+import opencowIp from '@/assets/opencow-ip.png'
 
 interface WelcomeStepProps {
   onStart: () => void
@@ -36,8 +37,8 @@ export function WelcomeStep({ onStart }: WelcomeStepProps): React.JSX.Element {
   return (
     <div className="text-center onboarding-step-enter">
       {/* Logo area */}
-      <div className="mx-auto mb-6 flex h-16 w-16 items-center justify-center rounded-2xl bg-[hsl(var(--accent))] ring-1 ring-[hsl(var(--border))]">
-        <Sparkles className="h-8 w-8 text-[hsl(var(--primary))]" />
+      <div className="mx-auto mb-6 flex h-20 w-20 items-center justify-center">
+        <img src={opencowIp} alt="OpenCow" className="h-20 w-20 object-contain" draggable={false} />
       </div>
 
       <h1 className="text-2xl font-bold mb-2">{t('welcome.title')}</h1>
