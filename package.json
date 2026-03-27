@@ -1,7 +1,7 @@
 {
   "name": "opencow",
   "productName": "OpenCow",
-  "version": "0.3.4",
+  "version": "0.3.5",
   "description": "Task-driven autonomous AI agent platform",
   "packageManager": "pnpm@10.13.1",
   "main": "./out/main/index.js",
@@ -169,8 +169,17 @@
     "dmg": {
       "iconSize": 128,
       "contents": [
-        { "x": 192, "y": 244, "type": "file" },
-        { "x": 548, "y": 244, "type": "link", "path": "/Applications" }
+        {
+          "x": 192,
+          "y": 244,
+          "type": "file"
+        },
+        {
+          "x": 548,
+          "y": 244,
+          "type": "link",
+          "path": "/Applications"
+        }
       ],
       "window": {
         "width": 740,
