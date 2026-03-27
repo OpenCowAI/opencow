@@ -5,6 +5,11 @@ import { normalizeContentBlocks, ensureThinkingBlocksFirst, type SDKContentBlock
 import type { EngineRuntimeEvent, RuntimeModelUsage, RuntimeResultOutcome, RuntimeTurnUsage } from './events'
 import { toConversationContentBlocks } from './contentBlockMapper'
 import type { ConversationContentBlock } from '../domain/content'
+import { createLogger } from '../../platform/logger'
+
+const log = createLogger('ClaudeRuntimeAdapter')
+
+// ── Helpers ─────────────────────────────────────────────────────────────────
 
 interface RawUsage {
   input_tokens?: number
@@ -123,6 +128,8 @@ function extractModelUsage(raw: Record<string, unknown>): Record<string, Runtime
   return mapped
 }
 
+// ── Block parsers ───────────────────────────────────────────────────────────
+
 function parseAssistantBlocks(raw: Record<string, unknown>): EngineRuntimeEvent[] {
   const messageObj = raw.message as { content?: SDKContentBlock[]; usage?: RawUsage } | undefined
   const events: EngineRuntimeEvent[] = [{
@@ -176,10 +183,45 @@ function parsePartialBlocks(raw: Record<string, unknown>): EngineRuntimeEvent {
   }
 }
 
+// ── Main adapter ────────────────────────────────────────────────────────────
+
+/**
+ * Set of SDK event signatures (`type` or `type:subtype`) that are known
+ * informational events. These are logged at debug level and silently dropped —
+ * the conversation pipeline does not need to act on them.
+ *
+ * Adding entries here is the correct way to handle new SDK events that
+ * carry no actionable data for OpenCow. This avoids protocol violation
+ * noise when the SDK evolves.
+ */
+const KNOWN_INFORMATIONAL_EVENTS = new Set([
+  // File persistence notifications (SDK v0.2.50+)
+  'system:files_persisted',
+  // Task progress updates (todo list tracking)
+  'system:task_progress',
+  // Session state transitions (idle/running/requires_action)
+  'system:session_state_changed',
+  // MCP elicitation completion
+  'system:elicitation_complete',
+  // Local command output (/voice, /cost etc.)
+  'system:local_command_output',
+  // Prompt suggestions (predicted next user input)
+  'prompt_suggestion',
+  // Authentication status updates
+  'auth_status',
+  // Tool use summaries
+  'tool_use_summary',
+  // User message echoes
+  'user',
+])
+
 export function adaptClaudeSdkMessage(message: SDKMessage): EngineRuntimeEvent[] {
   const raw = message as Record<string, unknown>
   const type = typeof raw.type === 'string' ? raw.type : ''
   const subtype = typeof raw.subtype === 'string' ? raw.subtype : null
+  const eventSignature = subtype ? `${type}:${subtype}` : type
+
+  // ── Actionable events (mapped to EngineRuntimeEvent) ──────────────────
 
   if (type === 'system' && subtype === 'init') {
     return [{
@@ -233,13 +275,6 @@ export function adaptClaudeSdkMessage(message: SDKMessage): EngineRuntimeEvent[]
       })]
     }
 
-    // result.usage is the cumulative aggregate across all internal API turns of
-    // the query (consistent with total_cost_usd being session-level cumulative).
-    // It must NOT be emitted as turn.usage — that would overwrite the correct
-    // per-API-call context window size from the last assistant message.
-    //
-    // Token accounting is handled authoritatively by modelUsage → setFinalTokenUsage().
-    // Context window tracking is handled by assistant message → context.snapshot.
     return [{
       kind: 'turn.result',
       payload: {
@@ -402,8 +437,8 @@ export function adaptClaudeSdkMessage(message: SDKMessage): EngineRuntimeEvent[]
     }]
   }
 
-  // SDK v0.2.50+: informational status updates (e.g. compacting indicator).
-  // Mapped to engine.diagnostic so existing reducer/projector handles it.
+  // ── Diagnostic events (mapped to engine.diagnostic) ───────────────────
+
   if (type === 'system' && subtype === 'status') {
     const status = raw.status as string | null
     if (status === 'compacting') {
@@ -418,31 +453,54 @@ export function adaptClaudeSdkMessage(message: SDKMessage): EngineRuntimeEvent[]
         },
       }]
     }
-    // status === null or other values: no-op, session returned to normal
+    // status === null or other values: session returned to normal
     return []
   }
 
-  // SDK v0.2.50+: file persistence notifications. Informational only;
-  // no action needed on the conversation pipeline side.
-  if (type === 'system' && subtype === 'files_persisted') {
+  if (type === 'system' && subtype === 'api_retry') {
+    const attempt = typeof raw.attempt === 'number' ? raw.attempt : 0
+    const delay = typeof raw.delay === 'number' ? raw.delay : 0
+    const errorStatus = typeof raw.error_status === 'number' ? raw.error_status : undefined
+    log.info(`API retry: attempt ${attempt}, delay ${delay}ms`, { errorStatus })
+    return [{
+      kind: 'engine.diagnostic',
+      payload: {
+        code: 'claude.api_retry',
+        severity: 'warning' as const,
+        message: `API retry attempt ${attempt}${errorStatus ? ` (HTTP ${errorStatus})` : ''}, retrying in ${delay}ms`,
+        terminal: false,
+        source: 'claude-sdk',
+      },
+    }]
+  }
+
+  if (type === 'rate_limit_event') {
+    const status = typeof raw.status === 'string' ? raw.status : 'unknown'
+    log.info(`Rate limit event: ${status}`, { raw })
+    return [{
+      kind: 'engine.diagnostic',
+      payload: {
+        code: 'claude.rate_limit',
+        severity: 'warning' as const,
+        message: `Rate limit: ${status}`,
+        terminal: false,
+        source: 'claude-sdk',
+      },
+    }]
+  }
+
+  // ── Known informational events (no-op, debug logged) ──────────────────
+
+  if (KNOWN_INFORMATIONAL_EVENTS.has(eventSignature) || KNOWN_INFORMATIONAL_EVENTS.has(type)) {
+    log.debug(`SDK event (informational, no-op): ${eventSignature}`)
     return []
   }
 
-  // Task progress updates (e.g. todo list tracking). Informational only;
-  // the conversation pipeline does not need to act on these.
-  if (type === 'system' && subtype === 'task_progress') {
-    return []
-  }
-
-  // The SDK echoes `user` messages back on the stream; they carry no new
-  // information for the engine so we silently drop them.
-  if (type === 'user') {
-    return []
-  }
-
-  return [protocolViolation({
-    reason: `Unsupported Claude runtime event: ${type}:${subtype ?? '-'}`,
-    rawType: type,
-    rawSubtype: subtype,
-  })]
+  // ── Unknown events ────────────────────────────────────────────────────
+  // Forward-compatible: new SDK events that we haven't explicitly handled
+  // are logged at info level for diagnostics, NOT treated as protocol
+  // violations. Protocol violations are reserved for genuinely malformed
+  // messages (missing type, broken payloads).
+  log.info(`Unhandled SDK event type: ${eventSignature} — ignoring (SDK may be newer than adapter)`)
+  return []
 }

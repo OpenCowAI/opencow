@@ -107,14 +107,12 @@ describe('adaptClaudeSdkMessage routing matrix', () => {
     })
   }
 
-  it('unknown route -> protocol.violation', () => {
+  it('unknown route -> graceful ignore (forward-compatible)', () => {
     const events = adaptClaudeSdkMessage({
       type: 'mystery',
       subtype: 'x',
     } as never)
 
-    expect(events).toHaveLength(1)
-    const event = events[0]!
-    expect(event.kind).toBe('protocol.violation')
+    expect(events).toHaveLength(0)
   })
 })

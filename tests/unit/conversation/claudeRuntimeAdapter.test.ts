@@ -209,15 +209,13 @@ describe('adaptClaudeSdkMessage', () => {
     expect(events).toHaveLength(0)
   })
 
-  it('fail-closes unknown messages as protocol violations', () => {
+  it('gracefully ignores unknown event types (forward-compatible)', () => {
     const events = adaptClaudeSdkMessage({
       type: 'unknown_event',
       subtype: 'mystery',
     } as never)
 
-    expect(events).toHaveLength(1)
-    const event = events[0]!
-    expect(event.kind).toBe('protocol.violation')
+    expect(events).toHaveLength(0)
   })
 
   it('fail-closes unknown result subtype with subtype context', () => {
