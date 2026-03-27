@@ -22,16 +22,17 @@
  *   resources/tray-source.png     — tray/menu bar icon (transparent bg, cow at ~75%)
  *
  * Generated outputs:
- *   resources/icon.icns        — macOS .app bundle icon (full-bleed, system applies squircle mask)
- *   resources/icon.png         — BrowserWindow / Dock icon (pre-rendered squircle mask)
- *   resources/icon-dev.icns    — dev build .icns (full-bleed, dark bg)
- *   resources/icon-dev.png     — dev Dock icon (pre-rendered squircle mask, dark bg)
+ *   resources/icon.icns        — macOS .app bundle icon (pre-rendered squircle, works on 11-26+)
+ *   resources/icon.png         — BrowserWindow / Dock icon (pre-rendered squircle)
+ *   resources/icon-dev.icns    — dev build .icns (pre-rendered squircle, dark bg)
+ *   resources/icon-dev.png     — dev Dock icon (pre-rendered squircle, dark bg)
  *   resources/tray.png         — menu bar tray icon 22×22 (colored, cropped)
  *   resources/tray@2x.png      — menu bar tray icon 44×44 (colored, cropped, Retina)
  *
  * Both prod and dev icons go through the SAME pipeline (process_icon).
- * .icns = full-bleed source (system masks it). .png = pre-rendered squircle mask
- * (Electron's app.dock.setIcon() and BrowserWindow do NOT get system masking).
+ * Both .icns and .png use the pre-rendered squircle mask because macOS 11-15
+ * does NOT auto-apply squircle to bundle icons. macOS 26+ enforces squircle
+ * but our shape already matches, so no double-masking issue.
  */
 
 import { execSync } from 'node:child_process'
@@ -99,30 +100,33 @@ ImageDraw.Draw(mask).rounded_rectangle(
     [MARGIN, MARGIN, MARGIN + SHAPE, MARGIN + SHAPE],
     radius=SHAPE_RADIUS, fill=255)
 
-def process_icon(source_path, png_name, full_bleed_name):
+def process_icon(source_path, png_name, icns_bleed_name):
     """Identical pipeline for both prod and dev icons.
     Source images are pre-normalized to 1024×1024 with cow at ~64%.
-    - .icns: use source as-is (full-bleed), system applies squircle mask
-    - .png:  pre-render squircle mask (for app.dock.setIcon / BrowserWindow)
+
+    Both .icns and .png get the pre-rendered squircle mask because:
+    - macOS 11-15: system does NOT auto-apply squircle to .icns bundle icons
+    - macOS 26+:   system enforces squircle, but our shape already matches
+    - Electron:    app.dock.setIcon() and BrowserWindow never get system mask
     """
     src = Image.open(source_path).convert("RGBA")
     if src.size != (CANVAS, CANVAS):
         src = src.resize((CANVAS, CANVAS), Image.LANCZOS)
 
-    # Flatten alpha: composite onto opaque background to eliminate any
-    # semi-transparent pixels. Without this, macOS renders transparent
-    # areas as a visible gap between the icon content and the squircle.
-    bg_px = src.getpixel((0, 0))[:3] + (255,)  # sample corner for bg color
+    # Flatten alpha onto opaque background to eliminate semi-transparent pixels
+    bg_px = src.getpixel((0, 0))[:3] + (255,)
     bg = Image.new("RGBA", (CANVAS, CANVAS), bg_px)
     src = Image.alpha_composite(bg, src)
 
-    # Save full-bleed for .icns generation
-    src.save(os.path.join(tmp_dir, full_bleed_name))
-
-    # Apply squircle mask for .png
+    # Apply squircle mask — used for BOTH .png and .icns
     masked = Image.new("RGBA", (CANVAS, CANVAS), (0, 0, 0, 0))
     masked.paste(src, (0, 0), mask)
+
+    # .png for Electron (app.dock.setIcon / BrowserWindow)
     masked.save(os.path.join(res_dir, png_name))
+
+    # .icns source: same squircle-masked image (compatible with macOS 11-26+)
+    masked.save(os.path.join(tmp_dir, icns_bleed_name))
 
 # Both icons go through the exact same pipeline
 process_icon(src_path, "icon.png", "icon-full-bleed.png")
