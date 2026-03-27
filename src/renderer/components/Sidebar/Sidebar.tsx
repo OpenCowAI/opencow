@@ -36,6 +36,7 @@ import { DeleteProjectDialog } from './DeleteProjectDialog'
 import { AddProjectPopover } from './AddProjectPopover'
 import { CreateProjectDialog } from './CreateProjectDialog'
 import { ImportProjectsDialog } from './ImportProjectsDialog'
+import { SidebarUpdateCard } from './SidebarUpdateCard'
 
 const PROJECTS_POPOVER_GAP = 8
 const PROJECTS_POPOVER_CLOSE_DELAY_MS = 120
@@ -680,6 +681,7 @@ export function Sidebar(): React.JSX.Element {
           <div className="mt-2 pt-2 border-t border-[hsl(var(--sidebar-border)/0.5)] space-y-1">
             <ScheduleWidget collapsed />
             <InboxWidget collapsed />
+            <SidebarUpdateCard collapsed />
           </div>
         </nav>
 
@@ -798,6 +800,7 @@ export function Sidebar(): React.JSX.Element {
           <ScheduleWidget />
           <InboxWidget />
         </div>
+        <SidebarUpdateCard />
       </nav>
 
       <div className="shrink-0">

@@ -8,7 +8,7 @@
  *   - Manual "Check for Updates" IPC calls from About dialog / Settings
  *
  * Consumed by:
- *   - UpdateBanner (global notification)
+ *   - SidebarUpdateCard (sidebar notification card)
  *   - AboutDialog (version status section)
  *   - SettingsModal UpdateSection (preferences + manual check)
  */
