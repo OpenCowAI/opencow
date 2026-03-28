@@ -62,6 +62,12 @@ export interface RegisterCodexBridgeSessionInput {
   relay: ToolProgressRelay
   nativeToolAllowlist: StartSessionNativeToolAllowItem[]
   activeMcpServerNames?: ReadonlySet<string>
+  /**
+   * Additional per-session tool descriptors to merge with registry tools.
+   * Used for per-session sandboxed tools (e.g. RepoAnalyzer's filesystem tools)
+   * that can't be registered globally in NativeCapabilityRegistry.
+   */
+  additionalTools?: NativeToolDescriptor[]
 }
 
 interface CodexNativeBridgeManagerOptions {
@@ -115,7 +121,10 @@ export class CodexNativeBridgeManager {
       activeMcpServerNames: input.activeMcpServerNames,
     }
 
-    const tools = this.nativeCapabilityRegistry.getToolDescriptorsByAllowlist(input.nativeToolAllowlist, toolContext)
+    const registryTools = this.nativeCapabilityRegistry.getToolDescriptorsByAllowlist(input.nativeToolAllowlist, toolContext)
+    const tools = input.additionalTools
+      ? [...registryTools, ...input.additionalTools]
+      : registryTools
 
     if (tools.length === 0) {
       this.sessions.delete(sessionId)

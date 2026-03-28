@@ -31,6 +31,7 @@ import type {
   DataBusEvent,
   MarketAnalysisPhase,
 } from '../../../src/shared/types'
+import { MARKET_ANALYSIS_TIMEOUT_SEC } from '../../../src/shared/types'
 import type {
   MarketplaceProvider,
   MarketplaceSettings,
@@ -331,9 +332,9 @@ export class MarketplaceService {
 
     let result: MarketInstallPreview
 
-    if (this.repoAnalyzer) {
-      // ── Agent-First analysis ─────────────────────────────────────
-      result = await this.analyzeViaAgent(slug, marketplaceId, provider)
+    if (this.repoAnalyzer && this.orchestrator) {
+      // ── Agent analysis via visible session ─────────────────────
+      result = await this.analyzeViaSession(slug, marketplaceId)
     } else if (provider.probeCapabilities) {
       // Provider declares multi-capability probing support (e.g. UserRepoProvider)
       result = await provider.probeCapabilities(slug)
@@ -406,13 +407,18 @@ export class MarketplaceService {
       },
     })
 
-    // Start the visible session
+    // Start the visible session — projectPath sets the SDK subprocess cwd
+    // so the Agent's sandboxed tools (read_file, list_directory) resolve
+    // paths relative to the downloaded repository.
+    // customTools (engine-agnostic): SessionOrchestrator handles injection per engine
+    // - Claude: creates in-process MCP server
+    // - Codex:  registers via CodexNativeBridgeManager HTTP bridge
     const sessionInput: SessionStartOptions = {
       prompt: prepared.userMessage,
       origin: { source: 'market-analyzer', slug, marketplaceId },
       systemPrompt: prepared.systemPrompt,
-      maxTurns: prepared.maxTurns,
-      customMcpServers: { 'repo-analyzer': prepared.mcpServerConfig as Record<string, unknown> },
+      projectPath: repoDir,
+      customTools: { name: prepared.toolServerName, tools: prepared.tools },
       onComplete: (result) => this.handleAnalysisComplete(sessionId, result),
     }
 
@@ -448,8 +454,15 @@ export class MarketplaceService {
     const pendingKey = `${meta.marketplaceId}:${meta.slug}`
 
     try {
+      // If the session ended with an error (timeout, crash, user stop),
+      // treat it as a failed analysis — don't silently return empty preview.
+      if (result.error) {
+        throw new Error(`Analysis session failed: ${result.error}`)
+      }
+
       // Extract manifest from the capability instance
       const agentManifest = meta.capability.getSubmittedManifest()
+      log.info(`Session ${sessionId} for ${meta.slug}: submit_manifest ${agentManifest ? 'received' : 'NOT received'}, stopReason=${result.stopReason}`)
 
       // Validate
       let manifest: ValidatedManifest | null = null
@@ -485,6 +498,13 @@ export class MarketplaceService {
           preview,
         },
       })
+
+      // Resolve pending analyzeViaSession() caller (if any)
+      const resolver = this.pendingSessionResolvers.get(pendingKey)
+      if (resolver) {
+        this.pendingSessionResolvers.delete(pendingKey)
+        resolver.resolve(preview)
+      }
     } catch (err) {
       log.error(`Failed to process analysis result for ${meta.slug}`, err)
 
@@ -502,6 +522,13 @@ export class MarketplaceService {
           error: err instanceof Error ? err.message : String(err),
         },
       })
+
+      // Reject pending analyzeViaSession() caller (if any)
+      const resolver = this.pendingSessionResolvers.get(pendingKey)
+      if (resolver) {
+        this.pendingSessionResolvers.delete(pendingKey)
+        resolver.reject(err instanceof Error ? err : new Error(String(err)))
+      }
     }
   }
 
@@ -538,138 +565,69 @@ export class MarketplaceService {
     }
   }
 
-  // ─── Legacy Agent Analysis (direct SDK, black-box) ─────────────────
+  // ─── Session-Based Agent Analysis (bridges sync analyze() with async session) ──
 
   /**
-   * Agent-First analysis path for `analyze()`.
+   * Pending resolve/reject callbacks for `analyzeViaSession()` callers.
+   * Keyed by `${marketplaceId}:${slug}`.
    *
-   * Downloads the repo, runs Agent analysis, stores the result in
-   * `pendingAnalysis` for the subsequent `install()` call, and converts
-   * the ValidatedManifest into the MarketInstallPreview format the UI expects.
-   *
-   * @deprecated Use `startAnalysisSession()` for the session-based (visible) path.
+   * When `handleAnalysisComplete()` fires, it checks this map and resolves
+   * the pending Promise, bridging the async session completion back to the
+   * synchronous `analyze()` contract.
    */
-  private async analyzeViaAgent(
+  private pendingSessionResolvers = new Map<string, {
+    resolve: (preview: MarketInstallPreview) => void
+    reject: (error: Error) => void
+  }>()
+
+  /**
+   * Start a visible analysis session and wait for completion.
+   *
+   * Bridges the synchronous `analyze()` contract (returns MarketInstallPreview)
+   * with the async session-based analysis (event-driven completion).
+   *
+   * Data flow:
+   *   1. startAnalysisSession() → downloads repo, starts visible session
+   *   2. SessionOrchestrator runs Agent → onComplete callback fires
+   *   3. handleAnalysisComplete() → stores pendingAnalysis + resolves this Promise
+   */
+  private async analyzeViaSession(
     slug: string,
     marketplaceId: MarketplaceId,
-    provider: MarketplaceProvider,
   ): Promise<MarketInstallPreview> {
-    const pendingKey = `${marketplaceId}:${slug}`
+    const key = `${marketplaceId}:${slug}`
 
-    // ── Cancel any previous active analysis for this slug (user retries) ──
-    this.cancelAnalysis(slug, marketplaceId)
+    // Create a Promise that will be resolved by handleAnalysisComplete()
+    const resultPromise = new Promise<MarketInstallPreview>((resolve, reject) => {
+      this.pendingSessionResolvers.set(key, { resolve, reject })
+    })
 
-    // Clean up any previous pending analysis for this slug
-    const previous = this.pendingAnalysis.get(pendingKey)
-    if (previous) {
-      fs.rm(previous.tmpDir, { recursive: true, force: true }).catch(() => {})
-      this.pendingAnalysis.delete(pendingKey)
-    }
+    // Safety timeout — prevents indefinite hang if onComplete never fires
+    // (e.g. SessionOrchestrator internal error, session cleanup without callback)
+    const timeoutMs = MARKET_ANALYSIS_TIMEOUT_SEC * 1000 + 30_000 // analysis timeout + 30s buffer
+    const timeoutId = setTimeout(() => {
+      const resolver = this.pendingSessionResolvers.get(key)
+      if (resolver) {
+        this.pendingSessionResolvers.delete(key)
+        resolver.reject(new Error(`Analysis session for "${slug}" timed out waiting for completion`))
+      }
+    }, timeoutMs)
 
-    // ── Create AbortController for cancellation support ──
-    const controller = new AbortController()
-    const { signal } = controller
-    this.activeAnalyses.set(pendingKey, controller)
-
-    // Fetch detail for context and version info
-    const detail = await provider.getDetail(slug)
-
-    // Download the full repo for Agent analysis
-    const tmpDir = path.join(
-      os.tmpdir(),
-      `opencow-analyze-${crypto.randomUUID()}`,
-    )
-    await fs.mkdir(tmpDir, { recursive: true })
+    // Clear timeout when Promise settles (either resolve or reject)
+    const guarded = resultPromise.finally(() => clearTimeout(timeoutId))
 
     try {
-      // ── Phase 1: Download ────────────────────────────────────────────
-      this.emitAnalyzeProgress(slug, 'downloading', 'Downloading repository…')
-
-      if (signal.aborted) throw new Error('Analysis cancelled')
-
-      const repoDir = await this.downloadFullRepo(
-        provider,
-        { slug, marketplaceId, scope: 'global' } as MarketplaceInstallParams,
-        tmpDir,
-      )
-
-      if (signal.aborted) throw new Error('Analysis cancelled')
-
-      // ── Phase 2: Agent analysis ─────────────────────────────────────
-      const onProgress = (progress: AnalysisProgress): void => {
-        this.emitAnalyzeProgress(slug, progress.phase, progress.detail, progress.toolName)
-      }
-
-      const analysisResult = await this.repoAnalyzer!.analyze({
-        repoDir,
-        cacheKey: { slug, version: detail.version ?? '' },
-        marketDetail: {
-          name: detail.name,
-          description: detail.description,
-          author: detail.author,
-          repoUrl: detail.repoUrl,
-        },
-        onProgress,
-        signal,
-      })
-
-      // ── Phase 3: Validation + result ────────────────────────────────
-      this.emitAnalyzeProgress(slug, 'validating', 'Validating analysis results…')
-
-      const manifest = analysisResult.manifest
-
-      // Store pending analysis for the install() call
-      this.pendingAnalysis.set(pendingKey, {
-        tmpDir,
-        repoDir,
-        manifest,
-        detail,
-        createdAt: Date.now(),
-      })
-
-      // Convert ValidatedManifest → MarketInstallPreview
-      if (!manifest || manifest.capabilities.length === 0) {
-        return {
-          isMultiCapability: false,
-          capabilities: [],
-          skipped: manifest?.rejected.map(r => ({
-            dir: r.sourcePath,
-            reason: r.issues.join('; '),
-          })) ?? [],
-          probeStatus: 'ok',
-          probeMessage: manifest?.reasoning ?? 'Agent found no installable capabilities in this repository.',
-        }
-      }
-
-      return {
-        isMultiCapability: manifest.capabilities.length > 1,
-        capabilities: manifest.capabilities.map(cap => ({
-          name: cap.name,
-          category: cap.category,
-        })),
-        skipped: manifest.rejected.map(r => ({
-          dir: r.sourcePath,
-          reason: r.issues.join('; '),
-        })),
-        probeStatus: 'ok',
-      }
+      // Start the visible session (reuses entire startAnalysisSession flow:
+      // repo download, prepareSession, orchestrator.startSession)
+      await this.startAnalysisSession(slug, marketplaceId)
     } catch (err) {
-      // ── Cancellation takes priority — propagate to caller ──
-      if (isCancellationError(signal, err)) {
-        this.emitAnalyzeProgress(slug, 'cancelled', 'Analysis cancelled')
-        throw new Error('Analysis cancelled by user', { cause: err })
-      }
-
-      // ── Non-cancel error — classify and fall back to probe ──
-      const errorKind = classifyAnalysisError(err)
-      log.warn(`Agent analyze failed for "${slug}" (${errorKind}), falling back to probe: ${err}`)
-      this.emitAnalyzeProgress(slug, 'cancelled', `Analysis failed (${errorKind})`, undefined, errorKind)
-      await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => {})
-      return this.analyzeFallbackProbe(slug, marketplaceId, provider)
-    } finally {
-      // Guaranteed cleanup — single callsite replaces 3 scattered deletes
-      this.activeAnalyses.delete(pendingKey)
+      clearTimeout(timeoutId)
+      this.pendingSessionResolvers.delete(key)
+      throw err
     }
+
+    // Wait for handleAnalysisComplete() to resolve the Promise
+    return guarded
   }
 
   /**
@@ -741,39 +699,26 @@ export class MarketplaceService {
 
     // ── Check for pending Agent analysis from analyze() step ──────
     const pendingKey = `${params.marketplaceId}:${params.slug}`
-    const pending = this.pendingAnalysis.get(pendingKey)
+    const pending = this.consumePendingAnalysis(pendingKey)
 
     if (pending) {
-      // Consume the pending analysis — remove from map so it won't be reused
-      this.pendingAnalysis.delete(pendingKey)
-
       log.info(`Using cached Agent analysis for "${params.slug}" (from analyze step)`)
+      return this.installFromPendingAnalysis(params, pending)
+    }
 
-      try {
-        if (pending.manifest && pending.manifest.capabilities.length > 0) {
-          return await this.installFromAgentManifest(
-            params, pending.detail, pending.manifest,
-            pending.repoDir, pending.tmpDir,
-          )
-        }
+    // ── No cached analysis — run analysis first, then install ────
+    // When Agent + Orchestrator are available, trigger a visible analysis session
+    // which populates pendingAnalysis. Then consume the result.
+    if (this.repoAnalyzer && this.orchestrator) {
+      await this.analyzeViaSession(params.slug, params.marketplaceId)
 
-        // Agent found no capabilities — report as unsuccessful
-        return {
-          success: false,
-          installedPath: '',
-          name: pending.detail.name,
-          version: pending.detail.version,
-          marketplaceId: params.marketplaceId,
-          sourceSlug: params.slug,
-          importedCount: 0,
-          importedNames: [],
-        }
-      } finally {
-        await fs.rm(pending.tmpDir, { recursive: true, force: true }).catch(() => {})
+      const freshPending = this.consumePendingAnalysis(pendingKey)
+      if (freshPending) {
+        return this.installFromPendingAnalysis(params, freshPending)
       }
     }
 
-    // ── No cached analysis — download and analyze from scratch ────
+    // ── Legacy fallback: programmatic discovery (no Agent) ────────
     const detail = await provider.getDetail(params.slug)
     const marketInfo: MarketSkillInfo = {
       marketplaceId: params.marketplaceId,
@@ -791,80 +736,58 @@ export class MarketplaceService {
     await fs.mkdir(tmpDir, { recursive: true })
 
     try {
-      // ── Phase 1: Download full repo (preserve directory structure) ──
       const repoDir = await this.downloadFullRepo(provider, params, tmpDir)
-
-      // ── Phase 2: Analyze capabilities ──────────────────────────────
-      if (this.repoAnalyzer) {
-        return await this.installViaAgent(params, detail, marketInfo, repoDir, tmpDir)
-      }
-
-      // ── Legacy fallback: programmatic discovery ────────────────────
       return await this.installViaProgrammatic(params, detail, marketInfo, repoDir, tmpDir)
     } finally {
       await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => {})
     }
   }
 
-  /**
-   * Agent-First installation path (fresh — no cached analysis).
-   *
-   * The Agent examines the repo, produces a manifest of capabilities,
-   * and we structure the files into the standard layout for PackageInstaller.
-   */
-  private async installViaAgent(
-    params: MarketplaceInstallParams,
-    detail: MarketSkillDetail,
-    _marketInfo: MarketSkillInfo,
-    repoDir: string,
-    tmpDir: string,
-  ): Promise<MarketInstallResult> {
-    const analysisResult = await this.repoAnalyzer!.analyze({
-      repoDir,
-      cacheKey: {
-        slug: params.slug,
-        version: detail.version ?? '',
-      },
-      marketDetail: {
-        name: detail.name,
-        description: detail.description,
-        author: detail.author,
-        repoUrl: detail.repoUrl,
-      },
-    })
+  /** Atomically consume a pending analysis entry (remove from map and return). */
+  private consumePendingAnalysis(pendingKey: string): PendingAnalysis | null {
+    const pending = this.pendingAnalysis.get(pendingKey)
+    if (!pending) return null
+    this.pendingAnalysis.delete(pendingKey)
+    return pending
+  }
 
-    const manifest = analysisResult.manifest
-    if (!manifest || manifest.capabilities.length === 0) {
-      log.info(
-        `Agent found no installable capabilities in "${params.slug}"` +
-          (manifest?.reasoning ? `: ${manifest.reasoning}` : ''),
-      )
+  /**
+   * Install from a consumed `PendingAnalysis` entry.
+   *
+   * Handles both "has capabilities" (installFromAgentManifest) and
+   * "no capabilities" (return failure) cases. Always cleans up tmpDir.
+   */
+  private async installFromPendingAnalysis(
+    params: MarketplaceInstallParams,
+    pending: PendingAnalysis,
+  ): Promise<MarketInstallResult> {
+    try {
+      if (pending.manifest && pending.manifest.capabilities.length > 0) {
+        return await this.installFromAgentManifest(
+          params, pending.detail, pending.manifest,
+          pending.repoDir, pending.tmpDir,
+        )
+      }
       return {
         success: false,
         installedPath: '',
-        name: detail.name,
-        version: detail.version,
+        name: pending.detail.name,
+        version: pending.detail.version,
         marketplaceId: params.marketplaceId,
         sourceSlug: params.slug,
         importedCount: 0,
         importedNames: [],
       }
+    } finally {
+      await fs.rm(pending.tmpDir, { recursive: true, force: true }).catch(() => {})
     }
-
-    log.info(
-      `Agent analysis complete for "${params.slug}" (source: ${analysisResult.source}): ` +
-        `${manifest.capabilities.length} capabilities` +
-        (manifest.rejected.length > 0 ? `, ${manifest.rejected.length} rejected` : ''),
-    )
-
-    return this.installFromAgentManifest(params, detail, manifest, repoDir, tmpDir)
   }
 
   /**
    * Install from an already-validated Agent manifest.
    *
-   * Shared by both fresh Agent analysis (`installViaAgent`) and
-   * cached analysis from the `analyze()` preview step.
+   * Used by the `install()` method after consuming a `pendingAnalysis` entry
+   * populated by either `analyzeViaSession()` or `handleAnalysisComplete()`.
    */
   private async installFromAgentManifest(
     params: MarketplaceInstallParams,

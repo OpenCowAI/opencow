@@ -14,6 +14,7 @@
 import type { ManagedSession } from './managedSession'
 import type { SessionLifecycle } from './sessionLifecycle'
 import type { ConversationEventPipeline } from '../conversation/pipeline'
+import type { NativeToolDescriptor } from '../nativeCapabilities/types'
 import type { ApiProvider, StartSessionPolicy, SessionStopReason } from '../../src/shared/types'
 
 // ── Completion tracking ──────────────────────────────────────────────────────
@@ -58,4 +59,13 @@ export interface SessionRuntime {
    * onSessionComplete registers the callback.
    */
   pendingCompletion?: SessionCompletionResult
+
+  /**
+   * Per-session custom tool descriptors (engine-agnostic).
+   *
+   * Stored on runtime (not ManagedSession) because tool descriptors contain
+   * JS function references that can't be serialized/persisted.
+   * Injected by SessionOrchestrator at session launch time.
+   */
+  customTools?: { name: string; tools: NativeToolDescriptor[] }
 }

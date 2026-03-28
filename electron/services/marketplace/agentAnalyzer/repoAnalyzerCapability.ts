@@ -23,7 +23,10 @@ import * as path from 'node:path'
 import * as fs from 'node:fs/promises'
 import type { NativeCapabilityMeta, NativeCapabilityToolContext } from '../../../nativeCapabilities/types'
 import { BaseNativeCapability, type ToolConfig } from '../../../nativeCapabilities/baseNativeCapability'
+import { createLogger } from '../../../platform/logger'
 import type { AgentManifest } from './types'
+
+const log = createLogger('RepoAnalyzerCapability')
 
 // ─── Constants ──────────────────────────────────────────────────────────────
 
@@ -272,13 +275,11 @@ export class RepoAnalyzerCapability extends BaseNativeCapability {
         }
 
         if (missingPaths.length > 0) {
-          return this.errorResult(
-            new Error(
-              `Source path validation failed. The following paths do not exist:\n`
-              + missingPaths.map((p) => `  - ${p}`).join('\n')
-              + '\n\nPlease verify the paths and resubmit.',
-            ),
-          )
+          const errorMsg = `Source path validation failed. The following paths do not exist:\n`
+            + missingPaths.map((p) => `  - ${p}`).join('\n')
+            + `\n\nrepoDir: ${this.repoDir}\nPlease verify the paths and resubmit.`
+          log.warn('submit_manifest path validation failed', { missingPaths, repoDir: this.repoDir })
+          return this.errorResult(new Error(errorMsg))
         }
 
         // Store the validated manifest

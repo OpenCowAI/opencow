@@ -27,7 +27,9 @@ import { buildSDKHooks } from '../hooks/buildSDKHooks'
 import { resolveExecutionContext } from './resolveExecutionContext'
 import type { GitCommandExecutor } from '../services/git/gitCommandExecutor'
 import type { NativeCapabilityRegistry } from '../nativeCapabilities/registry'
-import type { NativeCapabilityToolContext } from '../nativeCapabilities/types'
+import type { NativeCapabilityToolContext, NativeToolDescriptor } from '../nativeCapabilities/types'
+import { toClaudeToolDefinitions } from '../nativeCapabilities/claudeToolAdapter'
+import { createSdkMcpServer } from '@anthropic-ai/claude-agent-sdk'
 import type { BrowserService } from '../browser/browserService'
 import type { PendingQuestionRegistry } from '../nativeCapabilities/interaction/pendingQuestionRegistry'
 import type { CapabilityCenter } from '../services/capabilityCenter'
@@ -186,6 +188,18 @@ const MAX_TRANSIENT_RETRIES = 2
 export interface SessionStartOptions extends StartSessionInput {
   /** Per-session MCP server configs (e.g., marketplace analysis sandbox tools). */
   customMcpServers?: Record<string, Record<string, unknown>>
+  /**
+   * Per-session custom tool descriptors — engine-agnostic.
+   *
+   * Unlike `customMcpServers` (which requires engine-specific MCP server config),
+   * this accepts raw NativeToolDescriptor[] and lets SessionOrchestrator handle
+   * engine-appropriate injection:
+   * - Claude: creates an in-process MCP server via createSdkMcpServer()
+   * - Codex:  registers tools with CodexNativeBridgeManager's HTTP bridge
+   *
+   * Used by RepoAnalyzer for per-analysis sandboxed tools.
+   */
+  customTools?: { name: string; tools: NativeToolDescriptor[] }
   /** One-shot completion callback — registered via onSessionComplete() automatically. */
   onComplete?: SessionCompletionCallback
 }
@@ -429,6 +443,7 @@ export class SessionOrchestrator {
       spawnErrorCount: 0,
       onComplete: input.onComplete,
       completionFired: false,
+      customTools: input.customTools,
     }
     this.runtimes.set(tempId, rt)
 
@@ -729,11 +744,26 @@ export class SessionOrchestrator {
       }
     }
 
+    // Per-session custom tools (engine-agnostic NativeToolDescriptor[]).
+    // Injected as in-process MCP server (Claude) or via HTTP bridge (Codex).
+    const customTools = this.runtimes.get(sessionId)?.customTools
+
     if (isClaudeEngine) {
       // Per-session custom MCP servers (marketplace analysis tools, etc.)
       // Applied after capability servers so custom servers take precedence.
       if (config.customMcpServers && Object.keys(config.customMcpServers).length > 0) {
         options.mcpServers = { ...(options.mcpServers ?? {}), ...config.customMcpServers }
+      }
+
+      // Per-session custom tool descriptors → in-process MCP server
+      if (customTools && customTools.tools.length > 0) {
+        const claudeTools = toClaudeToolDefinitions(customTools.tools)
+        const mcpServerConfig = createSdkMcpServer({
+          name: customTools.name,
+          version: '1.0.0',
+          tools: claudeTools,
+        })
+        options.mcpServers = { ...(options.mcpServers ?? {}), [customTools.name]: mcpServerConfig }
       }
 
       // Compose final system prompt after all layer adjustments.
@@ -776,6 +806,7 @@ export class SessionOrchestrator {
           activeMcpServerNames: mergedWithCustom.activeServerNames.size > 0
             ? mergedWithCustom.activeServerNames
             : activeMcpServerNames,
+          additionalTools: customTools?.tools,
         })
         if (bridgeServer) {
           finalCodexConfig = mergeCodexMcpServers({

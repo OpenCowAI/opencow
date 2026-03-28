@@ -9,7 +9,7 @@
  */
 
 export { RepoAnalyzer } from './repoAnalyzer'
-export type { RepoAnalyzerDeps, PreparedAnalysisSession } from './repoAnalyzer'
+export type { PreparedAnalysisSession } from './repoAnalyzer'
 export { RepoAnalyzerCapability } from './repoAnalyzerCapability'
 export type {
   AgentManifest,

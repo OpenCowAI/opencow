@@ -90,7 +90,10 @@ function derivePhase(
   if (!progress) {
     if (analyzing) return 'analyzing'
     if (analyzeError) return 'analyzing' // show error in analyzing phase UI
-    if (preview) return 'preview'
+    // Only show preview when there are actual capabilities to install.
+    // An empty preview (agent found nothing) should not show the Install button.
+    if (preview && preview.capabilities.length > 0) return 'preview'
+    if (preview) return 'analyzing' // empty result — show "no capabilities" in analyzing UI
     return 'select'
   }
   if (progress.steps.some((s) => s.status === 'error')) return 'error'
@@ -524,6 +527,28 @@ export function InstallDialog({
                     </div>
                   </div>
                 </div>
+              ) : analysis.preview && analysis.preview.capabilities.length === 0 ? (
+                /* Agent completed but found no installable capabilities */
+                <div className="flex-1 flex items-center justify-center p-6">
+                  <div className="flex flex-col items-center gap-3">
+                    <Package className="h-6 w-6 text-[hsl(var(--muted-foreground)/0.3)]" />
+                    <p className="text-xs text-[hsl(var(--muted-foreground)/0.6)] text-center px-4 leading-relaxed">
+                      No installable capabilities found
+                    </p>
+                    {analysis.preview.probeMessage && (
+                      <p className="text-[10px] text-[hsl(var(--muted-foreground)/0.4)] text-center px-4 leading-relaxed">
+                        {analysis.preview.probeMessage}
+                      </p>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => analysis.reset()}
+                      className="px-3 py-1.5 text-sm rounded-lg border border-[hsl(var(--border))] hover:bg-[hsl(var(--foreground)/0.04)] transition-colors outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--ring))] mt-2"
+                    >
+                      Back
+                    </button>
+                  </div>
+                </div>
               ) : null}
             </>
           )}
@@ -648,6 +673,7 @@ export function InstallDialog({
                   onClick={() => onInstall(scope, analysis.preview?.isMultiCapability ? (namespacePrefix || defaultPrefix) : undefined)}
                   disabled={
                     analysis.preview?.probeStatus === 'degraded' ||
+                    !analysis.preview?.capabilities.length ||
                     (analysis.preview?.isMultiCapability && !namespacePrefix && !defaultPrefix)
                   }
                   className="px-3 py-1.5 text-sm rounded-lg font-medium bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))] hover:opacity-90 transition-colors outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--ring))] disabled:opacity-40 disabled:cursor-not-allowed"

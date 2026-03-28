@@ -298,10 +298,7 @@ export async function createAppServices(deps: ServiceFactoryDeps): Promise<AppSe
     .catch((err) => log.warn('Distribution backfill failed', err))
 
   // ── Marketplace Service ─────────────────────────────────────────────
-  const repoAnalyzer = new RepoAnalyzer({
-    getProviderEnv: () => providerService.getProviderEnv('claude'),
-    getProxyEnv: () => settingsService.getProxyEnv(),
-  })
+  const repoAnalyzer = new RepoAnalyzer()
 
   const marketplaceService = new MarketplaceService({
     importer: {
