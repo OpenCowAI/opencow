@@ -13,6 +13,9 @@ import {
   type EngineRuntimeEventEnvelope,
   type RuntimeTurnRef,
 } from '../conversation/runtime/events'
+import { createLogger } from '../platform/logger'
+
+const log = createLogger('QueryLifecycle')
 
 /** Safety timeout (ms) for stop() — last resort if SDK hangs. */
 const STOP_SAFETY_TIMEOUT_MS = 30_000
@@ -59,6 +62,17 @@ export class QueryLifecycle implements SessionLifecycle {
   ): AsyncIterable<EngineRuntimeEventEnvelope> {
     if (this._query) throw new Error('QueryLifecycle already started')
     if (this._stopped) throw new Error('QueryLifecycle already stopped')
+
+    // Log initial prompt preview (Codex-style: first 200 + last 100 chars)
+    const promptPreview = summarizePrompt(initialPrompt)
+    const optionKeys = Object.keys(options).sort()
+    log.info('start', {
+      promptPreview,
+      optionKeys: optionKeys.join(', '),
+      hasSystemPrompt: !!options.systemPrompt,
+      systemPromptLength: typeof options.systemPrompt === 'string' ? options.systemPrompt.length : 0,
+      model: options.model ?? 'default',
+    })
 
     this.queue.push(initialPrompt)
     this.pendingTurnSeqs.push(this.nextTurnSeq++)
@@ -109,6 +123,7 @@ export class QueryLifecycle implements SessionLifecycle {
    */
   pushMessage(content: UserMessageContent): void {
     if (this._stopped) return
+    log.debug('pushMessage', { turnSeq: this.nextTurnSeq, preview: summarizePrompt(content) })
     this.queue.push(content)
     this.pendingTurnSeqs.push(this.nextTurnSeq++)
   }
@@ -123,6 +138,7 @@ export class QueryLifecycle implements SessionLifecycle {
    */
   async stop(): Promise<void> {
     if (this._stopped) return
+    log.info('stop', { turnsCompleted: this.lastCompletedTurnSeq ?? 0, pendingTurns: this.pendingTurnSeqs.length })
     this._stopped = true
 
     if (this._query) {
@@ -178,4 +194,18 @@ export class QueryLifecycle implements SessionLifecycle {
     }
     return { turnSeq }
   }
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+/** Build a compact prompt preview string (Codex-style: first 200 + last 100 for long text). */
+function summarizePrompt(content: UserMessageContent): string {
+  const text = typeof content === 'string'
+    ? content
+    : content
+        .filter((b): b is Extract<typeof b, { type: 'text' }> => b.type === 'text')
+        .map((b) => b.text)
+        .join('\n')
+  if (text.length <= 300) return text.replace(/\n/g, '\\n')
+  return `${text.slice(0, 200)}...[${text.length} chars]...${text.slice(-100)}`.replace(/\n/g, '\\n')
 }

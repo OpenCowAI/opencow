@@ -835,6 +835,27 @@ export class SessionOrchestrator {
     })
     if (rt) rt.pipeline = pipeline
 
+    // ── Pre-flight summary (single log for the entire request payload) ────
+    const startTime = Date.now()
+    log.info('Session pre-flight summary', {
+      sessionId,
+      engineKind,
+      model: options.model ?? 'default',
+      promptLayers: {
+        identity: !!promptLayers.identity,
+        context: promptLayers.context?.length ?? 0,
+        memory: promptLayers.memory?.length ?? 0,
+        base: promptLayers.base?.length ?? 0,
+        session: promptLayers.session?.length ?? 0,
+        capability: promptLayers.capability?.length ?? 0,
+      },
+      systemPromptLength: (options.systemPrompt ?? options.codexSystemPrompt ?? '').length,
+      messageCount: session.getMessages().length,
+      mcpServerCount: Object.keys(options.mcpServers ?? {}).length,
+      hasHooks: !!options.hooks,
+      maxTurns: options.maxTurns,
+    })
+
     // Track whether the for-await loop completed normally (not via throw).
     // When the stream throws, handleSessionError (via .catch on lifecycleDone)
     // handles the state transition — the safety net must NOT interfere.
@@ -855,7 +876,13 @@ export class SessionOrchestrator {
         }
       }
       streamEndedCleanly = true
-      log.debug('Session lifecycle stream ended cleanly', { sessionId })
+      log.info('Session lifecycle completed', {
+        sessionId,
+        engineKind,
+        finalState: session.getState(),
+        totalMessages: session.getMessages().length,
+        durationMs: Date.now() - startTime,
+      })
     } finally {
       if (!isClaudeEngine && this.deps.codexNativeBridgeManager) {
         await this.deps.codexNativeBridgeManager.unregisterSession(sessionId).catch((err) => {

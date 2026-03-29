@@ -21,6 +21,9 @@ import type {
   EvoseToolCallBlock,
 } from '../../src/shared/types'
 import type { SessionLifecycleEvent } from './sessionStateMachine'
+import { createLogger } from '../platform/logger'
+
+const log = createLogger('ManagedSession')
 
 /**
  * Dynamic engine switch parameters.
@@ -239,6 +242,12 @@ export class ManagedSession {
     // 4. Insert engine switch marker into message timeline
     this.addSystemEvent({ type: 'engine_switch', fromEngine: oldEngine, toEngine: newEngine })
 
+    log.info('switchEngine', {
+      sessionId: this.sessionId,
+      from: oldEngine,
+      to: newEngine,
+      summaryLength: contextSummary?.length ?? 0,
+    })
     this.lastActivity = Date.now()
   }
 
@@ -502,6 +511,8 @@ export class ManagedSession {
    * from outside ManagedSession, making illegal transitions impossible.
    */
   transition(event: SessionLifecycleEvent): void {
+    const fromState = this.state
+    log.debug('transition', { sessionId: this.sessionId, event: event.type, fromState })
     switch (event.type) {
       case 'engine_initialized':
       case 'recover_from_awaiting_input':
@@ -586,6 +597,7 @@ export class ManagedSession {
       this.messages.push({ id, role, content: blocks, timestamp })
     }
 
+    log.debug('addMessage', { sessionId: this.sessionId, messageId: id, role, blockCount: blocks.length })
     this.lastActivity = timestamp
     return id
   }
