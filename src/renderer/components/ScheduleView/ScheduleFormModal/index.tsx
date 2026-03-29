@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-import { useState, useRef } from 'react'
+import { useState, useRef, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import { X, Clock, Pencil } from 'lucide-react'
 import { useAppStore } from '@/stores/appStore'
@@ -44,6 +44,16 @@ export function ScheduleFormModal({ onClose, editSchedule, defaultValues, onCrea
     (isEditMode && !!editSchedule.description) || !!defaultValues?.description
   )
   const descRef = useRef<HTMLTextAreaElement>(null)
+  // Track whether the user just clicked "Add description" so we auto-focus only once
+  const shouldFocusDesc = useRef(false)
+
+  const descRefCallback = useCallback((el: HTMLTextAreaElement | null) => {
+    (descRef as React.MutableRefObject<HTMLTextAreaElement | null>).current = el
+    if (el && shouldFocusDesc.current) {
+      el.focus()
+      shouldFocusDesc.current = false
+    }
+  }, [])
 
   const handleSubmit = async (): Promise<void> => {
     if (!canSubmit) return
@@ -164,13 +174,12 @@ export function ScheduleFormModal({ onClose, editSchedule, defaultValues, onCrea
                 'focus:outline-none focus:text-[hsl(var(--foreground))]',
                 '-mt-3'
               )}
-              // Single callback ref — assigns to descRef AND auto-focuses when revealed
-              ref={(el) => { (descRef as React.MutableRefObject<HTMLTextAreaElement | null>).current = el; el?.focus() }}
+              ref={descRefCallback}
             />
           ) : (
             <button
               type="button"
-              onClick={() => setDescOpen(true)}
+              onClick={() => { shouldFocusDesc.current = true; setDescOpen(true) }}
               className="text-xs text-[hsl(var(--muted-foreground)/0.45)] hover:text-[hsl(var(--muted-foreground))] transition-colors text-left -mt-3"
             >
               {state.description.trim() || t('form.addDescription')}

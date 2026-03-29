@@ -20,7 +20,7 @@
  *   ToolResultBlock.toolUseId → ToolLifecycleMap → { name } → routing
  */
 
-import { useState } from 'react'
+import { memo, useState } from 'react'
 import type { ToolResultBlock } from '@shared/types'
 import { NativeCapabilityTools } from '@shared/nativeCapabilityToolNames'
 import { useToolLifecycle } from './ToolLifecycleContext'
@@ -117,7 +117,7 @@ const COLLAPSE_THRESHOLD = 20
 
 // ─── Component ──────────────────────────────────────────────────────────────
 
-export function ToolResultBlockView({ block }: ToolResultBlockViewProps): React.JSX.Element {
+export const ToolResultBlockView = memo(function ToolResultBlockView({ block }: ToolResultBlockViewProps): React.JSX.Element {
   // Resolve originating tool lifecycle via Context (O(1) Map lookup)
   const toolInfo = useToolLifecycle(block.toolUseId)
 
@@ -136,7 +136,7 @@ export function ToolResultBlockView({ block }: ToolResultBlockViewProps): React.
 
   // Path 3: Raw text fallback
   return <RawToolResult block={block} />
-}
+})
 
 // ─── Raw fallback (extracted for clarity, logic identical to original) ───────
 

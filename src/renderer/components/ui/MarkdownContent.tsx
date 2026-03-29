@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-import { memo, useState, useRef, useLayoutEffect, createContext, useContext } from 'react'
+import { memo, useState, useEffect, useRef, useLayoutEffect, createContext, useContext } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import rehypeHighlight from 'rehype-highlight'
@@ -529,17 +529,45 @@ export const MarkdownContent = memo(function MarkdownContent({
   // O(delta) per frame instead of O(N) full scan.
   const scannerRef = useRef<IncrementalSplitScanner>(new IncrementalSplitScanner())
 
-  // ── Non-streaming: single pass with full pipeline (highlight enabled) ──
+  // ── Non-streaming: two-phase rendering with deferred highlighting ──
+  //
+  // When isStreaming transitions from true → false, applying rehypeHighlight
+  // synchronously blocks the main thread for 50-100ms per code block
+  // (highlight.js language auto-detection is O(lines × languages)).
+  // With 3 visible code blocks, that's 150-300ms of unresponsive UI.
+  //
+  // Fix: render immediately WITHOUT highlighting (same visual as streaming),
+  // then apply full highlighting in an idle callback.  The user sees content
+  // instantly; syntax colors appear ~50-100ms later — imperceptible.
+  const [highlightReady, setHighlightReady] = useState(!isStreaming)
+
+  useEffect(() => {
+    if (isStreaming) {
+      // Reset when entering streaming mode — next finalization starts fresh
+      setHighlightReady(false)
+      return
+    }
+    // Defer highlighting to next idle frame
+    if (typeof requestIdleCallback === 'function') {
+      const id = requestIdleCallback(() => setHighlightReady(true))
+      return () => cancelIdleCallback(id)
+    }
+    // Fallback for environments without requestIdleCallback
+    const id = setTimeout(() => setHighlightReady(true), 50)
+    return () => clearTimeout(id)
+  }, [isStreaming])
+
   if (!isStreaming) {
     // Reset streaming state so the next streaming session starts clean.
     scannerRef.current.reset()
+    const rehypePlugins = highlightReady ? REHYPE_PLUGINS_FULL : REHYPE_PLUGINS_STREAMING
     return (
       <StreamingContext.Provider value={false}>
         <SlugCounterContext.Provider value={slugCounterRef}>
           <div className={cn(MARKDOWN_BASE_CN, className)}>
             <ReactMarkdown
               remarkPlugins={REMARK_PLUGINS}
-              rehypePlugins={REHYPE_PLUGINS_FULL}
+              rehypePlugins={rehypePlugins}
               components={MARKDOWN_COMPONENTS}
             >
               {content}

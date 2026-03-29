@@ -11,7 +11,7 @@ import { BrowserScreenshotCard } from './PreviewCards/BrowserScreenshotCard'
 import { resolveWidgetTool } from './WidgetToolRegistry'
 import { useToolLifecycleMap } from './ToolLifecycleContext'
 import { NativeCapabilityTools } from '@shared/nativeCapabilityToolNames'
-import type { ContentBlock } from '@shared/types'
+import type { ContentBlock, ImageBlock } from '@shared/types'
 import { getSlashDisplayLabel } from '@shared/slashDisplay'
 
 interface ContentBlockRendererProps {
@@ -23,6 +23,20 @@ interface ContentBlockRendererProps {
   activeToolUseId?: string | null
 }
 
+/**
+ * Renders a single content block (text, image, tool_use, tool_result, etc.).
+ *
+ * Performance-critical: this component is instantiated per content block inside
+ * Virtuoso's visible range.  A typical viewport has 25-50 instances.
+ *
+ * IMPORTANT — Context subscription isolation:
+ * This component does NOT subscribe to ToolLifecycleContext directly.
+ * Only `ImageBlockWithScreenshotDetection` (below) subscribes, because it's
+ * the sole consumer that needs the tool lifecycle map (to detect browser
+ * screenshots).  This prevents Context value changes from forcing re-renders
+ * of ALL 25-50 ContentBlockRenderer instances — only the few image blocks
+ * (typically 0-2) re-render on Context changes.
+ */
 export const ContentBlockRenderer = memo(function ContentBlockRenderer({
   block,
   sessionId,
@@ -31,10 +45,6 @@ export const ContentBlockRenderer = memo(function ContentBlockRenderer({
   isMessageStreaming,
   activeToolUseId
 }: ContentBlockRendererProps): React.JSX.Element {
-  // Full lifecycle map for context-aware image rendering (screenshot detection).
-  // Hook called unconditionally at top level per Rules of Hooks.
-  const toolMap = useToolLifecycleMap()
-
   switch (block.type) {
     case 'text':
       return (
@@ -49,18 +59,10 @@ export const ContentBlockRenderer = memo(function ContentBlockRenderer({
           )}
         </div>
       )
-    case 'image': {
-      // Context-aware rendering: ImageBlocks extracted from tool_results carry
-      // toolUseId as provenance. If it came from browser_screenshot, render the
-      // browser-chrome preview card instead of the default thumbnail.
-      if (block.toolUseId) {
-        const toolInfo = toolMap.get(block.toolUseId)
-        if (toolInfo?.name === NativeCapabilityTools.BROWSER_SCREENSHOT) {
-          return <BrowserScreenshotCard imageData={block.data} mediaType={block.mediaType} />
-        }
-      }
-      return <ImageBlockView block={block} />
-    }
+    case 'image':
+      // Context-aware rendering delegated to a dedicated component that
+      // isolates the ToolLifecycleContext subscription.  See JSDoc above.
+      return <ImageBlockWithScreenshotDetection block={block} />
     case 'document':
       return <DocumentBlockView block={block} />
     case 'tool_use': {
@@ -100,4 +102,28 @@ export const ContentBlockRenderer = memo(function ContentBlockRenderer({
     default:
       return <></>
   }
+})
+
+// ---------------------------------------------------------------------------
+// ImageBlockWithScreenshotDetection — Context subscription isolation
+//
+// Only image blocks need the ToolLifecycleContext (to detect browser_screenshot
+// tool provenance).  By isolating useContext to this dedicated component,
+// Context value changes only trigger re-renders for image block instances
+// (typically 0-2 on screen), not all 25-50 ContentBlockRenderer instances.
+// ---------------------------------------------------------------------------
+
+const ImageBlockWithScreenshotDetection = memo(function ImageBlockWithScreenshotDetection({
+  block,
+}: {
+  block: ImageBlock
+}): React.JSX.Element {
+  const toolMap = useToolLifecycleMap()
+  if (block.toolUseId) {
+    const toolInfo = toolMap.get(block.toolUseId)
+    if (toolInfo?.name === NativeCapabilityTools.BROWSER_SCREENSHOT) {
+      return <BrowserScreenshotCard imageData={block.data} mediaType={block.mediaType} />
+    }
+  }
+  return <ImageBlockView block={block} />
 })

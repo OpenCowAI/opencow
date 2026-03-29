@@ -382,9 +382,17 @@ export function useAutoFollow(
   // 24px threshold (~1.5 lines) reduces scroll commands by ~40-60%
   // during streaming while remaining visually imperceptible.
   const lastScrolledHeightRef = useRef(0)
+  // Latest height reported by Virtuoso — stored in a ref so the rAF
+  // callback always reads the most recent value, not a stale closure
+  // capture from the call that scheduled the rAF.
+  const latestHeightRef = useRef(0)
 
   const handleTotalHeightChanged = useCallback(
     (height: number) => {
+      // Always record the latest height — even if this call is gated out,
+      // the rAF callback (if already scheduled) should use the freshest value.
+      latestHeightRef.current = height
+
       // Suppress during engage flight — let the engage scroll complete
       // without competition from this callback.
       if (Date.now() - engageTimestampRef.current < ENGAGE_FLIGHT_MS) return
@@ -407,7 +415,10 @@ export function useAutoFollow(
         repinScheduledRef.current = false
         if (stateRef.current !== 'following') return
         if (!contentActiveRef.current && userScrolledRef.current) return
-        lastScrolledHeightRef.current = height
+        // Read the latest height from ref — NOT the closure-captured `height`.
+        // Multiple handleTotalHeightChanged calls may have fired since the
+        // rAF was scheduled; we want the most recent measurement.
+        lastScrolledHeightRef.current = latestHeightRef.current
         virtuosoRef.current?.scrollTo({ top: Number.MAX_SAFE_INTEGER, behavior: 'instant' })
       })
     },

@@ -63,7 +63,7 @@ export type TaskEventsMap = Map<string, TaskLifecycleInfo>
 export interface TaskEventsScanResult {
   map: TaskEventsMap
   /** taskIds that were successfully linked to a toolUseId (consumed by TaskExecutionView) */
-  consumedTaskIds: Set<string>
+  consumedTaskIds: ReadonlySet<string>
 }
 
 // ─── Context ─────────────────────────────────────────────────────────────────
@@ -289,7 +289,7 @@ export function resolveTaskFinalStates(
  * (built by {@link buildTaskLifecycleMap}).  This covers both events WITH `toolUseId`
  * and those linked by `taskId` fallback.
  */
-export function isConsumedTaskEvent(event: SystemEvent, consumedTaskIds: Set<string>): boolean {
+export function isConsumedTaskEvent(event: SystemEvent, consumedTaskIds: ReadonlySet<string>): boolean {
   return (
     (event.type === 'task_started' || event.type === 'task_notification') &&
     consumedTaskIds.has(event.taskId)

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-import { useState, useRef, useCallback } from 'react'
+import { useState, useRef, useCallback, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ChevronDown, ChevronUp, Info, Check } from 'lucide-react'
 import { ProjectPicker } from '@/components/ui/ProjectPicker'
@@ -270,6 +270,10 @@ export function ActionSection({
 // SessionActionConfig
 // ---------------------------------------------------------------------------
 
+/** Min / max heights (in px) for the auto-growing prompt textarea. */
+const PROMPT_MIN_H = 96   // ≈ 4 lines of text-xs mono
+const PROMPT_MAX_H = 280  // generous cap before scrolling kicks in
+
 function SessionActionConfig({
   action,
   dispatch,
@@ -282,6 +286,18 @@ function SessionActionConfig({
     action.contextInjections.length > 0
   )
 
+  // ── Auto-grow prompt textarea ──
+  const promptRef = useRef<HTMLTextAreaElement>(null)
+  const autoGrow = useCallback(() => {
+    const el = promptRef.current
+    if (!el) return
+    el.style.height = 'auto' // reset so scrollHeight recalculates
+    el.style.height = `${Math.min(Math.max(el.scrollHeight, PROMPT_MIN_H), PROMPT_MAX_H)}px`
+  }, [])
+
+  // Resize on mount & whenever the value changes externally (e.g. edit mode hydration)
+  useEffect(autoGrow, [action.promptTemplate, autoGrow])
+
   return (
     <div className="space-y-3">
       {/* Prompt template */}
@@ -293,10 +309,15 @@ function SessionActionConfig({
           </span>
         </label>
         <textarea
+          ref={promptRef}
           value={action.promptTemplate}
-          onChange={(e) => dispatch({ type: 'SET_PROMPT', payload: e.target.value })}
+          onChange={(e) => {
+            dispatch({ type: 'SET_PROMPT', payload: e.target.value })
+            autoGrow()
+          }}
           rows={4}
-          className="w-full px-3 py-2 text-xs rounded-xl border border-[hsl(var(--border))] bg-transparent placeholder:text-[hsl(var(--muted-foreground)/0.4)] focus:outline-none focus:ring-1 focus:ring-[hsl(var(--ring))] resize-none font-mono leading-relaxed"
+          className="w-full px-3 py-2 text-xs rounded-xl border border-[hsl(var(--border))] bg-transparent placeholder:text-[hsl(var(--muted-foreground)/0.4)] focus:outline-none focus:ring-1 focus:ring-[hsl(var(--ring))] resize-none font-mono leading-relaxed overflow-y-auto"
+          style={{ minHeight: PROMPT_MIN_H, maxHeight: PROMPT_MAX_H }}
         />
       </div>
 
