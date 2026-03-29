@@ -1119,12 +1119,23 @@ export class SessionOrchestrator {
       defaultEngine: this.deps.getCommandDefaults().defaultEngine,
     })
 
+    const existing = this.runtimes.get(sessionId)
+    let forceRestart = options.forceRestart
+
+    // ── Engine drift check (must run BEFORE the fast path) ────────────────
+    // The fast path pushes messages into the existing lifecycle queue, which
+    // would silently bypass engine switching. Detect drift first; if the
+    // engine changed, skip the fast path and fall through to full restart.
+    if (existing && !forceRestart && this.detectAndApplyEngineDrift(existing.session)) {
+      log.info('resumeSessionInternal: engine drift detected, skipping fast path for full restart', { sessionId })
+      forceRestart = true
+    }
+
     // Fast path: if the SDK process is still alive (multi-turn wait mode),
     // push to the existing queue instead of the expensive kill → restart cycle.
     // This is the primary entry point from the renderer for `idle` sessions
     // (the renderer routes idle → onResume → resumeSession).
-    const existing = this.runtimes.get(sessionId)
-    if (!options.forceRestart && existing && this.pushToActiveSession(sessionId, existing, message)) {
+    if (!forceRestart && existing && this.pushToActiveSession(sessionId, existing, message)) {
       log.debug('resumeSession fast path: reused active lifecycle', { sessionId })
       return true
     }
@@ -1145,12 +1156,12 @@ export class SessionOrchestrator {
       session = ManagedSession.fromInfo(persisted)
     }
 
-    // Engine kind drift check — covers idle/stopped sessions that bypass
-    // sendMessage's active-runtime checks (the most common resume path).
+    // Engine kind drift check — covers persisted sessions restored from store
+    // (no active runtime). Idempotent: no-op if already applied above.
     const engineSwitched = this.detectAndApplyEngineDrift(session)
 
     const engineSessionRef = session.getEngineRef()
-    if (!engineSessionRef && !options.forceRestart && !engineSwitched) {
+    if (!engineSessionRef && !forceRestart && !engineSwitched) {
       log.warn('resumeSession failed: missing engine session ref', { sessionId })
       return false
     }
