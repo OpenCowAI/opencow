@@ -2538,11 +2538,18 @@ export interface CompactBoundaryEvent {
   phase?: 'compacting' | 'done'
 }
 
+export interface EngineSwitchEvent {
+  type: 'engine_switch'
+  fromEngine: AIEngineKind
+  toEngine: AIEngineKind
+}
+
 export type SystemEvent =
   | TaskStartedEvent
   | TaskNotificationEvent
   | HookStatusEvent
   | CompactBoundaryEvent
+  | EngineSwitchEvent
 
 // === Command Phase: Managed Sessions ===
 

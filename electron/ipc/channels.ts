@@ -863,6 +863,14 @@ export function registerIPCHandlers(deps: IPCDeps): void {
       const updated = await settingsService.update(settings)
       const evoseSettingsChanged = isEvoseSettingsChanged(oldSettings, updated)
 
+      // Detect default engine change — log for debugging engine drift scenarios
+      if (oldSettings.command.defaultEngine !== updated.command.defaultEngine) {
+        log.info('Default engine changed in settings', {
+          from: oldSettings.command.defaultEngine,
+          to: updated.command.defaultEngine,
+        })
+      }
+
       // Detect language change → rebuild menu + update tray locale
       if (oldSettings.language !== updated.language) {
         const locale = resolveLocale(updated.language, app.getLocale())

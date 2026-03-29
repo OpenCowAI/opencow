@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { memo } from 'react'
-import { ListChecks, CheckCircle2, XCircle, Square, Zap, Scissors, Loader2 } from 'lucide-react'
+import { ListChecks, CheckCircle2, XCircle, Square, Zap, Scissors, Loader2, ArrowRightLeft } from 'lucide-react'
 import type { SystemEvent } from '@shared/types'
 
 interface SystemEventViewProps {
@@ -88,6 +88,20 @@ export const SystemEventView = memo(function SystemEventView({ event }: SystemEv
           <div className="flex-1 h-px bg-[hsl(var(--border))]" />
           <Scissors className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
           <span>Memory optimized {'\u00b7'} saved {tokenLabel} tokens</span>
+          <div className="flex-1 h-px bg-[hsl(var(--border))]" />
+        </li>
+      )
+    }
+
+    case 'engine_switch': {
+      return (
+        <li
+          className="flex items-center gap-2.5 py-1 text-xs font-mono text-[hsl(var(--muted-foreground)/0.5)]"
+          aria-label={`Engine switched from ${event.fromEngine} to ${event.toEngine}`}
+        >
+          <div className="flex-1 h-px bg-[hsl(var(--border))]" />
+          <ArrowRightLeft className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+          <span>Engine switched {'\u00b7'} {event.fromEngine} → {event.toEngine}</span>
           <div className="flex-1 h-px bg-[hsl(var(--border))]" />
         </li>
       )

@@ -57,6 +57,7 @@ import { type SessionLaunchOptions, toSdkOptions } from './sessionLaunchOptions'
 import type { SessionRuntime, SessionCompletionCallback, SessionCompletionResult } from './sessionRuntime'
 import { planSessionPolicy } from './policy/sessionPolicyPlanner'
 import { decideSessionReconfiguration } from './policy/sessionReconfigurationCoordinator'
+import { buildConversationSummary } from './conversationSummary'
 
 const log = createLogger('Orchestrator')
 
@@ -478,13 +479,16 @@ export class SessionOrchestrator {
     session: ManagedSession,
     lifecycle: SessionLifecycle,
     initialPrompt: UserMessageContent,
-    extra?: { resume?: string }
+    extra?: { resume?: string; skipAddMessage?: boolean }
   ): Promise<void> {
     const sessionId = session.id
 
     // Only add user message if this is not coming from resumeSession
-    // (resumeSession adds the user message before calling runSession)
-    if (!extra?.resume) {
+    // (resumeSession adds the user message before calling runSession).
+    // skipAddMessage decouples "message already added" from "has resume ref"
+    // — needed for engine switch where there's no resume ref but message
+    // was already added by resumeSessionInternal.
+    if (!extra?.resume && !extra?.skipAddMessage) {
       session.addMessage('user', userContentToBlocks(initialPrompt))
       const userMsg = session.getLastMessage()
       if (userMsg) {
@@ -943,6 +947,13 @@ export class SessionOrchestrator {
 
   async sendMessage(sessionId: string, content: UserMessageContent): Promise<boolean> {
     const rt = this.runtimes.get(sessionId)
+    log.debug('sendMessage entered', {
+      sessionId,
+      hasRuntime: !!rt,
+      sessionState: rt?.session.getState() ?? 'no-runtime',
+      sessionEngine: rt?.session.getEngineKind() ?? 'unknown',
+      defaultEngine: this.deps.getCommandDefaults().defaultEngine,
+    })
 
     // MCP ask_user_question is blocking — route answer to PendingQuestionRegistry
     if (rt && rt.session.getState() === 'awaiting_question' && this.deps.pendingQuestionRegistry) {
@@ -1018,6 +1029,12 @@ export class SessionOrchestrator {
           from: sessionMode,
           to: currentMode,
         })
+        return await this.resumeSessionInternal(sessionId, content, { forceRestart: true })
+      }
+
+      // 3. Engine kind drift: user switched default engine since this session started.
+      //    Pattern identical to provider mode drift above.
+      if (this.detectAndApplyEngineDrift(rt.session)) {
         return await this.resumeSessionInternal(sessionId, content, { forceRestart: true })
       }
     }
@@ -1096,6 +1113,12 @@ export class SessionOrchestrator {
     message: UserMessageContent,
     options: { forceRestart: boolean },
   ): Promise<boolean> {
+    log.debug('resumeSessionInternal entered', {
+      sessionId,
+      forceRestart: options.forceRestart,
+      defaultEngine: this.deps.getCommandDefaults().defaultEngine,
+    })
+
     // Fast path: if the SDK process is still alive (multi-turn wait mode),
     // push to the existing queue instead of the expensive kill → restart cycle.
     // This is the primary entry point from the renderer for `idle` sessions
@@ -1122,8 +1145,12 @@ export class SessionOrchestrator {
       session = ManagedSession.fromInfo(persisted)
     }
 
+    // Engine kind drift check — covers idle/stopped sessions that bypass
+    // sendMessage's active-runtime checks (the most common resume path).
+    const engineSwitched = this.detectAndApplyEngineDrift(session)
+
     const engineSessionRef = session.getEngineRef()
-    if (!engineSessionRef) {
+    if (!engineSessionRef && !options.forceRestart && !engineSwitched) {
       log.warn('resumeSession failed: missing engine session ref', { sessionId })
       return false
     }
@@ -1163,12 +1190,77 @@ export class SessionOrchestrator {
     }
     this.runtimes.set(sessionId, rt)
 
-    rt.lifecycleDone = this.runSession(session, lifecycle, message, { resume: engineSessionRef })
-      .catch(async (err) => this.handleSessionError(sessionId, err))
+    rt.lifecycleDone = this.runSession(
+      session, lifecycle, message,
+      engineSessionRef
+        ? { resume: engineSessionRef }
+        : { skipAddMessage: true },  // engine switch or fresh start: message already added above
+    ).catch(async (err) => this.handleSessionError(sessionId, err))
 
     log.info('resumeSession started new lifecycle', { sessionId })
     return true
   }
+
+  // ── Engine drift helpers ─────────────────────────────────────────────
+
+  /**
+   * Detect and apply engine kind drift: if the session's engine differs from
+   * the current default, switch it in-place and dispatch UI updates.
+   *
+   * @returns `true` if an engine switch was performed.
+   */
+  private detectAndApplyEngineDrift(session: ManagedSession): boolean {
+    const currentDefaultEngine = this.deps.getCommandDefaults().defaultEngine
+    const sessionEngine = session.getEngineKind()
+    if (sessionEngine === currentDefaultEngine) return false
+
+    const messageCount = session.getMessages().length
+    log.info('engine kind drift detected, switching engine', {
+      sessionId: session.id,
+      origin: session.origin.source,
+      from: sessionEngine,
+      to: currentDefaultEngine,
+      messageCount,
+    })
+    const summary = buildConversationSummary({
+      messages: session.getMessages(),
+      fromEngine: sessionEngine,
+    })
+    session.switchEngine({
+      newEngine: currentDefaultEngine,
+      contextSummary: summary,
+      originalContext: session.getConfig().contextSystemPrompt,
+    })
+    log.info('engine switch applied', {
+      sessionId: session.id,
+      newEngine: currentDefaultEngine,
+      summaryLength: summary.length,
+      hasOriginalContext: !!session.getConfig().contextSystemPrompt,
+    })
+
+    // Dispatch snapshot + system event so renderer updates immediately
+    this.dispatchSessionUpdate(session)
+    this.dispatchLastSystemEvent(session)
+    return true
+  }
+
+  // ── Dispatch helpers ──────────────────────────────────────────────────
+
+  private dispatchSessionUpdate(session: ManagedSession): void {
+    this.deps.dispatch({ type: 'command:session:updated', payload: session.snapshot() })
+  }
+
+  private dispatchLastSystemEvent(session: ManagedSession): void {
+    const lastMsg = session.getLastMessage()
+    if (lastMsg && lastMsg.role === 'system') {
+      this.deps.dispatch({
+        type: 'command:session:message',
+        payload: { sessionId: session.id, origin: session.origin, message: lastMsg },
+      })
+    }
+  }
+
+  // ── Session lifecycle ───────────────────────────────────────────────
 
   async stopSession(sessionId: string): Promise<boolean> {
     const rt = this.runtimes.get(sessionId)
