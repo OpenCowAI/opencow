@@ -1,11 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 
-import { useEffect, useRef, useCallback, useMemo, useState, useContext, createContext, startTransition, memo, forwardRef, useImperativeHandle } from 'react'
+import { useEffect, useRef, useCallback, useMemo, useState, startTransition, memo, forwardRef, useImperativeHandle } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Virtuoso, type VirtuosoHandle, type ListRange } from 'react-virtuoso'
 import { ArrowDown, GitCompare } from 'lucide-react'
-import { LinkifiedText } from '@/components/ui/LinkifiedText'
-import { ContentBlockRenderer } from './ContentBlockRenderer'
+import { UserMessage, ChatBubbleUserMessage } from './MessageRenderers'
+import { AssistantMessage } from './AssistantMessage'
+import { INCREASE_VIEWPORT_BY, FooterNodeContext, VIRTUOSO_COMPONENTS } from './VirtuosoShell'
+import type { VirtuosoContext, MessageListVariant } from './VirtuosoShell'
 import { SystemEventView } from './SystemEventView'
 import { TaskEventsProvider, buildTaskLifecycleMap, resolveTaskFinalStates, isConsumedTaskEvent } from './TaskWidgets'
 import { ToolLifecycleProvider } from './ToolLifecycleContext'
@@ -19,24 +21,21 @@ import {
 } from './AskUserQuestionWidgets'
 import type { AskUserQuestionActions } from './AskUserQuestionWidgets'
 import { DiffChangesDialog } from './DiffChangesDialog'
-import { hasFileChanges, countChangedFiles } from './extractFileChanges'
-import { useDialogState } from '@/hooks/useModalAnimation'
 import { useAutoFollow } from '@/hooks/useAutoFollow'
+import { useTurnDiffs } from '@/hooks/useTurnDiffs'
 import { useIncrementalMemo } from '@/hooks/useIncrementalMemo'
 import { cn } from '@/lib/utils'
-import { parseContextFiles } from '@/lib/contextFilesParsing'
-import { ContextFileChips } from '@/components/ui/ContextFileChips'
-import { useCommandStore, selectSessionMessages, selectStreamingMessage } from '@/stores/commandStore'
-import type { ManagedSessionMessage, ManagedSessionState, SessionStopReason, UserMessageContent, ContentBlock, SlashCommandBlock } from '@shared/types'
-import { getSlashDisplayLabel, joinSlashDisplays } from '@shared/slashDisplay'
+import { useCommandStore, selectSessionMessages } from '@/stores/commandStore'
+import type { ManagedSessionMessage, ManagedSessionState, SessionStopReason, UserMessageContent, ContentBlock } from '@shared/types'
 import { truncate as unicodeTruncate } from '@shared/unicode'
+import { extractUserText, getUserMessageDisplayInfo } from './messageDisplayUtils'
 
 // ---------------------------------------------------------------------------
 // Public types
 // ---------------------------------------------------------------------------
 
-/** Display variant for user messages */
-export type MessageListVariant = 'cli' | 'chat'
+// Re-export from VirtuosoShell (canonical definition) for backward compatibility.
+export type { MessageListVariant } from './VirtuosoShell'
 
 /** Imperative handle exposed to parent via ref */
 export interface SessionMessageListHandle {
@@ -94,6 +93,21 @@ interface SessionMessageListProps {
 }
 
 // ---------------------------------------------------------------------------
+// Helpers — reference stabilization
+// ---------------------------------------------------------------------------
+
+/** Stable empty Set for consumedTaskIds initial state. */
+const EMPTY_CONSUMED_IDS: ReadonlySet<string> = new Set()
+
+/** Check if every element of `a` is in `b`. O(|a|). */
+function setIsSubset(a: ReadonlySet<string>, b: ReadonlySet<string>): boolean {
+  for (const id of a) {
+    if (!b.has(id)) return false
+  }
+  return true
+}
+
+// ---------------------------------------------------------------------------
 // Incremental processors — stable module-level functions for useIncrementalMemo.
 // Must NOT capture component scope (no closures) to maintain reference stability.
 // ---------------------------------------------------------------------------
@@ -140,18 +154,13 @@ function scanNavAnchors(
   for (const msg of newMsgs) {
     if (msg.role === 'user') {
       inAssistantTurn = false
-      const text = extractUserText(msg.content).trim()
-      const slashNames = joinSlashDisplays(
-        msg.content.filter((b): b is SlashCommandBlock => b.type === 'slash_command'),
-      )
-      const hasMedia = msg.content.some((b) => b.type === 'image' || b.type === 'document')
-      const hasSlashCmd = slashNames.length > 0
-      if (!text && !hasMedia && !hasSlashCmd) continue
+      const info = getUserMessageDisplayInfo(msg.content)
+      if (info.isEmpty) continue
       if (next === prev) next = { ...prev, anchors: [...prev.anchors] } // copy-on-write
       next.anchors.push({
         msgId: msg.id,
         role: 'user',
-        preview: unicodeTruncate(hasSlashCmd ? `${slashNames} ${text}`.trim() : text || '(attachment)', { max: NAV_PREVIEW_MAX }),
+        preview: unicodeTruncate(info.displayText ?? '', { max: NAV_PREVIEW_MAX }),
       })
     } else if (msg.role === 'assistant' && !inAssistantTurn) {
       inAssistantTurn = true
@@ -178,519 +187,17 @@ function scanNavAnchors(
 const INIT_NAV_ANCHORS_ACC = (): NavAnchorAccumulator => ({ anchors: [], inAssistantTurn: false })
 
 // ---------------------------------------------------------------------------
-// Helpers — pure text extraction
+// Message components — extracted to MessageRenderers.tsx and AssistantMessage.tsx
 // ---------------------------------------------------------------------------
 
-function extractUserText(blocks: ContentBlock[]): string {
-  return blocks
-    .filter((b) => b.type === 'text')
-    .map((b) => (b.type === 'text' ? b.text : ''))
-    .join('\n')
-}
-
 // ---------------------------------------------------------------------------
-// Context-files rendering (parsing & chips extracted to shared modules)
+// Constants
 // ---------------------------------------------------------------------------
-
-function UserTextWithContext({ text, className }: { text: string; className?: string }): React.JSX.Element {
-  const { files, rest } = parseContextFiles(text)
-  return (
-    <>
-      {files.length > 0 && (
-        <div className="mb-1">
-          <ContextFileChips files={files} />
-        </div>
-      )}
-      {rest.trim() && <LinkifiedText text={rest} className={className} />}
-    </>
-  )
-}
-
-function SlashCommandChip({ block }: { block: SlashCommandBlock }): React.JSX.Element {
-  const label = getSlashDisplayLabel(block)
-  return (
-    <span className="slash-mention" role="img" aria-label={`Slash command: ${label}`}>
-      /{label}
-    </span>
-  )
-}
-
-// ---------------------------------------------------------------------------
-// Message components — no content-visibility, pure rendering
-// ---------------------------------------------------------------------------
-
-const UserMessage = memo(function UserMessage({ id, content }: { id: string; content: ContentBlock[] }) {
-  const hasRichContent = content.some((b) => b.type === 'slash_command' || b.type === 'image' || b.type === 'document')
-  const plainText = hasRichContent ? '' : extractUserText(content)
-
-  return (
-    <div data-msg-id={id} data-msg-role="user" className="relative flex gap-2 py-1 -ml-3 pl-3 before:absolute before:left-0 before:top-[6px] before:bottom-[6px] before:w-0.5 before:bg-[hsl(var(--primary)/0.2)]">
-      <span className="text-[hsl(var(--muted-foreground))] font-mono text-sm shrink-0 select-none leading-5" aria-hidden="true">{'>'}</span>
-      <div className="min-w-0">
-        {hasRichContent ? (
-          <div className="text-sm font-mono text-[hsl(var(--foreground))] break-words min-w-0 leading-5">
-            {(() => {
-              const elements: React.ReactNode[] = []
-              let imageGroup: React.ReactNode[] = []
-
-              const flushImages = () => {
-                if (imageGroup.length > 0) {
-                  elements.push(
-                    <div key={`img-group-${elements.length}`} className="flex flex-wrap gap-1.5 py-0.5">
-                      {imageGroup}
-                    </div>
-                  )
-                  imageGroup = []
-                }
-              }
-
-              content.forEach((block, i) => {
-                if (block.type === 'image') {
-                  imageGroup.push(<ContentBlockRenderer key={i} block={block} />)
-                } else {
-                  flushImages()
-                  if (block.type === 'text') elements.push(<UserTextWithContext key={i} text={block.text} />)
-                  else if (block.type === 'slash_command') elements.push(<SlashCommandChip key={i} block={block} />)
-                  else if (block.type === 'document') elements.push(<div key={i} className="py-0.5"><ContentBlockRenderer block={block} /></div>)
-                }
-              })
-              flushImages()
-
-              return elements
-            })()}
-          </div>
-        ) : (
-          <>
-            {plainText && (
-              <div className="text-sm font-mono text-[hsl(var(--foreground))] break-words min-w-0 leading-5">
-                <UserTextWithContext text={plainText} />
-              </div>
-            )}
-          </>
-        )}
-      </div>
-    </div>
-  )
-})
-
-const ChatBubbleUserMessage = memo(function ChatBubbleUserMessage({ id, content }: { id: string; content: ContentBlock[] }) {
-  const hasRichContent = content.some((b) => b.type === 'slash_command' || b.type === 'image' || b.type === 'document')
-  const plainText = hasRichContent ? '' : extractUserText(content)
-  const linkClass = '[&_a]:text-[hsl(var(--primary))] [&_a]:underline [&_a]:decoration-[hsl(var(--primary)/0.4)]'
-
-  return (
-    <div data-msg-id={id} data-msg-role="user" className="flex justify-end py-1.5">
-      <div className="max-w-[80%] px-4 py-2.5 rounded-2xl bg-[hsl(var(--foreground)/0.06)] dark:bg-white/10 text-[hsl(var(--foreground))]">
-        {hasRichContent ? (
-          <div className="text-sm break-words min-w-0 leading-relaxed">
-            {(() => {
-              const elements: React.ReactNode[] = []
-              let imageGroup: React.ReactNode[] = []
-
-              const flushImages = () => {
-                if (imageGroup.length > 0) {
-                  elements.push(
-                    <div key={`img-group-${elements.length}`} className="flex flex-wrap gap-1.5 py-0.5">
-                      {imageGroup}
-                    </div>
-                  )
-                  imageGroup = []
-                }
-              }
-
-              content.forEach((block, i) => {
-                if (block.type === 'image') {
-                  imageGroup.push(<ContentBlockRenderer key={i} block={block} />)
-                } else {
-                  flushImages()
-                  if (block.type === 'text') elements.push(<UserTextWithContext key={i} text={block.text} className={linkClass} />)
-                  else if (block.type === 'slash_command') elements.push(<SlashCommandChip key={i} block={block} />)
-                  else if (block.type === 'document') elements.push(<div key={i} className="py-0.5"><ContentBlockRenderer block={block} /></div>)
-                }
-              })
-              flushImages()
-
-              return elements
-            })()}
-          </div>
-        ) : (
-          <>
-            {plainText && (
-              <div className="text-sm break-words min-w-0 leading-relaxed">
-                <UserTextWithContext text={plainText} className={linkClass} />
-              </div>
-            )}
-          </>
-        )}
-      </div>
-    </div>
-  )
-})
-
-/** Narrowed assistant variant of ManagedSessionMessage — used by AssistantMessage props. */
-type AssistantSessionMessage = Extract<ManagedSessionMessage, { role: 'assistant' }>
-
-const IN_MESSAGE_TOOL_COLLAPSE_THRESHOLD = 2
-
-interface IndexedContentBlock {
-  block: ContentBlock
-  index: number
-}
-
-function countToolUseBlocks(blocks: ContentBlock[]): number {
-  let total = 0
-  for (const block of blocks) {
-    if (block.type === 'tool_use') total += 1
-  }
-  return total
-}
-
-function splitToolAndNonToolSegments(
-  blocks: ContentBlock[],
-): Array<{ kind: 'tool' | 'other'; blocks: IndexedContentBlock[] }> {
-  const segments: Array<{ kind: 'tool' | 'other'; blocks: IndexedContentBlock[] }> = []
-  for (let i = 0; i < blocks.length; i++) {
-    const block = blocks[i]
-    const kind: 'tool' | 'other' = block.type === 'tool_use' || block.type === 'tool_result' ? 'tool' : 'other'
-    const prev = segments[segments.length - 1]
-    if (prev && prev.kind === kind) {
-      prev.blocks.push({ block, index: i })
-    } else {
-      segments.push({ kind, blocks: [{ block, index: i }] })
-    }
-  }
-  return segments
-}
-
-function extractLastTextBlockIndex(blocks: ContentBlock[]): number {
-  for (let i = blocks.length - 1; i >= 0; i--) {
-    if (blocks[i].type === 'text') return i
-  }
-  return -1
-}
-
-const AssistantMessage = memo(function AssistantMessage({
-  message: structuralMessage,
-  sessionId,
-}: {
-  /** The structural message from sessionMessages (stable during streaming). */
-  message: AssistantSessionMessage
-  sessionId: string
-}) {
-  // ── Self-subscribing streaming overlay ──────────────────────────────
-  // During streaming, the store fast-path writes ALL updates (text growth
-  // AND structural changes like new tool_use blocks) to
-  // `streamingMessageBySession` — NOT `sessionMessages`.  This keeps
-  // sessionMessages stable → messageGroups unchanged → Virtuoso data
-  // unchanged → zero cascade to other visible items.
-  //
-  // This component self-subscribes to the streaming overlay and resolves
-  // the **effective message**: overlay when streaming, structural when not.
-  // The overlay IS the complete ManagedSessionMessage, so this is a
-  // wholesale replacement — no per-field extraction needed.  New fields
-  // added to ManagedSessionMessage are automatically available from the
-  // overlay without any changes to this component.
-  //
-  //   - React.memo prevents parent-triggered re-renders (structural ref stable)
-  //   - The internal useCommandStore subscription drives re-renders
-  //     ONLY for this one component when streaming content changes
-  //   - No other AssistantMessage in the Virtuoso list is affected
-  //
-  // The subscription is NOT gated by `isStreaming`.  During finalization,
-  // the store clears the overlay and updates sessionMessages in a single
-  // set() call, but the child subscription fires before the parent's new
-  // props propagate through Virtuoso — creating a one-frame gap where the
-  // structural prop is stale but the overlay is already null.  Unconditional
-  // subscription eliminates this race.  The ID+role check inside the
-  // selector ensures only the actual streaming message for THIS component
-  // returns non-null, so non-streaming AssistantMessages have zero
-  // re-render overhead (selector returns same `null` → Object.is skips).
-  const overlay = useCommandStore((s) => {
-    const msg = selectStreamingMessage(s, sessionId)
-    return (msg && msg.id === structuralMessage.id && msg.role === 'assistant') ? msg : null
-  })
-
-  // Effective message: overlay replaces the ENTIRE structural message when
-  // present.  All fields (content, activeToolUseId, isStreaming, etc.) come
-  // from the overlay wholesale — no field-by-field extraction.
-  const msg = overlay ?? structuralMessage
-  const { id, content, isStreaming, activeToolUseId } = msg
-
-  // ── Block reference stabilization ──────────────────────────────────
-  // During streaming, `content` is a new array every frame.  Preserve
-  // old block references for unchanged blocks so ContentBlockRenderer's
-  // React.memo skips re-rendering them — avoiding expensive markdown
-  // re-parse and syntax highlighting for blocks that haven't changed.
-  //
-  // Handles both same-length updates (text growth) AND length changes
-  // (new tool_use / thinking block appended).  For the common prefix
-  // (indices that exist in both old and new), per-type comparison
-  // decides whether to reuse the old reference.  New blocks beyond the
-  // previous length always use the new reference.
-  const prevBlocksRef = useRef<ContentBlock[]>(content)
-  const stableContent = useMemo(() => {
-    const prev = prevBlocksRef.current
-    if (prev === content) return content
-    const stabilized = content.map((newBlock, i) => {
-      const oldBlock = prev[i]
-      // New block appended beyond previous length — no old reference to reuse.
-      if (!oldBlock) return newBlock
-      if (oldBlock === newBlock) return oldBlock
-      if (oldBlock.type !== newBlock.type) return newBlock
-      // Text block: reuse old reference only if text is identical
-      if (newBlock.type === 'text' && oldBlock.type === 'text') {
-        return oldBlock.text === newBlock.text ? oldBlock : newBlock
-      }
-      // Thinking block: also has growing text content during streaming
-      if (newBlock.type === 'thinking' && oldBlock.type === 'thinking') {
-        return oldBlock.thinking === newBlock.thinking ? oldBlock : newBlock
-      }
-      // tool_use block: progressBlocks may change during Evose streaming.
-      // A new progressBlocks reference means new streaming data arrived —
-      // propagate the new block to trigger ContentBlockRenderer re-render.
-      if (newBlock.type === 'tool_use' && oldBlock.type === 'tool_use') {
-        return newBlock.progressBlocks !== oldBlock.progressBlocks ? newBlock : oldBlock
-      }
-      // Other block types (tool_result, image, document, slash_command):
-      // content is immutable once emitted — safe to reuse old reference.
-      return oldBlock
-    })
-    prevBlocksRef.current = stabilized
-    return stabilized
-  }, [content])
-
-  const toolCallCount = countToolUseBlocks(stableContent)
-  const shouldCollapseInMessageTools = toolCallCount >= IN_MESSAGE_TOOL_COLLAPSE_THRESHOLD
-  const lastTextBlockIndex = extractLastTextBlockIndex(stableContent)
-  const hasToolUseInMessage = toolCallCount > 0
-  const textStreaming = isStreaming && !hasToolUseInMessage
-
-  if (!shouldCollapseInMessageTools) {
-    return (
-      <div data-msg-id={id} data-msg-role="assistant" className="py-0.5 break-words min-w-0">
-        {stableContent.map((block, index) => (
-          <ContentBlockRenderer
-            key={`${block.type}-${index}`}
-            block={block}
-            sessionId={sessionId}
-            isLastTextBlock={index === lastTextBlockIndex}
-            isStreaming={textStreaming}
-            isMessageStreaming={isStreaming}
-            activeToolUseId={activeToolUseId}
-          />
-        ))}
-      </div>
-    )
-  }
-
-  const segments = splitToolAndNonToolSegments(stableContent)
-
-  return (
-    <div data-msg-id={id} data-msg-role="assistant" className="py-0.5 break-words min-w-0">
-      {segments.map((segment, segmentIndex) => {
-        if (segment.kind === 'tool') {
-          const segmentContent = segment.blocks.map(({ block }) => block)
-          const segmentToolCallCount = countToolUseBlocks(segmentContent)
-          if (segmentToolCallCount < IN_MESSAGE_TOOL_COLLAPSE_THRESHOLD) {
-            return (
-              <div key={`${id}-tool-segment-raw-${segmentIndex}-${segment.blocks[0]?.index ?? 0}`}>
-                {segment.blocks.map(({ block, index }) => (
-                  <ContentBlockRenderer
-                    key={`${block.type}-${index}`}
-                    block={block}
-                    sessionId={sessionId}
-                    isLastTextBlock={index === lastTextBlockIndex}
-                    isStreaming={textStreaming}
-                    isMessageStreaming={isStreaming}
-                    activeToolUseId={activeToolUseId}
-                  />
-                ))}
-              </div>
-            )
-          }
-
-          const segmentMessage: ManagedSessionMessage = {
-            id: `${id}-tool-segment-${segmentIndex}`,
-            role: 'assistant',
-            content: segmentContent,
-            timestamp: msg.timestamp,
-            isStreaming,
-            activeToolUseId,
-          }
-          return (
-            <ToolBatchCollapsible
-              key={`${id}-tool-segment-${segmentIndex}-${segment.blocks[0]?.index ?? 0}`}
-              messages={[segmentMessage]}
-              sessionId={sessionId}
-            />
-          )
-        }
-        return (
-          <div key={`${id}-other-segment-${segmentIndex}-${segment.blocks[0]?.index ?? 0}`}>
-            {segment.blocks.map(({ block, index }) => (
-              <ContentBlockRenderer
-                key={`${block.type}-${index}`}
-                block={block}
-                sessionId={sessionId}
-                isLastTextBlock={index === lastTextBlockIndex}
-                isStreaming={textStreaming}
-                isMessageStreaming={isStreaming}
-                activeToolUseId={activeToolUseId}
-              />
-            ))}
-          </div>
-        )
-      })}
-    </div>
-  )
-})
-
-// ---------------------------------------------------------------------------
-// Layout constants
-// ---------------------------------------------------------------------------
-
-/**
- * Bottom padding (px) for the Virtuoso Footer spacer.
- *
- * Virtuoso measures Footer height via ResizeObserver and includes it in the
- * total scroll extent, making this the idiomatic way to add bottom breathing
- * room to a virtualised list.  We use inline styles (not Tailwind classes) to
- * guarantee the spacer is never purged or overridden.
- */
-const FOOTER_BASE_PADDING = 24
-
-/**
- * Over-scan buffer — tells Virtuoso to render items this far outside the
- * visible viewport.  Larger top values reduce blank-flash when scrolling up
- * through complex cards; smaller bottom values reduce wasted renders below.
- */
-const INCREASE_VIEWPORT_BY = { top: 800, bottom: 200 } as const
 
 /** Session states in which the AskUserQuestion card can accept user input. */
 const SENDABLE_STATES: ReadonlySet<ManagedSessionState> = new Set<ManagedSessionState>([
   'idle', 'awaiting_input', 'awaiting_question', 'stopped', 'error',
 ])
-
-// ---------------------------------------------------------------------------
-// Virtuoso context — carries per-instance config to module-level sub-components.
-//
-// IMPORTANT: Only include props that are used by Scroller/List sub-components
-// AND that are stable across session lifecycle changes.  Props that change
-// frequently (like footerNode) must use a separate React Context to avoid
-// triggering Virtuoso's full item re-render when context changes.
-// ---------------------------------------------------------------------------
-
-interface VirtuosoContext {
-  variant: MessageListVariant
-}
-
-// ---------------------------------------------------------------------------
-// Footer node context — dedicated channel for VirtuosoFooter.
-//
-// Separated from VirtuosoContext because footerNode changes on session
-// lifecycle transitions (e.g. Stop Session → ArtifactsSummaryBlock appears)
-// while variant is effectively constant after mount.  Bundling them in
-// Virtuoso's context prop would cause Virtuoso to re-render ALL visible
-// items on every footerNode change — a costly no-op since items don't use
-// footerNode.  With a dedicated React Context, only VirtuosoFooter re-renders.
-// ---------------------------------------------------------------------------
-
-const FooterNodeContext = createContext<React.ReactNode>(undefined)
-
-// ---------------------------------------------------------------------------
-// Virtuoso sub-components — MUST be defined at module level.
-//
-// CRITICAL: Defining forwardRef components inline inside the render function
-// (or inside the components={{...}} object literal) creates a NEW component
-// type on every render.  React treats different types as different components:
-//   old Scroller (type A) → unmount → new Scroller (type B) → mount
-// When the Scroller DOM element is destroyed, scrollTop resets to 0 — the
-// list snaps to the top.  This was the root cause of the scroll-to-top bug.
-//
-// By defining components at module level, the reference is stable across
-// renders, so React reuses the existing DOM element and preserves scrollTop.
-//
-// The `context` prop is injected by Virtuoso from <Virtuoso context={...}>
-// and carries instance-specific configuration without closures.
-// ---------------------------------------------------------------------------
-
-type VirtuosoSubComponentProps = React.ComponentPropsWithoutRef<'div'> & {
-  context?: VirtuosoContext
-}
-
-const VirtuosoScroller = forwardRef<HTMLDivElement, VirtuosoSubComponentProps>(
-  function VirtuosoScroller({ style, context, ...props }, ref) {
-    return (
-      <div
-        ref={ref}
-        style={style}
-        {...props}
-      />
-    )
-  }
-)
-
-const VirtuosoList = forwardRef<HTMLDivElement, VirtuosoSubComponentProps>(
-  function VirtuosoList({ style, context, ...props }, ref) {
-    const isChat = context?.variant === 'chat'
-    return (
-      <div
-        ref={ref}
-        style={isChat ? {
-          ...style,
-          maxWidth: 640,
-          width: '100%',
-          marginLeft: 'auto',
-          marginRight: 'auto',
-        } : style}
-        className="py-2 space-y-0.5 px-3"
-        role="list"
-        aria-label="Session messages"
-        {...props}
-      />
-    )
-  }
-)
-
-// Footer — module-level for reference stability (same principle as Scroller/List).
-// Uses a dedicated React Context (FooterNodeContext) instead of Virtuoso's context
-// prop, so footerNode changes only trigger a Footer re-render — not a full item
-// re-render of the entire visible list.
-//
-// IMPORTANT: Always renders a SINGLE stable <div> regardless of whether footerNode
-// is present.  A single div with a stable `paddingBottom` minimises the DOM diff
-// when the footer content transitions (e.g. spacer → ArtifactsSummaryBlock).
-//
-// The paddingBottom (FOOTER_BASE_PADDING) provides visual breathing room below the
-// last content element.  The parent Virtuoso container's `bottom` tracks the
-// overlay height — so the footer is never hidden behind the floating panel.
-//
-// NOTE: footerNode is gated by `mountSettled` in the Provider (see render section).
-// On mount, the context value is `undefined` for ~3 frames while Virtuoso performs
-// its initial measurement cycle.  This prevents the footer content (e.g.
-// ArtifactsSummaryBlock) from rendering during layout settling, eliminating the
-// visual jitter that would otherwise occur on issue switch.
-function VirtuosoFooter() {
-  const footerNode = useContext(FooterNodeContext)
-  return (
-    <div
-      className={footerNode ? 'mt-3 px-3' : undefined}
-      style={{ paddingBottom: FOOTER_BASE_PADDING }}
-      aria-label={footerNode ? 'Session summary' : undefined}
-      aria-hidden={footerNode ? undefined : true}
-    >
-      {footerNode}
-    </div>
-  )
-}
-
-// Stable components object — all references are module-level constants,
-// so Virtuoso never sees a component identity change across renders.
-const VIRTUOSO_COMPONENTS = {
-  Scroller: VirtuosoScroller,
-  List: VirtuosoList,
-  Footer: VirtuosoFooter,
-}
 
 // ---------------------------------------------------------------------------
 // SessionMessageList — Virtuoso-powered, zero content-visibility
@@ -776,10 +283,37 @@ function SessionMessageList({ sessionId, messages: externalMessages, sessionStat
   // consumedTaskIds → messageGroups → Virtuoso re-renders all visible items.
   // ---------------------------------------------------------------------------
 
-  const { map: scannedTaskMap, consumedTaskIds } = useMemo(
+  // ── consumedTaskIds reference stabilization ──────────────────────
+  // buildTaskLifecycleMap creates a NEW Set every call, even when its
+  // content hasn't changed. This causes messageGroups' useMemo to see
+  // a dependency change → filter + groupMessages full rebuild (~2-5ms)
+  // on EVERY structural message change, even when no new task events
+  // arrived.
+  //
+  // Fix: compare the new Set's content with the previous one. If equal,
+  // reuse the old reference → messageGroups useMemo skips entirely.
+  // consumedTaskIds is append-only (task IDs only get added), so a
+  // size check + subset check is sufficient for equality.
+  const prevConsumedIdsRef = useRef<ReadonlySet<string>>(EMPTY_CONSUMED_IDS)
+
+  const { map: scannedTaskMap, consumedTaskIds: rawConsumedIds } = useMemo(
     () => buildTaskLifecycleMap(messages),
     [messages],
   )
+
+  // Reference stabilization: reuse previous Set when content unchanged.
+  // Keeps both useMemos side-effect-free; ref update is render-time sync.
+  const consumedTaskIds = useMemo(() => {
+    const prev = prevConsumedIdsRef.current
+    if (
+      rawConsumedIds.size === prev.size &&
+      (prev.size === 0 || setIsSubset(prev, rawConsumedIds))
+    ) {
+      return prev
+    }
+    return rawConsumedIds
+  }, [rawConsumedIds])
+  prevConsumedIdsRef.current = consumedTaskIds
 
   const taskEventsMap = useMemo(
     () => resolveTaskFinalStates(scannedTaskMap, sessionState, stopReason),
@@ -796,9 +330,13 @@ function SessionMessageList({ sessionId, messages: externalMessages, sessionStat
   )
 
   // Group consecutive tool-only assistant messages into collapsible batches.
-  // Depends on `messages` and `consumedTaskIds` — both are stable across
-  // sessionState changes, so Stop Session never triggers a recompute here.
-  // Critical path: drives Virtuoso data, must use immediate `messages`.
+  // Depends on `messages` and `consumedTaskIds`.
+  //
+  // With consumedTaskIds reference stabilization above, this useMemo skips
+  // entirely when no new task events arrived — which is the common case for
+  // most structural changes (tool_result, assistant_final, system events).
+  // Only task_started/task_notification events grow consumedTaskIds and
+  // trigger a rebuild here.
   const messageGroups = useMemo(() => {
     const filtered = messages.filter((msg) => {
       if (msg.role === 'system' && isConsumedTaskEvent(msg.event, consumedTaskIds)) return false
@@ -823,94 +361,10 @@ function SessionMessageList({ sessionId, messages: externalMessages, sessionStat
   const virtuosoData = messageGroups
 
   // ---------------------------------------------------------------------------
-  // Turn-level diff: compute which message ID marks the end of each turn that
-  // has file changes.
-  //
-  // A turn's "View Changes" button should only appear once the turn is fully
-  // complete — not while the agent is still executing tool calls within the
-  // same turn.
-  //
-  // Historical turns (followed by a new user message) are always complete.
-  // The current (last) turn is complete only when sessionState settles into a
-  // non-processing state.
+  // Turn-level diff — extracted to useTurnDiffs hook.
+  // Computes which turns have file changes and manages the diff dialog state.
   // ---------------------------------------------------------------------------
-
-  /** Session has finished the current turn and is no longer producing changes. */
-  const isTurnSettled = !sessionState
-    || sessionState === 'idle'
-    || sessionState === 'awaiting_input'
-    || sessionState === 'stopped'
-    || sessionState === 'error'
-
-  const turnDiffMap = useMemo(() => {
-    const map = new Map<string, { turnMessages: ManagedSessionMessage[]; firstMessageId: string; fileCount: number }>()
-    let turnMsgs: ManagedSessionMessage[] = []
-    let lastAssistantId: string | null = null
-
-    const isVisibleUser = (msg: ManagedSessionMessage): boolean =>
-      msg.role === 'user' && msg.content.some(
-        (b) =>
-          (b.type === 'text' && b.text.trim().length > 0) ||
-          b.type === 'image' ||
-          b.type === 'document' ||
-          b.type === 'slash_command',
-      )
-
-    /**
-     * Flush accumulated turn messages into the map if the turn has file changes.
-     * @param isCurrentTurn - true for the last (potentially in-progress) turn
-     */
-    const flushTurn = (isCurrentTurn: boolean): void => {
-      if (lastAssistantId && turnMsgs.length > 0) {
-        const isStreaming = turnMsgs.some((m) => m.role === 'assistant' && m.isStreaming)
-        // Historical turns: isStreaming check is sufficient (defensive).
-        // Current turn: also require session to have settled — the agent may
-        // still execute more tool calls even when no message is streaming.
-        const isTurnComplete = isCurrentTurn
-          ? !isStreaming && isTurnSettled
-          : !isStreaming
-        if (isTurnComplete && hasFileChanges(turnMsgs)) {
-          map.set(lastAssistantId, {
-            turnMessages: turnMsgs,
-            firstMessageId: turnMsgs[0].id,
-            fileCount: countChangedFiles(turnMsgs),
-          })
-        }
-      }
-      turnMsgs = []
-      lastAssistantId = null
-    }
-
-    for (const msg of messages) {
-      if (isVisibleUser(msg)) {
-        flushTurn(false) // historical turn — always complete
-      } else {
-        turnMsgs.push(msg)
-        if (msg.role === 'assistant' || msg.role === 'system') {
-          lastAssistantId = msg.id
-        }
-      }
-    }
-    flushTurn(true) // current (last) turn — depends on session state
-
-    return map
-  }, [messages, isTurnSettled])
-
-  // Hold turnDiffMap in a ref so that renderItem's useCallback does not depend
-  // on it.  During streaming, `messages` changes ~10×/sec which recomputes
-  // turnDiffMap (new Map reference).  If turnDiffMap were a direct useCallback
-  // dependency, Virtuoso would re-invoke itemContent for every visible item on
-  // every streaming tick.  Reading from a ref instead keeps renderItem stable
-  // while still picking up the latest diffs on the next natural re-render.
-  const turnDiffMapRef = useRef(turnDiffMap)
-  turnDiffMapRef.current = turnDiffMap
-
-  const turnDiffDialog = useDialogState<{ messages: ManagedSessionMessage[]; turnAnchorMessageId: string }>()
-
-  // Extract stable callback — useDialogState returns a new object literal every
-  // render, but .show is a useCallback([], []) with stable identity.  Using the
-  // extracted reference in renderItem's deps keeps the useCallback effective.
-  const showTurnDiffDialog = turnDiffDialog.show
+  const { turnDiffMapRef, turnDiffDialog, showTurnDiffDialog } = useTurnDiffs(messages, sessionState)
 
   // Compute interactive AskUserQuestion state
   const askActions = useMemo<AskUserQuestionActions | null>(() => {
@@ -992,17 +446,7 @@ function SessionMessageList({ sessionId, messages: externalMessages, sessionStat
     const msg = messages.find((m) => m.id === userMsgId)
     if (!msg || msg.role !== 'user') return { text: null, msgId: null }
 
-    const text = extractUserText(msg.content).trim()
-    const slashNames = joinSlashDisplays(
-      msg.content.filter((b): b is SlashCommandBlock => b.type === 'slash_command'),
-    )
-    const hasMedia = msg.content.some((b) => b.type === 'image' || b.type === 'document')
-
-    let displayText: string | null = null
-    if (text) displayText = slashNames ? `${slashNames} ${text}`.trim() : text
-    else if (slashNames) displayText = slashNames
-    else if (hasMedia) displayText = '(attachment)'
-
+    const { displayText } = getUserMessageDisplayInfo(msg.content)
     return { text: displayText, msgId: userMsgId }
   }, [activeNavId, navAnchors, messages])
 
@@ -1147,10 +591,7 @@ function SessionMessageList({ sessionId, messages: externalMessages, sessionStat
       tailMsgId = msg.id
       switch (msg.role) {
         case 'user': {
-          const uText = extractUserText(msg.content).trim()
-          const hasMedia = msg.content.some((b) => b.type === 'image' || b.type === 'document')
-          const hasSlashCmd = msg.content.some((b) => b.type === 'slash_command')
-          if (!uText && !hasMedia && !hasSlashCmd) {
+          if (getUserMessageDisplayInfo(msg.content).isEmpty) {
             element = null
             tailMsgId = undefined
           } else {
