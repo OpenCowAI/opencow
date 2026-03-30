@@ -15,7 +15,7 @@
   "select": "选择记忆",
   "scopeAll": "全部",
   "includeGlobal": "全局",
-  "scopeUser": "用户",
+  "scopeUser": "全局",
   "scopeProject": "项目",
   "categoryAll": "全部分类",
   "category": {
@@ -65,7 +65,7 @@
     "contentLabel": "内容",
     "contentPlaceholder": "OpenCow 应该记住什么？",
     "scopeLabel": "范围",
-    "scopeUser": "用户（全局）",
+    "scopeUser": "全局",
     "scopeProject": "项目",
     "projectLabel": "项目",
     "projectPlaceholder": "选择一个项目",

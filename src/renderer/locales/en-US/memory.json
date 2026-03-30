@@ -15,7 +15,7 @@
   "select": "Select memory",
   "scopeAll": "All",
   "includeGlobal": "Global",
-  "scopeUser": "User",
+  "scopeUser": "Global",
   "scopeProject": "Project",
   "categoryAll": "All Categories",
   "category": {
@@ -65,7 +65,7 @@
     "contentLabel": "Content",
     "contentPlaceholder": "What should OpenCow remember?",
     "scopeLabel": "Scope",
-    "scopeUser": "User (global)",
+    "scopeUser": "Global",
     "scopeProject": "Project",
     "projectLabel": "Project",
     "projectPlaceholder": "Select a project",
