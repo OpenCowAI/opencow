@@ -577,15 +577,6 @@ export function QueuedMessageList({
         )}
       </div>
 
-      {/* Sequential mode tooltip */}
-      {isSequential && !isSending && queue.length >= 2 && (
-        <div className="px-3 pb-1">
-          <span className="text-[10px] text-[hsl(var(--muted-foreground))] italic">
-            {t('queuedMessages.sequentialTooltip')}
-          </span>
-        </div>
-      )}
-
       {/* Message list — single container, conditionally wrapped with DnD context */}
       {(() => {
         const list = (

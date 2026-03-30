@@ -348,8 +348,7 @@
     "modeSequential": "逐条",
     "dispatchModeAria": "队列发送模式",
     "reorderAria": "拖拽排序队列消息",
-    "sendingItem": "正在发送消息 {{index}}…",
-    "sequentialTooltip": "消息将逐条发送。可拖拽排序。"
+    "sendingItem": "正在发送消息 {{index}}…"
   },
   "compose": {
     "placeholder": "编写提示词… 使用 / 调用命令",
