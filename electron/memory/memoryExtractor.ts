@@ -136,24 +136,32 @@ export class MemoryExtractor {
     }
 
     if (parsed.skipReason) {
-      log.debug('Extraction skipped', { reason: parsed.skipReason })
+      log.debug('Extraction skipped by LLM', { reason: parsed.skipReason })
       return []
     }
 
     if (!Array.isArray(parsed.memories)) {
+      log.debug('parseResponse: no memories array in LLM response', {
+        keys: Object.keys(parsed).join(', '),
+        preview: cleaned.slice(0, 300),
+      })
       return []
     }
 
+    let skippedEmpty = 0
+    let skippedTooLong = 0
+    let skippedLowConfidence = 0
     const results: CandidateMemory[] = []
     for (const raw of parsed.memories) {
       if (typeof raw !== 'object' || raw === null) continue
       const m = raw as Record<string, unknown>
 
       const content = typeof m.content === 'string' ? m.content.trim() : ''
-      if (!content || content.length > MEMORY_LIMITS.maxContentLength) continue
+      if (!content) { skippedEmpty++; continue }
+      if (content.length > MEMORY_LIMITS.maxContentLength) { skippedTooLong++; continue }
 
       const confidence = clampConfidence(typeof m.confidence === 'number' ? m.confidence : 0.7)
-      if (confidence < MEMORY_LIMITS.minConfidence) continue
+      if (confidence < MEMORY_LIMITS.minConfidence) { skippedLowConfidence++; continue }
 
       const rawCategory = typeof m.category === 'string' ? m.category : 'fact'
       const rawScope = typeof m.scope === 'string' ? m.scope : defaultScope
@@ -171,6 +179,15 @@ export class MemoryExtractor {
         tags: Array.isArray(m.tags) ? (m.tags.filter((t) => typeof t === 'string') as string[]).slice(0, MEMORY_LIMITS.maxTags) : [],
         reasoning: typeof m.reasoning === 'string' ? m.reasoning : '',
         action,
+      })
+    }
+
+    if (results.length === 0 && parsed.memories.length > 0) {
+      log.debug('parseResponse: all candidates filtered out', {
+        rawCount: parsed.memories.length,
+        skippedEmpty,
+        skippedTooLong,
+        skippedLowConfidence,
       })
     }
 
