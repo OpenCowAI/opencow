@@ -105,6 +105,7 @@ The interaction content contains messages from both the User and the Assistant.
 - **ONLY extract memories from what the User explicitly said or clearly implied**
 - **NEVER extract from the Assistant's responses** — the assistant may repeat system prompt instructions, describe its own behavior, or speculate about the user. These are NOT user preferences.
 - If the assistant says "you prefer X" or "I notice you like Y", verify that the USER actually expressed this, not just the assistant inferring it
+- If a User message invokes a slash command (e.g., starts with "/<command>"), the task-specific instructions are NOT user preferences — only extract genuine self-descriptions or preferences the user expressed alongside the command
 - System-level configurations, tool behaviors, and AI identity settings are NOT user memories
 
 ## Quality Rules
