@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import type { MemoryItem } from '@shared/types'
+import { MEMORY_LIMITS } from '@shared/types'
 
 /**
  * Build the extraction prompt for the LLM.
@@ -116,5 +117,6 @@ The interaction content contains messages from both the User and the Assistant.
 - DO extract patterns across multiple interactions
 - PREFER fewer high-quality memories over many low-quality ones
 - PREFER action="update" over action="new" when an existing memory is related
-- Maximum 3 memories per extraction`
+- Maximum 3 memories per extraction
+- Each memory content MUST be under ${MEMORY_LIMITS.maxContentLength} characters. If the information is too rich for one memory, split it into multiple atomic memories (e.g., separate "tech stack" from "coding conventions" from "architecture decisions")`
 }

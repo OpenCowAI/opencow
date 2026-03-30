@@ -4102,6 +4102,6 @@ export const MEMORY_LIMITS = {
   maxUserMemories: 200,
   maxProjectMemories: 100,
   minConfidence: 0.5,
-  maxContentLength: 500,
+  maxContentLength: 1000,
   maxTags: 10,
 } as const

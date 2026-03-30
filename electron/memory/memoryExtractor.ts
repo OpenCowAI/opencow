@@ -149,16 +149,22 @@ export class MemoryExtractor {
     }
 
     let skippedEmpty = 0
-    let skippedTooLong = 0
     let skippedLowConfidence = 0
     const results: CandidateMemory[] = []
     for (const raw of parsed.memories) {
       if (typeof raw !== 'object' || raw === null) continue
       const m = raw as Record<string, unknown>
 
-      const content = typeof m.content === 'string' ? m.content.trim() : ''
+      let content = typeof m.content === 'string' ? m.content.trim() : ''
       if (!content) { skippedEmpty++; continue }
-      if (content.length > MEMORY_LIMITS.maxContentLength) { skippedTooLong++; continue }
+      // Graceful degradation: truncate instead of discard — partial value > zero value
+      if (content.length > MEMORY_LIMITS.maxContentLength) {
+        log.debug('truncating oversized memory content', {
+          originalLength: content.length,
+          limit: MEMORY_LIMITS.maxContentLength,
+        })
+        content = content.slice(0, MEMORY_LIMITS.maxContentLength - 1) + '\u2026'
+      }
 
       const confidence = clampConfidence(typeof m.confidence === 'number' ? m.confidence : 0.7)
       if (confidence < MEMORY_LIMITS.minConfidence) { skippedLowConfidence++; continue }
@@ -186,7 +192,6 @@ export class MemoryExtractor {
       log.debug('parseResponse: all candidates filtered out', {
         rawCount: parsed.memories.length,
         skippedEmpty,
-        skippedTooLong,
         skippedLowConfidence,
       })
     }
