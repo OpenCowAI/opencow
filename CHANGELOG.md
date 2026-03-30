@@ -4,6 +4,24 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.3.11] - 2026-03-30
+
+### Added
+- Engine-agnostic sessions with seamless per-turn engine switching — changing the default AI engine in Settings takes effect on the next message without restarting the session
+- Structured dev-tracing logs across session lifecycle (QueryLifecycle, SessionOrchestrator, ManagedSession state transitions)
+- Structured dev-tracing logs across memory system lifecycle (extraction, quality gate, retrieval, debounce queue)
+- Project name display for project-scoped memories in list (e.g., "Project · OpenCow")
+
+### Changed
+- Memory maxContentLength raised from 500 to 1000 to accommodate structured knowledge
+- Scope terminology unified: "User" → "Global" across memory UI
+- Settings switch components (Updates, Memory) now reuse shared `Switch` from `ui/switch`
+
+### Fixed
+- Engine drift detection now runs before fast path in `resumeSessionInternal`, preventing silent engine switch ignoring for active sessions
+- Silent memory loss from oversized content: three-layer defense (raised limit, prompt constraint, graceful truncation)
+- Zero-candidate extraction failures now log diagnostic details (response structure, filter reasons)
+
 ## [0.3.10] - 2026-03-29
 
 ### Added
