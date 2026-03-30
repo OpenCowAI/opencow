@@ -155,15 +155,15 @@ export class MemoryExtractor {
       if (typeof raw !== 'object' || raw === null) continue
       const m = raw as Record<string, unknown>
 
-      let content = typeof m.content === 'string' ? m.content.trim() : ''
+      const content = typeof m.content === 'string' ? m.content.trim() : ''
       if (!content) { skippedEmpty++; continue }
-      // Graceful degradation: truncate instead of discard — partial value > zero value
+      // Trust the LLM: the prompt specifies the length constraint; if the LLM
+      // still exceeds it, the extra content is deemed necessary. Store as-is.
       if (content.length > MEMORY_LIMITS.maxContentLength) {
-        log.debug('truncating oversized memory content', {
-          originalLength: content.length,
+        log.debug('oversized memory content accepted (LLM exceeded prompt constraint)', {
+          length: content.length,
           limit: MEMORY_LIMITS.maxContentLength,
         })
-        content = content.slice(0, MEMORY_LIMITS.maxContentLength - 1) + '\u2026'
       }
 
       const confidence = clampConfidence(typeof m.confidence === 'number' ? m.confidence : 0.7)
