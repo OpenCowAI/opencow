@@ -68,6 +68,7 @@ export class MemoryRetriever {
 
   async getContextForSession(params: SessionContextParams): Promise<MemoryContext> {
     const budget = params.tokenBudget ?? DEFAULT_TOKEN_BUDGET
+    log.debug('getContextForSession', { projectId: params.projectId, budget })
 
     // 1. Fetch project memories (only when a project is associated)
     const projectMemories = params.projectId
@@ -87,6 +88,8 @@ export class MemoryRetriever {
       status: 'confirmed',
       limit: 20,
     })
+
+    log.debug('memories fetched', { projectCount: projectMemories.length, userCount: userMemories.length })
 
     // 3. Merge and rank
     const ranked = this.mergeAndRank(projectMemories, userMemories)

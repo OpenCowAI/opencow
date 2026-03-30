@@ -2,6 +2,9 @@
 
 import type { InteractionEvent } from './types'
 import { MEMORY_DEFAULTS } from '@shared/types'
+import { createLogger } from '../platform/logger'
+
+const log = createLogger('MemoryDebounceQueue')
 
 type FlushListener = (event: InteractionEvent) => void
 
@@ -45,10 +48,12 @@ export class MemoryDebounceQueue {
     if (entry) {
       entry.events.push(event)
       if (entry.events.length > this.maxQueueDepth) {
+        log.warn('queue overflow, dropping oldest event', { key, depth: entry.events.length })
         entry.events.shift()
       }
       clearTimeout(entry.timer)
     }
+    log.debug('enqueue', { key, source: event.type, queueDepth: entry ? entry.events.length : 1 })
 
     const timer = setTimeout(() => this.flush(key), this.getDebounceMs())
 
@@ -66,6 +71,7 @@ export class MemoryDebounceQueue {
 
     const batch = entry.events.slice(-this.maxBatchSize)
     const merged = this.mergeEvents(batch)
+    log.debug('flush', { key, batchSize: batch.length, mergedContentLength: merged.content.length })
 
     for (const listener of this.flushListeners) {
       listener(merged)

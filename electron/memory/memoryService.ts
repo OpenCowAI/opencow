@@ -141,6 +141,7 @@ export class MemoryService {
 
     const eventType = event.type
     const data = ('payload' in event ? event.payload : {}) as Record<string, unknown>
+    log.debug('onDataBusEvent', { eventType })
 
     for (const adapter of this.adapters) {
       if (!adapter.shouldProcess(eventType, data)) continue
@@ -152,7 +153,13 @@ export class MemoryService {
       // Resolve content + project context for session events
       if (interactionEvent.type === 'session' && !interactionEvent.content && this.getSessionContext) {
         const ctx = await this.getSessionContext(interactionEvent.sessionId!)
-        if (!ctx || ctx.content.length < 30) continue
+        if (!ctx || ctx.content.length < 30) {
+          log.debug('onDataBusEvent skipped: session content too short or missing', {
+            sessionId: interactionEvent.sessionId,
+            contentLength: ctx?.content.length ?? 0,
+          })
+          continue
+        }
         interactionEvent.content = ctx.content
         // Enrich with project context from session (adapter can't access it from event payload)
         if (ctx.projectId) interactionEvent.projectId = ctx.projectId
@@ -205,6 +212,13 @@ export class MemoryService {
     try {
       const settings = await this.store.getSettings(event.projectId ?? undefined)
       if (!settings.enabled) return
+
+      log.info('doProcessExtraction started', {
+        source: event.type,
+        contentLength: event.content.length,
+        projectId: event.projectId ?? 'global',
+        sessionId: event.sessionId ?? 'none',
+      })
 
       // Atomic rate limiting
       if (!this.tryAcquireExtractionSlot()) {
@@ -449,12 +463,18 @@ export class MemoryService {
   // ── Context Injection ────────────────────────────────────────────
 
   async getContextForSession(params: SessionContextParams): Promise<MemoryContext> {
+    log.debug('getContextForSession', { projectId: params.projectId })
     const context = await this.retriever.getContextForSession(params)
 
     for (const m of context.memories) {
       await this.store.incrementAccess(m.id)
     }
 
+    log.debug('getContextForSession result', {
+      memoriesInjected: context.memories.length,
+      tokenCount: context.tokenCount,
+      formattedLength: context.formatted.length,
+    })
     return context
   }
 

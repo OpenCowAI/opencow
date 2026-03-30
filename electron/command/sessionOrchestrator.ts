@@ -588,8 +588,8 @@ export class SessionOrchestrator {
       try {
         const mc = await this.deps.getMemoryContext(config.projectId ?? null)
         if (mc?.formatted) memoryPrompt = mc.formatted
-      } catch {
-        // Memory injection failure is non-fatal
+      } catch (err) {
+        log.warn('Memory context injection failed (non-fatal)', err)
       }
     }
 

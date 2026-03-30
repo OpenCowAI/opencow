@@ -85,12 +85,21 @@ export class MemoryExtractor {
     const defaultScope: MemoryScope = event.projectId ? 'project' : 'user'
 
     try {
+      const t0 = Date.now()
       const responseText = await this.deps.llmClient.query({
         systemPrompt: 'You are a memory extraction assistant. Return ONLY valid JSON, no markdown fences or explanation.',
         userMessage: prompt,
         timeoutMs: EXTRACTION_TIMEOUT_MS,
       })
-      return this.parseResponse(responseText, defaultScope)
+      const candidates = this.parseResponse(responseText, defaultScope)
+      log.info('extract succeeded', {
+        source: event.type,
+        contentLength: filtered.length,
+        responseLength: responseText.length,
+        candidateCount: candidates.length,
+        durationMs: Date.now() - t0,
+      })
+      return candidates
     } catch (err) {
       log.error('Extraction failed', err)
       return []

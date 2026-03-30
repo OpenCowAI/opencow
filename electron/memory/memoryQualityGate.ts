@@ -102,14 +102,18 @@ export class MemoryQualityGate {
       }
 
       // 3. Route result to appropriate collection
+      const preview = candidate.content.length > 60 ? candidate.content.slice(0, 60) + '…' : candidate.content
       switch (outcome.outcome) {
         case 'accept':
+          log.debug('candidate routed → accept', { preview, scope: candidate.scope })
           newCandidates.push(candidate)
           break
         case 'merge':
+          log.debug('candidate routed → merge', { preview, targetId: outcome.target.id })
           this.addMergeCandidate(candidate, outcome.target, mergeTargetIds, mergeCandidates)
           break
         case 'reject':
+          log.debug('candidate routed → reject', { preview, reason: outcome.reason })
           this.countRejection(rejectionCounts, outcome.reason)
           break
       }
@@ -188,8 +192,9 @@ export class MemoryQualityGate {
           return { outcome: 'merge', target: existing }
         }
       }
-    } catch {
+    } catch (err) {
       // FTS search failure is non-fatal — allow the candidate through
+      log.warn('FTS similarity search failed, allowing candidate through', err)
     }
 
     // Add hash to prevent intra-batch duplicates
