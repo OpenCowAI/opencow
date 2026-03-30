@@ -99,10 +99,20 @@ function buildDisplayEntries(
     }
   }
 
-  // Include orphan children (whose parent wasn't in this slice)
+  // Include orphan children (whose parent wasn't in this slice).
+  // Children whose parent IS in this slice but collapsed are intentionally
+  // hidden — they are not orphans and must be skipped.
   const shownIds = new Set(result.map((e) => e.issue.id))
+  const topLevelIds = new Set(topLevel.map((i) => i.id))
   for (const issue of issues) {
     if (!shownIds.has(issue.id)) {
+      if (
+        issue.parentIssueId &&
+        topLevelIds.has(issue.parentIssueId) &&
+        collapsedParents.has(issue.parentIssueId)
+      ) {
+        continue
+      }
       result.push({
         issue,
         isChild: !!issue.parentIssueId,

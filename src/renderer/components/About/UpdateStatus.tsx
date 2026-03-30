@@ -3,10 +3,11 @@
 /**
  * UpdateStatus — Inline update status block rendered inside AboutDialog.
  *
- * Three visual states:
+ * Four visual states:
  *   1. Checking — spinner with "Checking for updates..."
- *   2. Up to date — green check with last-checked timestamp
- *   3. Update available — highlighted card with version + action buttons
+ *   2. Update available — highlighted card with version + action buttons
+ *   3. Never checked — only "Check for Updates" button (before first auto-check)
+ *   4. Up to date — green check with last-checked timestamp
  */
 
 import type { TFunction } from 'i18next'
@@ -76,18 +77,30 @@ export function UpdateStatus(): React.JSX.Element {
     )
   }
 
-  // State: Up to date
+  // State: Never checked — no result yet (e.g. within the 30s startup delay)
+  if (lastCheckedAt === null) {
+    return (
+      <div className="flex flex-col items-center gap-1 mt-2">
+        <button
+          onClick={checkForUpdates}
+          className="text-[10px] text-[hsl(var(--primary))] hover:underline"
+        >
+          {t('update.checkNow')}
+        </button>
+      </div>
+    )
+  }
+
+  // State: Up to date (at least one check has completed)
   return (
     <div className="flex flex-col items-center gap-1 mt-2">
       <div className="flex items-center gap-1.5 text-xs text-emerald-600 dark:text-emerald-400">
         <Check className="h-3 w-3" aria-hidden="true" />
         {t('update.upToDate')}
       </div>
-      {lastCheckedAt && (
-        <p className="text-[10px] text-[hsl(var(--muted-foreground)/0.6)]">
-          {t('update.lastChecked', { time: formatRelativeTime(lastCheckedAt, t) })}
-        </p>
-      )}
+      <p className="text-[10px] text-[hsl(var(--muted-foreground)/0.6)]">
+        {t('update.lastChecked', { time: formatRelativeTime(lastCheckedAt, t) })}
+      </p>
       <button
         onClick={checkForUpdates}
         className="mt-1 text-[10px] text-[hsl(var(--primary))] hover:underline"
