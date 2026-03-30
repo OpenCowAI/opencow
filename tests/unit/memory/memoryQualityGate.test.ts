@@ -102,7 +102,7 @@ describe('MemoryQualityGate', () => {
     const store = createMockStore()
     const gate = new MemoryQualityGate(store)
 
-    const candidates = [makeCandidate({ content: 'a'.repeat(600) })]
+    const candidates = [makeCandidate({ content: 'a'.repeat(1100) })]
     const result = await gate.evaluate(candidates, [])
 
     expect(result.newCandidates).toHaveLength(0)

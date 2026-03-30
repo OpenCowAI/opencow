@@ -97,7 +97,7 @@ describe('validateCreateInput', () => {
   })
 
   it('should reject content exceeding max length', () => {
-    expect(() => validateCreateInput({ ...validInput, content: 'x'.repeat(600) })).toThrow(MemoryValidationError)
+    expect(() => validateCreateInput({ ...validInput, content: 'x'.repeat(1100) })).toThrow(MemoryValidationError)
   })
 
   it('should reject invalid scope', () => {
