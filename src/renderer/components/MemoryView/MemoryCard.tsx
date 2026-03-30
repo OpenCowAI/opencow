@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next'
 import { Archive, Trash2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { CATEGORY_ICON_MAP } from './memoryCategoryConfig'
+import { useAppStore } from '@/stores/appStore'
 import type { MemoryItem } from '@shared/types'
 
 interface MemoryCardProps {
@@ -25,7 +26,14 @@ export function MemoryCard({
   onArchive,
 }: MemoryCardProps): React.JSX.Element {
   const { t } = useTranslation('memory')
-  const scopeLabel = memory.scope === 'project' ? t('scopeProject') : t('scopeUser')
+  const projectName = useAppStore((s) =>
+    memory.scope === 'project' && memory.projectId
+      ? s.projects.find((p) => p.id === memory.projectId)?.name ?? null
+      : null,
+  )
+  const scopeLabel = projectName
+    ? `${t('scopeProject')} · ${projectName}`
+    : memory.scope === 'project' ? t('scopeProject') : t('scopeUser')
   const categoryLabel = t(`category.${memory.category}`)
   const date = new Date(memory.updatedAt)
   const dateStr = date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
