@@ -17,6 +17,7 @@ import { useUpdateStore } from '@/stores/updateStore'
 import { APP_VERSION } from '@shared/appIdentity'
 import type { UpdateCheckInterval } from '@shared/types'
 import { cn } from '@/lib/utils'
+import { Switch } from '@/components/ui/switch'
 
 const INTERVAL_OPTIONS: { value: UpdateCheckInterval; labelKey: string }[] = [
   { value: '1h', labelKey: 'updates.intervals.1h' },
@@ -67,24 +68,12 @@ export function UpdateSection(): React.JSX.Element {
             {t('updates.autoCheckDesc')}
           </p>
         </div>
-        <button
-          onClick={handleToggleAutoCheck}
-          className={cn(
-            'relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors',
-            autoCheckUpdates
-              ? 'bg-[hsl(var(--primary))]'
-              : 'bg-[hsl(var(--muted-foreground)/0.3)]',
-          )}
-          role="switch"
-          aria-checked={autoCheckUpdates}
-        >
-          <span
-            className={cn(
-              'pointer-events-none block h-4 w-4 rounded-full bg-white shadow-sm transition-transform',
-              autoCheckUpdates ? 'translate-x-4' : 'translate-x-0',
-            )}
-          />
-        </button>
+        <Switch
+          checked={autoCheckUpdates}
+          onChange={() => handleToggleAutoCheck()}
+          size="sm"
+          label={t('updates.autoCheck')}
+        />
       </div>
 
       {/* Check interval */}
