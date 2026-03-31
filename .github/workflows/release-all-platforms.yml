@@ -60,9 +60,8 @@ jobs:
       - name: Test
         run: pnpm test || true
 
-      # ── macOS signing ─────────────────────────────────────────────────
+      # ── macOS signing (证书为空时会失败，但不影响其他平台) ───────────
       - name: Import macOS signing certificate
-        if: ${{ secrets.MAC_CERTIFICATE != '' }}
         env:
           MAC_CERTIFICATE: ${{ secrets.MAC_CERTIFICATE }}
           MAC_CERTIFICATE_PASSWORD: ${{ secrets.MAC_CERTIFICATE_PASSWORD }}
