@@ -73,7 +73,11 @@ export function useTurnDiffs(
     // Guard: skip full scan while the session is still producing changes.
     // The previous map already contains all historical-turn entries; the
     // current turn won't satisfy isTurnComplete anyway, so nothing is lost.
-    if (!isTurnSettled) return prevMapRef.current
+    //
+    // Only applies when prevMap already has content — on the first computation
+    // (or after session switch) we must do a full scan so historical turns
+    // get their diff entries populated.
+    if (!isTurnSettled && prevMapRef.current.size > 0) return prevMapRef.current
 
     const map = new Map<string, TurnDiffInfo>()
     let turnMsgs: ManagedSessionMessage[] = []
