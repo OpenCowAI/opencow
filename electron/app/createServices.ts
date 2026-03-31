@@ -48,6 +48,16 @@ import { MarketplaceService } from '../services/marketplace'
 import { RepoAnalyzer } from '../services/marketplace/agentAnalyzer'
 import { RepoSourceRegistry } from '../services/marketplace/repoSourceRegistry'
 import { GitService } from '../services/git/gitService'
+import { IssueProviderStore } from '../services/issueProviderStore'
+import { IssueProviderService } from '../services/issueProviderService'
+import { AdapterRegistry } from '../services/issue-sync/adapterRegistry'
+import { IssueSyncEngine } from '../services/issue-sync/syncEngine'
+import { ChangeQueueStore } from '../services/issue-sync/changeQueueStore'
+import { ChangeQueueService } from '../services/issue-sync/changeQueueService'
+import { PushEngine } from '../services/issue-sync/pushEngine'
+import { SyncLogStore } from '../services/issue-sync/syncLogStore'
+import { IssueCommentStore } from '../services/issueCommentStore'
+import { IssueCommentService } from '../services/issueCommentService'
 import { createMemoryStorage } from '../memory/storage'
 import { MemoryService } from '../memory/memoryService'
 import { MAX_SESSION_CONTENT_LENGTH } from '../memory/constants'
@@ -140,6 +150,13 @@ export interface AppServices {
   repoSourceRegistry: RepoSourceRegistry
   gitService: GitService
   memoryService: MemoryService
+  issueProviderService: import('../services/issueProviderService').IssueProviderService
+  issueSyncEngine: import('../services/issue-sync/syncEngine').IssueSyncEngine
+  changeQueueStore: ChangeQueueStore
+  changeQueueService: ChangeQueueService
+  pushEngine: PushEngine
+  issueCommentService: IssueCommentService
+  syncLogStore: SyncLogStore
 }
 
 // ── Factory ──────────────────────────────────────────────────────────────────
@@ -219,6 +236,52 @@ export async function createAppServices(deps: ServiceFactoryDeps): Promise<AppSe
   })
   const contextRefStore = new IssueContextRefStore(database.db)
   const issueViewService = new IssueViewService(new IssueViewStore(database.db))
+
+  // ── Issue Providers (GitHub/GitLab integration) ─────────────────────
+  const issueProviderStore = new IssueProviderStore(database.db)
+  const issueProviderCredentialStore = new CredentialStore<Record<string, string>>(
+    dataPaths.issueProviderCredentials
+  )
+  const adapterRegistry = new AdapterRegistry()
+  const issueProviderService = new IssueProviderService({
+    store: issueProviderStore,
+    credentialStore: issueProviderCredentialStore,
+    adapterRegistry,
+    dispatch: (e) => bus.dispatch(e),
+  })
+  const issueSyncEngine = new IssueSyncEngine({
+    issueStore,
+    providerStore: issueProviderStore,
+    providerService: issueProviderService,
+    adapterRegistry,
+    dispatch: (e) => bus.dispatch(e),
+  })
+
+  // ── Phase 2: Bidirectional sync modules ─────────────────────────────
+  const changeQueueStore = new ChangeQueueStore(database.db)
+  const changeQueueService = new ChangeQueueService({
+    store: changeQueueStore,
+    dispatch: (e) => bus.dispatch(e),
+  })
+  const pushEngine = new PushEngine({
+    changeQueueStore,
+    issueStore,
+    providerStore: issueProviderStore,
+    providerService: issueProviderService,
+    adapterRegistry,
+    dispatch: (e) => bus.dispatch(e),
+  })
+  const syncLogStore = new SyncLogStore(database.db)
+  const issueCommentStore = new IssueCommentStore(database.db)
+  const issueCommentService = new IssueCommentService({
+    store: issueCommentStore,
+    changeQueueService,
+    dispatch: (e) => bus.dispatch(e),
+  })
+
+  // Late-bind ChangeQueueService → IssueService for push-on-update hooks.
+  // Avoids circular dependency: IssueService is created before Phase 2 modules.
+  issueService.setChangeQueueService(changeQueueService)
 
   const claudeCredentialStore = new CredentialStore(dataPaths.credentials)
   const codexCredentialsPath = join(dataPaths.root, 'credentials-codex.enc')
@@ -515,8 +578,12 @@ export async function createAppServices(deps: ServiceFactoryDeps): Promise<AppSe
   })
   nativeCapabilityRegistry.register(new EvoseNativeCapability(evoseService, settingsService))
 
-  // Issue NativeCapability — exposes Issue CRUD as MCP tools to Claude.
-  nativeCapabilityRegistry.register(new IssueNativeCapability({ issueService }))
+  // Issue NativeCapability — exposes Issue CRUD + remote issue tools as MCP tools to Claude.
+  nativeCapabilityRegistry.register(new IssueNativeCapability({
+    issueService,
+    issueProviderService,
+    adapterRegistry,
+  }))
 
   // Project NativeCapability — exposes Project read-only queries as MCP tools to Claude.
   // Write operations (create/delete/archive) intentionally omitted — belong in UI.
@@ -615,5 +682,12 @@ export async function createAppServices(deps: ServiceFactoryDeps): Promise<AppSe
     repoSourceRegistry,
     gitService,
     memoryService,
+    issueProviderService,
+    issueSyncEngine,
+    changeQueueStore,
+    changeQueueService,
+    pushEngine,
+    issueCommentService,
+    syncLogStore,
   }
 }

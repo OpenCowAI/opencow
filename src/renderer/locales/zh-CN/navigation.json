@@ -62,6 +62,7 @@
     "unarchive": "取消归档",
     "rename": "重命名",
     "remove": "移除",
+    "settings": "项目设置",
     "removeProject": "移除项目",
     "removeConfirmMessage": "从 {{appName}} 中移除「{{projectName}}」？",
     "removeConfirmDetail": "磁盘上的文件不受影响。项目可以随时重新添加。",

@@ -33,3 +33,30 @@
  * messages are never delayed.
  */
 export const DISPATCH_THROTTLE_INTERVAL_MS = 50
+
+/**
+ * Maximum interval between IPC dispatches for tool.progress-only updates (~5 fps).
+ *
+ * tool.progress events fire at 100+/sec during Claude engine tool execution,
+ * but the progress output is a scrollable log — 5 fps visual updates are
+ * perceptually smooth.  Separating progress from the main message throttle
+ * (50 ms) reduces IPC round-trips for progress-only changes by 75%.
+ *
+ * Text streaming (assistant.partial) remains at 50 ms for responsive text
+ * appearance.  Only tool.progress uses this longer interval.
+ */
+export const PROGRESS_THROTTLE_INTERVAL_MS = 200
+
+/**
+ * Maximum progress string length sent over IPC (characters).
+ *
+ * tool.progress accumulates to 50-200 KB during long tool executions.
+ * The renderer's ToolProgressText component only displays the last 8000
+ * characters.  Sending the full string wastes 96%+ of structured clone
+ * budget on data that will never be rendered.
+ *
+ * Capping at the IPC boundary reduces per-dispatch serialisation cost
+ * from 1-5 ms to <0.1 ms, freeing the main process event loop and the
+ * renderer main thread for input handling and scrolling.
+ */
+export const IPC_PROGRESS_CAP_CHARS = 8000

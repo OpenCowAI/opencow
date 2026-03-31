@@ -4,20 +4,33 @@ import { generateId } from '../shared/identity'
 import { IssueStore } from './issueStore'
 import { validateSetParent } from '../../src/shared/issueValidation'
 import { deriveDescriptionFromRichContent } from '../../src/shared/richContentUtils'
+import { createLogger } from '../platform/logger'
+import type { ChangeQueueService } from './issue-sync/changeQueueService'
 import type { Issue, IssueSummary, CreateIssueInput, IssueFilter, IssueQueryFilter, DataBusEvent } from '../../src/shared/types'
+
+const log = createLogger('IssueService')
 
 interface IssueServiceDeps {
   store: IssueStore
   dispatch: (event: DataBusEvent) => void
+  /** Optional — when provided, local changes to synced issues are enqueued for push. */
+  changeQueueService?: ChangeQueueService | null
 }
 
 export class IssueService {
   private store: IssueStore
   private dispatch: (event: DataBusEvent) => void
+  private changeQueueService: ChangeQueueService | null
 
   constructor(deps: IssueServiceDeps) {
     this.store = deps.store
     this.dispatch = deps.dispatch
+    this.changeQueueService = deps.changeQueueService ?? null
+  }
+
+  /** Late-bind the ChangeQueueService (for circular dependency resolution). */
+  setChangeQueueService(cqs: ChangeQueueService): void {
+    this.changeQueueService = cqs
   }
 
   async start(): Promise<void> {
@@ -71,12 +84,31 @@ export class IssueService {
       readAt: now,
       lastAgentActivityAt: null,
       contextRefs: [],  // contextRefs are stored separately in issue_context_refs table
+      // Remote issue tracking (null unless explicitly linked to a provider)
+      providerId: input.providerId ?? null,
+      remoteNumber: null,
+      remoteUrl: null,
+      remoteState: null,
+      remoteSyncedAt: null,
+      // Phase 2
+      assignees: null,
+      milestone: null,
+      syncStatus: null,
+      remoteUpdatedAt: null,
     }
     await this.store.add(issue)
     // Auto-sync labels to the registry so they appear in filter/picker UIs,
     // regardless of the entry point (UI form, MCP tool, API).
     await this.store.syncLabels(issue.labels)
     this.dispatch({ type: 'issues:invalidated', payload: {} })
+
+    // Enqueue push to remote if issue has a provider and queue service is available
+    if (issue.providerId && this.changeQueueService) {
+      this.changeQueueService.enqueueCreate(issue).catch((err) => {
+        log.warn(`Failed to enqueue remote create for issue ${issue.id}:`, err)
+      })
+    }
+
     return issue
   }
 
@@ -123,6 +155,38 @@ export class IssueService {
           type: 'issue:status_changed',
           payload: { issueId: id, oldStatus: old.status, newStatus: updated.status }
         })
+      }
+
+      // Enqueue push to remote if issue has a provider
+      if (updated.providerId && this.changeQueueService) {
+        // Map local terminal statuses to remote close/reopen.
+        // GitHub/GitLab only have open/closed — both 'done' and 'cancelled' map to closed.
+        const isClosedStatus = (s: string) => s === 'done' || s === 'cancelled'
+        const wasOpen = old ? !isClosedStatus(old.status) : true
+        const nowClosed = patch.status ? isClosedStatus(patch.status) : false
+        const nowOpen = patch.status ? !isClosedStatus(patch.status) : false
+        const wasClosed = old ? isClosedStatus(old.status) : false
+
+        // Extract non-status field changes for bundling into close/reopen operations.
+        const { status: _statusField, ...nonStatusPatch } = patch
+        const hasNonStatusChanges = Object.keys(nonStatusPatch).length > 0
+
+        if (nowClosed && wasOpen) {
+          // Bundle field changes into the close operation so they're pushed atomically.
+          // enqueueClose's merge strategy will also fold any prior pending updates.
+          this.changeQueueService.enqueueClose(updated, hasNonStatusChanges ? nonStatusPatch : undefined).catch((err) =>
+            log.warn(`Failed to enqueue remote close for issue ${id}:`, err))
+        } else if (nowOpen && wasClosed) {
+          this.changeQueueService.enqueueReopen(updated, hasNonStatusChanges ? nonStatusPatch : undefined).catch((err) =>
+            log.warn(`Failed to enqueue remote reopen for issue ${id}:`, err))
+        } else if (hasNonStatusChanges) {
+          // No status transition — push field changes only
+          this.changeQueueService.enqueueUpdate(updated, nonStatusPatch).catch((err) =>
+            log.warn(`Failed to enqueue remote update for issue ${id}:`, err))
+        }
+        // Intra-group status changes (e.g. todo→in_progress) are not pushed to
+        // GitHub/GitLab (they only recognize open/closed). Linear adapter maps
+        // these internally via workflow state.
       }
     }
     return updated
@@ -190,6 +254,29 @@ export class IssueService {
   /** List lightweight child issue summaries (excludes heavy fields). */
   async listChildIssueSummaries(parentId: string): Promise<IssueSummary[]> {
     return this.store.listChildrenSummaries(parentId)
+  }
+
+  /**
+   * Batch-update multiple issues in a single call.
+   * Applies the same patch to all specified issue IDs.
+   * Returns the list of successfully updated issues.
+   */
+  async batchUpdateIssues(ids: string[], patch: Partial<Issue>): Promise<Issue[]> {
+    const results: Issue[] = []
+    for (const id of ids) {
+      try {
+        const updated = await this.updateIssue(id, patch)
+        if (updated) results.push(updated)
+      } catch {
+        // Best-effort — skip individual failures, continue with remaining
+      }
+    }
+    // Single invalidation event after all updates (updateIssue already dispatches per-item,
+    // but this ensures a final consistent state)
+    if (results.length > 0) {
+      this.dispatch({ type: 'issues:invalidated', payload: {} })
+    }
+    return results
   }
 
   async getCustomLabels(): Promise<string[]> {

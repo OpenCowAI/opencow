@@ -853,6 +853,33 @@ function ToolInputDetails({
   )
 }
 
+// ─── Tool progress text ─────────────────────────────────────────────────────
+//
+// Isolated memo component for tool execution output (block.progress).
+// CSS `contain: layout style paint` confines style recalculation and paint
+// to this <pre> element — preventing layout/paint cascade to the parent
+// message container and VirtuosoItem.
+//
+// Long progress strings (>8000 chars) are tail-truncated to bound DOM
+// text-node size.  The full string remains in the data model for
+// post-hoc inspection (e.g. content viewer).
+
+const PROGRESS_TAIL_CHARS = 8000
+
+const ToolProgressText = memo(function ToolProgressText({ progress }: { progress: string }) {
+  const display = progress.length > PROGRESS_TAIL_CHARS
+    ? '\u2026' + progress.slice(-PROGRESS_TAIL_CHARS)
+    : progress
+  return (
+    <pre
+      className="pl-2 text-xs font-mono text-[hsl(var(--muted-foreground))] whitespace-pre-wrap break-words max-h-40 overflow-y-auto leading-normal"
+      style={{ contain: 'layout style paint' }}
+    >
+      {display}
+    </pre>
+  )
+})
+
 // ─── Main component ──────────────────────────────────────────────────────────
 
 interface ToolUseBlockViewProps {
@@ -1040,9 +1067,7 @@ export const ToolUseBlockView = memo(function ToolUseBlockView({
         />
       )}
       {block.progress && (
-        <pre className="pl-2 text-xs font-mono text-[hsl(var(--muted-foreground))] whitespace-pre-wrap break-words max-h-40 overflow-y-auto leading-normal">
-          {block.progress}
-        </pre>
+        <ToolProgressText progress={block.progress} />
       )}
     </div>
   )

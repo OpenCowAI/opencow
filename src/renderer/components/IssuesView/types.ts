@@ -29,7 +29,7 @@ export interface IssueRowProps {
   /** Selection state */
   selection: {
     isSelected: boolean
-    onSelect: () => void
+    onSelect: (e?: React.MouseEvent) => void
     onContextMenu?: (e: React.MouseEvent) => void
     /** Pre-fetch detail data on hover for instant switching. */
     onPrefetch?: () => void

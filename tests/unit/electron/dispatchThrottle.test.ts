@@ -280,4 +280,96 @@ describe('DispatchThrottle', () => {
     expect(onFlushMessage).toHaveBeenCalledTimes(2)   // window 1 + 2
     expect(onFlushSession).toHaveBeenCalledTimes(2)   // window 1 + 3
   })
+
+  // --- scheduleProgress: separate 200ms timer ---------------------------------
+
+  it('scheduleProgress does NOT flush immediately', () => {
+    throttle.scheduleProgress()
+    expect(onFlushMessage).not.toHaveBeenCalled()
+  })
+
+  it('scheduleProgress flushes after 200ms (default progress interval)', () => {
+    throttle.scheduleProgress()
+    vi.advanceTimersByTime(50)
+    expect(onFlushMessage).not.toHaveBeenCalled() // still within 200ms
+    vi.advanceTimersByTime(150)
+    expect(onFlushMessage).toHaveBeenCalledOnce()
+  })
+
+  it('scheduleProgress uses onFlushMessage callback', () => {
+    throttle.scheduleProgress()
+    vi.advanceTimersByTime(200)
+    expect(onFlushMessage).toHaveBeenCalledOnce()
+    expect(onFlushSession).not.toHaveBeenCalled()
+  })
+
+  it('rapid scheduleProgress calls: only one flush per 200ms window', () => {
+    for (let i = 0; i < 20; i++) {
+      throttle.scheduleProgress()
+    }
+    vi.advanceTimersByTime(200)
+    expect(onFlushMessage).toHaveBeenCalledOnce()
+  })
+
+  it('scheduleProgress piggybacks on pending message flush (50ms)', () => {
+    throttle.scheduleMessage()
+    throttle.scheduleProgress() // should be no-op since message pending
+    vi.advanceTimersByTime(50)
+    expect(onFlushMessage).toHaveBeenCalledOnce()
+    // No separate progress flush at 200ms
+    vi.advanceTimersByTime(200)
+    expect(onFlushMessage).toHaveBeenCalledOnce()
+  })
+
+  it('message flush clears progress pending flag', () => {
+    throttle.scheduleProgress()
+    vi.advanceTimersByTime(30)
+    throttle.scheduleMessage() // starts 50ms message timer
+    vi.advanceTimersByTime(50) // message timer fires — should also clear progress
+    expect(onFlushMessage).toHaveBeenCalledOnce()
+    // Progress timer still fires at 200ms from first scheduleProgress, but flag already cleared
+    vi.advanceTimersByTime(200)
+    expect(onFlushMessage).toHaveBeenCalledOnce() // no extra flush
+  })
+
+  it('flushNow clears progress pending and cancels progress timer', () => {
+    throttle.scheduleProgress()
+    throttle.flushNow()
+    expect(onFlushMessage).toHaveBeenCalledOnce()
+    // No stale progress timer fire
+    vi.advanceTimersByTime(300)
+    expect(onFlushMessage).toHaveBeenCalledOnce()
+  })
+
+  it('dispose cancels progress timer without flushing', () => {
+    throttle.scheduleProgress()
+    throttle.dispose()
+    vi.advanceTimersByTime(300)
+    expect(onFlushMessage).not.toHaveBeenCalled()
+  })
+
+  it('respects custom progressIntervalMs', () => {
+    const customThrottle = new DispatchThrottle({
+      onFlushMessage,
+      onFlushSession,
+      progressIntervalMs: 500,
+    })
+    customThrottle.scheduleProgress()
+    vi.advanceTimersByTime(200)
+    expect(onFlushMessage).not.toHaveBeenCalled() // 500ms not yet
+    vi.advanceTimersByTime(300)
+    expect(onFlushMessage).toHaveBeenCalledOnce()
+    customThrottle.dispose()
+  })
+
+  it('progress and message use independent timers', () => {
+    throttle.scheduleProgress() // 200ms timer
+    vi.advanceTimersByTime(100)
+    throttle.scheduleMessage()  // 50ms timer
+    vi.advanceTimersByTime(50)  // message fires at t=150
+    // _flush clears both message AND progress pending, cancels progress timer
+    expect(onFlushMessage).toHaveBeenCalledOnce()
+    vi.advanceTimersByTime(100) // t=250 — progress timer would have fired but was cancelled
+    expect(onFlushMessage).toHaveBeenCalledOnce()
+  })
 })

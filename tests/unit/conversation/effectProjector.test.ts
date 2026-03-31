@@ -23,7 +23,8 @@ function makeContext(params: { engineKind: 'claude' | 'codex' }) {
     dispatchMessageById: vi.fn(),
     queueMessageDispatch: vi.fn(),
     timers: { cancel: vi.fn(), set: vi.fn() },
-    throttle: { scheduleSession: vi.fn(), scheduleMessage: vi.fn(), flushNow: vi.fn() },
+    throttle: { scheduleSession: vi.fn(), scheduleMessage: vi.fn(), scheduleProgress: vi.fn(), flushNow: vi.fn() },
+    buffer: { isActive: false, begin: vi.fn(), updateBlocks: vi.fn(), setActiveToolUseId: vi.fn(), appendToolProgress: vi.fn(), getSnapshot: vi.fn(() => null), finalize: vi.fn(() => null), clear: vi.fn() },
     isSessionAlive: vi.fn(() => true),
   } as unknown as SessionContext & {
     session: typeof session

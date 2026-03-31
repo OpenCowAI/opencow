@@ -32,12 +32,17 @@ import { z } from 'zod/v4'
 import type { NativeCapabilityMeta, NativeCapabilityToolContext, NativeCapabilitySessionContext } from './types'
 import { BaseNativeCapability, type ToolConfig } from './baseNativeCapability'
 import type { IssueService } from '../services/issueService'
+import type { IssueProviderService } from '../services/issueProviderService'
+import type { AdapterRegistry } from '../services/issue-sync/adapterRegistry'
 import type { Issue, IssuePriority } from '../../src/shared/types'
 
 // ─── Dependencies ─────────────────────────────────────────────────────────────
 
 export interface IssueNativeCapabilityDeps {
   issueService: IssueService
+  /** Optional — when provided, remote issue tools are enabled. */
+  issueProviderService?: IssueProviderService
+  adapterRegistry?: AdapterRegistry
 }
 
 // ─── Text normalisation ──────────────────────────────────────────────────────
@@ -89,20 +94,35 @@ export class IssueNativeCapability extends BaseNativeCapability {
   }
 
   private readonly issueService: IssueService
+  private readonly issueProviderService: IssueProviderService | null
+  private readonly adapterRegistry: AdapterRegistry | null
 
   constructor(deps: IssueNativeCapabilityDeps) {
     super()
     this.issueService = deps.issueService
+    this.issueProviderService = deps.issueProviderService ?? null
+    this.adapterRegistry = deps.adapterRegistry ?? null
   }
 
   protected toolConfigs(context: NativeCapabilityToolContext): ToolConfig[] {
     const session = context.session
-    return [
+    const configs: ToolConfig[] = [
       this.listIssuesConfig(session),
       this.getIssueConfig(),
       this.createIssueConfig(session),
       this.updateIssueConfig(),
     ]
+
+    // Phase 3: Remote issue tools (only when provider infrastructure is available)
+    if (this.issueProviderService && this.adapterRegistry) {
+      configs.push(
+        this.searchRemoteIssuesConfig(),
+        this.getRemoteIssueConfig(),
+        this.commentRemoteIssueConfig(),
+      )
+    }
+
+    return configs
   }
 
   // ── list_issues ─────────────────────────────────────────────────────────────
@@ -432,6 +452,155 @@ export class IssueNativeCapability extends BaseNativeCapability {
         }
 
         return this.textResult(JSON.stringify(this.toDetail(updated), null, 2))
+      },
+    }
+  }
+
+  // ── Remote issue tools (Phase 3) ────────────────────────────────────────────
+
+  /**
+   * Helper to resolve a provider + adapter from a providerId.
+   * Returns null if provider not found or token unavailable.
+   */
+  private async resolveRemoteAdapter(providerId: string) {
+    if (!this.issueProviderService || !this.adapterRegistry) return null
+    const provider = await this.issueProviderService.getProvider(providerId)
+    if (!provider) return null
+    const token = await this.issueProviderService.getToken(provider)
+    if (!token) return null
+    return { provider, adapter: this.adapterRegistry.createWriteAdapter(provider, token) }
+  }
+
+  private searchRemoteIssuesConfig(): ToolConfig {
+    return {
+      name: 'search_remote_issues',
+      description:
+        'Search issues on a remote GitHub/GitLab repository. ' +
+        'Use this to find issues on the remote platform that may not be synced locally. ' +
+        'Results are fetched directly from the remote API. ' +
+        'You need a valid providerId — use list_issues to find issues with a providerId, ' +
+        'or ask the user which repository to search.',
+      schema: {
+        providerId: z.string().describe('The issue provider ID (GitHub/GitLab connection)'),
+        state: z
+          .enum(['open', 'closed', 'all'])
+          .default('open')
+          .describe('Filter by issue state'),
+        page: z
+          .number()
+          .int()
+          .min(1)
+          .default(1)
+          .describe('Page number (1-based)'),
+        perPage: z
+          .number()
+          .int()
+          .min(1)
+          .max(100)
+          .default(30)
+          .describe('Results per page (max 100)'),
+      },
+      execute: async (args) => {
+        const resolved = await this.resolveRemoteAdapter(args.providerId as string)
+        if (!resolved) {
+          return this.errorResult(new Error('Provider not found or token unavailable'))
+        }
+
+        const result = await resolved.adapter.listIssues({
+          state: args.state as 'open' | 'closed' | 'all',
+          page: args.page as number,
+          perPage: args.perPage as number,
+        })
+
+        return this.textResult(JSON.stringify({
+          provider: `${resolved.provider.platform}:${resolved.provider.repoOwner}/${resolved.provider.repoName}`,
+          total: result.issues.length,
+          hasNextPage: result.hasNextPage,
+          nextPage: result.nextPage,
+          issues: result.issues.map((i) => ({
+            number: i.number,
+            title: i.title,
+            state: i.state,
+            labels: i.labels,
+            url: i.url,
+            createdAt: i.createdAt,
+            updatedAt: i.updatedAt,
+          })),
+        }, null, 2))
+      },
+    }
+  }
+
+  private getRemoteIssueConfig(): ToolConfig {
+    return {
+      name: 'get_remote_issue',
+      description:
+        'Get full details of a remote issue by its number (e.g. #42). ' +
+        'Returns the issue body, labels, state, and recent comments. ' +
+        'Use this to read the full context of a GitHub/GitLab issue.',
+      schema: {
+        providerId: z.string().describe('The issue provider ID'),
+        number: z.number().int().describe('The remote issue number (e.g. 42 for #42)'),
+      },
+      execute: async (args) => {
+        const resolved = await this.resolveRemoteAdapter(args.providerId as string)
+        if (!resolved) {
+          return this.errorResult(new Error('Provider not found or token unavailable'))
+        }
+
+        const [issue, commentsPage] = await Promise.all([
+          resolved.adapter.getIssue(args.number as number),
+          resolved.adapter.listComments(args.number as number, { perPage: 20 }),
+        ])
+
+        return this.textResult(JSON.stringify({
+          number: issue.number,
+          title: issue.title,
+          body: issue.body,
+          state: issue.state,
+          labels: issue.labels,
+          url: issue.url,
+          createdAt: issue.createdAt,
+          updatedAt: issue.updatedAt,
+          comments: commentsPage.comments.map((c) => ({
+            id: c.id,
+            author: c.authorLogin,
+            body: c.body,
+            createdAt: c.createdAt,
+          })),
+        }, null, 2))
+      },
+    }
+  }
+
+  private commentRemoteIssueConfig(): ToolConfig {
+    return {
+      name: 'comment_remote_issue',
+      description:
+        'Post a comment on a remote GitHub/GitLab issue. ' +
+        'The comment is posted immediately to the remote platform. ' +
+        'IMPORTANT: Only call this when the user explicitly asks to comment on an issue.',
+      schema: {
+        providerId: z.string().describe('The issue provider ID'),
+        number: z.number().int().describe('The remote issue number'),
+        body: z.string().describe('Comment body in Markdown format'),
+      },
+      execute: async (args) => {
+        const resolved = await this.resolveRemoteAdapter(args.providerId as string)
+        if (!resolved) {
+          return this.errorResult(new Error('Provider not found or token unavailable'))
+        }
+
+        const comment = await resolved.adapter.createComment(
+          args.number as number,
+          normaliseLlmText(args.body as string),
+        )
+
+        return this.textResult(JSON.stringify({
+          success: true,
+          commentId: comment.id,
+          createdAt: comment.createdAt,
+        }, null, 2))
       },
     }
   }

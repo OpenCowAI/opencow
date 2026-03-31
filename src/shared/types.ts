@@ -435,6 +435,7 @@ export interface IPCChannels {
   'create-issue': { args: [input: CreateIssueInput]; return: Issue }
   'update-issue': { args: [id: string, patch: UpdateIssueInput]; return: Issue | null }
   'delete-issue': { args: [id: string]; return: boolean }
+  'batch-update-issues': { args: [ids: string[], patch: UpdateIssueInput]; return: Issue[] }
   'mark-issue-read': { args: [id: string]; return: Issue | null }
   'mark-issue-unread': { args: [id: string]; return: Issue | null }
   'list-child-issues': { args: [parentId: string]; return: IssueSummary[] }
@@ -443,6 +444,24 @@ export interface IPCChannels {
   'delete-custom-label': { args: [label: string]; return: string[] }
   'update-custom-label': { args: [oldLabel: string, newLabel: string]; return: string[] }
   'get-context-candidates': { args: [filter?: ContextCandidateFilter]; return: { issues: IssueSummary[]; artifacts: Artifact[] } }
+  // Issue Providers (GitHub/GitLab Integration)
+  'issue-provider:list': { args: [projectId: string]; return: IssueProvider[] }
+  'issue-provider:get': { args: [id: string]; return: IssueProvider | null }
+  'issue-provider:create': { args: [input: CreateIssueProviderInput]; return: IssueProvider }
+  'issue-provider:update': { args: [id: string, patch: UpdateIssueProviderInput]; return: IssueProvider | null }
+  'issue-provider:delete': { args: [id: string]; return: boolean }
+  'issue-provider:test-connection': { args: [id: string]; return: IssueProviderTestResult }
+  'issue-provider:sync-now': { args: [id: string]; return: void }
+  // Issue Comments (Phase 2)
+  'issue-comment:list': { args: [issueId: string]; return: IssueComment[] }
+  'issue-comment:create': { args: [input: CreateIssueCommentInput, providerId?: string | null]; return: IssueComment }
+  'issue-comment:update': { args: [id: string, body: string]; return: IssueComment | null }
+  'issue-comment:delete': { args: [id: string]; return: boolean }
+  'issue-comment:count': { args: [issueId: string]; return: number }
+  // Sync Log (Phase 2)
+  'sync-log:list': { args: [providerId: string, limit?: number]; return: IssueSyncLog[] }
+  // Change Queue (Phase 2)
+  'change-queue:status': { args: [providerId: string]; return: Record<ChangeQueueStatus, number> }
   // Issue Views
   'list-issue-views': { args: []; return: IssueView[] }
   'create-issue-view': { args: [input: CreateIssueViewInput]; return: IssueView }
@@ -1881,11 +1900,21 @@ export type DataBusEvent =
   // Issue events — emitted by IssueService on every mutation so the
   // renderer can reactively refresh the list (consistent with Schedule/Session patterns).
   | { type: 'issues:invalidated'; payload: Record<string, never> }
+  // Issue provider config changed (add/update/delete provider)
+  | { type: 'issue-providers:changed'; payload: { projectId: string } }
   // Issue status change (needed by Schedule EventMatcher)
   | {
       type: 'issue:status_changed'
       payload: { issueId: string; oldStatus: IssueStatus; newStatus: IssueStatus }
     }
+  // Phase 2: Issue comments changed (added/updated/deleted)
+  | { type: 'issue-comments:changed'; payload: { issueId: string } }
+  // Phase 2: Change queue updated (new entry enqueued or status changed)
+  | { type: 'change-queue:updated'; payload: { providerId: string } }
+  // Phase 2: Sync log entry created or completed
+  | { type: 'sync-log:updated'; payload: { providerId: string } }
+  // Phase 2: Conflict detected during pull sync
+  | { type: 'issue:conflict'; payload: { issueId: string; providerId: string } }
   // Project path changed (triggers dependent subsystems to migrate stale path references)
   | {
       type: 'project:path-changed'
@@ -2149,6 +2178,28 @@ export interface Issue {
   /** Timestamp of the last agent-completed activity on this issue (null = no agent activity). */
   lastAgentActivityAt: number | null
   contextRefs: ContextRef[]
+
+  // ── Remote issue tracking (populated for synced issues) ──
+  /** FK to issue_providers.id; null for local-only issues. */
+  providerId: string | null
+  /** Remote issue number (e.g. GitHub #42). */
+  remoteNumber: number | null
+  /** Full URL to the remote issue page. */
+  remoteUrl: string | null
+  /** Raw remote state string (e.g. 'open', 'closed'). */
+  remoteState: string | null
+  /** Epoch ms when last synced from remote. */
+  remoteSyncedAt: number | null
+
+  // ── Phase 2: Extended remote fields ──
+  /** JSON-encoded assignees array. Null for local-only or unset. */
+  assignees: IssueAssignee[] | null
+  /** JSON-encoded milestone object. Null for local-only or unset. */
+  milestone: IssueMilestone | null
+  /** Tracks local ↔ remote divergence. Null for local-only issues. */
+  syncStatus: IssueSyncStatus | null
+  /** Epoch ms of remote issue's updated_at — used for conflict detection. */
+  remoteUpdatedAt: number | null
 }
 
 /**
@@ -2200,6 +2251,8 @@ export interface CreateIssueInput {
   parentIssueId?: string | null
   images?: IssueImage[]
   contextRefs?: ContextRef[]
+  /** When set, the created issue is linked to a remote provider and enqueued for push. */
+  providerId?: string | null
 }
 
 /**
@@ -2212,6 +2265,213 @@ export interface CreateIssueInput {
  * accepts it.
  */
 export type UpdateIssueInput = Partial<Omit<Issue, 'id' | 'createdAt' | 'updatedAt'>>
+
+// === Issue Provider Types (GitHub/GitLab Integration) ===
+
+/** Platform type for issue providers. Extends RepoSourcePlatform with additional platforms. */
+export type IssueProviderPlatform = RepoSourcePlatform | 'linear' // 'github' | 'gitlab' | 'linear'
+
+/** Human-readable display name for a provider platform. */
+export function issueProviderPlatformLabel(platform: IssueProviderPlatform): string {
+  switch (platform) {
+    case 'github': return 'GitHub'
+    case 'linear': return 'Linear'
+    default:       return 'GitLab'
+  }
+}
+
+/**
+ * Human-readable repo/workspace display string for a provider.
+ * Linear shows workspace slug only; GitHub/GitLab show `owner/repo`.
+ */
+export function issueProviderRepoLabel(platform: IssueProviderPlatform, owner: string, repo: string): string {
+  return platform === 'linear' ? owner : `${owner}/${repo}`
+}
+
+/** Token storage strategy. */
+export type IssueProviderAuthStorage = 'keychain' | 'encrypted'
+
+/** A configured GitHub/GitLab integration for a project's issue syncing. */
+export interface IssueProvider {
+  id: string
+  projectId: string
+  platform: IssueProviderPlatform
+  repoOwner: string
+  repoName: string
+  /** Custom API base URL for GitLab self-hosted; null for cloud defaults. */
+  apiBaseUrl: string | null
+  /** Key reference into CredentialStore — never contains plaintext token. */
+  authTokenRef: string
+  authStorage: IssueProviderAuthStorage
+  syncEnabled: boolean
+  syncIntervalS: number
+  lastSyncedAt: number | null
+  /** Controls read-only vs push vs bidirectional sync. */
+  syncDirection: IssueSyncDirection
+  /** Opaque cursor for incremental sync (ISO 8601 timestamp or page token). */
+  syncCursor: string | null
+  /** Platform-specific metadata as JSON (e.g., Linear teamId, teamKey, cached WorkflowStates). */
+  metadata: string | null
+  createdAt: number
+  updatedAt: number
+}
+
+export interface CreateIssueProviderInput {
+  projectId: string
+  platform: IssueProviderPlatform
+  repoOwner: string
+  repoName: string
+  apiBaseUrl?: string | null
+  /** The raw auth token — will be stored securely, never kept in DB. */
+  authToken: string
+  syncIntervalS?: number
+  /** Platform-specific metadata as JSON string (e.g., Linear: { teamId, teamKey, tokenType }). */
+  metadata?: string | null
+}
+
+export interface UpdateIssueProviderInput {
+  syncEnabled?: boolean
+  syncIntervalS?: number
+  syncDirection?: IssueSyncDirection
+  apiBaseUrl?: string | null
+  /** If provided, rotates the stored token. */
+  authToken?: string
+}
+
+export interface IssueProviderTestResult {
+  ok: boolean
+  error?: string
+}
+
+// === Phase 2: Sync Direction ===
+
+/** Controls whether a provider syncs read-only, push-only, or bidirectional. */
+export type IssueSyncDirection = 'readonly' | 'push' | 'bidirectional'
+
+// === Phase 2: Issue Change Queue Types ===
+
+/** Operations that can be queued for push to remote. */
+export type ChangeQueueOperation = 'create' | 'update' | 'close' | 'reopen' | 'comment'
+
+/** Processing status of a change queue entry. */
+export type ChangeQueueStatus = 'pending' | 'processing' | 'completed' | 'failed'
+
+/** A queued local change waiting to be pushed to a remote provider. */
+export interface ChangeQueueEntry {
+  id: string
+  localIssueId: string
+  providerId: string
+  operation: ChangeQueueOperation
+  /** JSON-encoded payload: full field snapshot for idempotent replay. */
+  payload: string
+  status: ChangeQueueStatus
+  retryCount: number
+  maxRetries: number
+  errorMessage: string | null
+  createdAt: number
+  processedAt: number | null
+}
+
+export interface CreateChangeQueueInput {
+  localIssueId: string
+  providerId: string
+  operation: ChangeQueueOperation
+  payload: string
+}
+
+// === Phase 2: Issue Comment Types ===
+
+/** Body format for issue comments. */
+export type CommentBodyFormat = 'markdown' | 'tiptap'
+
+/** An issue comment (local or synced from remote). */
+export interface IssueComment {
+  id: string
+  issueId: string
+  providerId: string | null
+  /** Remote comment ID from GitHub/GitLab (null for local-only). */
+  remoteId: string | null
+  authorLogin: string | null
+  authorName: string | null
+  authorAvatar: string | null
+  /** Markdown (remote) or TipTap JSON (local). */
+  body: string
+  bodyFormat: CommentBodyFormat
+  /** True if created locally by the user. */
+  isLocal: boolean
+  createdAt: number
+  updatedAt: number
+  syncedAt: number | null
+}
+
+export interface CreateIssueCommentInput {
+  issueId: string
+  body: string
+  bodyFormat?: CommentBodyFormat
+}
+
+// === Phase 2: Sync Log Types ===
+
+/** Type of sync operation. */
+export type SyncLogType = 'pull' | 'push' | 'full'
+
+/** Status of a sync operation. */
+export type SyncLogStatus = 'running' | 'success' | 'partial' | 'failed'
+
+/** Audit trail entry for a sync operation. */
+export interface IssueSyncLog {
+  id: string
+  providerId: string
+  syncType: SyncLogType
+  status: SyncLogStatus
+  issuesCreated: number
+  issuesUpdated: number
+  issuesFailed: number
+  commentsSynced: number
+  conflicts: number
+  errorMessage: string | null
+  startedAt: number
+  completedAt: number | null
+  durationMs: number | null
+}
+
+// === Phase 2: Sync Status ===
+
+/** Tracks local ↔ remote divergence state for an issue. */
+export type IssueSyncStatus = 'synced' | 'local_ahead' | 'conflict'
+
+// === Phase 2: Assignee & Milestone (JSON stored in issues table) ===
+
+export interface IssueAssignee {
+  login: string
+  name: string | null
+  avatarUrl: string | null
+}
+
+export interface IssueMilestone {
+  id: number
+  title: string
+  dueDate: string | null
+}
+
+// === Phase 2: Conflict Resolution ===
+
+export type ConflictResolutionType = 'fast-forward' | 'auto-merge' | 'manual'
+
+export interface ConflictField {
+  field: string
+  localValue: unknown
+  remoteValue: unknown
+  baseValue: unknown
+}
+
+export interface ConflictResult {
+  type: ConflictResolutionType
+  /** Fields that can be auto-merged (non-overlapping changes). */
+  autoMergeFields?: string[]
+  /** Fields requiring manual resolution (both sides changed the same field). */
+  conflictFields?: ConflictField[]
+}
 
 export interface IssueFilter {
   status?: IssueStatus
@@ -2284,6 +2544,8 @@ export interface EphemeralFilters {
   priorities?: IssuePriority[]
   labels?: string[]
   search?: string
+  /** Filter by remote provider ID (GitHub/GitLab repo). */
+  providerId?: string
 }
 
 export interface IssueQueryFilter {
@@ -2291,6 +2553,8 @@ export interface IssueQueryFilter {
   priorities?: IssuePriority[]
   labels?: string[]
   projectId?: string
+  /** Filter by remote provider ID (GitHub/GitLab repo). */
+  providerId?: string
   search?: string
   parentIssueId?: string | null
   /** Optional exact-match session IDs for Issue↔Session link lookups. */

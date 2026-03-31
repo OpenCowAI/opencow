@@ -1,0 +1,102 @@
+{
+  "title": "Project Settings",
+  "tabs": {
+    "issueIntegration": "Issue Integration"
+  },
+  "issueIntegration": {
+    "title": "Issue Integration",
+    "description": "Connect GitHub, GitLab, or Linear to sync issues into this project.",
+    "addIntegration": "Add Integration",
+    "noProviders": "No integrations configured yet.",
+    "noProvidersHint": "Connect a GitHub, GitLab, or Linear workspace to start syncing issues.",
+    "providerCard": {
+      "lastSynced": "Last synced",
+      "never": "Never",
+      "syncNow": "Sync Now",
+      "syncing": "Syncing...",
+      "enabled": "Enabled",
+      "disabled": "Disabled",
+      "delete": "Remove",
+      "deleteConfirm": "Remove this integration? Synced issues will remain in the local database.",
+      "deleteConfirmTitle": "Remove Integration",
+      "cancelDelete": "Cancel",
+      "syncFailed": "Sync failed",
+      "updateFailed": "Update failed",
+      "deleteFailed": "Delete failed",
+      "edit": "Edit"
+    }
+  },
+  "addProvider": {
+    "title": "Add Issue Integration",
+    "stepPlatform": "Select Platform",
+    "stepCredentials": "Repository & Token",
+    "stepVerify": "Verify Connection",
+    "platform": {
+      "github": "GitHub",
+      "gitlab": "GitLab",
+      "githubDesc": "Connect to GitHub.com or GitHub Enterprise.",
+      "gitlabDesc": "Connect to GitLab.com or self-hosted GitLab.",
+      "linear": "Linear",
+      "linearDesc": "Connect to a Linear workspace."
+    },
+    "repo": {
+      "owner": "Owner / Organization",
+      "ownerPlaceholder": "e.g. OpenCowAI",
+      "name": "Repository Name",
+      "namePlaceholder": "e.g. opencow",
+      "orPasteUrl": "Or paste the repository URL",
+      "urlPlaceholder": "https://github.com/owner/repo"
+    },
+    "token": {
+      "label": "Personal Access Token",
+      "placeholder": "ghp_... or glpat-...",
+      "hint": "Requires at least read access to issues.",
+      "helpLink": "How to create a token"
+    },
+    "linear": {
+      "teamKey": "Team Key",
+      "teamKeyPlaceholder": "e.g. ENG",
+      "teamKeyHint": "The short prefix shown in issue identifiers (e.g. ENG-42).",
+      "teamId": "Team ID",
+      "teamIdPlaceholder": "UUID from Linear settings",
+      "teamIdHint": "Found in Linear → Settings → Team → General.",
+      "teamIdInvalid": "Must be a valid UUID (e.g., 550e8400-e29b-41d4-a716-446655440000)",
+      "tokenLabel": "API Key",
+      "tokenPlaceholder": "lin_api_...",
+      "tokenHint": "Create at Linear → Settings → API → Personal API Keys."
+    },
+    "apiBaseUrl": {
+      "label": "API Base URL (optional)",
+      "placeholder": "https://gitlab.example.com/api/v4",
+      "hint": "Only needed for self-hosted instances."
+    },
+    "verify": {
+      "testing": "Testing connection...",
+      "success": "Connection successful!",
+      "failed": "Connection failed",
+      "retry": "Retry"
+    },
+    "actions": {
+      "back": "Back",
+      "next": "Next",
+      "connect": "Connect",
+      "cancel": "Cancel"
+    }
+  },
+  "editProvider": {
+    "title": "Edit Integration",
+    "syncInterval": "Sync Interval",
+    "syncDirection": "Sync Direction",
+    "direction": {
+      "readonly": "Read-only (pull remote changes)",
+      "push": "Push (push local changes)",
+      "bidirectional": "Bidirectional"
+    },
+    "newToken": "Update Token",
+    "newTokenPlaceholder": "Leave empty to keep current token",
+    "save": "Save",
+    "saving": "Saving...",
+    "saved": "Settings saved",
+    "saveFailed": "Save failed"
+  }
+}

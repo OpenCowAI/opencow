@@ -62,6 +62,7 @@
     "unarchive": "Unarchive",
     "rename": "Rename",
     "remove": "Remove",
+    "settings": "Project Settings",
     "removeProject": "Remove Project",
     "removeConfirmMessage": "Remove \"{{projectName}}\" from {{appName}}?",
     "removeConfirmDetail": "Files on disk are not affected. The project can be re-added at any time.",
