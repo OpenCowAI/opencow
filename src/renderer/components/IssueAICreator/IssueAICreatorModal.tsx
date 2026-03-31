@@ -16,7 +16,7 @@
  * @module
  */
 
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { IssueConfirmationCard } from './IssueConfirmationCard'
 import { IssueFormModal } from '../IssueForm/IssueFormModal'
@@ -28,9 +28,10 @@ import {
 import { useCreatorModalBehavior } from '@/hooks/useCreatorModalBehavior'
 import { useAppStore, selectProjectId } from '@/stores/appStore'
 import { useIssueStore } from '@/stores/issueStore'
+import { useIssueProviderStore } from '@/stores/issueProviderStore'
 import { selectIssue } from '@/actions/issueActions'
 import { toast } from '@/lib/toast'
-import type { Issue, CreateIssueInput } from '@shared/types'
+import { issueProviderPlatformLabel, issueProviderRepoLabel, type Issue, type CreateIssueInput } from '@shared/types'
 import type { ParsedIssueOutput } from '@shared/issueOutputParser'
 
 // ═══════════════════════════════════════════════════════════════════
@@ -89,6 +90,33 @@ export function IssueAICreatorModal({
     },
     [projects, sessionConfig.projectId]
   )
+
+  // ── Remote publish — load providers for current project ────────
+  const providers = useIssueProviderStore((s) => s.providers)
+  const loadProviders = useIssueProviderStore((s) => s.loadProviders)
+  const [publishToRemote, setPublishToRemote] = useState(false)
+
+  // Ensure provider store is populated (may not have been loaded yet if
+  // the user hasn't opened ProjectSettings in this session).
+  useEffect(() => {
+    if (sessionConfig.projectId) loadProviders(sessionConfig.projectId)
+  }, [sessionConfig.projectId, loadProviders])
+  const [selectedProviderId, setSelectedProviderId] = useState<string | null>(null)
+
+  // Filter to writable providers (push or bidirectional) for the current project
+  const writableProviders = useMemo(
+    () => providers.filter((p) =>
+      p.projectId === sessionConfig.projectId &&
+      p.syncEnabled &&
+      (p.syncDirection === 'push' || p.syncDirection === 'bidirectional')
+    ),
+    [providers, sessionConfig.projectId]
+  )
+
+  // Auto-select first writable provider
+  const effectiveProviderId = publishToRemote
+    ? (selectedProviderId ?? writableProviders[0]?.id ?? null)
+    : null
 
   const creator = useIssueCreatorSession(sessionConfig)
 
@@ -163,7 +191,8 @@ export function IssueAICreatorModal({
         priority: parsed.priority,
         labels: parsed.labels,
         projectId: sessionConfig.projectId,
-        parentIssueId: parsed.parentIssueId ?? sessionConfig.parentIssueId
+        parentIssueId: parsed.parentIssueId ?? sessionConfig.parentIssueId,
+        providerId: effectiveProviderId,
       }
       const created = await createIssue(input)
       modal.markConfirmed()
@@ -178,7 +207,7 @@ export function IssueAICreatorModal({
       )
       return created
     },
-    [createIssue, sessionConfig, t, modal]
+    [createIssue, sessionConfig, effectiveProviderId, t, modal]
   )
 
   const handleNavigateToIssue = useCallback(
@@ -188,19 +217,53 @@ export function IssueAICreatorModal({
     []
   )
 
-  // ── Footer node: IssueConfirmationCard ─────────────────────────
+  // ── Footer node: IssueConfirmationCard + optional remote publish toggle ──
   const footerNode = useMemo(() => {
     if (!creator.parsedIssue) return undefined
     return (
-      <IssueConfirmationCard
-        issue={creator.parsedIssue}
-        onConfirm={handleConfirmIssue}
-        onNavigate={handleNavigateToIssue}
-        onEdit={handleEditIssue}
-        createdIssue={createdIssueFromForm}
-      />
+      <div>
+        {/* Remote publish toggle — only shown when writable providers exist */}
+        {writableProviders.length > 0 && (
+          <div className="ml-4 mt-2 flex items-center gap-2 text-xs text-[hsl(var(--muted-foreground))]">
+            <label className="flex items-center gap-1.5 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={publishToRemote}
+                onChange={(e) => setPublishToRemote(e.target.checked)}
+                className="w-3.5 h-3.5 rounded border-[hsl(var(--border))] accent-[hsl(var(--primary))]"
+              />
+              <span>{t('aiCreator.publishToRemote', 'Publish to remote')}</span>
+            </label>
+            {publishToRemote && writableProviders.length > 1 && (
+              <select
+                value={selectedProviderId ?? writableProviders[0]?.id ?? ''}
+                onChange={(e) => setSelectedProviderId(e.target.value)}
+                className="text-xs px-1.5 py-0.5 rounded border border-[hsl(var(--border)/0.5)] bg-transparent"
+              >
+                {writableProviders.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {issueProviderPlatformLabel(p.platform)}: {issueProviderRepoLabel(p.platform, p.repoOwner, p.repoName)}
+                  </option>
+                ))}
+              </select>
+            )}
+            {publishToRemote && writableProviders.length === 1 && (
+              <span className="text-[10px] opacity-70">
+                ({issueProviderPlatformLabel(writableProviders[0].platform)}: {issueProviderRepoLabel(writableProviders[0].platform, writableProviders[0].repoOwner, writableProviders[0].repoName)})
+              </span>
+            )}
+          </div>
+        )}
+        <IssueConfirmationCard
+          issue={creator.parsedIssue}
+          onConfirm={handleConfirmIssue}
+          onNavigate={handleNavigateToIssue}
+          onEdit={handleEditIssue}
+          createdIssue={createdIssueFromForm}
+        />
+      </div>
     )
-  }, [creator.parsedIssue, handleConfirmIssue, handleNavigateToIssue, handleEditIssue, createdIssueFromForm])
+  }, [creator.parsedIssue, handleConfirmIssue, handleNavigateToIssue, handleEditIssue, createdIssueFromForm, writableProviders, publishToRemote, selectedProviderId, t])
 
   // ── Render ─────────────────────────────────────────────────────
   return (

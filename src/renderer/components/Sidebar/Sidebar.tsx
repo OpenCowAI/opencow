@@ -33,6 +33,7 @@ import { ScheduleWidget } from './ScheduleWidget'
 import { AppInfoWidget } from './AppInfoWidget'
 import { ProjectContextMenu, type ProjectContextMenuState } from './ProjectContextMenu'
 import { DeleteProjectDialog } from './DeleteProjectDialog'
+import { ProjectSettingsModal } from '@/components/ProjectSettings/ProjectSettingsModal'
 import { AddProjectPopover } from './AddProjectPopover'
 import { CreateProjectDialog } from './CreateProjectDialog'
 import { ImportProjectsDialog } from './ImportProjectsDialog'
@@ -314,6 +315,7 @@ export function Sidebar(): React.JSX.Element {
   const [createProjectDialogOpen, setCreateProjectDialogOpen] = useState(false)
   const [importProjectsDialogOpen, setImportProjectsDialogOpen] = useState(false)
 
+  const [settingsProjectId, setSettingsProjectId] = useState<string | null>(null)
   const [contextMenu, setContextMenu] = useState<ProjectContextMenuState | null>(null)
   const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({})
 
@@ -819,6 +821,7 @@ export function Sidebar(): React.JSX.Element {
           onClose={closeContextMenu}
           onRenameRequest={startRename}
           onDeleteRequest={requestDelete}
+          onSettingsRequest={setSettingsProjectId}
         />
       )}
 
@@ -829,6 +832,12 @@ export function Sidebar(): React.JSX.Element {
         onConfirm={confirmDelete}
         onCancel={cancelDelete}
       />
+      {settingsProjectId && (
+        <ProjectSettingsModal
+          projectId={settingsProjectId}
+          onClose={() => setSettingsProjectId(null)}
+        />
+      )}
       {projectDialogs}
     </aside>
   )

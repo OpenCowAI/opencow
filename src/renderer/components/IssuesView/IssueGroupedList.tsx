@@ -19,6 +19,7 @@ import { useIssueDndContext } from './IssueDndProvider'
 import { ScrollToTopButton } from '../ui/ScrollToTopButton'
 import { ConfirmDialog } from '../ui/confirm-dialog'
 import { IssueFormModal } from '../IssueForm/IssueFormModal'
+import { IssueBatchToolbar } from './IssueBatchToolbar'
 import { ALL_VIEW, isIssueUnread } from '@shared/types'
 import type {
   IssueSummary,
@@ -273,6 +274,28 @@ export function IssueGroupedList(): React.JSX.Element {
   const [collapsedParents, setCollapsedParents] = useState<Set<string>>(new Set())
   const listContainerRef = useRef<HTMLDivElement>(null)
 
+  // ── Multi-select state ────────────────────────────────────────────
+  const [multiSelectedIds, setMultiSelectedIds] = useState<Set<string>>(new Set())
+
+  const toggleMultiSelect = useCallback((id: string, e: React.MouseEvent) => {
+    // Cmd/Ctrl+Click toggles individual selection
+    if (e.metaKey || e.ctrlKey) {
+      e.preventDefault()
+      setMultiSelectedIds((prev) => {
+        const next = new Set(prev)
+        if (next.has(id)) next.delete(id)
+        else next.add(id)
+        return next
+      })
+      return true // signals that multi-select handled the click
+    }
+    return false
+  }, [])
+
+  const clearMultiSelection = useCallback(() => {
+    setMultiSelectedIds(new Set())
+  }, [])
+
   // (Scroll-to-top on view change is handled below in the Virtuoso section)
 
   // --- Context menu state ---
@@ -409,6 +432,7 @@ export function IssueGroupedList(): React.JSX.Element {
    * In flat mode, Virtuoso further limits this to ~20-30 visible items.
    */
   const renderIssueEntry = (entry: DisplayEntry): React.JSX.Element => {
+    const isMultiSelected = multiSelectedIds.has(entry.issue.id)
     return (
       <div
         key={entry.issue.id}
@@ -417,8 +441,13 @@ export function IssueGroupedList(): React.JSX.Element {
         <DraggableIssueRow
           issue={entry.issue}
           selection={{
-            isSelected: selectedIssueId === entry.issue.id,
-            onSelect: () => selectIssue(entry.issue.id),
+            isSelected: selectedIssueId === entry.issue.id || isMultiSelected,
+            onSelect: (e?: React.MouseEvent) => {
+              if (e && toggleMultiSelect(entry.issue.id, e)) return
+              // Normal click: clear multi-select and do normal selection
+              if (multiSelectedIds.size > 0) clearMultiSelection()
+              selectIssue(entry.issue.id)
+            },
             onContextMenu: (e) => handleContextMenu(e, entry.issue),
             onPrefetch: () => prefetchIssueDetail(entry.issue.id),
           }}
@@ -556,6 +585,7 @@ export function IssueGroupedList(): React.JSX.Element {
         />
         {contextMenuOverlay}
         <ScrollToTopButton containerRef={virtuosoScrollerRef as React.RefObject<HTMLElement>} />
+        <IssueBatchToolbar selectedIds={multiSelectedIds} onClearSelection={clearMultiSelection} />
       </div>
     )
   }
@@ -589,6 +619,7 @@ export function IssueGroupedList(): React.JSX.Element {
       </div>
 
       <ScrollToTopButton containerRef={listContainerRef} />
+      <IssueBatchToolbar selectedIds={multiSelectedIds} onClearSelection={clearMultiSelection} />
     </div>
   )
 }

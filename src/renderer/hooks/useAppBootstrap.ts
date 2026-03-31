@@ -249,6 +249,10 @@ export function useAppBootstrap(): void {
           useInboxStore.getState().setInboxState(event.payload)
           break
         case 'command:session:created':
+          // Must be IMMEDIATE (not buffered) — downstream components
+          // (ChatPanel, IssueDetailView, ExecutionDetailModal) read
+          // sessionById right after creation. A 500ms buffer delay
+          // causes them to see null → blank screen.
           useCommandStore.getState().upsertManagedSession(event.payload)
           break
         case 'command:session:updated': {
@@ -267,7 +271,11 @@ export function useAppBootstrap(): void {
             if (issueId) {
               const issue = useIssueStore.getState().issueById[issueId]
               if (issue && issue.status !== 'in_progress') {
-                fireAndForget(useIssueStore.getState().updateIssue(issueId, { status: 'in_progress' as const }), 'DataBus.command:session:updated.updateIssue(status)')
+                // Optimistic: instant UI update — O(1) patch, no loadIssues cascade
+                useIssueStore.getState().patchIssueOptimistic(issueId, { status: 'in_progress' })
+                // Backend: fire-and-forget persist. On failure the next loadIssues
+                // (view switch, issues:invalidated) will reconcile to backend truth.
+                fireAndForget(getAppAPI()['update-issue'](issueId, { status: 'in_progress' as const }), 'DataBus.command:session:updated.patchIssue(status)')
               }
             }
           }
@@ -354,7 +362,12 @@ export function useAppBootstrap(): void {
           if (ended) {
             const issueId = getOriginIssueId(ended.origin)
             if (issueId) {
-              fireAndForget(useIssueStore.getState().updateIssue(issueId, { lastAgentActivityAt: Date.now() }), 'DataBus.command:session:stopped.updateIssue(lastAgentActivityAt)')
+              const now = Date.now()
+              // Optimistic: instant UI update — O(1) patch, no loadIssues cascade
+              useIssueStore.getState().patchIssueOptimistic(issueId, { lastAgentActivityAt: now })
+              // Backend: fire-and-forget persist. On failure the next loadIssues
+              // (view switch, issues:invalidated) will reconcile to backend truth.
+              fireAndForget(getAppAPI()['update-issue'](issueId, { lastAgentActivityAt: now }), 'DataBus.command:session:stopped.patchIssue(lastAgentActivityAt)')
             }
           }
           useFileStore.getState().markAllOpenFilesNeedRefresh()

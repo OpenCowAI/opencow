@@ -43,6 +43,14 @@ import * as m039 from './039_add_inbox_navigation_target'
 import * as m040 from './040_add_managed_session_ref_index'
 import * as m041 from './041_create_memory_tables'
 import * as m042 from './042_add_memory_extraction_delay'
+import * as m043 from './043_create_issue_providers'
+import * as m044 from './044_extend_issues_for_remote'
+import * as m045 from './045_create_issue_change_queue'
+import * as m046 from './046_create_issue_comments'
+import * as m047 from './047_create_issue_sync_logs'
+import * as m048 from './048_extend_issues_for_phase2'
+import * as m049 from './049_extend_issue_providers_for_phase2'
+import * as m050 from './050_extend_issue_providers_for_linear'
 
 /**
  * Compile-time migration provider.
@@ -99,6 +107,14 @@ class CodeMigrationProvider implements MigrationProvider {
       '040_add_managed_session_ref_index': m040,
       '041_create_memory_tables': m041,
       '042_add_memory_extraction_delay': m042,
+      '043_create_issue_providers': m043,
+      '044_extend_issues_for_remote': m044,
+      '045_create_issue_change_queue': m045,
+      '046_create_issue_comments': m046,
+      '047_create_issue_sync_logs': m047,
+      '048_extend_issues_for_phase2': m048,
+      '049_extend_issue_providers_for_phase2': m049,
+      '050_extend_issue_providers_for_linear': m050,
     }
   }
 }

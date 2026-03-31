@@ -128,6 +128,7 @@
     "discardCancel": "Cancel",
     "close": "Close",
     "send": "Send",
+    "publishToRemote": "Publish to remote",
     "card": {
       "discarded": "discarded",
       "view": "View",
@@ -153,5 +154,31 @@
     "deleteViewConfirm": "Delete this view?",
     "saveView": "Save",
     "createViewBtn": "Create"
+  },
+  "remote": {
+    "source": "Source",
+    "synced": "synced {{time}}",
+    "justNow": "just now",
+    "minutesAgo": "{{count}}m ago",
+    "hoursAgo": "{{count}}h ago",
+    "daysAgo": "{{count}}d ago"
+  },
+  "batch": {
+    "selected": "{{count}} selected",
+    "clearSelection": "Clear selection",
+    "setStatus": "Set status",
+    "setPriority": "Set priority",
+    "addLabel": "Add label",
+    "delete": "Delete",
+    "deleteTitle": "Delete Issues",
+    "deleteMessage": "Delete {{count}} issues? This cannot be undone.",
+    "statusUpdated": "Updated status for {{count}} issues",
+    "priorityUpdated": "Updated priority for {{count}} issues",
+    "labelUpdated": "Added label \"{{label}}\" to {{count}} issues",
+    "deleted": "Deleted {{count}} issues"
+  },
+  "providerSwitcher": {
+    "label": "Filter by repository",
+    "all": "All repositories"
   }
 }

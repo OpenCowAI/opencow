@@ -128,6 +128,7 @@
     "discardCancel": "取消",
     "close": "关闭",
     "send": "发送",
+    "publishToRemote": "发布到远端",
     "card": {
       "discarded": "已放弃",
       "view": "查看",
@@ -153,5 +154,31 @@
     "deleteViewConfirm": "确认删除此视图？",
     "saveView": "保存",
     "createViewBtn": "创建"
+  },
+  "remote": {
+    "source": "来源",
+    "synced": "{{time}}同步",
+    "justNow": "刚刚",
+    "minutesAgo": "{{count}}分钟前",
+    "hoursAgo": "{{count}}小时前",
+    "daysAgo": "{{count}}天前"
+  },
+  "batch": {
+    "selected": "已选 {{count}} 项",
+    "clearSelection": "清除选择",
+    "setStatus": "设置状态",
+    "setPriority": "设置优先级",
+    "addLabel": "添加标签",
+    "delete": "删除",
+    "deleteTitle": "删除 Issue",
+    "deleteMessage": "删除 {{count}} 个 Issue？此操作无法撤销。",
+    "statusUpdated": "已更新 {{count}} 个 Issue 的状态",
+    "priorityUpdated": "已更新 {{count}} 个 Issue 的优先级",
+    "labelUpdated": "已为 {{count}} 个 Issue 添加标签 \"{{label}}\"",
+    "deleted": "已删除 {{count}} 个 Issue"
+  },
+  "providerSwitcher": {
+    "label": "按仓库筛选",
+    "all": "所有仓库"
   }
 }

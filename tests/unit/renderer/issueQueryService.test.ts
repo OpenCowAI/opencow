@@ -22,6 +22,18 @@ function makeIssueSummary(overrides: Partial<IssueSummary> = {}): IssueSummary {
     sourceMessageType: null,
     sourceMessageRole: null,
     lastAgentActivityAt: null,
+    parentIssueId: null,
+    // Remote issue tracking
+    providerId: null,
+    remoteNumber: null,
+    remoteUrl: null,
+    remoteState: null,
+    remoteSyncedAt: null,
+    // Phase 2
+    assignees: null,
+    milestone: null,
+    syncStatus: null,
+    remoteUpdatedAt: null,
     ...overrides,
   }
 }

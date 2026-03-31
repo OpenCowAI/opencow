@@ -142,6 +142,11 @@ export interface IPCDeps {
   /** UpdateChecker for manual "Check for Updates" IPC. */
   updateChecker?: import('../services/update').UpdateCheckerService
   memoryService?: import('../memory/memoryService').MemoryService
+  issueProviderService?: import('../services/issueProviderService').IssueProviderService
+  issueSyncEngine?: import('../services/issue-sync/syncEngine').IssueSyncEngine
+  issueCommentService?: import('../services/issueCommentService').IssueCommentService
+  syncLogStore?: import('../services/issue-sync/syncLogStore').SyncLogStore
+  changeQueueStore?: import('../services/issue-sync/changeQueueStore').ChangeQueueStore
 }
 
 /* ------------------------------------------------------------------ */
@@ -526,6 +531,7 @@ export function registerIPCHandlers(deps: IPCDeps): void {
       }
       return issue
     })
+    registerHandler('batch-update-issues', (ids, patch) => issueService.batchUpdateIssues(ids, patch))
     registerHandler('delete-issue', async (id) => {
       // Release any browser view created for this Issue (issue-standalone mode)
       // before deleting the record, to free WebContentsView resources immediately.
@@ -571,6 +577,44 @@ export function registerIPCHandlers(deps: IPCDeps): void {
     registerHandler('update-issue-view', (id, patch) => issueViewService.updateView(id, patch))
     registerHandler('delete-issue-view', (id) => issueViewService.deleteView(id))
     registerHandler('reorder-issue-views', (orderedIds) => issueViewService.reorderViews(orderedIds))
+  }
+
+  // --- Issue Provider handlers (GitHub/GitLab integration) ---
+  if (deps.issueProviderService) {
+    const ips = deps.issueProviderService
+    registerHandler('issue-provider:list', (projectId) => ips.listProviders(projectId))
+    registerHandler('issue-provider:get', (id) => ips.getProvider(id))
+    registerHandler('issue-provider:create', (input) => ips.createProvider(input))
+    registerHandler('issue-provider:update', (id, patch) => ips.updateProvider(id, patch))
+    registerHandler('issue-provider:delete', (id) => ips.deleteProvider(id))
+    registerHandler('issue-provider:test-connection', (id) => ips.testConnection(id))
+    registerHandler('issue-provider:sync-now', async (id) => {
+      if (deps.issueSyncEngine) {
+        await deps.issueSyncEngine.pullNow(id)
+      }
+    })
+  }
+
+  // --- Issue Comment handlers (Phase 2) ---
+  if (deps.issueCommentService) {
+    const commentService = deps.issueCommentService
+    registerHandler('issue-comment:list', (issueId) => commentService.listComments(issueId))
+    registerHandler('issue-comment:create', (input, providerId) => commentService.createComment(input, providerId))
+    registerHandler('issue-comment:update', (id, body) => commentService.updateComment(id, body))
+    registerHandler('issue-comment:delete', (id) => commentService.deleteComment(id))
+    registerHandler('issue-comment:count', (issueId) => commentService.countComments(issueId))
+  }
+
+  // --- Sync Log handlers (Phase 2) ---
+  if (deps.syncLogStore) {
+    const syncLogStore = deps.syncLogStore
+    registerHandler('sync-log:list', (providerId, limit) => syncLogStore.list(providerId, limit))
+  }
+
+  // --- Change Queue handlers (Phase 2) ---
+  if (deps.changeQueueStore) {
+    const changeQueueStore = deps.changeQueueStore
+    registerHandler('change-queue:status', (providerId) => changeQueueStore.countByStatus(providerId))
   }
 
   // --- Schedule handlers ---

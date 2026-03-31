@@ -2,7 +2,7 @@
 
 import { sql, type Kysely, type SelectQueryBuilder } from 'kysely'
 import type { Database, IssueTable } from '../database/types'
-import type { Issue, IssueSummary, IssueFilter, IssueQueryFilter, IssueImage, SortConfig, ContextRef } from '../../src/shared/types'
+import type { Issue, IssueSummary, IssueFilter, IssueQueryFilter, IssueImage, SortConfig, ContextRef, IssueAssignee, IssueMilestone, IssueSyncStatus } from '../../src/shared/types'
 
 /** Options for {@link IssueStore.update}. */
 export interface IssueUpdateOptions {
@@ -22,6 +22,8 @@ const SUMMARY_COLUMNS = [
   'id', 'title', 'status', 'priority', 'labels',
   'project_id', 'session_id', 'parent_issue_id',
   'created_at', 'updated_at', 'read_at', 'last_agent_activity_at',
+  'provider_id', 'remote_number', 'remote_url', 'remote_state', 'remote_synced_at',
+  'assignees', 'milestone', 'sync_status', 'remote_updated_at',
 ] as const
 
 /** Row shape returned by summary queries (only the lightweight columns). */
@@ -193,6 +195,114 @@ export class IssueStore {
     return rows.map(rowToIssue)
   }
 
+  // ─── Remote issue sync helpers ───────────────────────────────────────
+
+  /** Find a local issue by its remote provider + issue number (for upsert logic). */
+  async findByRemoteNumber(providerId: string, remoteNumber: number): Promise<Issue | null> {
+    const row = await this.db
+      .selectFrom('issues')
+      .selectAll()
+      .where('provider_id', '=', providerId)
+      .where('remote_number', '=', remoteNumber)
+      .executeTakeFirst()
+
+    return row ? rowToIssue(row) : null
+  }
+
+  /**
+   * Batch lookup: find all local issues for a set of remote numbers under one provider.
+   * Returns a Map keyed by remote_number for O(1) lookup by the caller.
+   * Used by SyncEngine to eliminate N+1 queries during batch upsert.
+   */
+  async findByRemoteNumbers(providerId: string, remoteNumbers: number[]): Promise<Map<number, Issue>> {
+    if (remoteNumbers.length === 0) return new Map()
+
+    const rows = await this.db
+      .selectFrom('issues')
+      .selectAll()
+      .where('provider_id', '=', providerId)
+      .where('remote_number', 'in', remoteNumbers)
+      .execute()
+
+    const map = new Map<number, Issue>()
+    for (const row of rows) {
+      const issue = rowToIssue(row)
+      if (issue.remoteNumber != null) {
+        map.set(issue.remoteNumber, issue)
+      }
+    }
+    return map
+  }
+
+  /**
+   * Insert multiple issues in a single transaction.
+   * Used by SyncEngine for batch pull — avoids N individual inserts.
+   */
+  async batchAdd(issues: Issue[]): Promise<void> {
+    if (issues.length === 0) return
+
+    await this.db.transaction().execute(async (trx) => {
+      for (const issue of issues) {
+        await trx
+          .insertInto('issues')
+          .values(issueToRow(issue))
+          .execute()
+      }
+    })
+  }
+
+  /**
+   * Update multiple issues in a single transaction.
+   * Used by SyncEngine for batch incremental sync.
+   */
+  async batchUpdate(patches: Array<{ id: string; patch: Partial<Issue> }>): Promise<void> {
+    if (patches.length === 0) return
+
+    await this.db.transaction().execute(async (trx) => {
+      for (const { id, patch } of patches) {
+        const setClauses = patchToRow(patch)
+        if (Object.keys(setClauses).length === 0) continue
+
+        await trx
+          .updateTable('issues')
+          .set({ ...setClauses, updated_at: Date.now() })
+          .where('id', '=', id)
+          .execute()
+      }
+    })
+  }
+
+  /**
+   * Insert new issues and update existing ones in a SINGLE transaction.
+   * Ensures sync atomicity — either all changes apply or none do.
+   * Used by SyncEngine to prevent partial sync states.
+   */
+  async batchUpsert(
+    toInsert: Issue[],
+    toUpdate: Array<{ id: string; patch: Partial<Issue> }>,
+  ): Promise<void> {
+    if (toInsert.length === 0 && toUpdate.length === 0) return
+
+    await this.db.transaction().execute(async (trx) => {
+      for (const issue of toInsert) {
+        await trx
+          .insertInto('issues')
+          .values(issueToRow(issue))
+          .execute()
+      }
+      for (const { id, patch } of toUpdate) {
+        const setClauses = patchToRow(patch)
+        if (Object.keys(setClauses).length === 0) continue
+
+        await trx
+          .updateTable('issues')
+          .set({ ...setClauses, updated_at: Date.now() })
+          .where('id', '=', id)
+          .execute()
+      }
+    })
+  }
+
   async getCustomLabels(): Promise<string[]> {
     const rows = await this.db
       .selectFrom('custom_labels')
@@ -346,6 +456,10 @@ function applyFilters<Q extends SelectQueryBuilder<Database, 'issues', Record<st
     query = query.where('project_id', '=', filter.projectId) as Q
   }
 
+  if (qf?.providerId) {
+    query = query.where('provider_id', '=', qf.providerId) as Q
+  }
+
   if (filter?.search) {
     const term = `%${escapeLikePattern(filter.search)}%`
     query = query.where(
@@ -430,6 +544,17 @@ function rowToIssue(row: IssueTable): Issue {
     readAt: row.read_at,
     lastAgentActivityAt: row.last_agent_activity_at,
     contextRefs: [] as ContextRef[],  // loaded separately by IssueService when needed
+    // Remote issue tracking
+    providerId: row.provider_id,
+    remoteNumber: row.remote_number,
+    remoteUrl: row.remote_url,
+    remoteState: row.remote_state,
+    remoteSyncedAt: row.remote_synced_at,
+    // Phase 2
+    assignees: row.assignees ? JSON.parse(row.assignees) as IssueAssignee[] : null,
+    milestone: row.milestone ? JSON.parse(row.milestone) as IssueMilestone : null,
+    syncStatus: row.sync_status as IssueSyncStatus | null,
+    remoteUpdatedAt: row.remote_updated_at,
   }
 }
 
@@ -448,6 +573,17 @@ function rowToIssueSummary(row: IssueSummaryRow): IssueSummary {
     updatedAt: row.updated_at,
     readAt: row.read_at,
     lastAgentActivityAt: row.last_agent_activity_at,
+    // Remote issue tracking
+    providerId: row.provider_id,
+    remoteNumber: row.remote_number,
+    remoteUrl: row.remote_url,
+    remoteState: row.remote_state,
+    remoteSyncedAt: row.remote_synced_at,
+    // Phase 2
+    assignees: row.assignees ? JSON.parse(row.assignees) as IssueAssignee[] : null,
+    milestone: row.milestone ? JSON.parse(row.milestone) as IssueMilestone : null,
+    syncStatus: row.sync_status as IssueSyncStatus | null,
+    remoteUpdatedAt: row.remote_updated_at,
   }
 }
 
@@ -469,6 +605,17 @@ function issueToRow(issue: Issue): IssueTable {
     updated_at: issue.updatedAt,
     read_at: issue.readAt,
     last_agent_activity_at: issue.lastAgentActivityAt,
+    // Remote issue tracking
+    provider_id: issue.providerId,
+    remote_number: issue.remoteNumber,
+    remote_url: issue.remoteUrl,
+    remote_state: issue.remoteState,
+    remote_synced_at: issue.remoteSyncedAt,
+    // Phase 2
+    assignees: issue.assignees ? JSON.stringify(issue.assignees) : null,
+    milestone: issue.milestone ? JSON.stringify(issue.milestone) : null,
+    sync_status: issue.syncStatus,
+    remote_updated_at: issue.remoteUpdatedAt,
   }
 }
 
@@ -488,6 +635,17 @@ function patchToRow(patch: Partial<Issue>): Partial<IssueTable> {
   if (patch.images !== undefined) row.images = JSON.stringify(patch.images)
   if (patch.readAt !== undefined) row.read_at = patch.readAt
   if (patch.lastAgentActivityAt !== undefined) row.last_agent_activity_at = patch.lastAgentActivityAt
+  // Remote issue tracking
+  if (patch.providerId !== undefined) row.provider_id = patch.providerId
+  if (patch.remoteNumber !== undefined) row.remote_number = patch.remoteNumber
+  if (patch.remoteUrl !== undefined) row.remote_url = patch.remoteUrl
+  if (patch.remoteState !== undefined) row.remote_state = patch.remoteState
+  if (patch.remoteSyncedAt !== undefined) row.remote_synced_at = patch.remoteSyncedAt
+  // Phase 2
+  if (patch.assignees !== undefined) row.assignees = patch.assignees ? JSON.stringify(patch.assignees) : null
+  if (patch.milestone !== undefined) row.milestone = patch.milestone ? JSON.stringify(patch.milestone) : null
+  if (patch.syncStatus !== undefined) row.sync_status = patch.syncStatus
+  if (patch.remoteUpdatedAt !== undefined) row.remote_updated_at = patch.remoteUpdatedAt
 
   return row
 }

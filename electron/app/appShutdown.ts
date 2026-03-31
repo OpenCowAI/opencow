@@ -53,6 +53,8 @@ export interface ShutdownDeps {
   timeResolver: TimeResolver | null
   retryScheduler: RetryScheduler | null
   gitService: GitService | null
+  issueSyncEngine: import('../services/issue-sync/syncEngine').IssueSyncEngine | null
+  pushEngine: import('../services/issue-sync/pushEngine').PushEngine | null
 
   // Async disposal targets (awaited in order)
   nativeCapabilityRegistry: NativeCapabilityRegistry
@@ -114,6 +116,8 @@ export function executeShutdown(deps: ShutdownDeps): void {
   timeResolver?.stop()
   retryScheduler?.cancelAll()
   gitService?.shutdown()
+  deps.issueSyncEngine?.stop()
+  deps.pushEngine?.stop()
 
   // Step 3: Async disposal sequence
   const shutdownSequence = async (): Promise<void> => {

@@ -144,11 +144,34 @@ export interface IssueStore {
   createIssue: (input: CreateIssueInput) => Promise<Issue>
   updateIssue: (id: string, patch: UpdateIssueInput) => Promise<void>
   /**
+   * Lightweight in-memory patch for a single issue field.
+   *
+   * Used by cross-store side effects (session→issue status sync) that
+   * only need to update one field on the hot path. Unlike `updateIssue()`,
+   * this does NOT:
+   *   - Call the backend IPC (no 'update-issue' round-trip)
+   *   - Call `loadIssues()` (no full query + normalization)
+   *   - Trigger `loadViewIssueCounts()` (no count refresh)
+   *
+   * Updates BOTH `issueById` AND `issueDetailCache` so that list views
+   * and detail views stay consistent (mirrors the dual-write pattern
+   * of `patchReadAt()`).
+   *
+   * The caller is responsible for persisting to the backend separately
+   * (typically via fire-and-forget IPC).
+   */
+  patchIssueOptimistic: (id: string, patch: Partial<IssueSummary>) => void
+  /**
    * Delete issue data: IPC + evict from caches + reload list.
    * Does NOT handle navigation cleanup — that's in issueActions.deleteIssue.
    */
   deleteIssueData: (id: string) => Promise<boolean>
   loadChildIssues: (parentId: string) => Promise<IssueSummary[]>
+  /**
+   * Batch-update multiple issues with the same patch.
+   * Returns updated issues; reloads list afterward.
+   */
+  batchUpdateIssues: (ids: string[], patch: UpdateIssueInput) => Promise<Issue[]>
   /** Mark an issue as read — updates `readAt` without bumping `updatedAt`. */
   markIssueRead: (id: string) => Promise<void>
   /** Manually mark an issue as unread — sets `readAt` to 0 sentinel value. */
@@ -333,6 +356,31 @@ export const useIssueStore = create<IssueStore>((set, get) => ({
     return issue
   },
 
+  patchIssueOptimistic: (id, patch) => {
+    set((s) => {
+      const existing = s.issueById[id]
+      if (!existing) return {}
+      // Reference equality check — skip if nothing changed
+      const keys = Object.keys(patch) as (keyof IssueSummary)[]
+      if (keys.every((k) => existing[k] === patch[k])) return {}
+
+      const updated = { ...existing, ...patch }
+      const result: Partial<IssueStore> = {
+        issueById: { ...s.issueById, [id]: updated },
+      }
+      // Dual-write: also patch issueDetailCache so IssueDetailView
+      // sees the update without a full loadIssueDetail round-trip.
+      // Mirrors the patchReadAt() pattern.
+      const cached = s.issueDetailCache.get(id)
+      if (cached) {
+        const nextCache = new Map(s.issueDetailCache)
+        nextCache.set(id, { ...cached, ...patch })
+        result.issueDetailCache = nextCache
+      }
+      return result
+    })
+  },
+
   updateIssue: async (id, patch) => {
     // Save old parentIssueId before update (loadIssues will overwrite normalized issues)
     const oldParentId = get().issueById[id]?.parentIssueId ?? null
@@ -427,6 +475,12 @@ export const useIssueStore = create<IssueStore>((set, get) => ({
       childIssuesCache: { ...s.childIssuesCache, [parentId]: children }
     }))
     return children
+  },
+
+  batchUpdateIssues: async (ids, patch) => {
+    const results = await getAppAPI()['batch-update-issues'](ids, patch)
+    await get().loadIssues()
+    return results
   },
 
   markIssueRead: async (id) => {
