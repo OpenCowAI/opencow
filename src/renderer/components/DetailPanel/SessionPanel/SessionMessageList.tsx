@@ -384,7 +384,7 @@ function SessionMessageList({ sessionId, messages: externalMessages, sessionStat
       if (filtered.length === 0) return prev // copy-on-write: no change
 
       // --- Reopen the pending tail from previous result ---
-      let reopenedPending: ManagedSessionMessage[] = []
+      const reopenedPending: ManagedSessionMessage[] = []
       let baseGroups: MessageGroup[]
 
       if (prev.pendingTailGroupCount > 0) {
