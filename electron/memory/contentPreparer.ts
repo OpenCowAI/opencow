@@ -48,6 +48,20 @@ type SessionMessage = { role: string } & Record<string, unknown>
 interface Turn {
   userText: string
   assistantText: string
+  /**
+   * True when the user message contained `slash_command` content blocks.
+   *
+   * Command-driven turns have fundamentally different assistant semantics:
+   * the assistant is executing a command template (code review, commit analysis,
+   * etc.), NOT responding to user preferences. The assistant response in these
+   * turns is omitted from extraction content to prevent false memory extraction.
+   *
+   * The user's own text blocks are always preserved — user preferences expressed
+   * alongside a slash command (e.g., "我偏好 strict TS") are self-descriptive
+   * and don't require the assistant's command output for the extraction LLM to
+   * understand them.
+   */
+  isCommandDriven: boolean
 }
 
 // ─── Public API ──────────────────────────────────────────────────────
@@ -131,6 +145,7 @@ function groupIntoTurns(messages: SessionMessage[]): Turn[] {
   const turns: Turn[] = []
   let currentUserText = ''
   let currentAssistantText = ''
+  let currentIsCommandDriven = false
 
   for (const msg of messages) {
     if (msg.role !== 'user' && msg.role !== 'assistant') continue
@@ -141,10 +156,11 @@ function groupIntoTurns(messages: SessionMessage[]): Turn[] {
     if (msg.role === 'user') {
       // Flush previous turn if exists
       if (currentUserText) {
-        turns.push({ userText: currentUserText, assistantText: currentAssistantText })
+        turns.push({ userText: currentUserText, assistantText: currentAssistantText, isCommandDriven: currentIsCommandDriven })
       }
       currentUserText = text
       currentAssistantText = ''
+      currentIsCommandDriven = hasSlashCommandBlock(msg)
     } else {
       currentAssistantText += (currentAssistantText ? '\n' : '') + text
     }
@@ -152,7 +168,7 @@ function groupIntoTurns(messages: SessionMessage[]): Turn[] {
 
   // Flush last turn
   if (currentUserText) {
-    turns.push({ userText: currentUserText, assistantText: currentAssistantText })
+    turns.push({ userText: currentUserText, assistantText: currentAssistantText, isCommandDriven: currentIsCommandDriven })
   }
 
   return turns
@@ -177,6 +193,12 @@ function formatTurns(turns: Turn[], compress: boolean): string {
 
     if (!turn.assistantText) continue
 
+    // Command-driven turns: the assistant is executing a slash-command template
+    // (code review, commit analysis, etc.), not responding to user preferences.
+    // Drop the assistant response to prevent the extraction LLM from confusing
+    // template-driven output with user-expressed preferences.
+    if (turn.isCommandDriven) continue
+
     if (!compress || isRecentTurn) {
       lines.push(`Assistant: ${turn.assistantText}`)
     } else {
@@ -188,6 +210,15 @@ function formatTurns(turns: Turn[], compress: boolean): string {
   }
 
   return lines.join('\n')
+}
+
+/** Check whether a user message contains at least one slash_command content block. */
+function hasSlashCommandBlock(msg: SessionMessage): boolean {
+  const content = (msg as Record<string, unknown>).content
+  if (!Array.isArray(content)) return false
+  return content.some(
+    (block) => typeof block === 'object' && block !== null && block.type === 'slash_command',
+  )
 }
 
 /** Extract text from content blocks, joining multiple text blocks. */

@@ -8,6 +8,8 @@ body:
       value: |
         Thank you for reporting a bug! Please fill out the sections below to help us investigate.
 
+        > **Note:** Please write in English if possible, so that all community members can participate.
+
   - type: textarea
     id: description
     attributes:
@@ -38,10 +40,27 @@ body:
       required: true
 
   - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: What actually happened instead?
+    validations:
+      required: true
+
+  - type: textarea
     id: screenshots
     attributes:
       label: Screenshots or logs
       description: If applicable, add screenshots or paste relevant log output.
+
+  - type: dropdown
+    id: reproducibility
+    attributes:
+      label: Reproducibility
+      options:
+        - Always
+        - Sometimes
+        - Only once
 
   - type: input
     id: os
@@ -72,5 +91,7 @@ body:
       options:
         - Claude (Subscription)
         - Claude (API Key)
-        - OpenAI Codex
+        - Claude (OpenRouter)
+        - Codex (OpenRouter)
+        - Custom Endpoint
         - Other / N/A

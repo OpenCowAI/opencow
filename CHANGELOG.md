@@ -4,6 +4,20 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.3.12] - 2026-03-31
+
+### Added
+- Editing support for queued items during sequential agent dispatch (#10)
+
+### Changed
+- GitHub Actions upgraded to Node.js 24 compatible versions: checkout v6, setup-node v6, pnpm/action-setup v5, node 22 LTS (#12)
+- GitHub issue templates improved for better triage quality (#8)
+
+### Fixed
+- Streaming rendering pipeline optimized end-to-end for reduced latency (#11)
+- Collapsed sub-issues no longer leak as orphan items in issue views (#9)
+- Memory extraction now skips assistant responses in slash-command-driven turns to prevent template pollution (#7)
+
 ## [0.3.11] - 2026-03-30
 
 ### Added

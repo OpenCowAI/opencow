@@ -348,8 +348,7 @@
     "modeSequential": "Sequential",
     "dispatchModeAria": "Queue dispatch mode",
     "reorderAria": "Drag to reorder queued message",
-    "sendingItem": "Sending message {{index}}…",
-    "sequentialTooltip": "Messages will be sent one at a time. Drag to reorder."
+    "sendingItem": "Sending message {{index}}…"
   },
   "compose": {
     "placeholder": "Compose your prompt… Use / for commands",

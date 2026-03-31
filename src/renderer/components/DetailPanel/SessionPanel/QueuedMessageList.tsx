@@ -21,7 +21,7 @@ import {
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import type { QueuedMessage, QueueDispatchContext, DispatchPhase } from '../../../hooks/useMessageQueue'
+import type { QueuedMessage, QueueDispatchContext } from '../../../hooks/useMessageQueue'
 import type { UserMessageContent } from '@shared/types'
 import { getSlashDisplayLabel } from '@shared/slashDisplay'
 import { truncate } from '@shared/unicode'
@@ -500,7 +500,10 @@ export function QueuedMessageList({
   const { mode, phase, onModeChange } = dispatch
 
   const isSequential = mode === 'sequential'
-  const isActive = phase !== 'idle' // pipeline is active (any phase)
+  // Only the 'sending' phase represents an in-flight IPC — during 'awaiting_agent'
+  // the dispatched message has already been removed from the queue, so remaining
+  // items should be fully interactive (edit, delete, reorder).
+  const isSending = phase === 'sending'
   const showDnD = isSequential && queue.length > 1
 
   // ── DnD state ──
@@ -547,7 +550,7 @@ export function QueuedMessageList({
     <div className="shrink-0 bg-[hsl(var(--card))]">
       {/* Header */}
       <div className="flex items-center gap-1.5 px-3 py-1">
-        {isActive ? (
+        {isSending ? (
           <Loader2
             className="w-3 h-3 text-orange-400 motion-safe:animate-spin"
             aria-hidden="true"
@@ -569,19 +572,10 @@ export function QueuedMessageList({
           <ModeToggle
             mode={mode}
             onChange={onModeChange}
-            disabled={isActive}
+            disabled={isSending}
           />
         )}
       </div>
-
-      {/* Sequential mode tooltip */}
-      {isSequential && !isActive && queue.length >= 2 && (
-        <div className="px-3 pb-1">
-          <span className="text-[10px] text-[hsl(var(--muted-foreground))] italic">
-            {t('queuedMessages.sequentialTooltip')}
-          </span>
-        </div>
-      )}
 
       {/* Message list — single container, conditionally wrapped with DnD context */}
       {(() => {
@@ -592,7 +586,12 @@ export function QueuedMessageList({
             aria-label={t('queuedMessages.queueListAria')}
           >
             {queue.map((msg, i) => {
-              const activelyDispatching = phase === 'sending' && isSequential && i === 0
+              // Per-item disabled:
+              //   - Sequential 'sending': only msg[0] is in-flight, rest are editable
+              //   - Batch 'sending': all messages are in the merged payload, all locked
+              //   - 'awaiting_agent': dispatched msg already removed from queue, all unlocked
+              //   - 'idle': all unlocked
+              const isItemDispatching = isSending && (isSequential ? i === 0 : true)
               return showDnD ? (
                 <SortableQueueItem
                   key={msg.id}
@@ -600,8 +599,8 @@ export function QueuedMessageList({
                   index={i}
                   onEdit={onEdit}
                   onCancel={onCancel}
-                  disabled={isActive}
-                  isActivelyDispatching={activelyDispatching}
+                  disabled={isItemDispatching}
+                  isActivelyDispatching={isItemDispatching}
                 />
               ) : (
                 <QueuedMessageItem
@@ -610,8 +609,8 @@ export function QueuedMessageList({
                   index={i}
                   onEdit={onEdit}
                   onCancel={onCancel}
-                  disabled={isActive}
-                  isActivelyDispatching={activelyDispatching}
+                  disabled={isItemDispatching}
+                  isActivelyDispatching={isItemDispatching}
                 />
               )
             })}

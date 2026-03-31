@@ -8,6 +8,8 @@ body:
       value: |
         Thank you for suggesting a feature! Please describe your idea so we can evaluate it.
 
+        > **Note:** Please write in English if possible, so that all community members can participate.
+
   - type: textarea
     id: problem
     attributes:

@@ -31,6 +31,7 @@ import { useElementInset } from '@/hooks/useElementInset'
 import { useMessageQueue } from '../../../hooks/useMessageQueue'
 import { useAppStore, selectProjectId } from '@/stores/appStore'
 import { useCommandStore, selectIsProcessing } from '@/stores/commandStore'
+import { useIssueStore } from '@/stores/issueStore'
 import { useNoteStore } from '@/stores/noteStore'
 import { useSessionByBinding, type SessionBinding } from '@/hooks/useSessionForIssue'
 import { cn } from '@/lib/utils'
@@ -189,14 +190,33 @@ export const SessionPanel = React.memo(function SessionPanel({
   const sessionId = session?.id ?? ''
   const state = session?.state
 
-  // ─── Lazy-load persisted messages ──────────────────────────────────────────
-  // When viewing an idle/completed session (e.g. from Issue detail panel),
-  // messages may not yet be in commandStore.sessionMessages. Trigger an
-  // on-demand fetch the first time SessionPanel mounts for this session.
+  // ─── On-demand session loading ─────────────────────────────────────────────
+  // With ManagedSessionStore.list() capped at LIMIT 200, older sessions (e.g.
+  // Done/Cancelled issues) may not be in sessionById after bootstrap.  When
+  // the binding references a known sessionId but `session` resolved to null,
+  // fetch the snapshot on-demand so the panel renders correctly.
+  //
+  // Also lazily loads persisted messages — when viewing an idle/completed
+  // session, messages may not yet be in commandStore.sessionMessages.
+  //
+  // Both calls are idempotent (no-op if already loaded).
+  const bindingSessionId = useIssueStore((s) => {
+    if (binding.kind === 'session') return binding.sessionId
+    if (binding.archivedSessionId) return binding.archivedSessionId
+    return s.issueDetailCache.get(binding.issueId)?.sessionId ?? null
+  })
   useEffect(() => {
-    if (!sessionId) return
-    useCommandStore.getState().ensureSessionMessages(sessionId)
-  }, [sessionId])
+    if (!bindingSessionId) return
+    // ensureSession must complete BEFORE ensureSessionMessages — the latter's
+    // set() guard discards fetched messages if sessionId is not yet in
+    // sessionById (line 623 of commandStore.ts).  Without await, both IPCs
+    // race and messages can be silently lost + marked as _historyFetched.
+    const load = async (): Promise<void> => {
+      await useCommandStore.getState().ensureSession(bindingSessionId)
+      useCommandStore.getState().ensureSessionMessages(bindingSessionId)
+    }
+    void load()
+  }, [bindingSessionId])
 
   // ─── isProcessing ─────────────────────────────────────────────────────────
   // Derived from commandStore selector: O(1) for most states, only scans
