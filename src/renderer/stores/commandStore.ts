@@ -428,7 +428,7 @@ export const useCommandStore = create<CommandStore>((set, get) => ({
           const pos = posMap.get(id)
           if (pos !== undefined) {
             // ── Update existing message ──────────────────────────────
-            const existing = currentList[pos]
+            const _existing = currentList[pos]
 
             if (msg.role === 'assistant') {
               // FAST PATH: ALL assistant message updates — both streaming AND

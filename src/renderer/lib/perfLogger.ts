@@ -34,8 +34,10 @@ export function perfLog(tag: string, durationMs: number, detail?: Record<string,
   if (!perfEnabled()) return
   const rounded = Math.round(durationMs * 100) / 100
   if (detail) {
+    // eslint-disable-next-line no-console -- perf diagnostics, gated by __PERF_LOG
     console.log(`[perf:${tag}] ${rounded}ms`, detail)
   } else {
+    // eslint-disable-next-line no-console -- perf diagnostics, gated by __PERF_LOG
     console.log(`[perf:${tag}] ${rounded}ms`)
   }
 }
