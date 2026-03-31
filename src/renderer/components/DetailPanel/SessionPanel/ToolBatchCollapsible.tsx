@@ -302,7 +302,7 @@ export type MessageGroup =
   | { type: 'tool_batch'; messages: ManagedSessionMessage[] }
 
 /** Minimum number of batchable messages to form a collapsible group. */
-const MIN_BATCH_SIZE = MIN_COLLAPSIBLE_TOOL_CALLS
+export const MIN_BATCH_SIZE = MIN_COLLAPSIBLE_TOOL_CALLS
 
 /**
  * Groups a flat list of messages into renderable segments:

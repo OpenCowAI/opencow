@@ -18,6 +18,8 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useStoreWithEqualityFn } from 'zustand/traditional'
+import { shallow } from 'zustand/shallow'
 import { useAppStore, selectProjectId } from '@/stores/appStore'
 import { useCommandStore } from '@/stores/commandStore'
 import { startSession as startSessionAction } from '@/actions/commandActions'
@@ -99,8 +101,13 @@ export function useSessionBase(options: UseSessionBaseOptions): SessionBaseHandl
   // sessionById map.  Previously `useCommandStore((s) => s.sessionById)`
   // would trigger re-renders on ANY session metadata update — now only
   // the specific session's changes trigger a re-render.
-  const session: SessionSnapshot | null = useCommandStore(
+  // `shallow` equality prevents re-renders when the snapshot reference
+  // changes but all top-level fields are identical (common during metadata
+  // re-emission).
+  const session: SessionSnapshot | null = useStoreWithEqualityFn(
+    useCommandStore,
     (s) => (sessionId ? (s.sessionById[sessionId] ?? null) : null),
+    shallow,
   )
   const sendMessage = useCommandStore((s) => s.sendMessage)
   const resumeSession = useCommandStore((s) => s.resumeSession)

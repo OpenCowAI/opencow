@@ -90,8 +90,20 @@ function useAgentSessionData(agentSessionId: string | null): {
   error: string | null
   engineKind: AIEngineKind | undefined
 } {
-  const sessionData = useCommandStore((s) =>
-    agentSessionId ? s.sessionById[agentSessionId] : null,
+  // Narrow selectors: extract only the 4 fields actually used, so unrelated
+  // metadata changes (tokens, cost, duration) in the SessionSnapshot don't
+  // trigger re-renders of the entire BrowserSheetChat tree.
+  const sessionState = useCommandStore((s) =>
+    agentSessionId ? (s.sessionById[agentSessionId]?.state ?? null) : null,
+  )
+  const sessionActivity = useCommandStore((s) =>
+    agentSessionId ? (s.sessionById[agentSessionId]?.activity ?? null) : null,
+  )
+  const sessionError = useCommandStore((s) =>
+    agentSessionId ? (s.sessionById[agentSessionId]?.error ?? null) : null,
+  )
+  const sessionEngineKind = useCommandStore((s) =>
+    agentSessionId ? (s.sessionById[agentSessionId]?.engineKind ?? undefined) : undefined,
   )
   // Optimistic fallback: overlay's agentState covers the gap between
   // command:start-session IPC and command:session:created DataBus event.
@@ -100,10 +112,10 @@ function useAgentSessionData(agentSessionId: string | null): {
   )
 
   return {
-    state: sessionData?.state ?? optimisticState,
-    activity: sessionData?.activity ?? null,
-    error: sessionData?.error ?? null,
-    engineKind: sessionData?.engineKind as AIEngineKind | undefined,
+    state: sessionState ?? optimisticState,
+    activity: sessionActivity,
+    error: sessionError,
+    engineKind: sessionEngineKind as AIEngineKind | undefined,
   }
 }
 

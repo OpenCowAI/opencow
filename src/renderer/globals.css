@@ -114,6 +114,13 @@ select {
 
 .tool-pill-enter {
   animation: tool-pill-enter 150ms ease-out;
+  /* Pre-declare compositing hints so the browser creates a GPU layer
+     BEFORE the animation starts, avoiding a synchronous layout trigger
+     when multiple pills animate simultaneously during cascade re-renders. */
+  will-change: transform, opacity;
+  /* Contain layout so height/width changes during the animation cannot
+     propagate to ancestors and cause layout thrashing. */
+  contain: layout style;
 }
 
 @keyframes pulse-breathe {

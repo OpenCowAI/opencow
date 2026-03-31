@@ -132,12 +132,30 @@ export class ManagedSessionStore {
     return result.reduce((sum, r) => sum + Number(r.numUpdatedRows ?? 0), 0)
   }
 
-  async list(): Promise<ManagedSessionInfo[]> {
-    const rows = await this.db
+  /**
+   * Default cap for list() — avoids loading thousands of historical sessions
+   * on startup.  200 covers several months of typical usage while keeping
+   * bootstrap and per-flush overhead bounded.
+   */
+  static readonly DEFAULT_LIST_LIMIT = 200
+
+  /**
+   * List recent managed sessions, ordered by last_activity descending.
+   *
+   * @param limit  Maximum rows to return.  Defaults to DEFAULT_LIST_LIMIT.
+   *               Pass `Infinity` to load all rows (use sparingly).
+   */
+  async list(limit: number = ManagedSessionStore.DEFAULT_LIST_LIMIT): Promise<ManagedSessionInfo[]> {
+    let query = this.db
       .selectFrom('managed_sessions')
       .selectAll()
       .orderBy('last_activity', 'desc')
-      .execute()
+
+    if (Number.isFinite(limit)) {
+      query = query.limit(limit)
+    }
+
+    const rows = await query.execute()
 
     return rows.map(managedSessionRowToInfo)
   }

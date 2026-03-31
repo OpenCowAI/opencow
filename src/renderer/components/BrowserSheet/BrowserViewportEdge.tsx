@@ -69,12 +69,15 @@ export function BrowserViewportEdge(): React.JSX.Element {
   const agentSessionId = useBrowserOverlayStore((s) => s.browserOverlay?.agentSessionId ?? null)
   const optimisticState = useBrowserOverlayStore((s) => s.browserOverlay?.agentState ?? null)
 
-  // Canonical source: commandStore.sessionById
-  const sessionData = useCommandStore((s) =>
-    agentSessionId ? s.sessionById[agentSessionId] : null,
+  // Canonical source: commandStore.sessionById — narrow selector extracts
+  // only the two fields used here, avoiding re-renders from unrelated
+  // metadata changes (tokens, cost, duration) in the SessionSnapshot.
+  const agentState = useCommandStore((s) =>
+    agentSessionId ? (s.sessionById[agentSessionId]?.state ?? null) : null,
+  ) ?? optimisticState
+  const agentActivity = useCommandStore((s) =>
+    agentSessionId ? (s.sessionById[agentSessionId]?.activity ?? null) : null,
   )
-  const agentState = sessionData?.state ?? optimisticState
-  const agentActivity = sessionData?.activity ?? null
 
   const executorState = useBrowserOverlayStore((s) => s.browserOverlay?.executorState ?? 'idle')
 
