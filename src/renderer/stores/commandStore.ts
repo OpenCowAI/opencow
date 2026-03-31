@@ -38,6 +38,7 @@ import type {
   UserMessageContent,
 } from '@shared/types'
 import { getAppAPI } from '@/windowAPI'
+import { perfEnabled, perfLog, perfWarn } from '@/lib/perfLogger'
 
 // ─── Types ────────────────────────────────────────────────────────────
 
@@ -107,9 +108,9 @@ export interface CommandStore {
    * content block types change (structural change).
    *
    * Automatically merged back into `sessionMessages` when:
-   *   - A **structural change** is detected (new content block type or count)
    *   - A **new message** is appended (requires stable list for indexing)
-   *   - **Streaming ends** (`isStreaming` becomes false)
+   *   - A non-assistant message update triggers the slow path
+   *   - `mergeStreamingOverlay()` is called (on session idle/stop)
    *
    * `SessionMessageList` subscribes to this field separately from
    * `selectSessionMessages` to render the live streaming content in Virtuoso.
@@ -152,6 +153,23 @@ export interface CommandStore {
   setActiveManagedSession: (sessionId: string | null) => void
 
   /**
+   * Merge the streaming overlay for a session back into `sessionMessages`.
+   *
+   * Called when a session reaches a terminal state (idle / stopped / error)
+   * to ensure downstream scanners (groupMessages, buildToolLifecycleMap,
+   * turnDiffMap) see the final assistant message.
+   *
+   * The extended fast path (RC2) keeps ALL assistant message updates in the
+   * overlay — including finalized messages (isStreaming → false).  This is
+   * safe during streaming because AssistantMessage self-subscribes to the
+   * overlay.  But when the session settles, the overlay must be flushed
+   * into `sessionMessages` so the full message list is correct.
+   *
+   * No-op if there is no pending overlay for the session.
+   */
+  mergeStreamingOverlay: (sessionId: string) => void
+
+  /**
    * Ensure messages for a session are loaded into `sessionMessages`.
    *
    * If the session already has messages in memory, this is a no-op.
@@ -162,6 +180,18 @@ export interface CommandStore {
    * (`command:session:message`) — this method handles the cold-start path.
    */
   ensureSessionMessages: (sessionId: string) => Promise<void>
+
+  /**
+   * Ensure a session snapshot is loaded into `sessionById`.
+   *
+   * With `ManagedSessionStore.list()` capped at a LIMIT, older sessions
+   * (e.g. for Done/Cancelled issues) may not be in the store after bootstrap.
+   * This method fetches a single session on-demand via IPC and inserts it
+   * into `sessionById` + `managedSessions`.
+   *
+   * No-op if the session is already in `sessionById`.
+   */
+  ensureSession: (sessionId: string) => Promise<void>
 
   /** Raw session start — IPC only, no cross-store side effects. */
   startSessionRaw: (input: StartSessionInput) => Promise<string>
@@ -242,6 +272,24 @@ export const useCommandStore = create<CommandStore>((set, get) => ({
 
   batchUpsertManagedSessions: (sessions) =>
     set((s) => {
+      const _t0 = perfEnabled() ? performance.now() : 0
+
+      // ── NO-OP DETECTION ──────────────────────────────────────────
+      // Skip the entire update if all incoming snapshots are identical
+      // by reference to what's already in the store.  During streaming,
+      // the main process may re-emit the same snapshot when only the
+      // activity text changes (which the renderer already has via the
+      // previous flush).  Avoiding the array/map reconstruction here
+      // eliminates ~0.8ms of wasted work + Zustand subscriber evaluation.
+      let hasActualChange = false
+      for (const [id, session] of sessions) {
+        if (s.sessionById[id] !== session) { hasActualChange = true; break }
+      }
+      if (!hasActualChange) {
+        if (_t0) perfLog('batch:meta', performance.now() - _t0, { path: 'no-op' })
+        return {}
+      }
+
       // Build the next sessionById in ONE pass (single object spread + N property sets).
       // Replaces the old loop of N upsertManagedSession calls, each of which
       // did its own full object spread — O(N×M) where M is the session count.
@@ -251,8 +299,35 @@ export const useCommandStore = create<CommandStore>((set, get) => ({
         if (!(id in nextById)) newIds.push(id)
         nextById[id] = session
       }
-      // Update ordered array: replace existing entries + append new ones.
-      // Single pass through the array with Map.get() for O(1) lookup.
+
+      // ── FAST PATH: sessionById-only update (no new sessions) ────────
+      //
+      // During streaming, the typical batch contains 1-2 existing session
+      // updates (metadata: tokens, cost, activity).  The `managedSessions`
+      // array is consumed by 3 selectors:
+      //   - selectActivityData → reads createdAt (immutable)
+      //   - useAgentSession → filters by origin.source, projectId (immutable)
+      //   - useReviewSession → matches by origin (immutable)
+      //
+      // Since ALL consumers only read immutable properties from the array
+      // items, we can safely skip the O(N) array rebuild and only update
+      // `sessionById` (the O(1) lookup source of truth).
+      //
+      // This reduces per-flush cost from O(totalManagedSessions) to
+      // O(batchSize) — e.g. from O(833) to O(1-2).
+      //
+      // When new sessions ARE added (newIds.length > 0), we must rebuild
+      // the array to include them for ordered iteration consumers.
+      if (newIds.length === 0) {
+        if (_t0) {
+          const dt = performance.now() - _t0
+          perfLog('batch:meta', dt, { path: 'sessionById-only', sessions: sessions.size, totalManaged: s.managedSessions.length })
+          perfWarn('batch:meta:slow', dt, 2, { sessions: sessions.size })
+        }
+        return { sessionById: nextById }
+      }
+
+      // ── SLOW PATH: full array rebuild (new sessions added) ──────────
       //
       // ⚠️  PERFORMANCE CONTRACT — REFERENCE PRESERVATION:
       // The `?? ms` fallback is critical: it preserves the ORIGINAL object
@@ -264,14 +339,14 @@ export const useCommandStore = create<CommandStore>((set, get) => ({
       // If this line ever changes to always create new objects (e.g. deep
       // clone), those selectors will silently degrade to re-rendering on
       // every batch upsert (~20/sec during streaming).
-      let nextList: SessionSnapshot[]
-      if (newIds.length === 0) {
-        nextList = s.managedSessions.map((ms) => sessions.get(ms.id) ?? ms)
-      } else {
-        nextList = s.managedSessions.map((ms) => sessions.get(ms.id) ?? ms)
-        for (const id of newIds) {
-          nextList.push(nextById[id])
-        }
+      const nextList = s.managedSessions.map((ms) => sessions.get(ms.id) ?? ms)
+      for (const id of newIds) {
+        nextList.push(nextById[id])
+      }
+      if (_t0) {
+        const dt = performance.now() - _t0
+        perfLog('batch:meta', dt, { path: 'full-rebuild', sessions: sessions.size, totalManaged: nextList.length, newIds: newIds.length })
+        perfWarn('batch:meta:slow', dt, 2, { sessions: sessions.size })
       }
       return {
         managedSessions: nextList,
@@ -301,6 +376,8 @@ export const useCommandStore = create<CommandStore>((set, get) => ({
 
   batchAppendSessionMessages: (entries) =>
     set((s) => {
+      const _t0 = perfEnabled() ? performance.now() : 0
+
       // Lazily initialized — `null` means "no structural changes yet".
       // Avoids creating new object references when only the streaming
       // message content is growing (the dominant streaming pattern).
@@ -317,6 +394,28 @@ export const useCommandStore = create<CommandStore>((set, get) => ({
         const latestById = new Map<string, ManagedSessionMessage>()
         for (const msg of msgs) latestById.set(msg.id, msg)
 
+        // ── FAST-PATH SHORT-CIRCUIT ──────────────────────────────
+        // During text-only streaming, 90%+ of batches contain a single
+        // assistant message update that already exists in the overlay.
+        // Detect this common case and skip the expensive O(N) posMap
+        // construction + per-message loop entirely.
+        //
+        // This eliminates ~6000 Map.set() ops/sec (200 msgs × 30 fps)
+        // that were previously wasted on the fast path.
+        if (latestById.size === 1) {
+          const only = latestById.values().next().value!
+          if (only.role === 'assistant') {
+            const existingOverlay = getStreaming(sid)
+            if (existingOverlay && existingOverlay.id === only.id) {
+              // Same assistant message already in overlay → update overlay only
+              if (!nextStreaming) nextStreaming = { ...s.streamingMessageBySession }
+              nextStreaming[sid] = only
+              if (_t0) perfLog('batch:msg', performance.now() - _t0, { path: 'fast-shortcircuit', sid: sid.slice(0, 8) })
+              continue // Skip posMap + entire per-session loop
+            }
+          }
+        }
+
         // Read the current structural message list for this session
         const currentList = (nextMsgs ?? s.sessionMessages)[sid] ?? []
         const posMap = new Map<string, number>()
@@ -331,36 +430,55 @@ export const useCommandStore = create<CommandStore>((set, get) => ({
             // ── Update existing message ──────────────────────────────
             const existing = currentList[pos]
 
-            if (msg.role === 'assistant' && msg.isStreaming) {
-              // FAST PATH: ALL streaming assistant updates — text growth AND
-              // structural changes (new tool_use block, thinking block, etc.).
+            if (msg.role === 'assistant') {
+              // FAST PATH: ALL assistant message updates — both streaming AND
+              // finalized (isStreaming → false).
               //
               // Write to streamingMessageBySession ONLY — sessionMessages
               // reference stays stable → all downstream useMemos skip:
-              //   - groupMessages: streaming messages are never batchable
-              //     (isBatchableToolMessage returns false for isStreaming=true)
-              //   - buildToolLifecycleMap: streaming messages have no tool_result yet
+              //   - groupMessages: the sessionMessages entry is unchanged
+              //   - buildToolLifecycleMap: incremental scan sees no new messages
               //   - buildTaskLifecycleMap: only scans system events
               //   - turnDiffMap: gated by isTurnSettled (false during streaming)
               //
               // AssistantMessage self-subscribes to the streaming overlay
               // (selectStreamingMessage) and uses it as the authoritative
               // source for ALL live fields (content, activeToolUseId, etc.),
-              // so tool pills and all blocks render correctly.
+              // so tool pills and all blocks render correctly whether the
+              // message is streaming or finalized.
               //
-              // When streaming ends (isStreaming → false), the slow path fires
-              // and merges the final version into sessionMessages — at which
-              // point downstream scans recompute with the complete message.
+              // The overlay is merged back into sessionMessages when:
+              //   - A new message arrives (see "New message" branch below)
+              //   - The session is explicitly cleaned up
+              //
+              // Keeping finalized assistant messages in the overlay avoids
+              // an extra slow-path cascade per tool call cycle.  Previously
+              // isStreaming→false triggered a slow-path + cascade, followed
+              // immediately by another cascade when the next message appended.
+              // Now both merge into a SINGLE slow-path when the next message
+              // arrives — halving cascade frequency during tool-dense workflows.
               if (!nextStreaming) nextStreaming = { ...s.streamingMessageBySession }
               nextStreaming[sid] = msg
             } else {
-              // SLOW PATH: streaming ended (isStreaming → false) or non-streaming
-              // message update.  Merge into sessionMessages → triggers downstream
+              // SLOW PATH: non-assistant message update (rare — e.g. system event
+              // status change).  Merge into sessionMessages → triggers downstream
               // recomputation (groupMessages, buildToolLifecycleMap, etc.).
               if (!newList) newList = [...currentList]
               newList[pos] = msg
-              // Clear streaming slot if this message was in it
-              if (getStreaming(sid)?.id === id) {
+              // Also merge any pending overlay back — the overlay held the
+              // assistant message in the fast path; now a structural change
+              // is happening anyway, so merge it for consistency.
+              const pendingOverlay = getStreaming(sid)
+              if (pendingOverlay) {
+                const overlayPos = posMap.get(pendingOverlay.id)
+                if (overlayPos !== undefined) {
+                  newList[overlayPos] = pendingOverlay
+                } else {
+                  // Overlay message not yet in sessionMessages (edge case:
+                  // overlay was written before the message was ever appended).
+                  // Append it so it isn't silently lost.
+                  toAppend.push(pendingOverlay)
+                }
                 if (!nextStreaming) nextStreaming = { ...s.streamingMessageBySession }
                 nextStreaming[sid] = null
               }
@@ -375,6 +493,9 @@ export const useCommandStore = create<CommandStore>((set, get) => ({
               if (streamPos !== undefined) {
                 if (!newList) newList = [...currentList]
                 newList[streamPos] = pendingStreaming
+              } else {
+                // Overlay message not in posMap — append to prevent data loss.
+                toAppend.push(pendingStreaming)
               }
               if (!nextStreaming) nextStreaming = { ...s.streamingMessageBySession }
               nextStreaming[sid] = null
@@ -396,7 +517,62 @@ export const useCommandStore = create<CommandStore>((set, get) => ({
       const update: Partial<Pick<CommandStore, 'sessionMessages' | 'streamingMessageBySession'>> = {}
       if (nextMsgs) update.sessionMessages = nextMsgs
       if (nextStreaming) update.streamingMessageBySession = nextStreaming
+      if (_t0) {
+        const path = nextMsgs ? 'slow' : nextStreaming ? 'fast' : 'no-op'
+        const dt = performance.now() - _t0
+        // Collect per-session details for slow path diagnosis
+        const sessionDetails: Record<string, unknown> = { path }
+        if (nextMsgs) {
+          for (const [sid] of entries) {
+            const prev = s.sessionMessages[sid]?.length ?? 0
+            const next = (nextMsgs[sid])?.length ?? prev
+            sessionDetails[`${sid.slice(0, 8)}`] = { prevLen: prev, nextLen: next, appended: next - prev }
+          }
+        }
+        perfLog('batch:msg', dt, sessionDetails)
+        // Warn on slow-path flushes > 2ms — these are the jank candidates
+        if (nextMsgs) perfWarn('batch:msg:slow', dt, 2, sessionDetails)
+      }
       return update
+    }),
+
+  mergeStreamingOverlay: (sessionId) =>
+    set((s) => {
+      const overlay = s.streamingMessageBySession[sessionId]
+      if (!overlay) return {}
+
+      const currentList = s.sessionMessages[sessionId] ?? []
+      const pos = currentList.findIndex((m) => m.id === overlay.id)
+
+      if (pos === -1) {
+        // Overlay message not found in list — append it.
+        // This can happen if the overlay was written before the message
+        // was ever added to sessionMessages (edge case).
+        return {
+          sessionMessages: {
+            ...s.sessionMessages,
+            [sessionId]: [...currentList, overlay],
+          },
+          streamingMessageBySession: {
+            ...s.streamingMessageBySession,
+            [sessionId]: null,
+          },
+        }
+      }
+
+      // Replace the stale entry with the overlay version.
+      const newList = [...currentList]
+      newList[pos] = overlay
+      return {
+        sessionMessages: {
+          ...s.sessionMessages,
+          [sessionId]: newList,
+        },
+        streamingMessageBySession: {
+          ...s.streamingMessageBySession,
+          [sessionId]: null,
+        },
+      }
     }),
 
   removeManagedSession: (sessionId) => {
@@ -460,6 +636,37 @@ export const useCommandStore = create<CommandStore>((set, get) => ({
       // Silently ignore — session may have been deleted between render and fetch.
     } finally {
       _ensureInFlight.delete(sessionId)
+    }
+  },
+
+  ensureSession: async (sessionId) => {
+    // Already loaded — no-op.
+    if (sessionId in get().sessionById) return
+
+    // Deduplicate: reuse _ensureInFlight to prevent concurrent IPC calls
+    // for the same sessionId (shared with ensureSessionMessages is fine —
+    // they hit different IPC channels and the set is per-id).
+    const key = `session:${sessionId}`
+    if (_ensureInFlight.has(key)) return
+    _ensureInFlight.add(key)
+
+    try {
+      const snapshot = await getAppAPI()['command:get-managed-session'](sessionId)
+      if (!snapshot) return // Session doesn't exist in DB either.
+
+      set((s) => {
+        // Double-check: may have been loaded by a DataBus event while IPC was in-flight.
+        if (sessionId in s.sessionById) return {}
+        const nextById = { ...s.sessionById, [sessionId]: snapshot }
+        return {
+          managedSessions: [...s.managedSessions, snapshot],
+          sessionById: nextById,
+        }
+      })
+    } catch {
+      // Silently ignore — session may have been deleted.
+    } finally {
+      _ensureInFlight.delete(key)
     }
   },
 
@@ -684,10 +891,15 @@ export function selectIsProcessing(store: CommandStore, sessionId: string | null
   if (state === 'creating' || state === 'streaming') return true
   if (state !== 'awaiting_input' && state !== 'awaiting_question') return false
   // Awaiting states: only "processing" if an assistant message is still streaming.
-  // Check the streaming slot first (O(1) — fast path during active streaming).
+  // Check the streaming overlay first (O(1) — authoritative during active streaming).
+  // The extended fast path (RC2) keeps finalized assistant messages in the overlay
+  // even after isStreaming → false, so sessionMessages may still hold a stale
+  // isStreaming=true entry.  When the overlay exists, trust it exclusively.
   const streaming = store.streamingMessageBySession[sessionId]
-  if (streaming?.role === 'assistant' && streaming.isStreaming === true) return true
-  // Fall back to the structural messages array.
+  if (streaming?.role === 'assistant') {
+    return streaming.isStreaming === true
+  }
+  // No overlay — check structural messages array.
   const msgs = store.sessionMessages[sessionId]
   return msgs?.some((m) => m.role === 'assistant' && m.isStreaming === true) ?? false
 }
@@ -718,7 +930,7 @@ export function selectSessionMessages(store: CommandStore, sessionId: string | n
  * for structural scans.  Returns `null` when:
  *   - The session has no active streaming message
  *   - The streaming message was merged back into `sessionMessages`
- *     (structural change or streaming ended)
+ *     (new message appended, or `mergeStreamingOverlay()` on session terminal)
  *
  * `SessionMessageList` subscribes to this separately and splices the
  * result into the Virtuoso data array.  Other subscribers (StickyQuestionBanner,

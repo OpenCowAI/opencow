@@ -42,6 +42,7 @@ import { thumbnailCache } from '@/lib/thumbnailCache'
 import { ensureBootstrapDataLoaded } from '@/lib/bootstrap/bootstrapCoordinator'
 import { applyLocale } from '@/i18n'
 import { fireAndForget } from '@/lib/asyncUtils'
+import { perfStart, perfEnabled, perfLog, perfWarn } from '@/lib/perfLogger'
 
 /** Tool names that modify files on disk — used for file refresh detection. */
 const FILE_MODIFYING_TOOLS = new Set(['Write', 'Edit', 'NotebookEdit'])
@@ -79,7 +80,7 @@ let _msgTimerId = 0
 let _metaTimerId = 0
 
 /**
- * Message flush interval (ms).
+ * Message flush interval when the active session is visible (ms).
  *
  * 33 ms ≈ 30fps — perceptually smooth for streaming text while freeing
  * the main thread for input handling and scrolling.  Decoupled from
@@ -92,6 +93,20 @@ let _metaTimerId = 0
 const MSG_FLUSH_INTERVAL_MS = 33
 
 /**
+ * Message flush interval when NO pending session is currently visible (ms).
+ *
+ * When the user is on Inbox, Schedule, or viewing a different session,
+ * background agent streaming doesn't need 30fps updates.  Dropping to
+ * ~1fps dramatically reduces main-thread work (posMap construction,
+ * Zustand selector evaluation, GC pressure) that causes perceptible
+ * stutter even on unrelated pages.
+ *
+ * Terminal events (session:idle/stopped) still call _flushAll() for
+ * immediate delivery, so no data is lost.
+ */
+const MSG_FLUSH_BACKGROUND_INTERVAL_MS = 1000
+
+/**
  * Metadata flush interval (ms).
  *
  * Token counts, duration, and activity text don't need 30fps updates —
@@ -101,9 +116,24 @@ const MSG_FLUSH_INTERVAL_MS = 33
  */
 const META_FLUSH_INTERVAL_MS = 500
 
+/**
+ * Determine the appropriate message flush interval based on whether any
+ * pending session is currently visible to the user.
+ *
+ * A session is "visible" when it is the `activeManagedSessionId` in
+ * commandStore — i.e., its SessionPanel is mounted and rendering.
+ * When no pending session is visible (user on Inbox, Schedule, etc.),
+ * we use a much longer interval to reduce main-thread load.
+ */
+function _getMsgFlushInterval(): number {
+  const activeId = useCommandStore.getState().activeManagedSessionId
+  if (activeId && _pendingMsgs.has(activeId)) return MSG_FLUSH_INTERVAL_MS
+  return MSG_FLUSH_BACKGROUND_INTERVAL_MS
+}
+
 function _scheduleMsgFlush(): void {
   if (_msgTimerId !== 0) return
-  _msgTimerId = window.setTimeout(_flushPendingMessages, MSG_FLUSH_INTERVAL_MS)
+  _msgTimerId = window.setTimeout(_flushPendingMessages, _getMsgFlushInterval())
 }
 
 function _scheduleMetaFlush(): void {
@@ -124,7 +154,26 @@ function _flushPendingMessages(): void {
   // Single set() for all message updates — the ONLY Zustand mutation per
   // flush during text-only streaming.  After Fix 20, only the single
   // self-subscribing AssistantMessage re-renders from this.
+  const t0 = perfEnabled() ? performance.now() : 0
+  const endFlush = perfStart('flush:msg')
   useCommandStore.getState().batchAppendSessionMessages(msgs)
+  // Measure time AFTER Zustand set() returns — this includes:
+  //   1. Store updater (batchAppendSessionMessages)
+  //   2. Zustand subscriber notification + selector evaluation
+  //   3. Synchronous React re-renders triggered by state change
+  let totalMsgs = 0
+  for (const [, arr] of msgs) totalMsgs += arr.length
+  endFlush({ sessions: msgs.size, messages: totalMsgs })
+
+  // Measure the FULL frame: store + React reconciliation + DOM commit + paint.
+  // rAF fires just before the next repaint, capturing any async React work
+  // that was scheduled by the store update.
+  if (t0) {
+    requestAnimationFrame(() => {
+      perfLog('frame:msg', performance.now() - t0, { messages: totalMsgs })
+      perfWarn('frame:msg:jank', performance.now() - t0, 8, { messages: totalMsgs })
+    })
+  }
 }
 
 function _flushPendingMeta(): void {
@@ -137,7 +186,9 @@ function _flushPendingMeta(): void {
   // Single set() for all metadata updates.  Triggers re-render of
   // StreamingOverlayContent and SessionStatusBar (via useStreamingSessionMetrics).
   // At 500ms interval, this adds ~0.8ms of work only twice per second.
+  const endFlush = perfStart('flush:meta')
   useCommandStore.getState().batchUpsertManagedSessions(meta)
+  endFlush({ sessions: meta.size })
 }
 
 /**
@@ -230,9 +281,19 @@ export function useAppBootstrap(): void {
           // ── Buffered: message → commandStore (rAF-coalesced) ─────────
           {
             const sid = event.payload.sessionId
+            const msg = event.payload.message
+            if (perfEnabled()) {
+              const blockCount = 'content' in msg && Array.isArray(msg.content) ? msg.content.length : 0
+              perfLog('ipc:msg', 0, {
+                sid: sid.slice(0, 8),
+                role: msg.role,
+                isStreaming: (msg as Record<string, unknown>).isStreaming,
+                blocks: blockCount,
+              })
+            }
             let buf = _pendingMsgs.get(sid)
             if (!buf) { buf = []; _pendingMsgs.set(sid, buf) }
-            buf.push(event.payload.message)
+            buf.push(msg)
             _scheduleMsgFlush()
           }
 
@@ -278,6 +339,13 @@ export function useAppBootstrap(): void {
           // Terminal events — flush any buffered metadata so subsequent
           // reads against sessionById see the latest state.
           _flushAll()
+          // Merge any pending streaming overlay back into sessionMessages.
+          // The extended fast path keeps ALL assistant updates (including
+          // finalized messages) in the overlay to avoid slow-path cascades
+          // during tool-dense workflows.  Now that the session is settled,
+          // downstream scanners (groupMessages, turnDiffMap, etc.) need the
+          // complete message list — merge the overlay so they recompute.
+          useCommandStore.getState().mergeStreamingOverlay(event.payload.sessionId)
           // State already synced by preceding command:session:updated event.
           // Both idle and stopped share the same side effects:
           //   1. Update linked issue's lastAgentActivityAt timestamp
@@ -326,6 +394,8 @@ export function useAppBootstrap(): void {
           break
         }
         case 'command:session:error': {
+          // Merge overlay — same rationale as idle/stopped above.
+          useCommandStore.getState().mergeStreamingOverlay(event.payload.sessionId)
           // State already synced by preceding command:session:updated event.
           // Error is available via commandStore.sessionById[id].error —
           // browser overlay reads from there directly.

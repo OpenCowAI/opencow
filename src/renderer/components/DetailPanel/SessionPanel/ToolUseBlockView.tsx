@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-import { memo, useState, useCallback } from 'react'
+import { memo, useMemo, useState, useCallback } from 'react'
 import {
   Loader2,
   ChevronRight,
@@ -869,10 +869,27 @@ export const ToolUseBlockView = memo(function ToolUseBlockView({
   const [expanded, setExpanded] = useState(false)
   const { showContentViewer, showDiffViewer, openToolFileViewer } = useContentViewerContext()
 
-  const { icon: Icon, displayName, target } = getToolMeta(block.name, block.input)
-  const hasInput = Object.keys(block.input).length > 0
-  const primaryViewer = getPrimaryViewerContent(block.name, block.input)
-  const fallbackViewerPath = getFallbackViewerPath(block.name, block.input)
+  // Memoize tool metadata and viewer content — block.name and block.input
+  // are reference-stable for completed tool_use blocks, so these only
+  // recompute when a genuinely different tool is rendered.  Avoids redundant
+  // string parsing, Object.keys traversal, and conditional routing during
+  // Virtuoso cascade re-renders (~0.1ms × 10-20 visible pills = 1-2ms saved).
+  const { icon: Icon, displayName, target } = useMemo(
+    () => getToolMeta(block.name, block.input),
+    [block.name, block.input],
+  )
+  const hasInput = useMemo(
+    () => Object.keys(block.input).length > 0,
+    [block.input],
+  )
+  const primaryViewer = useMemo(
+    () => getPrimaryViewerContent(block.name, block.input),
+    [block.name, block.input],
+  )
+  const fallbackViewerPath = useMemo(
+    () => getFallbackViewerPath(block.name, block.input),
+    [block.name, block.input],
+  )
 
   const openFileViewerFromPath = useCallback(async (filePath: string) => {
     if (!sessionId) {

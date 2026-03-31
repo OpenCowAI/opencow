@@ -254,11 +254,23 @@ export function applyConversationDomainEffects(params: {
               ctx.dispatchSessionUpdated()
             }
           }, 500)
+          // No tool execution follows — dispatch immediately so the renderer
+          // sees the finalized response without throttle delay.
+          ctx.dispatchMessageById(targetMessageId)
         } else {
           ctx.dispatchSessionUpdated()
+          // Tool execution follows shortly (<5 ms for fast tools like Read/Glob).
+          // Queue the finalized message instead of dispatching immediately so it
+          // coalesces with the upcoming next-turn assistant.partial in the same
+          // DispatchThrottle window (~50 ms).  The renderer's write-coalescing
+          // buffer (33 ms) then processes both in a single batchAppendSessionMessages
+          // call → ONE slow-path cascade instead of two.
+          //
+          // Visual correctness: AssistantMessage self-subscribes to the streaming
+          // overlay which already contains the complete content, so the 50 ms
+          // dispatch delay is invisible to users.
+          ctx.queueMessageDispatch(targetMessageId)
         }
-
-        ctx.dispatchMessageById(targetMessageId)
         break
       }
 

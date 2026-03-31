@@ -63,7 +63,18 @@ export function useTurnDiffs(
     || sessionState === 'stopped'
     || sessionState === 'error'
 
+  // Cache the last computed map so we can skip recomputation during streaming.
+  // While the session is unsettled, `messages` changes ~10×/sec but the result
+  // is identical: historical turns are stable and the current turn never passes
+  // the completion check.  Returning the cached map turns that O(N) scan into O(1).
+  const prevMapRef = useRef(new Map<string, TurnDiffInfo>())
+
   const turnDiffMap = useMemo(() => {
+    // Guard: skip full scan while the session is still producing changes.
+    // The previous map already contains all historical-turn entries; the
+    // current turn won't satisfy isTurnComplete anyway, so nothing is lost.
+    if (!isTurnSettled) return prevMapRef.current
+
     const map = new Map<string, TurnDiffInfo>()
     let turnMsgs: ManagedSessionMessage[] = []
     let lastAssistantId: string | null = null
@@ -108,15 +119,16 @@ export function useTurnDiffs(
     }
     flushTurn(true) // current (last) turn — depends on session state
 
+    prevMapRef.current = map
     return map
   }, [messages, isTurnSettled])
 
   // Hold turnDiffMap in a ref so that renderItem's useCallback does not depend
-  // on it.  During streaming, `messages` changes ~10×/sec which recomputes
-  // turnDiffMap (new Map reference).  If turnDiffMap were a direct useCallback
-  // dependency, Virtuoso would re-invoke itemContent for every visible item on
-  // every streaming tick.  Reading from a ref instead keeps renderItem stable
-  // while still picking up the latest diffs on the next natural re-render.
+  // on it.  When the session settles, turnDiffMap gets a new Map reference.
+  // If it were a direct useCallback dependency, Virtuoso would re-invoke
+  // itemContent for every visible item.  Reading from a ref instead keeps
+  // renderItem stable while still picking up the latest diffs on the next
+  // natural re-render.
   const turnDiffMapRef = useRef(turnDiffMap)
   turnDiffMapRef.current = turnDiffMap
 

@@ -88,8 +88,11 @@ function SessionFullView({
   const { t } = useTranslation('schedule')
 
   // ── Primary source: managed session (created by SessionOrchestrator) ──
+  // Only need existence check (boolean), not the full SessionSnapshot.
+  // Selecting a primitive avoids re-renders from metadata changes (tokens,
+  // cost, activity) that don't affect the conditional rendering decision.
   const managedSession = useCommandStore((s) =>
-    s.sessionById[sessionId]
+    sessionId in s.sessionById
   )
   const projects  = useAppStore((s) => s.projects)
 

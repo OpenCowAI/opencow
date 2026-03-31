@@ -12,7 +12,7 @@ import { SystemEventView } from './SystemEventView'
 import { TaskEventsProvider, buildTaskLifecycleMap, resolveTaskFinalStates, isConsumedTaskEvent } from './TaskWidgets'
 import { ToolLifecycleProvider } from './ToolLifecycleContext'
 import type { ToolLifecycle, ToolLifecycleMap } from './ToolLifecycleContext'
-import { ToolBatchCollapsible, groupMessages } from './ToolBatchCollapsible'
+import { ToolBatchCollapsible, isBatchableToolMessage, MIN_BATCH_SIZE } from './ToolBatchCollapsible'
 import type { MessageGroup } from './ToolBatchCollapsible'
 import { SessionScrollNav } from './SessionScrollNav'
 import type { NavAnchor } from './SessionScrollNav'
@@ -25,6 +25,7 @@ import { useAutoFollow } from '@/hooks/useAutoFollow'
 import { useTurnDiffs } from '@/hooks/useTurnDiffs'
 import { useIncrementalMemo } from '@/hooks/useIncrementalMemo'
 import { cn } from '@/lib/utils'
+import { perfEnabled, perfLog } from '@/lib/perfLogger'
 import { useCommandStore, selectSessionMessages } from '@/stores/commandStore'
 import type { ManagedSessionMessage, ManagedSessionState, SessionStopReason, UserMessageContent, ContentBlock } from '@shared/types'
 import { truncate as unicodeTruncate } from '@shared/unicode'
@@ -218,6 +219,9 @@ const SENDABLE_STATES: ReadonlySet<ManagedSessionState> = new Set<ManagedSession
  */
 export const SessionMessageList = memo(forwardRef<SessionMessageListHandle, SessionMessageListProps>(
 function SessionMessageList({ sessionId, messages: externalMessages, sessionState, stopReason, onSendAnswer, variant = 'cli', onContextualQuestionChange, footerNode, issueId }: SessionMessageListProps, ref): React.JSX.Element {
+  // ── Perf: measure full render cycle of this component ──────────────
+  const _renderT0 = perfEnabled() ? performance.now() : 0
+
   const { t } = useTranslation('sessions')
 
   // Default: subscribe to commandStore for real-time streaming messages.
@@ -329,21 +333,130 @@ function SessionMessageList({ sessionId, messages: externalMessages, sessionStat
     INIT_TOOL_MAP,
   )
 
-  // Group consecutive tool-only assistant messages into collapsible batches.
-  // Depends on `messages` and `consumedTaskIds`.
+  // ---------------------------------------------------------------------------
+  // RC3: Incremental messageGroups — O(delta) per append instead of O(N).
   //
-  // With consumedTaskIds reference stabilization above, this useMemo skips
-  // entirely when no new task events arrived — which is the common case for
-  // most structural changes (tool_result, assistant_final, system events).
-  // Only task_started/task_notification events grow consumedTaskIds and
-  // trigger a rebuild here.
-  const messageGroups = useMemo(() => {
-    const filtered = messages.filter((msg) => {
-      if (msg.role === 'system' && isConsumedTaskEvent(msg.event, consumedTaskIds)) return false
-      return true
-    })
-    return groupMessages(filtered)
-  }, [messages, consumedTaskIds])
+  // The old useMemo ran groupMessages(filter(messages)) on every messages
+  // change — O(N) full scan producing a new array → Virtuoso re-iterates all
+  // visible items.  Now we use useIncrementalMemo: only newly appended
+  // messages are processed, and the "pending tail" (batchable messages at the
+  // end that might merge with future appends) is tracked across renders.
+  //
+  // consumedTaskIds changes (rare — only on task_started/task_notification)
+  // trigger a full rebuild via resetKey rotation.
+  // ---------------------------------------------------------------------------
+
+  // Track consumedTaskIds identity changes → bump version for resetKey.
+  const consumedIdsVersionRef = useRef(0)
+  const prevConsumedIdsForGroupRef = useRef(consumedTaskIds)
+  if (prevConsumedIdsForGroupRef.current !== consumedTaskIds) {
+    consumedIdsVersionRef.current++
+    prevConsumedIdsForGroupRef.current = consumedTaskIds
+  }
+  // Stable ref so the processor callback can read latest value without
+  // changing its own reference identity (keeps useIncrementalMemo stable).
+  const consumedIdsRef = useRef(consumedTaskIds)
+  consumedIdsRef.current = consumedTaskIds
+
+  const groupResetKey = `${sessionId}:${consumedIdsVersionRef.current}`
+
+  /**
+   * Incremental result shape:
+   * - `groups`: complete MessageGroup[] ready for Virtuoso (includes flushed tail)
+   * - `pendingTailGroupCount`: how many groups at the end of `groups` came from
+   *   a force-flushed pending batch.  On next append these are "reopened" and
+   *   re-evaluated together with the new delta.
+   */
+  type IncrementalGroupResult = {
+    groups: MessageGroup[]
+    pendingTailGroupCount: number
+  }
+
+  const incrementalGroupProcessor = useCallback(
+    (newMsgs: readonly ManagedSessionMessage[], prev: IncrementalGroupResult): IncrementalGroupResult => {
+      const _gT0 = perfEnabled() ? performance.now() : 0
+
+      // Filter consumed task events from the delta
+      const filtered = newMsgs.filter((msg) => {
+        if (msg.role === 'system' && isConsumedTaskEvent(msg.event, consumedIdsRef.current)) return false
+        return true
+      })
+      if (filtered.length === 0) return prev // copy-on-write: no change
+
+      // --- Reopen the pending tail from previous result ---
+      let reopenedPending: ManagedSessionMessage[] = []
+      let baseGroups: MessageGroup[]
+
+      if (prev.pendingTailGroupCount > 0) {
+        baseGroups = prev.groups.slice(0, -prev.pendingTailGroupCount)
+        for (let i = prev.groups.length - prev.pendingTailGroupCount; i < prev.groups.length; i++) {
+          const g = prev.groups[i]
+          if (g.type === 'single') reopenedPending.push(g.message)
+          else if (g.type === 'tool_batch') reopenedPending.push(...g.messages)
+        }
+      } else {
+        baseGroups = prev.groups
+      }
+
+      // --- Process: reopened pending + new filtered messages ---
+      const toProcess = reopenedPending.length > 0 ? [...reopenedPending, ...filtered] : filtered
+      const committedGroups: MessageGroup[] = []
+      let pendingBatch: ManagedSessionMessage[] = []
+
+      const flushBatch = (): void => {
+        if (pendingBatch.length >= MIN_BATCH_SIZE) {
+          committedGroups.push({ type: 'tool_batch', messages: [...pendingBatch] })
+        } else {
+          for (const m of pendingBatch) {
+            committedGroups.push({ type: 'single', message: m })
+          }
+        }
+        pendingBatch = []
+      }
+
+      for (const msg of toProcess) {
+        if (isBatchableToolMessage(msg)) {
+          pendingBatch.push(msg)
+        } else {
+          flushBatch()
+          committedGroups.push({ type: 'single', message: msg })
+        }
+      }
+
+      // --- Flush trailing pending batch into tail groups ---
+      // These will be "reopened" on the next append.
+      const tailStart = committedGroups.length
+      flushBatch()
+      const pendingTailGroupCount = committedGroups.length - tailStart
+
+      const result = {
+        groups: [...baseGroups, ...committedGroups],
+        pendingTailGroupCount,
+      }
+      if (_gT0) perfLog('groupMessages:incremental', performance.now() - _gT0, {
+        delta: newMsgs.length,
+        filtered: filtered.length,
+        reopened: reopenedPending.length,
+        baseGroups: baseGroups.length,
+        newGroups: committedGroups.length,
+        totalGroups: result.groups.length,
+      })
+      return result
+    },
+    [], // stable — uses consumedIdsRef internally
+  )
+
+  const incrementalGroupInit = useCallback(
+    (): IncrementalGroupResult => ({ groups: [], pendingTailGroupCount: 0 }),
+    [],
+  )
+
+  const { groups: messageGroups } = useIncrementalMemo<ManagedSessionMessage, IncrementalGroupResult>(
+    messages,
+    groupResetKey,
+    incrementalGroupProcessor,
+    incrementalGroupInit,
+  )
 
   // ---------------------------------------------------------------------------
   // Virtuoso data — directly uses messageGroups (no streaming fusion).
@@ -683,6 +796,16 @@ function SessionMessageList({ sessionId, messages: externalMessages, sessionStat
   // ---------------------------------------------------------------------------
   // Render
   // ---------------------------------------------------------------------------
+
+  // ── Perf: log total render (hooks + JSX creation) ────────────────
+  if (_renderT0) {
+    const dt = performance.now() - _renderT0
+    perfLog('render:SessionMessageList', dt, {
+      messages: messages.length,
+      groups: messageGroups.length,
+      virtuosoItems: virtuosoData.length,
+    })
+  }
 
   return (
     <FooterNodeContext.Provider value={mountSettled ? footerNode : undefined}>
