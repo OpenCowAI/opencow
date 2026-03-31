@@ -80,7 +80,7 @@ export function EditProviderDialog({ provider, onClose, onSaved }: EditProviderD
       toast(t('editProvider.saved', 'Settings saved'))
       onSaved()
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : t('editProvider.saveFailed', 'Save failed'))
+      toast(err instanceof Error ? err.message : t('editProvider.saveFailed', 'Save failed'))
     } finally {
       setSaving(false)
     }

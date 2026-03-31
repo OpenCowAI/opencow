@@ -54,7 +54,7 @@ export function ProviderCard({ provider, onEdit }: ProviderCardProps): React.JSX
     try {
       await triggerSync(provider.id)
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : t('issueIntegration.providerCard.syncFailed', 'Sync failed'))
+      toast(err instanceof Error ? err.message : t('issueIntegration.providerCard.syncFailed', 'Sync failed'))
     } finally {
       setSyncing(false)
     }
@@ -64,7 +64,7 @@ export function ProviderCard({ provider, onEdit }: ProviderCardProps): React.JSX
     try {
       await updateProvider(provider.id, { syncEnabled: checked })
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : t('issueIntegration.providerCard.updateFailed', 'Update failed'))
+      toast(err instanceof Error ? err.message : t('issueIntegration.providerCard.updateFailed', 'Update failed'))
     }
   }
 
@@ -72,7 +72,7 @@ export function ProviderCard({ provider, onEdit }: ProviderCardProps): React.JSX
     try {
       await deleteProvider(provider.id)
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : t('issueIntegration.providerCard.deleteFailed', 'Delete failed'))
+      toast(err instanceof Error ? err.message : t('issueIntegration.providerCard.deleteFailed', 'Delete failed'))
     } finally {
       setConfirmingDelete(false)
     }
@@ -110,7 +110,7 @@ export function ProviderCard({ provider, onEdit }: ProviderCardProps): React.JSX
               {!testingConnection && connectionOk === false && (
                 <XCircle
                   className="h-3.5 w-3.5 text-red-500 shrink-0 cursor-help"
-                  title={connectionError ?? undefined}
+                  aria-label={connectionError ?? undefined}
                 />
               )}
               {testingConnection && (
