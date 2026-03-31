@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-import type { IssueProvider } from '../../src/shared/types'
+import type { IssueProvider } from '../../../src/shared/types'
 import type { RemoteAdapter, RemoteWriteAdapter } from './remoteAdapter'
 import { GitHubAdapter } from './adapters/githubAdapter'
 import { GitLabAdapter } from './adapters/gitlabAdapter'

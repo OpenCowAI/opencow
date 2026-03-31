@@ -10,7 +10,7 @@ import type {
   UpdateIssueProviderInput,
   IssueProviderTestResult,
   DataBusEvent,
-} from '../src/shared/types'
+} from '../../src/shared/types'
 
 /**
  * Business logic for Issue Provider CRUD + credential management.

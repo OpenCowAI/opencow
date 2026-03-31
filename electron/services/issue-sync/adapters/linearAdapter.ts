@@ -121,7 +121,7 @@ export class LinearAdapter implements RemoteWriteAdapter {
       issues,
       hasNextPage: result.pageInfo.hasNextPage,
       nextPage: undefined, // Linear uses cursor, not page numbers
-      nextCursor: result.pageInfo.endCursor,
+      nextCursor: result.pageInfo.endCursor ?? undefined,
     }
   }
 
@@ -370,11 +370,11 @@ export class LinearAdapter implements RemoteWriteAdapter {
     url: string
     createdAt: Date
     updatedAt: Date
-    state: Promise<{ id: string; name: string; type: string }> | { id: string; name: string; type: string }
+    state?: Promise<{ id: string; name: string; type: string }> | { id: string; name: string; type: string }
     labels: () => Promise<{ nodes: Array<{ name: string }> }>
   }): Promise<RemoteIssue> {
-    // Resolve the state (may be a lazy Promise from the SDK)
-    const state = await Promise.resolve(node.state)
+    // Resolve the state (may be a lazy Promise or undefined from the SDK)
+    const state = node.state ? await Promise.resolve(node.state) : null
 
     // Cache the issue ID for later write operations
     this.issueIdCache.set(node.number, node.id)
@@ -392,7 +392,7 @@ export class LinearAdapter implements RemoteWriteAdapter {
       number: node.number,
       title: node.title,
       body: node.description ?? '',
-      state: state.type, // category: backlog/unstarted/started/completed/canceled
+      state: state?.type ?? 'unknown', // category: backlog/unstarted/started/completed/canceled
       labels: labelNames,
       url: node.url,
       createdAt: node.createdAt.toISOString(),
