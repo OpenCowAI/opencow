@@ -166,7 +166,7 @@ jobs:
 
       # ── Build ─────────────────────────────────────────────────────────
       - name: Build Electron App (Linux)
-        run: pnpm exec electron-builder --linux --x64
+        run: pnpm exec electron-builder --linux --x64 --target AppImage,deb
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
