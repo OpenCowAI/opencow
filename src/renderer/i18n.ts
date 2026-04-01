@@ -38,8 +38,10 @@ import enUSDashboard from './locales/en-US/dashboard.json'
 import enUSSettings from './locales/en-US/settings.json'
 import enUSOnboarding from './locales/en-US/onboarding.json'
 import enUSMemory from './locales/en-US/memory.json'
+import enUSProjectSettings from './locales/en-US/projectSettings.json'
 
 import zhCNMemory from './locales/zh-CN/memory.json'
+import zhCNProjectSettings from './locales/zh-CN/projectSettings.json'
 
 const NS = [
   'common',
@@ -53,6 +55,7 @@ const NS = [
   'settings',
   'onboarding',
   'memory',
+  'projectSettings',
 ] as const
 
 /**
@@ -95,6 +98,7 @@ export function initI18n(): void {
         settings: zhCNSettings,
         onboarding: zhCNOnboarding,
         memory: zhCNMemory,
+        projectSettings: zhCNProjectSettings,
       },
       'en-US': {
         common: enUSCommon,
@@ -108,6 +112,7 @@ export function initI18n(): void {
         settings: enUSSettings,
         onboarding: enUSOnboarding,
         memory: enUSMemory,
+        projectSettings: enUSProjectSettings,
       },
     },
     interpolation: { escapeValue: false },

@@ -47,6 +47,8 @@ export interface DataPaths {
   readonly capabilities: string
   /** Encrypted credentials for repo sources (OS keychain-backed) */
   readonly repoSourceCredentials: string
+  /** Encrypted credentials for issue providers (GitHub/GitLab tokens) */
+  readonly issueProviderCredentials: string
 }
 
 export function resolveDataPaths(): DataPaths {
@@ -65,6 +67,7 @@ export function resolveDataPaths(): DataPaths {
     credentials: join(root, 'credentials.enc'),
     capabilities: join(root, 'capabilities'),
     repoSourceCredentials: join(root, 'repo-credentials.enc'),
+    issueProviderCredentials: join(root, 'issue-provider-credentials.enc'),
   })
 }
 

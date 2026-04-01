@@ -22,6 +22,7 @@ import type {
 } from '../../src/shared/types'
 import type { SessionLifecycleEvent } from './sessionStateMachine'
 import { createLogger } from '../platform/logger'
+import { IPC_PROGRESS_CAP_CHARS } from '../conversation/constants'
 
 const log = createLogger('ManagedSession')
 
@@ -790,22 +791,67 @@ export class ManagedSession {
   }
 
   /**
-   * Get a shallow copy of the last message. O(1).
-   * Avoids the full O(n) messages copy of getInfo() in hot dispatch paths.
+   * O(1) direct reference to the last message in the internal array.
+   *
+   * ⚠️ Returns the **same object** that lives in `this.messages[]` — not a copy.
+   * Used exclusively by `StreamingMessageBuffer.begin()` to establish a shared
+   * reference for zero-copy streaming mutations.
+   *
+   * Call immediately after `addMessage()` — the last element is the target.
+   *
+   * @internal
    */
-  getLastMessage(): ManagedSessionMessage | null {
-    const last = this.messages[this.messages.length - 1]
-    return last ? { ...last } : null
+  getLastMessageRef(): ManagedSessionMessage | null {
+    return this.messages[this.messages.length - 1] ?? null
   }
 
   /**
-   * Get a shallow copy of a specific message by ID.
-   * Used by relay onFlush/onDone callbacks that need a single message,
-   * avoiding the O(n) full-copy of getInfo().
+   * Get a shallow copy of the last message for IPC dispatch. O(1).
+   *
+   * Truncates oversized `progress` strings on tool_use blocks to
+   * {@link IPC_PROGRESS_CAP_CHARS} — the renderer only displays the
+   * tail, so sending the full 50-200 KB wastes structured-clone budget.
+   */
+  getLastMessage(): ManagedSessionMessage | null {
+    const last = this.messages[this.messages.length - 1]
+    return last ? ManagedSession._trimProgressForIPC(last) : null
+  }
+
+  /**
+   * Get a shallow copy of a specific message by ID for IPC dispatch.
+   *
+   * Same progress-trimming behaviour as {@link getLastMessage}.
    */
   getMessageById(id: string): ManagedSessionMessage | null {
     const msg = this.messages.find((m) => m.id === id)
-    return msg ? { ...msg } : null
+    return msg ? ManagedSession._trimProgressForIPC(msg) : null
+  }
+
+  /**
+   * Produce a shallow copy of a message, truncating oversized `progress`
+   * fields on tool_use blocks for IPC dispatch.
+   *
+   * Fast path (no oversized progress) returns a plain `{ ...msg }` with
+   * zero content-array overhead.  Slow path only copies blocks that
+   * exceed the cap.
+   */
+  private static _trimProgressForIPC(msg: ManagedSessionMessage): ManagedSessionMessage {
+    if (msg.role !== 'assistant') return { ...msg }
+    let needsTrim = false
+    for (const block of msg.content) {
+      if (block.type === 'tool_use' && block.progress && block.progress.length > IPC_PROGRESS_CAP_CHARS) {
+        needsTrim = true
+        break
+      }
+    }
+    if (!needsTrim) return { ...msg }
+    const content = msg.content.map((block) => {
+      if (block.type === 'tool_use' && block.progress && block.progress.length > IPC_PROGRESS_CAP_CHARS) {
+        return { ...block, progress: block.progress.slice(-IPC_PROGRESS_CAP_CHARS) }
+      }
+      return block
+    })
+    return { ...msg, content }
   }
 
   /**

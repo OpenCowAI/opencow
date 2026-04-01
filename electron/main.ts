@@ -497,6 +497,8 @@ app.whenReady().then(async () => {
     capabilityCenter, packageService, scheduleService, timeResolver,
     eventListener, executionStore, noteStore, providerService,
     marketplaceService, repoSourceRegistry, gitService, memoryService,
+    issueProviderService, issueSyncEngine,
+    changeQueueStore, changeQueueService, pushEngine, issueCommentService, syncLogStore,
   } = svc
 
   // Wire up TrayIssueService for issue-centric tray popover data
@@ -541,6 +543,11 @@ app.whenReady().then(async () => {
     repoSourceRegistry,
     gitService,
     memoryService,
+    issueProviderService,
+    issueSyncEngine,
+    issueCommentService,
+    syncLogStore,
+    changeQueueStore,
     getProxyFetch: () => proxyFetchFactory.getStandardFetch(),
     onQuit: requestQuit,
     updateChecker,
@@ -634,6 +641,12 @@ app.whenReady().then(async () => {
   // ── Phase 2.7: Start schedule engine ──────────────────────────────────
   timeResolver.start()
   log.info('Schedule engine: TimeResolver started')
+
+  // ── Phase 2.8: Start issue sync engine ──────────────────────────────
+  issueSyncEngine.start().catch((err) =>
+    log.warn('Issue sync engine start failed (non-fatal)', err)
+  )
+  pushEngine.start()
   await timeResolver.catchUpMissedExecutions()
 
   // Batch-cancel executions orphaned by previous crashes (best-effort)
@@ -718,5 +731,7 @@ app.on('before-quit', (event) => {
     terminalService: svc?.terminalService ?? null,
     orchestrator: svc?.orchestrator ?? null,
     database: svc?.database ?? null,
+    issueSyncEngine: svc?.issueSyncEngine ?? null,
+    pushEngine: svc?.pushEngine ?? null,
   })
 })

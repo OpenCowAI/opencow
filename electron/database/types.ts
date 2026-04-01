@@ -27,6 +27,25 @@ export interface IssueTable {
   updated_at: number
   read_at: number | null
   last_agent_activity_at: number | null
+  /** FK → issue_providers.id; NULL for local-only issues */
+  provider_id: string | null
+  /** Remote issue number (e.g. GitHub #42) */
+  remote_number: number | null
+  /** Full URL to the remote issue */
+  remote_url: string | null
+  /** Raw remote state string (e.g. 'open', 'closed') */
+  remote_state: string | null
+  /** Epoch ms when last synced from remote */
+  remote_synced_at: number | null
+  // Phase 2 fields
+  /** JSON: IssueAssignee[] */
+  assignees: string | null
+  /** JSON: IssueMilestone */
+  milestone: string | null
+  /** 'synced' | 'local_ahead' | 'conflict' | NULL */
+  sync_status: string | null
+  /** Epoch ms of remote issue's updated_at (for conflict detection) */
+  remote_updated_at: number | null
 }
 
 export interface CustomLabelTable {
@@ -347,10 +366,74 @@ export interface MemorySettingsTable {
   updated_at: number
 }
 
+// ─── Issue Change Queue ──────────────────────────────────────────────────
+
+export interface IssueChangeQueueTable {
+  id: string
+  local_issue_id: string
+  provider_id: string
+  /** 'create' | 'update' | 'close' | 'reopen' | 'comment' */
+  operation: string
+  /** JSON: full field snapshot for idempotent replay */
+  payload: string
+  /** 'pending' | 'processing' | 'completed' | 'failed' */
+  status: string
+  retry_count: number
+  max_retries: number
+  error_message: string | null
+  created_at: number
+  processed_at: number | null
+}
+
+// ─── Issue Comments ─────────────────────────────────────────────────────
+
+export interface IssueCommentTable {
+  id: string
+  issue_id: string
+  provider_id: string | null
+  /** Remote comment ID from GitHub/GitLab (null for local-only) */
+  remote_id: string | null
+  author_login: string | null
+  author_name: string | null
+  author_avatar: string | null
+  body: string
+  /** 'markdown' | 'tiptap' */
+  body_format: string
+  /** 0 | 1 */
+  is_local: number
+  created_at: number
+  updated_at: number
+  synced_at: number | null
+}
+
+// ─── Issue Sync Logs ────────────────────────────────────────────────────
+
+export interface IssueSyncLogTable {
+  id: string
+  provider_id: string
+  /** 'pull' | 'push' | 'full' */
+  sync_type: string
+  /** 'running' | 'success' | 'partial' | 'failed' */
+  status: string
+  issues_created: number
+  issues_updated: number
+  issues_failed: number
+  comments_synced: number
+  conflicts: number
+  error_message: string | null
+  started_at: number
+  completed_at: number | null
+  duration_ms: number | null
+}
+
 // ─── Database schema ─────────────────────────────────────────────────────
 
 export interface Database {
   issues: IssueTable
+  issue_providers: IssueProviderTable
+  issue_change_queue: IssueChangeQueueTable
+  issue_comments: IssueCommentTable
+  issue_sync_logs: IssueSyncLogTable
   custom_labels: CustomLabelTable
   inbox_messages: InboxMessageTable
   managed_sessions: ManagedSessionTable
@@ -437,6 +520,36 @@ export interface RepoSourceSyncTable {
   last_synced_at: number | null
   last_commit: string | null
   error_message: string | null
+}
+
+// ─── Issue Providers ─────────────────────────────────────────────────────
+
+export interface IssueProviderTable {
+  id: string
+  project_id: string
+  /** 'github' | 'gitlab' */
+  platform: string
+  repo_owner: string
+  repo_name: string
+  /** Custom API base URL for GitLab self-hosted; NULL for cloud defaults */
+  api_base_url: string | null
+  /** Key reference into CredentialStore — never plaintext */
+  auth_token_ref: string
+  /** 'keychain' | 'encrypted' */
+  auth_storage: string
+  /** 0 | 1 */
+  sync_enabled: number
+  sync_interval_s: number
+  last_synced_at: number | null
+  // Phase 2 fields
+  /** 'readonly' | 'push' | 'bidirectional' */
+  sync_direction: string
+  /** Opaque cursor for incremental sync */
+  sync_cursor: string | null
+  /** Platform-specific metadata as JSON (e.g., Linear teamId, teamKey, cached WorkflowStates) */
+  metadata: string | null
+  created_at: number
+  updated_at: number
 }
 
 // ─── Issue Context Refs ──────────────────────────────────────────────────

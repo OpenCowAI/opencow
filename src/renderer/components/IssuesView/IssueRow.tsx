@@ -2,7 +2,7 @@
 
 import { memo, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
-import { ChevronRight, StickyNote } from 'lucide-react'
+import { ChevronRight, ExternalLink, StickyNote } from 'lucide-react'
 import { cn } from '../../lib/utils'
 import { ISSUE_STATUS_THEME, ISSUE_STATUS_RING_ORDER } from '../../constants/issueStatus'
 import { IssueStatusIcon, IssuePriorityIcon } from './IssueIcons'
@@ -111,7 +111,7 @@ export const IssueRow = memo(function IssueRow({
 
   return (
     <button
-      onClick={onSelect}
+      onClick={(e) => onSelect(e)}
       onMouseEnter={onPrefetch}
       onContextMenu={onContextMenu}
       className={cn(
@@ -204,6 +204,23 @@ export const IssueRow = memo(function IssueRow({
           </span>
         )}
       </div>
+
+      {/* Remote source badge */}
+      {issue.remoteNumber != null && (
+        <span
+          role="link"
+          tabIndex={-1}
+          onClick={(e) => {
+            e.stopPropagation()
+            if (issue.remoteUrl && /^https?:\/\//i.test(issue.remoteUrl)) window.open(issue.remoteUrl, '_blank')
+          }}
+          className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-xs text-[hsl(var(--muted-foreground))] bg-[hsl(var(--muted)/0.6)] hover:bg-[hsl(var(--muted))] hover:text-[hsl(var(--foreground))] transition-colors cursor-pointer shrink-0"
+          title={issue.remoteUrl ?? undefined}
+        >
+          <ExternalLink className="w-2.5 h-2.5" />
+          <span className="text-[10px] font-medium leading-none">#{issue.remoteNumber}</span>
+        </span>
+      )}
 
       {/* Priority */}
       <IssuePriorityIcon priority={issue.priority} />

@@ -150,11 +150,17 @@ export const AssistantMessage = memo(function AssistantMessage({
       if (newBlock.type === 'thinking' && oldBlock.type === 'thinking') {
         return oldBlock.thinking === newBlock.thinking ? oldBlock : newBlock
       }
-      // tool_use block: progressBlocks may change during Evose streaming.
-      // A new progressBlocks reference means new streaming data arrived —
-      // propagate the new block to trigger ContentBlockRenderer re-render.
+      // tool_use block: propagate new reference when observable content changes.
+      //   - progressBlocks: Evose relay streaming data (structured blocks)
+      //   - progress: plain-text tool output (Claude engine tool execution)
+      //   - id: block identity (shouldn't change, but guard defensively)
+      // When none of these changed, reuse old reference → ContentBlockRenderer
+      // memo skips → zero DOM mutation → zero style recalc / paint.
       if (newBlock.type === 'tool_use' && oldBlock.type === 'tool_use') {
-        return newBlock.progressBlocks !== oldBlock.progressBlocks ? newBlock : oldBlock
+        if (newBlock.progressBlocks !== oldBlock.progressBlocks) return newBlock
+        if (newBlock.progress !== oldBlock.progress) return newBlock
+        if (newBlock.id !== oldBlock.id) return newBlock
+        return oldBlock
       }
       // Other block types (tool_result, image, document, slash_command):
       // content is immutable once emitted — safe to reuse old reference.

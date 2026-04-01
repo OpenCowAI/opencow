@@ -26,6 +26,8 @@ interface DialogProps {
   size?: DialogSize
   children: React.ReactNode
   className?: string
+  /** When true, clicking the overlay does not close the dialog (Escape key still works). */
+  preventOverlayClose?: boolean
 }
 
 /**
@@ -56,7 +58,8 @@ export function Dialog({
   title,
   size = 'md',
   children,
-  className
+  className,
+  preventOverlayClose = false
 }: DialogProps): React.JSX.Element | null {
   const dialogRef = useRef<HTMLDivElement>(null)
   const blockerId = useId()
@@ -107,7 +110,7 @@ export function Dialog({
           phase === 'enter' && 'modal-overlay-enter',
           phase === 'exit' && 'modal-overlay-exit'
         )}
-        onClick={onClose}
+        onClick={preventOverlayClose ? undefined : onClose}
         aria-hidden="true"
       />
 

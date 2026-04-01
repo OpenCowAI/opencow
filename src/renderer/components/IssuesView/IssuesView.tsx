@@ -16,6 +16,7 @@ import { IssueDndProvider, useIssueDndContext } from './IssueDndProvider'
 import { ViewTabBar } from './ViewTabBar'
 import { EphemeralFilterBar } from './EphemeralFilterBar'
 import { DisplayControlBar } from './DisplayControlBar'
+import { ProviderQuickSwitcher } from './ProviderQuickSwitcher'
 import { IssueGroupedList } from './IssueGroupedList'
 
 export function IssuesView(): React.JSX.Element {
@@ -58,6 +59,9 @@ export function IssuesView(): React.JSX.Element {
         {/* Right: Group + Sort + Create */}
         <div className="flex-none flex items-center gap-1">
           <DisplayControlBar />
+
+          {/* Provider quick switcher */}
+          <ProviderQuickSwitcher />
 
           {/* Separator */}
           <span className="w-px h-3 bg-[hsl(var(--border)/0.4)]" />

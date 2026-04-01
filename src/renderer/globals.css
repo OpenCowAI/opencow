@@ -238,6 +238,8 @@ select {
   border-radius: 9999px;
   background-color: currentColor;
   animation: streaming-dot-pulse 1.05s ease-in-out infinite;
+  will-change: opacity, transform;
+  contain: strict;
 }
 
 .streaming-dot:nth-child(2) {

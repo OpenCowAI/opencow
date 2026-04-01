@@ -62,6 +62,7 @@ import {
   CircleDot,
   PlusCircle,
   FolderOpen,
+  MessageSquare,
   // Schedule tool icons
   Calendar,
   Clock,
@@ -213,6 +214,9 @@ const TOOL_ICONS: Readonly<Record<string, LucideIcon>> = {
   get_issue: CircleDot,
   create_issue: PlusCircle,
   update_issue: PenLine,
+  search_remote_issues: Globe,
+  get_remote_issue: Globe,
+  comment_remote_issue: MessageSquare,
 
   // ── Project Capability tools ──
   list_projects: FolderOpen,
@@ -392,6 +396,14 @@ function getToolTargetByNormName(name: string, input: Record<string, unknown>): 
       return typeof input.title === 'string' ? safeSlice(input.title, 0, MAX_TEXT_TARGET) : ''
     case 'update_issue':
       return updateFieldsTarget(input, ['title', 'description', 'status', 'priority', 'labels', 'projectId', 'parentIssueId'])
+
+    // ── Remote Issue tools ──────────────────────────────────────────────
+    case 'search_remote_issues':
+      return typeof input.providerId === 'string' ? input.providerId : ''
+    case 'get_remote_issue':
+      return typeof input.number === 'number' ? `#${input.number}` : ''
+    case 'comment_remote_issue':
+      return typeof input.number === 'number' ? `#${input.number}` : ''
 
     // ── Project tools ──────────────────────────────────────────────────
     case 'list_projects':

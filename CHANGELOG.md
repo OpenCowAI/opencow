@@ -4,6 +4,25 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.3.13] - 2026-03-31
+
+### Added
+- GitHub, GitLab, and Linear issue provider integration with bidirectional sync — pull remote issues into local workspace, push local changes back, and manage connections via Project Settings UI
+- Remote issue MCP tools (`search_remote_issues`, `get_remote_issue`, `comment_remote_issue`) for AI agent access to external issue trackers
+- Project Settings modal with provider add wizard, edit dialog, connection testing, and manual sync trigger
+- Provider quick switcher for filtering the issue list by repository
+- Batch operations toolbar with multi-select (Cmd/Ctrl+Click) for bulk status, priority, label, and delete actions
+- Remote source metadata display in issue detail view (remote number, state, sync time)
+- "Publish to remote" toggle in AI Issue Creator for creating issues directly on connected repositories
+
+### Changed
+- Streaming performance: dedicated progress throttle channel (200ms/5fps) reduces IPC round-trips by 75% for tool output while maintaining 50ms/20fps for text streaming
+- StreamingMessageBuffer provides O(1) zero-copy streaming via direct ManagedSession reference
+- DataBus skips expensive snapshotState() for non-mutating forwarding events during streaming
+- IPC progress strings capped at 8000 characters to reduce structured-clone overhead
+- Issue detail view layout simplified from resizable PanelGroup to fixed layout
+- Optimistic issue patches for cross-store side effects avoid full loadIssues cascade
+
 ## [0.3.12] - 2026-03-31
 
 ### Added

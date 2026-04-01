@@ -57,18 +57,49 @@ export class DataBus {
   }
 
   dispatch(event: DataBusEvent): void {
-    const prevState = snapshotState(this.state)
+    // Forwarding events (command:session:message, browser:*, etc.) do not
+    // mutate DataBus state — they are routed directly to broadcastListeners
+    // which forward them to the renderer via IPC.  Skipping snapshotState()
+    // for these events eliminates 2× O(n) deep-copy of all sessions/projects/
+    // tasks/hookEvents per dispatch — critical during streaming where
+    // command:session:message fires at ~20 fps.
+    const mutates = this.eventMutatesState(event.type)
 
-    this.applyEvent(event)
-
-    const nextState = snapshotState(this.state)
+    const prevState = mutates ? snapshotState(this.state) : null
+    if (mutates) this.applyEvent(event)
+    const nextState = mutates ? snapshotState(this.state) : null
 
     for (const listener of this.broadcastListeners) {
       listener(event)
     }
 
-    for (const listener of this.stateChangeListeners) {
-      listener(prevState, nextState, event)
+    if (prevState && nextState) {
+      for (const listener of this.stateChangeListeners) {
+        listener(prevState, nextState, event)
+      }
+    }
+  }
+
+  /**
+   * Determine whether an event type mutates DataBus state.
+   *
+   * Only events with explicit `applyEvent()` handlers return true.
+   * All other events are forwarding-only (routed to broadcastListeners
+   * without touching state) and can skip the expensive snapshotState() calls.
+   */
+  private eventMutatesState(type: string): boolean {
+    switch (type) {
+      case 'sessions:updated':
+      case 'tasks:updated':
+      case 'stats:updated':
+      case 'hooks:event':
+      case 'onboarding:status':
+      case 'inbox:updated':
+      case 'settings:updated':
+      case 'provider:status':
+        return true
+      default:
+        return false
     }
   }
 

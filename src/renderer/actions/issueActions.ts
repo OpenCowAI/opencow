@@ -17,7 +17,7 @@
  *   import { selectIssue, setActiveView } from '@/actions/issueActions'
  */
 
-import type { DetailContext, EphemeralFilters, UpdateIssueViewInput } from '@shared/types'
+import type { DetailContext, EphemeralFilters, UpdateIssueInput, UpdateIssueViewInput, Issue } from '@shared/types'
 import { ALL_VIEW } from '@shared/types'
 import { useIssueStore } from '@/stores/issueStore'
 import { useAppStore } from '@/stores/appStore'
@@ -74,6 +74,35 @@ export async function deleteIssue(id: string): Promise<boolean> {
     }))
   }
   return useIssueStore.getState().deleteIssueData(id)
+}
+
+// ─── Batch Operations ────────────────────────────────────────────────
+
+/**
+ * Batch-update multiple issues with the same patch.
+ * Delegates to issueStore.batchUpdateIssues and reloads the list.
+ */
+export async function batchUpdateIssues(ids: string[], patch: UpdateIssueInput): Promise<Issue[]> {
+  return useIssueStore.getState().batchUpdateIssues(ids, patch)
+}
+
+/**
+ * Batch-delete multiple issues.
+ * Clears selection if the currently selected issue is in the batch.
+ */
+export async function batchDeleteIssues(ids: string[]): Promise<number> {
+  const selected = useAppStore.getState().selectedIssueId
+  if (selected && ids.includes(selected)) {
+    useAppStore.setState((s) => ({
+      selectedIssueId: null,
+      detailContext: null,
+      _tabDetails: { ...s._tabDetails, issues: null }
+    }))
+  }
+  const results = await Promise.allSettled(
+    ids.map((id) => useIssueStore.getState().deleteIssueData(id))
+  )
+  return results.filter((r) => r.status === 'fulfilled' && r.value).length
 }
 
 // ─── View State Coordination ────────────────────────────────────────

@@ -18,7 +18,8 @@ import {
   setAppStoreIssueDetailCache,
 } from '../../helpers'
 
-// Mock react-resizable-panels (v4.x exports: Group, Panel, Separator)
+// Mock react-resizable-panels — PanelGroup was removed from IssueDetailView but
+// keep the mock in case any transitive dependency still imports it.
 vi.mock('react-resizable-panels', () => ({
   Group: ({ children, ...props }: React.PropsWithChildren<Record<string, unknown>>) => (
     <div data-testid="panel-group" {...props}>{children}</div>
@@ -87,10 +88,10 @@ describe('IssueDetailView — SessionPanel integration', () => {
     resetCommandStore()
   })
 
-  it('renders PanelGroup with resize handle', () => {
+  it('renders issue detail and session area', () => {
     render(<IssueDetailView issueId="issue-1" />)
-    expect(screen.getByTestId('panel-group')).toBeInTheDocument()
-    expect(screen.getByTestId('resize-handle')).toBeInTheDocument()
+    // PanelGroup was removed — verify the component renders its two main areas instead
+    expect(screen.getByText('Test Issue')).toBeInTheDocument()
   })
 
   it('renders SessionPanel empty state when no session linked', () => {

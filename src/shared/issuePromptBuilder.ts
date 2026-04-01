@@ -7,6 +7,17 @@ import { buildStructuredContent, type UserMessageBlock } from './contentBuilder'
 
 // ─── Options ──────────────────────────────────────────────────────────────
 
+/** Remote provider metadata injected into the prompt when available. */
+export interface IssueRemoteContext {
+  platform: 'github' | 'gitlab' | 'linear'
+  repoOwner: string
+  repoName: string
+  remoteNumber: number | null
+  remoteUrl: string | null
+  remoteState: string | null
+  syncStatus: string | null
+}
+
 export interface BuildIssuePromptOptions {
   /** Locale-aware call-to-action appended at the end. */
   actionText?: string
@@ -16,6 +27,8 @@ export interface BuildIssuePromptOptions {
    * .md body content. When omitted, slash mentions are rendered as `/<name>`.
    */
   readSource?: (sourcePath: string) => Promise<string>
+  /** When provided, remote metadata is injected into the prompt context. */
+  remoteContext?: IssueRemoteContext | null
 }
 
 // ─── Core builder ─────────────────────────────────────────────────────────
@@ -49,12 +62,12 @@ export async function buildIssuePrompt(
   issue: Pick<Issue, 'title' | 'description' | 'richContent' | 'images'>,
   options: BuildIssuePromptOptions = {},
 ): Promise<UserMessageContent> {
-  const { actionText = 'Please work on this issue.', readSource } = options
+  const { actionText = 'Please work on this issue.', readSource, remoteContext } = options
   const images: IssueImage[] = issue.images ?? []
 
   // Fast path: no rich content or no readSource → plain text
   if (!issue.richContent || !readSource) {
-    return buildPlainTextPrompt(issue, actionText, images)
+    return buildPlainTextPrompt(issue, actionText, images, remoteContext)
   }
 
   // Parse once, extract segments once — then decide the path
@@ -64,7 +77,7 @@ export async function buildIssuePrompt(
     const hasSlash = allSegments.some((s) => s.type === 'slashMention')
 
     if (!hasSlash) {
-      return buildPlainTextPrompt(issue, actionText, images)
+      return buildPlainTextPrompt(issue, actionText, images, remoteContext)
     }
 
     // Partition segments by type using type predicates
@@ -86,12 +99,13 @@ export async function buildIssuePrompt(
     )
 
     if (!hasSlashCommands) {
-      return buildPlainTextPrompt(issue, actionText, images)
+      return buildPlainTextPrompt(issue, actionText, images, remoteContext)
     }
 
     // Build the final block array (immutable — no mutation of resolvedBlocks)
+    const remoteBlock = remoteContext ? `\n${formatRemoteContext(remoteContext)}\n\n` : '\n'
     const blocks = [
-      { type: 'text' as const, text: `Issue: ${issue.title}\n\n` },
+      { type: 'text' as const, text: `Issue: ${issue.title}${remoteBlock}` },
       ...prependContextFiles(fileMentions, resolvedBlocks),
       { type: 'text' as const, text: `\n\n${actionText}` },
     ]
@@ -107,7 +121,7 @@ export async function buildIssuePrompt(
   } catch (err) {
     // Log expansion failure for debugging, then gracefully degrade to plain text
     console.warn('[issuePromptBuilder] richContent expansion failed, falling back to plain text:', err)
-    return buildPlainTextPrompt(issue, actionText, images)
+    return buildPlainTextPrompt(issue, actionText, images, remoteContext)
   }
 }
 
@@ -122,9 +136,13 @@ export async function buildIssuePrompt(
 export function buildIssuePromptText(
   issue: Pick<Issue, 'title' | 'description'>,
   actionText = 'Please work on this issue.',
+  remoteContext?: IssueRemoteContext | null,
 ): string {
   const description = issue.description?.trim()
   const sections = [`Issue: ${issue.title}`]
+  if (remoteContext) {
+    sections.push(formatRemoteContext(remoteContext))
+  }
   if (description) sections.push(description)
   sections.push(actionText)
   return sections.join('\n\n')
@@ -156,12 +174,31 @@ function prependContextFiles(
   return result
 }
 
+/**
+ * Format remote context as an XML block for injection into the prompt.
+ * AI agents can use this to reference the remote issue directly.
+ */
+function formatRemoteContext(ctx: IssueRemoteContext): string {
+  const lines = [
+    `<remote-issue-context>`,
+    `  platform: ${ctx.platform}`,
+    `  repository: ${ctx.repoOwner}/${ctx.repoName}`,
+  ]
+  if (ctx.remoteNumber != null) lines.push(`  number: #${ctx.remoteNumber}`)
+  if (ctx.remoteUrl) lines.push(`  url: ${ctx.remoteUrl}`)
+  if (ctx.remoteState) lines.push(`  state: ${ctx.remoteState}`)
+  if (ctx.syncStatus) lines.push(`  sync-status: ${ctx.syncStatus}`)
+  lines.push(`</remote-issue-context>`)
+  return lines.join('\n')
+}
+
 function buildPlainTextPrompt(
   issue: Pick<Issue, 'title' | 'description'>,
   actionText: string,
   images: IssueImage[],
+  remoteContext?: IssueRemoteContext | null,
 ): UserMessageContent {
-  const text = buildIssuePromptText(issue, actionText)
+  const text = buildIssuePromptText(issue, actionText, remoteContext)
 
   if (images.length === 0) return text
 

@@ -3,7 +3,7 @@
 import { useRef, useEffect, useLayoutEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { createPortal } from 'react-dom'
-import { Pin, Archive, Trash2, Pencil } from 'lucide-react'
+import { Pin, Archive, Trash2, Pencil, Settings } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useAppStore } from '@/stores/appStore'
 import { useExitAnimation } from '@/hooks/useModalAnimation'
@@ -26,6 +26,8 @@ interface ProjectContextMenuProps {
   onRenameRequest: (projectId: string) => void
   /** Invoked with the full Project object when the user selects "Remove". */
   onDeleteRequest: (project: Project) => void
+  /** Invoked with the project ID when the user selects "Project Settings". */
+  onSettingsRequest: (projectId: string) => void
 }
 
 // ─── Component ───────────────────────────────────────────────────────────────
@@ -41,6 +43,7 @@ export function ProjectContextMenu({
   onClose,
   onRenameRequest,
   onDeleteRequest,
+  onSettingsRequest,
 }: ProjectContextMenuProps): React.JSX.Element {
   const { t } = useTranslation('navigation')
   const pinProject = useAppStore((s) => s.pinProject)
@@ -131,6 +134,11 @@ export function ProjectContextMenu({
     requestClose()
   }
 
+  const handleSettings = (): void => {
+    onSettingsRequest(project.id)
+    requestClose()
+  }
+
   const handleDeleteClick = (): void => {
     onDeleteRequest(project)
     requestClose()
@@ -177,6 +185,14 @@ export function ProjectContextMenu({
       >
         <Pencil className="h-3.5 w-3.5" aria-hidden="true" />
         {t('projectActions.rename')}
+      </button>
+      <button
+        role="menuitem"
+        onClick={handleSettings}
+        className="w-full flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-[hsl(var(--foreground)/0.04)] focus:bg-[hsl(var(--foreground)/0.04)] outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--ring))] focus-visible:ring-offset-1"
+      >
+        <Settings className="h-3.5 w-3.5" aria-hidden="true" />
+        {t('projectActions.settings')}
       </button>
       <div className="my-1 border-t border-[hsl(var(--border))]" role="separator" />
       <button
