@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.3.14] - 2026-04-02
+
+### Added
+- Windows + Linux CI build and release workflow (`release-all-platforms.yml`) to produce and publish multi-platform artifacts via GitHub Actions
+
+### Changed
+-
+
+### Fixed
+- Session streaming lifecycle now clears stale terminal streaming indicators after terminal stop, ensuring final-state cleanup consistency
+
 ## [0.3.13] - 2026-03-31
 
 ### Added
