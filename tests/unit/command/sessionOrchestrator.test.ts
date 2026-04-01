@@ -734,6 +734,78 @@ describe('SessionOrchestrator.stopSession — deterministic cleanup', () => {
     expect(stoppedEvents[0][0].payload.stopReason).toBe('user_stopped')
   })
 
+  it('dispatches finalized assistant message before session:stopped when stopping active stream', async () => {
+    const id = await orchestrator.startSession({ prompt: 'test' })
+    const runtimes = (orchestrator as unknown as {
+      runtimes: Map<string, { session: { addMessage: (role: 'assistant' | 'user', blocks: unknown[], isStreaming?: boolean) => string } }>
+    }).runtimes
+    const rt = runtimes.get(id)
+    expect(rt).toBeTruthy()
+    if (rt) {
+      rt.session.addMessage('assistant', [{ type: 'text', text: 'streaming response' }], true)
+    }
+    await orchestrator.stopSession(id)
+
+    const events = (deps.dispatch as ReturnType<typeof vi.fn>).mock.calls
+      .map(([event]: [DataBusEvent]) => event)
+      .filter((event) => event.type === 'command:session:message' || event.type === 'command:session:stopped')
+
+    const stoppedIndex = events.findIndex((event) => event.type === 'command:session:stopped')
+    expect(stoppedIndex).toBeGreaterThanOrEqual(0)
+
+    const finalizedMessage = events
+      .slice(0, stoppedIndex)
+      .reverse()
+      .find(
+        (event): event is Extract<DataBusEvent, { type: 'command:session:message' }> =>
+          event.type === 'command:session:message' &&
+          event.payload.sessionId === id &&
+          event.payload.message.role === 'assistant' &&
+          event.payload.message.isStreaming === false,
+      )
+
+    expect(finalizedMessage).toBeTruthy()
+  })
+
+  it('ignores late runtime partial events after manual stop (no streaming resurrection)', async () => {
+    const id = await orchestrator.startSession({ prompt: 'test' })
+    const runtimes = (orchestrator as unknown as {
+      runtimes: Map<string, { session: { addMessage: (role: 'assistant' | 'user', blocks: unknown[], isStreaming?: boolean) => string } }>
+    }).runtimes
+    const rt = runtimes.get(id)
+    expect(rt).toBeTruthy()
+    let streamMsgId: string | null = null
+    if (rt) {
+      streamMsgId = rt.session.addMessage('assistant', [{ type: 'text', text: 'streaming response' }], true)
+    }
+    expect(streamMsgId).toBeTruthy()
+
+    await orchestrator.stopSession(id)
+
+    // Simulate a buffered SDK partial event that arrives after stop.
+    if (pendingNextResolvers.length > 0) {
+      pendingNextResolvers[0]({
+        value: {
+          type: 'assistant',
+          subtype: 'partial',
+          message: {
+            content: [{ type: 'text', text: 'late partial after stop' }],
+          },
+        },
+        done: false,
+      })
+      pendingNextResolvers.splice(0, 1)
+      await new Promise((resolve) => setTimeout(resolve, 20))
+    }
+
+    const events = (deps.dispatch as ReturnType<typeof vi.fn>).mock.calls
+      .map(([event]: [DataBusEvent]) => event)
+      .filter((event): event is Extract<DataBusEvent, { type: 'command:session:message' }> => event.type === 'command:session:message')
+      .filter((event) => event.payload.sessionId === id && event.payload.message.role === 'assistant')
+
+    expect(events.some((event) => event.payload.message.isStreaming === true)).toBe(false)
+  })
+
   it('cleans runtime entry on stopSession', async () => {
     const id = await orchestrator.startSession({ prompt: 'test' })
     const runtimes = (orchestrator as unknown as { runtimes: Map<string, unknown> }).runtimes

@@ -5,8 +5,24 @@ import { applyConversationDomainEffects } from '../../../electron/conversation/p
 import type { ConversationDomainEffect } from '../../../electron/conversation/domain/effects'
 import type { SessionContext } from '../../../electron/command/sessionContext'
 
+function makeTurnResultEffect(params?: {
+  outcome?: 'success' | 'max_turns' | 'execution_error' | 'budget_exceeded' | 'structured_output_error'
+  result?: string
+  errors?: string[]
+}): ConversationDomainEffect {
+  return {
+    type: 'apply_turn_result',
+    payload: {
+      outcome: params?.outcome ?? 'success',
+      ...(params?.errors ? { errors: params.errors } : {}),
+      ...(params?.result ? { result: params.result } : {}),
+    },
+  }
+}
+
 function makeContext(params: { engineKind: 'claude' | 'codex' }) {
   const session = {
+    origin: { source: 'issue' },
     recordTurnUsage: vi.fn(),
     getEngineKind: vi.fn(() => params.engineKind),
     applyContextSnapshot: vi.fn(() => true),
@@ -14,6 +30,20 @@ function makeContext(params: { engineKind: 'claude' | 'codex' }) {
     addSystemEvent: vi.fn(() => 'sys-1'),
     setActivity: vi.fn(),
     updateSystemEventById: vi.fn(),
+    finalizeStreamingMessage: vi.fn(),
+    getMessages: vi.fn(() => []),
+    setActiveToolUseId: vi.fn(),
+    setCostUsd: vi.fn(),
+    setFinalTokenUsage: vi.fn(),
+    setContextLimitFromModelUsage: vi.fn(),
+    getContextUsedTokens: vi.fn(() => 0),
+    getModel: vi.fn(() => 'test-model'),
+    transition: vi.fn(),
+    snapshot: vi.fn(() => ({
+      totalCostUsd: 0,
+      origin: { source: 'issue' },
+      error: 'fallback error',
+    })),
   }
 
   return {
@@ -22,9 +52,15 @@ function makeContext(params: { engineKind: 'claude' | 'codex' }) {
     dispatchLastMessage: vi.fn(),
     dispatchMessageById: vi.fn(),
     queueMessageDispatch: vi.fn(),
+    dispatch: vi.fn(),
     timers: { cancel: vi.fn(), set: vi.fn() },
     throttle: { scheduleSession: vi.fn(), scheduleMessage: vi.fn(), scheduleProgress: vi.fn(), flushNow: vi.fn() },
     buffer: { isActive: false, begin: vi.fn(), updateBlocks: vi.fn(), setActiveToolUseId: vi.fn(), appendToolProgress: vi.fn(), getSnapshot: vi.fn(() => null), finalize: vi.fn(() => null), clear: vi.fn() },
+    stream: { finalizeStreaming: vi.fn(() => null) },
+    relay: { clear: vi.fn() },
+    onResultReceived: vi.fn(),
+    persistSession: vi.fn(() => Promise.resolve()),
+    sessionId: 'session-1',
     isSessionAlive: vi.fn(() => true),
   } as unknown as SessionContext & {
     session: typeof session
@@ -131,6 +167,55 @@ describe('applyConversationDomainEffects', () => {
         preTokens: 150000,
         phase: 'compacting',
       })
+    )
+  })
+
+  it('dispatches finalized streaming message on turn.result when stream was active', () => {
+    const ctx = makeContext({ engineKind: 'codex' })
+    ctx.stream.finalizeStreaming = vi.fn(() => 'assistant-1')
+
+    applyConversationDomainEffects({
+      effects: [makeTurnResultEffect({ outcome: 'success', result: 'done' })],
+      ctx,
+    })
+
+    expect(ctx.session.finalizeStreamingMessage).toHaveBeenCalledWith('assistant-1')
+    expect(ctx.dispatchMessageById).toHaveBeenCalledWith('assistant-1')
+  })
+
+  it('does not dispatch finalized message when there is no active stream on turn.result', () => {
+    const ctx = makeContext({ engineKind: 'codex' })
+    ctx.stream.finalizeStreaming = vi.fn(() => null)
+
+    applyConversationDomainEffects({
+      effects: [makeTurnResultEffect({ outcome: 'success' })],
+      ctx,
+    })
+
+    expect(ctx.session.finalizeStreamingMessage).not.toHaveBeenCalled()
+    expect(ctx.dispatchMessageById).not.toHaveBeenCalled()
+  })
+
+  it('dispatches finalized streaming message on protocol violation when stream was active', () => {
+    const ctx = makeContext({ engineKind: 'codex' })
+    ctx.stream.finalizeStreaming = vi.fn(() => 'assistant-violation-1')
+
+    applyConversationDomainEffects({
+      effects: [
+        {
+          type: 'apply_protocol_violation',
+          payload: { reason: 'bad event order' },
+        },
+      ],
+      ctx,
+    })
+
+    expect(ctx.session.finalizeStreamingMessage).toHaveBeenCalledWith('assistant-violation-1')
+    expect(ctx.dispatchMessageById).toHaveBeenCalledWith('assistant-violation-1')
+    expect(ctx.dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'command:session:error',
+      }),
     )
   })
 })

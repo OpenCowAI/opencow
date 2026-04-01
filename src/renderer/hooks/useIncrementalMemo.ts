@@ -72,6 +72,7 @@ export function useIncrementalMemo<TItem, TResult>(
     result: TResult
     processedCount: number
     resetKey: string
+    lastItems: readonly TItem[]
   } | null>(null)
 
   return useMemo(() => {
@@ -84,17 +85,43 @@ export function useIncrementalMemo<TItem, TResult>(
       items.length < cache.processedCount
     ) {
       const initial = init()
-      cache = { result: initial, processedCount: 0, resetKey }
+      cache = { result: initial, processedCount: 0, resetKey, lastItems: items }
       cacheRef.current = cache
     }
 
-    // Nothing new to process
-    if (items.length === cache.processedCount) return cache.result
+    // Same logical length: append-only delta is empty, but callers can still
+    // replace existing items in-place (e.g. assistant message finalization:
+    // isStreaming=true -> false on manual stop). In that case, incremental
+    // append processing must fall back to a full rebuild.
+    if (items.length === cache.processedCount) {
+      const prevItems = cache.lastItems
+      let hasInPlaceUpdate = false
+      if (prevItems !== items) {
+        for (let i = 0; i < items.length; i++) {
+          if (prevItems[i] !== items[i]) {
+            hasInPlaceUpdate = true
+            break
+          }
+        }
+      }
+
+      if (!hasInPlaceUpdate) {
+        cache.lastItems = items
+        return cache.result
+      }
+
+      const rebuilt = init()
+      cache.result = processor(items, rebuilt, items)
+      cache.processedCount = items.length
+      cache.lastItems = items
+      return cache.result
+    }
 
     // Process only the delta
     const delta = items.slice(cache.processedCount)
     cache.result = processor(delta, cache.result, items)
     cache.processedCount = items.length
+    cache.lastItems = items
     return cache.result
   }, [items, resetKey, processor, init])
 }

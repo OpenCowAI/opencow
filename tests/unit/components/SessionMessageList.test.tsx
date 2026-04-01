@@ -128,6 +128,25 @@ describe('SessionMessageList', () => {
     expect(document.querySelector('.streaming-dots')).toBeNull()
   })
 
+  it('removes streaming cursor when message updates in-place at same list length', () => {
+    const { rerender, container } = render(
+      <SessionMessageList
+        sessionId="test-session"
+        messages={[makeAssistantMsg(textBlocks('Working...'), { id: 'msg-inplace', isStreaming: true })]}
+      />
+    )
+    expect(container.querySelector('.streaming-dots')).toBeInTheDocument()
+
+    // Same message id, same list length — only isStreaming flips to false.
+    rerender(
+      <SessionMessageList
+        sessionId="test-session"
+        messages={[makeAssistantMsg(textBlocks('Working...'), { id: 'msg-inplace', isStreaming: false })]}
+      />
+    )
+    expect(container.querySelector('.streaming-dots')).toBeNull()
+  })
+
   it('renders multiple messages in order', () => {
     render(
       <SessionMessageList

@@ -202,6 +202,14 @@ function _flushAll(): void {
   _flushPendingMeta()
 }
 
+function _handleSessionTerminal(sessionId: string): void {
+  // Terminal events must flush buffered writes first so overlay merge applies
+  // on the latest session/message snapshots.
+  _flushAll()
+  // Merge pending streaming overlay into structural messages for downstream scanners.
+  useCommandStore.getState().mergeStreamingOverlay(sessionId)
+}
+
 /** Cancel any pending flushes and discard buffered events. */
 function _cancelPendingFlush(): void {
   if (_msgTimerId !== 0) {
@@ -344,16 +352,7 @@ export function useAppBootstrap(): void {
         }
         case 'command:session:idle':
         case 'command:session:stopped': {
-          // Terminal events — flush any buffered metadata so subsequent
-          // reads against sessionById see the latest state.
-          _flushAll()
-          // Merge any pending streaming overlay back into sessionMessages.
-          // The extended fast path keeps ALL assistant updates (including
-          // finalized messages) in the overlay to avoid slow-path cascades
-          // during tool-dense workflows.  Now that the session is settled,
-          // downstream scanners (groupMessages, turnDiffMap, etc.) need the
-          // complete message list — merge the overlay so they recompute.
-          useCommandStore.getState().mergeStreamingOverlay(event.payload.sessionId)
+          _handleSessionTerminal(event.payload.sessionId)
           // State already synced by preceding command:session:updated event.
           // Both idle and stopped share the same side effects:
           //   1. Update linked issue's lastAgentActivityAt timestamp
@@ -407,8 +406,7 @@ export function useAppBootstrap(): void {
           break
         }
         case 'command:session:error': {
-          // Merge overlay — same rationale as idle/stopped above.
-          useCommandStore.getState().mergeStreamingOverlay(event.payload.sessionId)
+          _handleSessionTerminal(event.payload.sessionId)
           // State already synced by preceding command:session:updated event.
           // Error is available via commandStore.sessionById[id].error —
           // browser overlay reads from there directly.

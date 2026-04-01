@@ -428,37 +428,28 @@ export const useCommandStore = create<CommandStore>((set, get) => ({
           const pos = posMap.get(id)
           if (pos !== undefined) {
             // ── Update existing message ──────────────────────────────
-            const _existing = currentList[pos]
-
             if (msg.role === 'assistant') {
-              // FAST PATH: ALL assistant message updates — both streaming AND
-              // finalized (isStreaming → false).
+              // FAST PATH (assistant): only for the CURRENT overlay target.
               //
-              // Write to streamingMessageBySession ONLY — sessionMessages
-              // reference stays stable → all downstream useMemos skip:
-              //   - groupMessages: the sessionMessages entry is unchanged
-              //   - buildToolLifecycleMap: incremental scan sees no new messages
-              //   - buildTaskLifecycleMap: only scans system events
-              //   - turnDiffMap: gated by isTurnSettled (false during streaming)
+              // streamingMessageBySession is a single-slot overlay per session.
+              // If we route every assistant update here, multiple assistant
+              // updates in one batch (e.g. terminal cleanup touching >1 message)
+              // would overwrite each other and only the last one would survive.
               //
-              // AssistantMessage self-subscribes to the streaming overlay
-              // (selectStreamingMessage) and uses it as the authoritative
-              // source for ALL live fields (content, activeToolUseId, etc.),
-              // so tool pills and all blocks render correctly whether the
-              // message is streaming or finalized.
+              // Therefore:
+              //   - overlay id matches msg.id -> keep fast path (overlay write)
+              //   - otherwise               -> structural slow path (array write)
               //
-              // The overlay is merged back into sessionMessages when:
-              //   - A new message arrives (see "New message" branch below)
-              //   - The session is explicitly cleaned up
-              //
-              // Keeping finalized assistant messages in the overlay avoids
-              // an extra slow-path cascade per tool call cycle.  Previously
-              // isStreaming→false triggered a slow-path + cascade, followed
-              // immediately by another cascade when the next message appended.
-              // Now both merge into a SINGLE slow-path when the next message
-              // arrives — halving cascade frequency during tool-dense workflows.
-              if (!nextStreaming) nextStreaming = { ...s.streamingMessageBySession }
-              nextStreaming[sid] = msg
+              // This preserves the dominant streaming optimization while keeping
+              // terminal/batch correctness for non-overlay assistant messages.
+              const pendingOverlay = getStreaming(sid)
+              if (pendingOverlay && pendingOverlay.id === msg.id) {
+                if (!nextStreaming) nextStreaming = { ...s.streamingMessageBySession }
+                nextStreaming[sid] = msg
+              } else {
+                if (!newList) newList = [...currentList]
+                newList[pos] = msg
+              }
             } else {
               // SLOW PATH: non-assistant message update (rare — e.g. system event
               // status change).  Merge into sessionMessages → triggers downstream

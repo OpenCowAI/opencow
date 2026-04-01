@@ -7,6 +7,7 @@ import type { ConversationDomainEffect } from '../domain/effects'
 import { toManagedContentBlocks } from './contentBlockMapper'
 import { resolveContextLimitOverride } from './contextUsage'
 import { registerEvoseRelayForProjection } from './evoseRelay'
+import { terminalizeSession } from './terminalization'
 
 const log = createLogger('ConversationEffectProjector')
 
@@ -74,23 +75,10 @@ function logEngineDiagnostic(params: {
 }
 
 function applyTurnResultEffect(effect: Extract<ConversationDomainEffect, { type: 'apply_turn_result' }>, ctx: SessionContext): void {
-  const { session, stream, relay } = ctx
-
-  // Finalize buffer before stream — ensures clean state before terminal processing.
-  // flushNow() was already called by the apply_turn_result case before entering here.
-  ctx.buffer.finalize()
-
-  const streamId = stream.finalizeStreaming()
-  if (streamId) session.finalizeStreamingMessage(streamId)
+  const { session } = ctx
 
   if (effect.payload.costUsd != null) {
     session.setCostUsd(effect.payload.costUsd)
-  }
-
-  for (const message of session.getMessages()) {
-    if (message.role !== 'assistant') continue
-    if (message.activeToolUseId == null) continue
-    session.setActiveToolUseId(message.id, null)
   }
 
   if (effect.payload.modelUsage) {
@@ -125,43 +113,37 @@ function applyTurnResultEffect(effect: Extract<ConversationDomainEffect, { type:
     }
   }
 
-  relay.clear()
-
   const stopReason = resultOutcomeToStopReason(effect.payload.outcome)
 
   if (stopReason === 'completed' || stopReason === 'max_turns') {
-    session.transition({ type: 'turn_completed', stopReason })
-    const snap = session.snapshot()
-    ctx.dispatch({ type: 'command:session:updated', payload: snap })
-    ctx.dispatch({
-      type: 'command:session:idle',
-      payload: {
-        sessionId: ctx.sessionId,
-        origin: session.origin,
+    terminalizeSession({
+      ctx,
+      input: {
+        reason: 'turn_result',
+        transition: { type: 'turn_completed', stopReason },
+        terminalEvent: 'idle',
         stopReason,
-        result: effect.payload.result,
-        costUsd: snap.totalCostUsd,
+        resultText: effect.payload.result,
+        shouldPersist: true,
+        shouldNotifyResultReceived: true,
+        flushPendingDispatches: false,
       },
     })
   } else {
     const message = resultOutcomeToErrorMessage(effect.payload.outcome, effect.payload.errors)
-    session.transition({ type: 'turn_error', message })
-    const snap = session.snapshot()
-    ctx.dispatch({ type: 'command:session:updated', payload: snap })
-    ctx.dispatch({
-      type: 'command:session:error',
-      payload: {
-        sessionId: ctx.sessionId,
-        origin: session.origin,
-        error: snap.error ?? message,
+    terminalizeSession({
+      ctx,
+      input: {
+        reason: 'turn_result',
+        transition: { type: 'turn_error', message },
+        terminalEvent: 'error',
+        errorMessage: message,
+        shouldPersist: true,
+        shouldNotifyResultReceived: true,
+        flushPendingDispatches: false,
       },
     })
   }
-
-  ctx.onResultReceived()
-  ctx.persistSession().catch((err) => {
-    log.error(`Failed to persist session ${ctx.sessionId}`, err)
-  })
 }
 
 export function applyConversationDomainEffects(params: {
@@ -490,24 +472,20 @@ export function applyConversationDomainEffects(params: {
             ? `${effect.payload.reason} (${effect.payload.rawType}:${effect.payload.rawSubtype})`
             : effect.payload.reason
 
-        ctx.session.transition({
-          type: 'protocol_violation',
-          message: `Engine protocol violation: ${reason}`,
-        })
-
-        const snap = ctx.session.snapshot()
-        ctx.dispatch({ type: 'command:session:updated', payload: snap })
-        ctx.dispatch({
-          type: 'command:session:error',
-          payload: {
-            sessionId: ctx.sessionId,
-            origin: ctx.session.origin,
-            error: snap.error ?? `Engine protocol violation: ${reason}`,
+        terminalizeSession({
+          ctx,
+          input: {
+            reason: 'protocol_violation',
+            transition: {
+              type: 'protocol_violation',
+              message: `Engine protocol violation: ${reason}`,
+            },
+            terminalEvent: 'error',
+            errorMessage: `Engine protocol violation: ${reason}`,
+            shouldPersist: true,
+            shouldNotifyResultReceived: false,
+            flushPendingDispatches: false,
           },
-        })
-
-        ctx.persistSession().catch((err) => {
-          log.error(`Failed to persist protocol violation for session ${ctx.sessionId}`, err)
         })
 
         shouldAbortLifecycle = true

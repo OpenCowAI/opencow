@@ -58,6 +58,7 @@ import type { SessionRuntime, SessionCompletionCallback, SessionCompletionResult
 import { planSessionPolicy } from './policy/sessionPolicyPlanner'
 import { decideSessionReconfiguration } from './policy/sessionReconfigurationCoordinator'
 import { buildConversationSummary } from './conversationSummary'
+import { dispatchSessionTerminal as dispatchSessionTerminalEvent } from './sessionTerminalDispatcher'
 
 const log = createLogger('Orchestrator')
 
@@ -304,17 +305,13 @@ export class SessionOrchestrator {
       if (rt.lifecycle.stopped && isActiveState) {
         log.warn(`Health audit: session ${id} state=${state} but lifecycle stopped — recovering to idle`)
         rt.session.transition({ type: 'lifecycle_exited_silently' })
+        this.dispatchFinalizedAssistantSnapshots(rt.session)
         toDelete.push(id)
-        const snap = rt.session.snapshot()
-        this.deps.dispatch({ type: 'command:session:updated', payload: snap })
-        this.deps.dispatch({
-          type: 'command:session:idle',
-          payload: {
-            sessionId: id,
-            origin: rt.session.origin,
-            stopReason: snap.stopReason ?? 'completed',
-            costUsd: snap.totalCostUsd,
-          },
+        this.dispatchSessionTerminal({
+          sessionId: id,
+          session: rt.session,
+          terminalEvent: 'idle',
+          stopReason: 'completed',
         })
         // Persist so resumeSession can find this session from the store
         this.store.save(rt.session.toPersistenceRecord()).catch((err) => {
@@ -864,6 +861,14 @@ export class SessionOrchestrator {
     try {
       const runtimeEventStream = lifecycle.start(initialPrompt, toSdkOptions(options))
       for await (const runtimeEvent of runtimeEventStream) {
+        // Hard stop guard: manual stop sets session state to `stopped`
+        // synchronously, but the runtime stream may still yield buffered
+        // events before close fully propagates. Ignore those events to
+        // prevent post-stop streaming resurrection.
+        if (session.getState() === 'stopped') {
+          continue
+        }
+
         const projectionResult = pipeline.applyRuntimeEvent({
           runtimeEvent,
           ctx,
@@ -907,16 +912,12 @@ export class SessionOrchestrator {
         if (finalState === 'creating' || finalState === 'streaming' || finalState === 'stopping') {
           log.warn(`Session ${sessionId} stream ended in active state '${finalState}' without result — forcing idle`)
           session.transition({ type: 'stream_ended_clean' })
-          const snap = session.snapshot()
-          this.deps.dispatch({ type: 'command:session:updated', payload: snap })
-          this.deps.dispatch({
-            type: 'command:session:idle',
-            payload: {
-              sessionId,
-              origin: session.origin,
-              stopReason: 'completed',
-              costUsd: snap.totalCostUsd,
-            },
+          this.dispatchFinalizedAssistantSnapshots(session)
+          this.dispatchSessionTerminal({
+            sessionId,
+            session,
+            terminalEvent: 'idle',
+            stopReason: 'completed',
           })
           ctx.persistSession().catch((err) => {
             log.error(`Failed to persist safety-net idle for session ${sessionId}`, err)
@@ -1288,6 +1289,59 @@ export class SessionOrchestrator {
     this.deps.dispatch({ type: 'command:session:updated', payload: session.snapshot() })
   }
 
+  private dispatchSessionTerminal(params: {
+    sessionId: string
+    session: ManagedSession
+    terminalEvent: 'idle' | 'stopped' | 'error'
+    stopReason?: SessionStopReason
+    result?: string
+    error?: string
+  }): SessionSnapshot {
+    return dispatchSessionTerminalEvent({
+      sessionId: params.sessionId,
+      session: params.session,
+      dispatch: this.deps.dispatch,
+      terminalEvent: params.terminalEvent,
+      stopReason: params.stopReason,
+      result: params.result,
+      error: params.error,
+    })
+  }
+
+  private dispatchMessageById(session: ManagedSession, messageId: string): void {
+    const message = session.getMessageById(messageId)
+    if (!message) return
+    this.deps.dispatch({
+      type: 'command:session:message',
+      payload: { sessionId: session.id, origin: session.origin, message },
+    })
+  }
+
+  private finalizeTerminalAssistantMessages(session: ManagedSession): string[] {
+    const finalizedIds: string[] = []
+    for (const message of session.getMessages()) {
+      if (message.role !== 'assistant') continue
+      let touched = false
+      if (message.isStreaming === true) {
+        session.finalizeStreamingMessage(message.id)
+        touched = true
+      }
+      if (message.activeToolUseId != null) {
+        session.setActiveToolUseId(message.id, null)
+        touched = true
+      }
+      if (touched) finalizedIds.push(message.id)
+    }
+    return finalizedIds
+  }
+
+  private dispatchFinalizedAssistantSnapshots(session: ManagedSession): void {
+    const finalizedIds = this.finalizeTerminalAssistantMessages(session)
+    for (const messageId of finalizedIds) {
+      this.dispatchMessageById(session, messageId)
+    }
+  }
+
   private dispatchLastSystemEvent(session: ManagedSession): void {
     const lastMsg = session.getLastMessage()
     if (lastMsg && lastMsg.role === 'system') {
@@ -1315,26 +1369,27 @@ export class SessionOrchestrator {
     // This ensures the session survives force-kills (e.g. electron-vite dev restart).
     rt.session.transition({ type: 'user_stopped' })
 
+    // Stop lifecycle immediately after entering `stopped` to minimize the
+    // window where buffered runtime events can still arrive.
+    const stopPromise = rt.lifecycle.stop()
+
+    this.dispatchFinalizedAssistantSnapshots(rt.session)
+
     try {
       await this.store.save(rt.session.toPersistenceRecord())
     } catch (err) {
       log.error(`Failed to persist session ${sessionId}`, err)
     }
 
-    const stopSnap = rt.session.snapshot()
-    this.deps.dispatch({ type: 'command:session:updated', payload: stopSnap })
-    this.deps.dispatch({
-      type: 'command:session:stopped',
-      payload: {
-        sessionId,
-        origin: stopSnap.origin,
-        stopReason: stopSnap.stopReason ?? 'user_stopped',
-        costUsd: stopSnap.totalCostUsd,
-      }
+    this.dispatchSessionTerminal({
+      sessionId,
+      session: rt.session,
+      terminalEvent: 'stopped',
+      stopReason: 'user_stopped',
     })
 
-    // Deterministic cleanup: close SDK process, wait for stream to end
-    await rt.lifecycle.stop()
+    // Deterministic cleanup: wait for close + stream drain
+    await stopPromise
     await rt.lifecycleDone.catch(() => {})
 
     this.runtimes.delete(sessionId)
@@ -1404,6 +1459,8 @@ export class SessionOrchestrator {
     if (!rt) return
     const session = rt.session
 
+    this.dispatchFinalizedAssistantSnapshots(session)
+
     // Capture fallback issue ID BEFORE potentially removing the runtime.
     // Use session.origin directly — avoids the O(n) deep-copy of getInfo().
     const fallbackIssueId = getOriginIssueId(session.origin) ?? undefined
@@ -1421,11 +1478,11 @@ export class SessionOrchestrator {
         message: `Session process failed (${code}). Please restart OpenCow to recover.`,
       })
       this.runtimes.delete(sessionId)
-      snap = session.snapshot()
-      this.deps.dispatch({ type: 'command:session:updated', payload: snap })
-      this.deps.dispatch({
-        type: 'command:session:error',
-        payload: { sessionId, origin: session.origin, error: snap.error! }
+      snap = this.dispatchSessionTerminal({
+        sessionId,
+        session,
+        terminalEvent: 'error',
+        error: `Session process failed (${code}). Please restart OpenCow to recover.`,
       })
     } else if (spawnCategory === 'transient') {
       // EMFILE/ENFILE/EAGAIN: temporary OS resource pressure.
@@ -1440,16 +1497,11 @@ export class SessionOrchestrator {
         // Clear operational fields since the lifecycle is dead.
         rt.pipeline = null
         rt.policy = null
-        snap = session.snapshot()
-        this.deps.dispatch({ type: 'command:session:updated', payload: snap })
-        this.deps.dispatch({
-          type: 'command:session:idle',
-          payload: {
-            sessionId,
-            origin: session.origin,
-            stopReason: snap.stopReason ?? 'completed',
-            costUsd: snap.totalCostUsd,
-          },
+        snap = this.dispatchSessionTerminal({
+          sessionId,
+          session,
+          terminalEvent: 'idle',
+          stopReason: 'completed',
         })
       } else {
         log.error(`Transient retries exhausted for ${sessionId} (${count})`)
@@ -1459,11 +1511,11 @@ export class SessionOrchestrator {
           message: `Session process failed (${code}) after ${count} retries. Please restart OpenCow.`,
         })
         this.runtimes.delete(sessionId)
-        snap = session.snapshot()
-        this.deps.dispatch({ type: 'command:session:updated', payload: snap })
-        this.deps.dispatch({
-          type: 'command:session:error',
-          payload: { sessionId, origin: session.origin, error: snap.error! }
+        snap = this.dispatchSessionTerminal({
+          sessionId,
+          session,
+          terminalEvent: 'error',
+          error: `Session process failed (${code}) after ${count} retries. Please restart OpenCow.`,
         })
       }
     } else {
@@ -1473,11 +1525,11 @@ export class SessionOrchestrator {
         message: err instanceof Error ? err.message : String(err),
       })
       this.runtimes.delete(sessionId)
-      snap = session.snapshot()
-      this.deps.dispatch({ type: 'command:session:updated', payload: snap })
-      this.deps.dispatch({
-        type: 'command:session:error',
-        payload: { sessionId, origin: session.origin, error: snap.error! }
+      snap = this.dispatchSessionTerminal({
+        sessionId,
+        session,
+        terminalEvent: 'error',
+        error: err instanceof Error ? err.message : String(err),
       })
     }
 
