@@ -80,7 +80,8 @@ jobs:
       - name: Add upstream
         run: |
           git remote add upstream https://github.com/${{ env.UPSTREAM_REPO }}.git
-          git fetch upstream
+          git fetch upstream --tags
+          echo "🔽 Fetched upstream tags"
 
       - name: Backup our workflow
         run: |
@@ -109,7 +110,14 @@ jobs:
       - name: Push changes
         run: |
           git push origin main || git push --force origin main
-          echo "🚀 Pushed to origin/main"
+          echo "🚀 Pushed main to origin/main"
+
+      - name: Push tags (triggers release workflow)
+        run: |
+          # 推送所有上游 tags，这会触发 release-all-platforms.yml
+          git push upstream --tags || true
+          git push origin --tags || true
+          echo "🏷️ Pushed tags to origin (will trigger release build)"
 
   sync-full:
     name: Full sync (overwrite with upstream)
