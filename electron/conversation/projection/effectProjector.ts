@@ -76,6 +76,10 @@ function logEngineDiagnostic(params: {
 function applyTurnResultEffect(effect: Extract<ConversationDomainEffect, { type: 'apply_turn_result' }>, ctx: SessionContext): void {
   const { session, stream, relay } = ctx
 
+  // Finalize buffer before stream — ensures clean state before terminal processing.
+  // flushNow() was already called by the apply_turn_result case before entering here.
+  ctx.buffer.finalize()
+
   const streamId = stream.finalizeStreaming()
   if (streamId) session.finalizeStreamingMessage(streamId)
 
@@ -199,15 +203,30 @@ export function applyConversationDomainEffects(params: {
         if (blocks.length === 0) break
 
         if (!ctx.stream.isStreaming) {
+          // First partial: create the message in ManagedSession, then
+          // grab a direct reference for the buffer — O(1) from here on.
           const messageId = ctx.session.addMessage('assistant', blocks, true)
           ctx.stream.beginStreaming(messageId)
+          const ref = ctx.session.getLastMessageRef()
+          if (ref) ctx.buffer.begin(ref)
         } else {
-          ctx.session.updateMessageBlocks(ctx.stream.streamingMessageId!, blocks, true)
+          // Subsequent partials: O(1) direct mutation via buffer.
+          // Replaces the O(M) session.updateMessageBlocks() find().
+          ctx.buffer.updateBlocks(blocks)
         }
 
-        const lastToolUse = [...blocks].reverse().find((block) => block.type === 'tool_use')
-        if (lastToolUse && ctx.stream.streamingMessageId) {
-          ctx.session.setActiveToolUseId(ctx.stream.streamingMessageId, lastToolUse.id)
+        // Find last tool_use — reverse for-loop avoids temporary array allocation
+        // that [...blocks].reverse().find() would create.
+        let lastToolUseId: string | null = null
+        for (let i = blocks.length - 1; i >= 0; i--) {
+          const block = blocks[i]
+          if (block.type === 'tool_use') {
+            lastToolUseId = block.id
+            break
+          }
+        }
+        if (lastToolUseId) {
+          ctx.buffer.setActiveToolUseId(lastToolUseId)  // O(1) vs O(M)
         }
 
         const activity = deriveActivity(blocks)
@@ -228,6 +247,10 @@ export function applyConversationDomainEffects(params: {
         // Ensures the last tool.progress snapshot reaches the renderer before
         // the final message replaces streaming content.
         ctx.throttle.flushNow()
+
+        // Finalize buffer before stream — buffer.getSnapshot() was used by
+        // the flushNow() above for the last IPC dispatch.
+        ctx.buffer.finalize()
 
         const finalBlocks = toManagedContentBlocks(effect.payload.blocks)
         const streamId = ctx.stream.finalizeStreaming()
@@ -297,16 +320,16 @@ export function applyConversationDomainEffects(params: {
       }
 
       case 'apply_tool_progress': {
-        const streamingMessageId = ctx.stream.streamingMessageId
-        if (!streamingMessageId) break
-        // State mutation: synchronous — keeps block.progress accurate in real time
-        ctx.session.appendToolProgress(streamingMessageId, effect.payload.toolUseId, effect.payload.chunk)
-        ctx.session.setActiveToolUseId(streamingMessageId, effect.payload.toolUseId)
-        // IPC dispatch: throttled — tool output can produce 100+ chunks/sec,
-        // coalescing to ~20 fps prevents renderer saturation.
-        // The throttle flush dispatches by streamingMessageId (not getLastMessage)
-        // to avoid sending the wrong message when system events are interleaved.
-        ctx.throttle.scheduleMessage()
+        if (!ctx.buffer.isActive) break
+        // State mutation via buffer: O(1) amortized (cached tool block reference)
+        // vs the old O(M) + O(N) path through session.appendToolProgress().
+        ctx.buffer.appendToolProgress(effect.payload.toolUseId, effect.payload.chunk)
+        ctx.buffer.setActiveToolUseId(effect.payload.toolUseId)
+        // IPC dispatch: progress-specific throttle (200 ms ≈ 5 fps).
+        // Tool output is a scrollable log — 5 fps visual updates are smooth
+        // while reducing IPC round-trips by 75% vs the 50 ms message channel.
+        // If text streaming is active, progress piggybacks on the 50 ms flush.
+        ctx.throttle.scheduleProgress()
         break
       }
 

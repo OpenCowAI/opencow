@@ -94,6 +94,17 @@ export function makeIssue(overrides: Partial<Issue> = {}): Issue {
     readAt: null,
     lastAgentActivityAt: null,
     contextRefs: [],
+    // Remote issue tracking
+    providerId: null,
+    remoteNumber: null,
+    remoteUrl: null,
+    remoteState: null,
+    remoteSyncedAt: null,
+    // Phase 2
+    assignees: null,
+    milestone: null,
+    syncStatus: null,
+    remoteUpdatedAt: null,
     ...overrides,
   }
 }
@@ -122,6 +133,17 @@ export function makeIssueSummary(
     updatedAt: BASE_TS,
     readAt: null,
     lastAgentActivityAt: null,
+    // Remote issue tracking
+    providerId: null,
+    remoteNumber: null,
+    remoteUrl: null,
+    remoteState: null,
+    remoteSyncedAt: null,
+    // Phase 2
+    assignees: null,
+    milestone: null,
+    syncStatus: null,
+    remoteUpdatedAt: null,
     ...overrides,
   }
 }

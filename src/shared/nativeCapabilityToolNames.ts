@@ -28,6 +28,11 @@ export const NativeCapabilityTools = {
   ISSUE_CREATE:       `${MCP_SERVER_QUALIFIED_NAME}__create_issue`,
   ISSUE_UPDATE:       `${MCP_SERVER_QUALIFIED_NAME}__update_issue`,
 
+  // ─── Remote Issue Tools (Phase 3) ─────────────────────────────────────────
+  REMOTE_ISSUE_SEARCH:  `${MCP_SERVER_QUALIFIED_NAME}__search_remote_issues`,
+  REMOTE_ISSUE_GET:     `${MCP_SERVER_QUALIFIED_NAME}__get_remote_issue`,
+  REMOTE_ISSUE_COMMENT: `${MCP_SERVER_QUALIFIED_NAME}__comment_remote_issue`,
+
   // ─── Project Tools ────────────────────────────────────────────────────────
   PROJECT_LIST:       `${MCP_SERVER_QUALIFIED_NAME}__list_projects`,
   PROJECT_GET:        `${MCP_SERVER_QUALIFIED_NAME}__get_project`,

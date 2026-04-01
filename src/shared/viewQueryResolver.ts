@@ -61,6 +61,9 @@ export function resolveToQuery(
   // Search: ephemeral layer only
   query.search = ef.search || undefined
 
+  // Provider: ephemeral layer only (quick switcher)
+  query.providerId = ef.providerId || undefined
+
   // Time: resolve relative filters to absolute timestamps
   if (vf.created) {
     const range = resolveTimeFilter(vf.created)

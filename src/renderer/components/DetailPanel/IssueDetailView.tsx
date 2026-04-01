@@ -2,11 +2,9 @@
 
 import { useState, useCallback, useMemo, useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
-import { X, Pencil, Trash2, Check, Calendar, Plus, ArrowUpRight, ChevronDown, ChevronUp, ListTree, Link, FileText } from 'lucide-react'
+import { X, Pencil, Trash2, Check, ArrowUpRight, Link, FileText, ExternalLink } from 'lucide-react'
 import { useBlockBrowserView } from '@/hooks/useBlockBrowserView'
 import type { Artifact } from '@shared/types'
-import { Group as PanelGroup, Panel, Separator as PanelResizeHandle } from 'react-resizable-panels'
-import type { PanelImperativeHandle } from 'react-resizable-panels'
 import { useAppStore } from '../../stores/appStore'
 import { useIssueStore } from '../../stores/issueStore'
 import { selectIssue, deleteIssue } from '../../actions/issueActions'
@@ -27,7 +25,6 @@ import { useSessionHistoryForIssue, selectSessionForIssue } from '../../hooks/us
 import { useSessionArchive } from '../../hooks/useSessionArchive'
 import { ProjectScopeProvider } from '../../contexts/ProjectScopeContext'
 import { ContextFilesProvider, useContextFiles } from '../../contexts/ContextFilesContext'
-import { MarkdownContent } from '../ui/MarkdownContent'
 import { issueImagesToAttachments, type ImageAttachment } from '../../lib/attachmentUtils'
 import { isIssueUnread } from '@shared/types'
 import type { IssueStatus, IssuePriority, UserMessageContent } from '@shared/types'
@@ -266,16 +263,10 @@ export function IssueDetailView({ issueId, onClose, onNavigateToIssue }: IssueDe
   // Artifact candidates — loaded lazily only when contextRefs include artifacts
   const [starredArtifacts, setStarredArtifacts] = useState<Artifact[]>([])
   const [idCopied, setIdCopied] = useState(false)
-  const [descExpanded, setDescExpanded] = useState(false)
-  const [descOverflows, setDescOverflows] = useState(false)
   const [statusOpen, setStatusOpen] = useState(false)
   const [priorityOpen, setPriorityOpen] = useState(false)
   const [isStarting, setIsStarting] = useState(false)
   const [composeMode, setComposeMode] = useState(false)
-  const [showCreateSubIssueModal, setShowCreateSubIssueModal] = useState(false)
-  const [isConsoleExpanded, setIsConsoleExpanded] = useState(true)
-  const issueInfoPanelRef = useRef<PanelImperativeHandle>(null)
-  const descRef = useRef<HTMLDivElement>(null)
   const contentRef = useRef<HTMLDivElement>(null)
   const prevIssueIdRef = useRef(issueId)
   const focusedIssueIdRef = useRef<string | null>(null)
@@ -372,9 +363,6 @@ export function IssueDetailView({ issueId, onClose, onNavigateToIssue }: IssueDe
   useEffect(() => {
     setComposeMode(false)
     setIsStarting(false)
-    setShowCreateSubIssueModal(false)
-    setIsConsoleExpanded(false)
-    setDescExpanded(false)
     setViewingArchivedSessionId(null)
   }, [issueId])
 
@@ -404,19 +392,6 @@ export function IssueDetailView({ issueId, onClose, onNavigateToIssue }: IssueDe
       prevIssueIdRef.current = issueId
     }
   }, [issueId, issue])
-
-  // Detect whether description content overflows the collapsed (2-line) height
-  useEffect(() => {
-    const el = descRef.current
-    if (!el) return
-    const check = (): void => {
-      setDescOverflows(el.scrollHeight > el.clientHeight + 1)
-    }
-    check()
-    const ro = new ResizeObserver(check)
-    ro.observe(el)
-    return () => ro.disconnect()
-  }, [issue?.description, descExpanded])
 
   // Lazily load artifact metadata for contextRef label resolution
   useEffect(() => {
@@ -684,22 +659,6 @@ export function IssueDetailView({ issueId, onClose, onNavigateToIssue }: IssueDe
     archivedSessionId: viewingArchivedSessionId,
   }), [issueId, viewingArchivedSessionId])
 
-  /** Toggle console expand/collapse by resizing the issue info panel. */
-  const handleToggleConsoleExpand = useCallback(() => {
-    const panel = issueInfoPanelRef.current
-    if (!panel) return
-    setIsConsoleExpanded((prev) => {
-      if (prev) {
-        // Collapse console: issue info takes 70%, console shrinks to 30%
-        panel.resize('70%')
-      } else {
-        // Expand console: shrink issue info to just show title + ID area
-        panel.resize('9%')
-      }
-      return !prev
-    })
-  }, [])
-
   // ── Render gate ──────────────────────────────────────────────────
   //
   // Display source priority: full issue (cache) > summary (list fallback).
@@ -780,6 +739,18 @@ export function IssueDetailView({ issueId, onClose, onNavigateToIssue }: IssueDe
     }).format(new Date(ts))
   }
 
+  const formatRelativeTime = (ts: number): string => {
+    const diffMs = Date.now() - ts
+    const diffSec = Math.floor(diffMs / 1000)
+    if (diffSec < 60) return t('remote.justNow')
+    const diffMin = Math.floor(diffSec / 60)
+    if (diffMin < 60) return t('remote.minutesAgo', { count: diffMin })
+    const diffHr = Math.floor(diffMin / 60)
+    if (diffHr < 24) return t('remote.hoursAgo', { count: diffHr })
+    const diffDay = Math.floor(diffHr / 24)
+    return t('remote.daysAgo', { count: diffDay })
+  }
+
   return (
     <ContextFilesProvider>
     <ContextFileDragZone className="h-full flex flex-col overflow-hidden">
@@ -787,8 +758,8 @@ export function IssueDetailView({ issueId, onClose, onNavigateToIssue }: IssueDe
       <div ref={contentRef} className="h-full flex flex-col overflow-hidden">
       {/* Header — always rendered; action buttons disabled while loading */}
       <div className="drag-region flex items-center justify-between px-4 py-3 border-b border-[hsl(var(--border))]">
-        <h2 className="text-sm font-semibold text-[hsl(var(--foreground))] truncate">
-          {isSubIssue ? t('detail.subTitle') : t('detail.title')}
+        <h2 className="text-sm font-semibold text-[hsl(var(--foreground))] truncate min-w-0 flex-1" title={displayTitle}>
+          {displayTitle}
         </h2>
         <div className="no-drag flex items-center gap-1">
           {issue ? (
@@ -825,14 +796,12 @@ export function IssueDetailView({ issueId, onClose, onNavigateToIssue }: IssueDe
         </div>
       </div>
 
-      {/* Content — unified PanelGroup layout for both loading and loaded states.
-          This eliminates DOM structure changes between skeleton → content transitions,
-          ensuring stable layout and smooth panel resize persistence. */}
-      <PanelGroup orientation="vertical" id="issue-detail-split">
-        <Panel minSize={5} defaultSize={9} panelRef={issueInfoPanelRef} style={{ overflow: 'visible' }} className="relative z-10">
-          <div className="h-full flex flex-col">
+      {/* Content — fixed layout: issue info (auto height) + console (flex-1) */}
+      <div className="flex-1 flex flex-col gap-3 overflow-hidden">
+        <div className="shrink-0 relative z-10">
+          <div className="flex flex-col">
             {/* Non-scrollable header — dropdowns live here so they are never clipped by overflow */}
-            <div className="shrink-0 px-4 pt-4 space-y-2 relative z-10">
+            <div className="shrink-0 px-4 pt-3 space-y-2 relative z-10">
               {/* Parent Issue breadcrumb (compact, for sub-issues only) */}
               {isSubIssue && parentIssueSummary && (
                 <button
@@ -843,9 +812,6 @@ export function IssueDetailView({ issueId, onClose, onNavigateToIssue }: IssueDe
                   <span className="truncate">{parentIssueSummary.title}</span>
                 </button>
               )}
-
-              {/* Title */}
-              <h3 className="text-sm font-semibold text-[hsl(var(--foreground))] leading-snug">{displayTitle}</h3>
 
               {/* Meta strip: Status | Priority | Labels | Project — all inline */}
               <div className="flex flex-wrap items-center gap-1.5">
@@ -983,128 +949,112 @@ export function IssueDetailView({ issueId, onClose, onNavigateToIssue }: IssueDe
                   <span className="shrink-0">{t('detail.updatedAt', { time: formatTime(issue.updatedAt) })}</span>
                 </div>
               )}
+
+              {/* Remote source metadata */}
+              {issue?.providerId && (
+                <div className="flex flex-wrap items-center gap-2 text-[10px] text-[hsl(var(--muted-foreground))]">
+                  <span className="font-medium text-[hsl(var(--foreground)/0.5)]">{t('remote.source')}</span>
+                  {issue.remoteUrl ? (
+                    <a
+                      href={issue.remoteUrl}
+                      onClick={(e) => {
+                        e.preventDefault()
+                        if (/^https?:\/\//i.test(issue.remoteUrl!)) window.open(issue.remoteUrl!, '_blank')
+                      }}
+                      className="inline-flex items-center gap-0.5 hover:text-[hsl(var(--foreground))] transition-colors"
+                      title={issue.remoteUrl}
+                    >
+                      <ExternalLink className="w-2.5 h-2.5" />
+                      <span>#{issue.remoteNumber}</span>
+                    </a>
+                  ) : issue.remoteNumber != null ? (
+                    <span className="inline-flex items-center gap-0.5">
+                      <ExternalLink className="w-2.5 h-2.5" />
+                      <span>#{issue.remoteNumber}</span>
+                    </span>
+                  ) : null}
+                  {issue.remoteState && (
+                    <>
+                      <span aria-hidden="true">·</span>
+                      <span className={cn(
+                        'px-1 py-px rounded font-medium',
+                        issue.remoteState === 'open'
+                          ? 'bg-green-500/10 text-green-600 dark:text-green-400'
+                          : 'bg-purple-500/10 text-purple-600 dark:text-purple-400'
+                      )}>
+                        {issue.remoteState}
+                      </span>
+                    </>
+                  )}
+                  {issue.remoteSyncedAt && (
+                    <>
+                      <span aria-hidden="true">·</span>
+                      <span className="shrink-0">{t('remote.synced', { time: formatRelativeTime(issue.remoteSyncedAt) })}</span>
+                    </>
+                  )}
+                </div>
+              )}
             </div>
 
-            {/* Scrollable body — description, images, sub-issues */}
-            <div className="flex-1 overflow-y-auto px-4 pb-4 pt-2 space-y-2">
-              {issue ? (
-                <>
-                  {/* Description — collapsed to 2 lines by default */}
-                  {issue.description && (
-                    <div className="relative">
-                      <div
-                        ref={descRef}
-                        className={cn(
-                          'prose prose-sm prose-invert max-w-none text-sm text-[hsl(var(--foreground))] overflow-hidden',
-                          !descExpanded && 'max-h-[2.8em]'
-                        )}
+            {/* Scrollable body — images, context refs, sub-issues (only rendered when content exists) */}
+            {issue && ((issue.images && issue.images.length > 0) || (issue.contextRefs && issue.contextRefs.length > 0) || (!isSubIssue && childIssues.length > 0)) && (
+              <div className="overflow-y-auto px-4 pt-2 space-y-2">
+                {/* Attached Images */}
+                {issue.images && issue.images.length > 0 && (
+                  <IssueImageGallery images={issue.images} />
+                )}
+
+                {/* Context References */}
+                {issue.contextRefs && issue.contextRefs.length > 0 && (
+                  <div className="space-y-1">
+                    <div className="flex flex-wrap gap-1.5">
+                      {issue.contextRefs.map((ref) => {
+                        const label = ref.type === 'issue'
+                          ? (useIssueStore.getState().issueById[ref.id]?.title ?? ref.id)
+                          : (starredArtifacts.find((a) => a.id === ref.id)?.title ||
+                             starredArtifacts.find((a) => a.id === ref.id)?.filePath ||
+                             ref.id)
+                        return (
+                          <span
+                            key={ref.id}
+                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs bg-[hsl(var(--foreground)/0.06)] text-[hsl(var(--foreground)/0.65)]"
+                          >
+                            {ref.type === 'issue' ? (
+                              <Link className="w-3 h-3 shrink-0" />
+                            ) : (
+                              <FileText className="w-3 h-3 shrink-0" />
+                            )}
+                            <span className="max-w-[200px] truncate">{label}</span>
+                          </span>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {/* Sub-Issues list (only for top-level issues) */}
+                {!isSubIssue && childIssues.length > 0 && (
+                  <div className="space-y-px">
+                    {childIssues.map((child) => (
+                      <button
+                        key={child.id}
+                        onClick={() => onNavigateToIssue ? onNavigateToIssue(child.id) : selectIssue(child.id)}
+                        className="w-full flex items-center gap-2 px-2 py-1 rounded text-left hover:bg-[hsl(var(--foreground)/0.04)] transition-colors"
                       >
-                        <MarkdownContent content={issue.description} />
-                      </div>
-                      {/* Gradient fade — only when collapsed and content overflows */}
-                      {!descExpanded && descOverflows && (
-                        <div
-                          className="absolute bottom-0 left-0 right-0 h-4 pointer-events-none"
-                          style={{ background: 'linear-gradient(to top, hsl(var(--background)), transparent)' }}
-                        />
-                      )}
-                      {!descExpanded && descOverflows && (
-                        <div className="flex justify-center mt-0.5">
-                          <button
-                            onClick={() => setDescExpanded(true)}
-                            className="inline-flex items-center gap-0.5 text-[10px] text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] transition-colors"
-                            aria-label="Expand description"
-                          >
-                            {t('detail.showMore')} <ChevronDown className="w-2.5 h-2.5" aria-hidden="true" />
-                          </button>
-                        </div>
-                      )}
-                      {descExpanded && (
-                        <div className="flex justify-center mt-0.5">
-                          <button
-                            onClick={() => setDescExpanded(false)}
-                            className="inline-flex items-center gap-0.5 text-[10px] text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] transition-colors"
-                            aria-label="Collapse description"
-                          >
-                            {t('detail.showLess')} <ChevronUp className="w-2.5 h-2.5" aria-hidden="true" />
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {/* Attached Images */}
-                  {issue.images && issue.images.length > 0 && (
-                    <IssueImageGallery images={issue.images} />
-                  )}
-
-                  {/* Context References */}
-                  {issue.contextRefs && issue.contextRefs.length > 0 && (
-                    <div className="space-y-1">
-                      <div className="flex flex-wrap gap-1.5">
-                        {issue.contextRefs.map((ref) => {
-                          const label = ref.type === 'issue'
-                            ? (useIssueStore.getState().issueById[ref.id]?.title ?? ref.id)
-                            : (starredArtifacts.find((a) => a.id === ref.id)?.title ||
-                               starredArtifacts.find((a) => a.id === ref.id)?.filePath ||
-                               ref.id)
-                          return (
-                            <span
-                              key={ref.id}
-                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs bg-[hsl(var(--foreground)/0.06)] text-[hsl(var(--foreground)/0.65)]"
-                            >
-                              {ref.type === 'issue' ? (
-                                <Link className="w-3 h-3 shrink-0" />
-                              ) : (
-                                <FileText className="w-3 h-3 shrink-0" />
-                              )}
-                              <span className="max-w-[200px] truncate">{label}</span>
-                            </span>
-                          )
-                        })}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Sub-Issues section (only for top-level issues) */}
-                  {!isSubIssue && (
-                    <div className="space-y-px">
-                      {childIssues.map((child) => (
-                        <button
-                          key={child.id}
-                          onClick={() => onNavigateToIssue ? onNavigateToIssue(child.id) : selectIssue(child.id)}
-                          className="w-full flex items-center gap-2 px-2 py-1 rounded text-left hover:bg-[hsl(var(--foreground)/0.04)] transition-colors"
-                        >
-                          <IssueStatusIcon status={child.status} className="w-3 h-3 shrink-0" />
-                          <span className="flex-1 text-xs truncate text-[hsl(var(--foreground))]">
-                            {child.title}
-                          </span>
-                          <IssuePriorityIcon priority={child.priority} className="w-3 h-3 shrink-0" />
-                        </button>
-                      ))}
-                      {issue.status !== 'done' && (
-                        <button
-                          onClick={() => setShowCreateSubIssueModal(true)}
-                          className="w-full flex items-center gap-2 px-2 py-1 rounded text-left hover:bg-[hsl(var(--foreground)/0.04)] transition-colors group"
-                          aria-label="Add sub-issue"
-                        >
-                          <ListTree className="w-3 h-3 shrink-0 text-[hsl(var(--muted-foreground)/0.5)] group-hover:text-[hsl(var(--muted-foreground))]" aria-hidden="true" />
-                          <span className="flex-1 text-xs text-[hsl(var(--muted-foreground)/0.4)] group-hover:text-[hsl(var(--muted-foreground))]">
-                            {t('detail.addSubIssue')}
-                          </span>
-                        </button>
-                      )}
-                    </div>
-                  )}
-                </>
-              ) : null}
-            </div>
+                        <IssueStatusIcon status={child.status} className="w-3 h-3 shrink-0" />
+                        <span className="flex-1 text-xs truncate text-[hsl(var(--foreground))]">
+                          {child.title}
+                        </span>
+                        <IssuePriorityIcon priority={child.priority} className="w-3 h-3 shrink-0" />
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
-        </Panel>
-        <PanelResizeHandle className="h-2 flex items-center justify-center group cursor-row-resize focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--ring))]">
-          <div className="h-0.5 w-8 rounded bg-[hsl(var(--border))] group-hover:bg-[hsl(var(--ring))] transition-colors" aria-hidden="true" />
-        </PanelResizeHandle>
-        <Panel minSize={20} defaultSize={75}>
+        </div>
+        <div className="flex-1 overflow-hidden">
           {issue ? (
             <ProjectScopeProvider projectPath={projectPath} projectId={issue.projectId ?? undefined}>
               {composeMode && !issue?.sessionId ? (
@@ -1120,8 +1070,6 @@ export function IssueDetailView({ issueId, onClose, onNavigateToIssue }: IssueDe
                   isStarting={isStarting}
                   capabilities={capabilities}
                   history={sessionHistoryCtx}
-                  isExpanded={isConsoleExpanded}
-                  onToggleExpand={handleToggleConsoleExpand}
                 />
               )}
             </ProjectScopeProvider>
@@ -1130,23 +1078,11 @@ export function IssueDetailView({ issueId, onClose, onNavigateToIssue }: IssueDe
               <div className="text-xs text-[hsl(var(--muted-foreground))] animate-pulse">{t('detail.loading')}</div>
             </div>
           )}
-        </Panel>
-      </PanelGroup>
+        </div>
+      </div>
 
       {/* Edit modal */}
       {showEditModal && issue && <IssueFormModal issueId={issue.id} defaultProjectId={issue.projectId} onClose={() => setShowEditModal(false)} />}
-
-      {/* Create sub-issue modal */}
-      {showCreateSubIssueModal && issue && (
-        <IssueFormModal
-          defaultProjectId={issue.projectId}
-          parentIssueId={issue.id}
-          onClose={() => {
-            setShowCreateSubIssueModal(false)
-            loadChildIssues(issueId)
-          }}
-        />
-      )}
 
       {/* Delete confirmation */}
       {confirmDelete && issue && (

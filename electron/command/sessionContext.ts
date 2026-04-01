@@ -23,6 +23,7 @@ import type { StreamState } from './streamState'
 import type { ToolProgressRelay } from '../utils/toolProgressRelay'
 import type { DataBusEvent } from '../../src/shared/types'
 import { DispatchThrottle } from './dispatchThrottle'
+import { StreamingMessageBuffer } from './streamingMessageBuffer'
 
 // TODO: Extract Dispatch to a shared types module (e.g. electron/types.ts)
 // so it can be reused across orchestrator, context, and handlers.
@@ -61,6 +62,7 @@ export class SessionContext {
   readonly stream: StreamState
   readonly relay: ToolProgressRelay
   readonly throttle: DispatchThrottle
+  readonly buffer: StreamingMessageBuffer
   readonly isSessionAlive: () => boolean
   readonly persistSession: () => Promise<void>
   readonly onStreamStarted: () => void
@@ -93,6 +95,7 @@ export class SessionContext {
     this.timers = params.timers
     this.stream = params.stream
     this.relay = params.relay
+    this.buffer = new StreamingMessageBuffer()
     this.isSessionAlive = params.isSessionAlive
     this.persistSession = params.persistSession
     this.onStreamStarted = params.onStreamStarted
@@ -104,10 +107,22 @@ export class SessionContext {
         // renderer sees them in the same batch as the streaming message.
         this._flushPendingMessageIds()
 
-        // Dispatch the streaming message by its tracked ID when available.
-        const streamingId = this.stream.streamingMessageId
-        if (streamingId) {
-          this.dispatchMessageById(streamingId)
+        // Fast path: read snapshot from the streaming buffer — O(1).
+        // The buffer holds a direct reference to the message in ManagedSession.messages[],
+        // eliminating the O(M) find() that dispatchMessageById would perform.
+        const snapshot = this.buffer.getSnapshot()
+        if (snapshot) {
+          this.dispatch({
+            type: 'command:session:message',
+            payload: {
+              sessionId: this.sessionId,
+              origin: this.session.origin,
+              message: snapshot,
+            },
+          })
+        } else if (this.stream.streamingMessageId) {
+          // Fallback: buffer not active but stream is (edge case, e.g. relay).
+          this.dispatchMessageById(this.stream.streamingMessageId)
         } else {
           this.dispatchLastMessage()
         }
@@ -211,11 +226,12 @@ export class SessionContext {
     })
   }
 
-  /** Session end: cancel all timers, clear relay, throttle, and pending queue. */
+  /** Session end: cancel all timers, clear relay, throttle, buffer, and pending queue. */
   dispose(): void {
     this.throttle.dispose()
     this.timers.dispose()
     this.relay.clear()
+    this.buffer.clear()
     this._pendingMessageIds = []
   }
 }

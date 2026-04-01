@@ -24,6 +24,19 @@ function makeIssue(overrides: Partial<Issue> = {}): Issue {
     updatedAt: Date.now(),
     readAt: null,
     lastAgentActivityAt: null,
+    richContent: null,
+    contextRefs: [],
+    // Remote issue tracking
+    providerId: null,
+    remoteNumber: null,
+    remoteUrl: null,
+    remoteState: null,
+    remoteSyncedAt: null,
+    // Phase 2
+    assignees: null,
+    milestone: null,
+    syncStatus: null,
+    remoteUpdatedAt: null,
     ...overrides
   }
 }

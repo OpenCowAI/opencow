@@ -45,6 +45,14 @@ const invokeChannels: (keyof IPCChannels)[] = [
   'delete-custom-label',
   'update-custom-label',
   'get-context-candidates',
+  // Issue Providers (GitHub/GitLab Integration)
+  'issue-provider:list',
+  'issue-provider:get',
+  'issue-provider:create',
+  'issue-provider:update',
+  'issue-provider:delete',
+  'issue-provider:test-connection',
+  'issue-provider:sync-now',
   // Issue Views
   'list-issue-views',
   'create-issue-view',

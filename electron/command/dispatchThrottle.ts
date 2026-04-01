@@ -19,11 +19,17 @@
  *   - When the timer fires, all pending dirty flags are flushed
  *     in a single pass: message first, then session metadata.
  *
- * Two independent dirty channels:
- *   - `message`  — high-frequency streaming message updates
- *                   (tool.progress, hook_progress)
+ * Three independent dirty channels:
+ *   - `message`  — high-frequency streaming text updates
+ *                   (assistant.partial, hook_progress)
+ *   - `progress` — tool.progress output (lower priority, 200 ms window)
  *   - `session`  — session metadata updates (activity, cost, state)
  *                   triggered by system lifecycle events
+ *
+ * `progress` uses a separate, longer timer (200 ms ≈ 5 fps) because
+ * tool output is a scrollable log that doesn't need 20 fps visual
+ * updates.  This reduces IPC round-trips for progress-only changes
+ * by 75% compared to the message channel (50 ms).
  *
  * Terminal events (turn.result, assistant.final, protocol.violation)
  * call `flushNow()` to guarantee:
@@ -36,7 +42,7 @@
  * semantics).
  */
 
-import { DISPATCH_THROTTLE_INTERVAL_MS } from '../conversation/constants'
+import { DISPATCH_THROTTLE_INTERVAL_MS, PROGRESS_THROTTLE_INTERVAL_MS } from '../conversation/constants'
 
 export interface DispatchThrottleConfig {
   /**
@@ -56,32 +62,45 @@ export interface DispatchThrottleConfig {
   readonly onFlushSession: () => void
 
   /**
-   * Throttle window in milliseconds.
+   * Throttle window for message channel in milliseconds.
    * Defaults to DISPATCH_THROTTLE_INTERVAL_MS (50 ms ≈ 20 fps).
    */
   readonly intervalMs?: number
+
+  /**
+   * Throttle window for progress channel in milliseconds.
+   * Defaults to PROGRESS_THROTTLE_INTERVAL_MS (200 ms ≈ 5 fps).
+   *
+   * Tool.progress output is a scrollable log — 5 fps visual updates
+   * are perceptually smooth while reducing IPC round-trips by 75%.
+   */
+  readonly progressIntervalMs?: number
 }
 
 export class DispatchThrottle {
   private _messagePending = false
   private _sessionPending = false
+  private _progressPending = false
   private _timer: ReturnType<typeof setTimeout> | null = null
+  private _progressTimer: ReturnType<typeof setTimeout> | null = null
 
   private readonly _onFlushMessage: () => void
   private readonly _onFlushSession: () => void
   private readonly _intervalMs: number
+  private readonly _progressIntervalMs: number
 
   constructor(config: DispatchThrottleConfig) {
     this._onFlushMessage = config.onFlushMessage
     this._onFlushSession = config.onFlushSession
     this._intervalMs = config.intervalMs ?? DISPATCH_THROTTLE_INTERVAL_MS
+    this._progressIntervalMs = config.progressIntervalMs ?? PROGRESS_THROTTLE_INTERVAL_MS
   }
 
   /**
    * Mark the `message` channel as dirty.
    *
    * Use for high-frequency events that update an EXISTING message
-   * in-place (tool.progress, hook_progress). The flush callback will
+   * in-place (assistant.partial, hook_progress). The flush callback will
    * dispatch the latest version of the streaming message.
    *
    * Do NOT use for events that ADD new messages — those must dispatch
@@ -92,6 +111,25 @@ export class DispatchThrottle {
   scheduleMessage(): void {
     this._messagePending = true
     this._ensureTimer()
+  }
+
+  /**
+   * Mark the `progress` channel as dirty.
+   *
+   * Use for tool.progress events — tool output is a scrollable log
+   * that doesn't need 20 fps updates.  Uses a separate 200 ms timer
+   * that reuses the `onFlushMessage` callback when it fires.
+   *
+   * If the main message timer is already pending (text streaming in
+   * progress), the progress update piggybacks on the 50 ms message
+   * flush — no separate IPC dispatch needed.
+   */
+  scheduleProgress(): void {
+    // If a message flush is already pending (text streaming active),
+    // piggyback: progress will be included in the message snapshot.
+    if (this._messagePending) return
+    this._progressPending = true
+    this._ensureProgressTimer()
   }
 
   /**
@@ -117,6 +155,7 @@ export class DispatchThrottle {
    */
   flushNow(): void {
     this._cancelTimer()
+    this._cancelProgressTimer()
     this._flush()
   }
 
@@ -129,8 +168,10 @@ export class DispatchThrottle {
    */
   dispose(): void {
     this._cancelTimer()
+    this._cancelProgressTimer()
     this._messagePending = false
     this._sessionPending = false
+    this._progressPending = false
   }
 
   // ---------------------------------------------------------------------------
@@ -138,7 +179,7 @@ export class DispatchThrottle {
   // ---------------------------------------------------------------------------
 
   /**
-   * Start the throttle timer if not already running.
+   * Start the main throttle timer if not already running.
    *
    * Fixed-window: the first event starts the window; subsequent events
    * within the window are absorbed (no timer reset). The timer fires
@@ -153,14 +194,39 @@ export class DispatchThrottle {
   }
 
   /**
+   * Start the progress throttle timer if not already running.
+   *
+   * Separate from the main timer — fires at 200 ms intervals.
+   * When it fires, it dispatches via `onFlushMessage` (same callback)
+   * to send the current message snapshot including accumulated progress.
+   */
+  private _ensureProgressTimer(): void {
+    if (this._progressTimer !== null) return
+    this._progressTimer = setTimeout(() => {
+      this._progressTimer = null
+      if (this._progressPending) {
+        this._progressPending = false
+        this._onFlushMessage()
+      }
+    }, this._progressIntervalMs)
+  }
+
+  /**
    * Flush all pending dirty channels.
    *
    * Order: message → session. This ensures the renderer has the
    * latest message content when the session metadata snapshot arrives.
+   *
+   * Also clears the progress flag — if a message flush happens,
+   * it includes the latest progress snapshot, so the separate
+   * progress timer is no longer needed for this window.
    */
   private _flush(): void {
-    if (this._messagePending) {
+    if (this._messagePending || this._progressPending) {
       this._messagePending = false
+      this._progressPending = false
+      // Cancel the separate progress timer — this flush covers it
+      this._cancelProgressTimer()
       this._onFlushMessage()
     }
     if (this._sessionPending) {
@@ -173,6 +239,13 @@ export class DispatchThrottle {
     if (this._timer !== null) {
       clearTimeout(this._timer)
       this._timer = null
+    }
+  }
+
+  private _cancelProgressTimer(): void {
+    if (this._progressTimer !== null) {
+      clearTimeout(this._progressTimer)
+      this._progressTimer = null
     }
   }
 }

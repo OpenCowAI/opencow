@@ -218,6 +218,24 @@ export const SessionPanel = React.memo(function SessionPanel({
     void load()
   }, [bindingSessionId])
 
+  // ─── Active session tracking (message flush cadence) ────────────────────
+  // Tell the write-coalescing buffer in useAppBootstrap which session is
+  // currently visible.  When set, messages for this session flush at 33ms
+  // (~30fps); when null, background sessions flush at 1000ms (~1fps).
+  // Without this, `_getMsgFlushInterval()` always returns 1000ms and ALL
+  // streaming appears as once-per-second bursts instead of smooth text.
+  useEffect(() => {
+    if (!sessionId) return
+    useCommandStore.getState().setActiveManagedSession(sessionId)
+    return () => {
+      // Only clear if this session is still the active one — prevents a
+      // race when switching between two SessionPanels.
+      if (useCommandStore.getState().activeManagedSessionId === sessionId) {
+        useCommandStore.getState().setActiveManagedSession(null)
+      }
+    }
+  }, [sessionId])
+
   // ─── isProcessing ─────────────────────────────────────────────────────────
   // Derived from commandStore selector: O(1) for most states, only scans
   // messages when awaiting_input / awaiting_question.  Replaces the old

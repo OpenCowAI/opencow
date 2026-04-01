@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
-import type { Issue, UserMessageContent } from '@shared/types'
-import { buildIssuePrompt } from '@shared/issuePromptBuilder'
+import type { Issue, IssueProvider, UserMessageContent } from '@shared/types'
+import { buildIssuePrompt, type IssueRemoteContext } from '@shared/issuePromptBuilder'
 import { getAppAPI } from '@/windowAPI'
 
 // ─── Types ──────────────────────────────────────────────────────────────────
@@ -48,7 +48,7 @@ export function resolveProjectPath(
  * building logic.
  */
 export async function buildIssueSessionPrompt(
-  issue: Pick<Issue, 'title' | 'description' | 'richContent' | 'images' | 'projectId'>,
+  issue: Pick<Issue, 'title' | 'description' | 'richContent' | 'images' | 'projectId' | 'providerId' | 'remoteNumber' | 'remoteUrl' | 'remoteState' | 'syncStatus'>,
   options: BuildIssueSessionPromptOptions,
 ): Promise<IssueSessionPromptResult> {
   const projectPath = resolveProjectPath(issue.projectId, options.projects)
@@ -58,9 +58,31 @@ export async function buildIssueSessionPrompt(
     return result.content
   }
 
+  // Resolve remote context if the issue is linked to a provider
+  let remoteContext: IssueRemoteContext | null = null
+  if (issue.providerId) {
+    try {
+      const provider: IssueProvider | null = await getAppAPI()['issue-provider:get'](issue.providerId)
+      if (provider) {
+        remoteContext = {
+          platform: provider.platform,
+          repoOwner: provider.repoOwner,
+          repoName: provider.repoName,
+          remoteNumber: issue.remoteNumber ?? null,
+          remoteUrl: issue.remoteUrl ?? null,
+          remoteState: issue.remoteState ?? null,
+          syncStatus: issue.syncStatus ?? null,
+        }
+      }
+    } catch {
+      // Best-effort — remote context failure should not block session start
+    }
+  }
+
   const prompt = await buildIssuePrompt(issue, {
     readSource,
     actionText: options.actionText,
+    remoteContext,
   })
 
   return { prompt, projectPath }
