@@ -13,18 +13,26 @@ concurrency:
 permissions:
   contents: write
 
+env:
+  NODE_VERSION: '22'
+  PNPM_VERSION: '10.13.1'
+
 jobs:
-  build-and-release:
-    name: Build & Release
-    runs-on: macos-latest
+  validate:
+    name: Validate Release
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
     steps:
       - uses: actions/checkout@v6
 
       - uses: pnpm/action-setup@v5
+        with:
+          version: ${{ env.PNPM_VERSION }}
 
       - uses: actions/setup-node@v6
         with:
-          node-version: 22
+          node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
 
       - run: pnpm install --frozen-lockfile
@@ -33,6 +41,7 @@ jobs:
       # Ensure the git tag matches the version declared in package.json.
       # Prevents accidental releases with mismatched version numbers.
       - name: Validate tag matches package.json version
+        id: version
         run: |
           TAG_VERSION="${GITHUB_REF_NAME#v}"
           PKG_VERSION=$(node -p "require('./package.json').version")
@@ -40,12 +49,34 @@ jobs:
             echo "::error::Tag version ($TAG_VERSION) does not match package.json version ($PKG_VERSION)"
             exit 1
           fi
-          echo "VERSION=$TAG_VERSION" >> "$GITHUB_ENV"
+          echo "version=$TAG_VERSION" >> "$GITHUB_OUTPUT"
 
       # ── Quality gates ─────────────────────────────────────────────────
       - run: pnpm lint
       - run: pnpm typecheck
       - run: pnpm test
+
+  build-macos:
+    name: Build macOS
+    needs: validate
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: pnpm/action-setup@v5
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # ── Build ─────────────────────────────────────────────────────────
+      # Vite build (main + preload + renderer)
+      - run: pnpm build
 
       # ── macOS Code Signing ─────────────────────────────────────────────
       # Import the Developer ID Application certificate into a temporary
@@ -76,14 +107,10 @@ jobs:
           # Add temporary keychain to the search list
           security list-keychains -d user -s $KEYCHAIN_PATH
 
-      # ── Build ─────────────────────────────────────────────────────────
-      # Vite build (main + preload + renderer)
-      - run: pnpm build
-
       # Electron Builder — produces DMG + ZIP for macOS (universal binary)
       # With code signing and notarization enabled.
       - name: Build Electron App
-        run: npx electron-builder --mac --universal
+        run: pnpm exec electron-builder --mac --universal
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # Code Signing
@@ -94,17 +121,127 @@ jobs:
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
 
-      # ── Publish ───────────────────────────────────────────────────────
-      # Upload only installer artifacts (DMG + ZIP). Blockmap files are
-      # excluded — they are only needed by electron-updater (Phase 3).
-      # The *.dmg.zip (DMG archive) is excluded via negation pattern.
+      - name: Upload macOS artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-artifacts
+          path: |
+            dist/*.dmg
+            dist/*-mac.zip
+          retention-days: 5
+
+  build-windows:
+    name: Build Windows
+    needs: validate
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: pnpm/action-setup@v5
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Build electron-vite artifacts
+        run: pnpm exec electron-vite build
+
+      - name: Build Electron App (Windows)
+        run: pnpm exec electron-builder --win --x64
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload Windows artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-artifacts
+          path: |
+            dist/*.exe
+            dist/*.zip
+          retention-days: 5
+
+  build-linux:
+    name: Build Linux
+    needs: validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: pnpm/action-setup@v5
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      # ── Install Linux build dependencies ──────────────────────────────
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libgtk-3-0 \
+            libnotify4 \
+            libnss3 \
+            libxss1 \
+            libxtst6 \
+            xdg-utils \
+            libatspi2.0-0 \
+            libsecret-1-0 \
+            libpython3-stdlib \
+            libpython3.12 \
+            libgcc-s1 \
+            libwebkit2gtk-4.1-0 \
+            libgbm1
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Build electron-vite artifacts
+        run: pnpm exec electron-vite build
+
+      - name: Build Electron App (Linux)
+        run: pnpm exec electron-builder --linux AppImage --x64
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload Linux artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-artifacts
+          path: |
+            dist/*.AppImage
+            dist/*.deb
+          retention-days: 5
+
+  create-release:
+    name: Create Release
+    needs: [validate, build-macos, build-windows, build-linux]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist/
+
+      - name: List artifacts
+        run: find dist/ -type f | head -50
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          name: OpenCow v${{ env.VERSION }}
+          name: OpenCow v${{ needs.validate.outputs.version }}
           files: |
-            dist/*.dmg
-            dist/*-mac.zip
+            dist/**/*.dmg
+            dist/**/*.zip
+            dist/**/*.exe
+            dist/**/*.AppImage
+            dist/**/*.deb
           generate_release_notes: true
           draft: false
           prerelease: ${{ contains(github.ref, '-beta') || contains(github.ref, '-alpha') || contains(github.ref, '-rc') }}
