@@ -94,17 +94,21 @@ jobs:
           git merge upstream/main --no-edit -X ours
           echo "🔄 Merged upstream/main"
 
-      - name: Restore our workflow
+      - name: Restore our workflow (if different)
         run: |
-          # 恢复我们的 workflow
+          # 恢复我们的 workflow（如果与上游不同）
           cp /tmp/release-all-platforms.yml "${{ env.OUR_WORKFLOW }}"
-          git add "${{ env.OUR_WORKFLOW }}"
-          git commit -m "chore: restore release-all-platforms workflow after upstream sync"
-          echo "✅ Restored our workflow"
+          if git diff --quiet "${{ env.OUR_WORKFLOW }}"; then
+            echo "ℹ️ Workflow unchanged, no commit needed"
+          else
+            git add "${{ env.OUR_WORKFLOW }}"
+            git commit -m "chore: restore release-all-platforms workflow after upstream sync"
+            echo "✅ Restored our workflow"
+          fi
 
       - name: Push changes
         run: |
-          git push origin main
+          git push origin main || git push --force origin main
           echo "🚀 Pushed to origin/main"
 
   sync-full:
