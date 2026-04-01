@@ -947,7 +947,7 @@ export const ToolUseBlockView = memo(function ToolUseBlockView({
     && /\.md$/i.test(block.input.file_path)
     && block.input.content != null
   const rowClasses =
-    'inline-flex items-center gap-1.5 font-mono text-xs min-w-0'
+    'flex items-center gap-1.5 font-mono text-xs min-w-0 max-w-full'
 
   // Shared icon + name + target elements
   const toolLabel = (
@@ -958,7 +958,7 @@ export const ToolUseBlockView = memo(function ToolUseBlockView({
       />
       <span className="font-medium text-[hsl(var(--foreground))]" title={block.name}>{displayName}</span>
       {target && (
-        <span className="text-[hsl(var(--muted-foreground))] truncate min-w-0">{target}</span>
+        <span className="text-[hsl(var(--muted-foreground))] truncate min-w-0 flex-1">{target}</span>
       )}
     </>
   )
@@ -971,7 +971,7 @@ export const ToolUseBlockView = memo(function ToolUseBlockView({
         <div className={rowClasses}>
           <button
             onClick={() => setExpanded((prev) => !prev)}
-            className="inline-flex items-center gap-1.5 min-w-0 text-left bg-[hsl(var(--muted))] hover:bg-[hsl(var(--muted-foreground)/0.15)] rounded-full px-2 py-0.5 transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[hsl(var(--ring))]"
+            className="inline-flex items-center gap-1.5 min-w-0 max-w-full flex-1 text-left bg-[hsl(var(--muted))] hover:bg-[hsl(var(--muted-foreground)/0.15)] rounded-full px-2 py-0.5 transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[hsl(var(--ring))]"
             aria-expanded={expanded}
             aria-label={expanded ? 'Collapse tool details' : 'Expand tool details'}
           >
@@ -1041,7 +1041,7 @@ export const ToolUseBlockView = memo(function ToolUseBlockView({
       ) : (
         // Static row (no input, not interactive) — pill style
         <div className={rowClasses}>
-          <span className="inline-flex items-center gap-1.5 bg-[hsl(var(--muted))] rounded-full px-2 py-0.5">
+          <span className="inline-flex items-center gap-1.5 bg-[hsl(var(--muted))] rounded-full px-2 py-0.5 min-w-0 max-w-full flex-1">
             {toolLabel}
           </span>
           {isExecuting && (
