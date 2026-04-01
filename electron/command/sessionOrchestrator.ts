@@ -859,6 +859,14 @@ export class SessionOrchestrator {
     let streamEndedCleanly = false
 
     try {
+      // stopSession() may run before lifecycle.start() is reached (startup race).
+      // In that case the lifecycle is already closed; skip start entirely to avoid
+      // throwing "already stopped" and incorrectly downgrading session state to error.
+      if (session.getState() === 'stopped' || lifecycle.stopped) {
+        log.info('Session lifecycle start skipped because session is already stopped', { sessionId })
+        return
+      }
+
       const runtimeEventStream = lifecycle.start(initialPrompt, toSdkOptions(options))
       for await (const runtimeEvent of runtimeEventStream) {
         // Hard stop guard: manual stop sets session state to `stopped`
@@ -1458,6 +1466,13 @@ export class SessionOrchestrator {
     const rt = this.runtimes.get(sessionId)
     if (!rt) return
     const session = rt.session
+
+    // User-initiated stop has already converged this session to terminal "stopped".
+    // Late lifecycle errors after shutdown must not overwrite that state.
+    if (session.getState() === 'stopped') {
+      log.info(`Ignoring late runtime error for already-stopped session ${sessionId}`)
+      return
+    }
 
     this.dispatchFinalizedAssistantSnapshots(session)
 

@@ -173,6 +173,7 @@ describe('SessionOrchestrator.startSession — idempotency', () => {
       async () => ({ Codex: codexMocks.mockCodexCtor as unknown as typeof import('@openai/codex-sdk').Codex }),
     )
     mockClose.mockReset()
+    pendingNextResolvers = []
     codexMocks.state.turnPlans = []
     codexMocks.mockCodexRunStreamed.mockClear()
     codexMocks.mockCodexStartThread.mockClear()
@@ -694,6 +695,7 @@ describe('SessionOrchestrator.stopSession — deterministic cleanup', () => {
       async () => ({ Codex: codexMocks.mockCodexCtor as unknown as typeof import('@openai/codex-sdk').Codex }),
     )
     mockClose.mockReset()
+    pendingNextResolvers = []
     codexMocks.state.turnPlans = []
     codexMocks.mockCodexRunStreamed.mockClear()
     codexMocks.mockCodexStartThread.mockClear()
@@ -709,6 +711,15 @@ describe('SessionOrchestrator.stopSession — deterministic cleanup', () => {
 
   it('calls lifecycle.stop() which invokes query.close()', async () => {
     const id = await orchestrator.startSession({ prompt: 'test' })
+
+    // Wait until QueryLifecycle has started and issued at least one next() pull.
+    // Without this, stopSession may race before lifecycle.start() is reached,
+    // making close() legitimately unnecessary for this particular timing.
+    for (let i = 0; i < 500 && pendingNextResolvers.length === 0; i++) {
+      await new Promise((resolve) => setTimeout(resolve, 1))
+    }
+    expect(pendingNextResolvers.length).toBeGreaterThan(0)
+
     await orchestrator.stopSession(id)
 
     expect(mockClose).toHaveBeenCalledTimes(1)
