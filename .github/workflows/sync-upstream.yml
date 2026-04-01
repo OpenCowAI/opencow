@@ -1,0 +1,131 @@
+name: Sync from Upstream
+
+on:
+  # 手动触发（最安全）
+  workflow_dispatch:
+    inputs:
+      strategy:
+        description: 'Sync strategy'
+        required: true
+        default: 'preserve-workflow'
+        type: choice
+        options:
+          - preserve-workflow  # 保留我们的 workflow，sync 其他
+          - full-sync          # 完全同步上游（会覆盖 workflow！）
+
+  # 也可以定时自动检查（可选）
+  schedule:
+    - cron: '0 3 * * *'  # 每天凌晨3点检查一次
+
+permissions:
+  contents: write
+  pull-requests: write
+
+env:
+  UPSTREAM_REPO: OpenCowAI/opencow
+  OUR_WORKFLOW: .github/workflows/release-all-platforms.yml
+
+jobs:
+  check-upstream:
+    name: Check upstream updates
+    runs-on: ubuntu-latest
+    outputs:
+      has_updates: ${{ steps.check.outputs.has_updates }}
+      upstream_sha: ${{ steps.check.outputs.upstream_sha }}
+      current_sha: ${{ steps.check.outputs.current_sha }}
+    steps:
+      - name: Checkout our repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Add upstream remote
+        run: |
+          git remote add upstream https://github.com/${{ env.UPSTREAM_REPO }}.git
+          git fetch upstream
+
+      - name: Check for updates
+        id: check
+        run: |
+          UPSTREAM_SHA=$(git rev-parse upstream/main)
+          CURRENT_SHA=$(git rev-parse origin/main)
+          
+          echo "upstream_sha=$UPSTREAM_SHA" >> $GITHUB_OUTPUT
+          echo "current_sha=$CURRENT_SHA" >> $GITHUB_OUTPUT
+          
+          if [ "$UPSTREAM_SHA" != "$CURRENT_SHA" ]; then
+            echo "has_updates=true" >> $GITHUB_OUTPUT
+            echo "📦 Upstream has updates: $UPSTREAM_SHA != $CURRENT_SHA"
+          else
+            echo "has_updates=false" >> $GITHUB_OUTPUT
+            echo "✅ Already up to date"
+          fi
+
+  sync-preserve-workflow:
+    name: Sync (preserve our workflow)
+    needs: check-upstream
+    if: needs.check-upstream.outputs.has_updates == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Add upstream
+        run: |
+          git remote add upstream https://github.com/${{ env.UPSTREAM_REPO }}.git
+
+      - name: Backup our workflow
+        run: |
+          # 保存我们的 workflow
+          cp "${{ env.OUR_WORKFLOW }}" /tmp/release-all-platforms.yml
+          echo "📦 Backed up our workflow"
+
+      - name: Sync from upstream
+        run: |
+          git fetch upstream
+          git merge upstream/main --no-edit -X ours
+          echo "🔄 Merged upstream/main"
+
+      - name: Restore our workflow
+        run: |
+          # 恢复我们的 workflow
+          cp /tmp/release-all-platforms.yml "${{ env.OUR_WORKFLOW }}"
+          git add "${{ env.OUR_WORKFLOW }}"
+          git commit -m "chore: restore release-all-platforms workflow after upstream sync"
+          echo "✅ Restored our workflow"
+
+      - name: Push changes
+        run: |
+          git push origin main
+          echo "🚀 Pushed to origin/main"
+
+  sync-full:
+    name: Full sync (overwrite with upstream)
+    needs: check-upstream
+    if: needs.check-upstream.outputs.has_updates == 'true' && github.event.inputs.strategy == 'full-sync'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Full sync
+        run: |
+          git fetch upstream
+          git merge upstream/main --no-edit
+          git push origin main
+          echo "🚀 Full sync completed"
+
+  notify:
+    name: Notify result
+    needs: [check-upstream, sync-preserve-workflow]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Summary
+        run: |
+          if [[ "${{ needs.check-upstream.outputs.has_updates }}" == "false" ]]; then
+            echo "✅ No updates needed"
+          elif [[ "${{ needs.sync-preserve-workflow.result }}" == "success" ]]; then
+            echo "✅ Sync completed successfully"
+          else
+            echo "❌ Sync failed - manual intervention needed"
+          fi
