@@ -19,7 +19,7 @@ import { ComposeView } from './SessionPanel/ComposeView'
 import { SessionContextBar } from './SessionContextBar'
 import { ImageThumbnail } from './ImageThumbnail'
 import { ImageLightbox } from './ImageLightbox'
-import { DropOverlay } from './DropOverlay'
+import { ContextFileDropZone } from './ContextFileDropZone'
 import { getSessionInputFocus } from '../../lib/sessionInputRegistry'
 import { useSessionHistoryForIssue, selectSessionForIssue } from '../../hooks/useSessionForIssue'
 import { useSessionArchive } from '../../hooks/useSessionArchive'
@@ -139,73 +139,6 @@ function IssueImageGallery({ images }: { images: import('@shared/types').IssueIm
           onClose={() => setLightboxIdx(null)}
         />
       )}
-    </div>
-  )
-}
-
-/**
- * Drop zone wrapper — detects native drag of file/directory entries from
- * the sidebar FileTree and forwards them to the ContextFiles context.
- */
-function ContextFileDragZone({ children, className }: { children: React.ReactNode; className?: string }): React.JSX.Element {
-  const { addFile } = useContextFiles()
-  const [isDragOver, setIsDragOver] = useState(false)
-  const dragCounterRef = useRef(0)
-
-  const handleDragEnter = useCallback((e: React.DragEvent) => {
-    if (e.dataTransfer.types.includes('application/x-opencow-file')) {
-      e.preventDefault()
-      dragCounterRef.current += 1
-      if (dragCounterRef.current === 1) setIsDragOver(true)
-    }
-  }, [])
-
-  const handleDragOver = useCallback((e: React.DragEvent) => {
-    if (e.dataTransfer.types.includes('application/x-opencow-file')) {
-      e.preventDefault()
-      e.dataTransfer.dropEffect = 'copy'
-    }
-  }, [])
-
-  const handleDragLeave = useCallback((e: React.DragEvent) => {
-    if (e.dataTransfer.types.includes('application/x-opencow-file')) {
-      dragCounterRef.current -= 1
-      if (dragCounterRef.current <= 0) {
-        dragCounterRef.current = 0
-        setIsDragOver(false)
-      }
-    }
-  }, [])
-
-  const handleDrop = useCallback(
-    (e: React.DragEvent) => {
-      e.preventDefault()
-      dragCounterRef.current = 0
-      setIsDragOver(false)
-
-      const raw = e.dataTransfer.getData('application/x-opencow-file')
-      if (!raw) return
-
-      try {
-        const data = JSON.parse(raw) as { path: string; name: string; isDirectory: boolean }
-        addFile({ path: data.path, name: data.name, isDirectory: data.isDirectory })
-      } catch {
-        // Ignore malformed data
-      }
-    },
-    [addFile],
-  )
-
-  return (
-    <div
-      className={cn(className, 'relative')}
-      onDragEnter={handleDragEnter}
-      onDragOver={handleDragOver}
-      onDragLeave={handleDragLeave}
-      onDrop={handleDrop}
-    >
-      {children}
-      {isDragOver && <DropOverlay />}
     </div>
   )
 }
@@ -753,7 +686,7 @@ export function IssueDetailView({ issueId, onClose, onNavigateToIssue }: IssueDe
 
   return (
     <ContextFilesProvider>
-    <ContextFileDragZone className="h-full flex flex-col overflow-hidden">
+    <IssueDetailContent className="h-full flex flex-col overflow-hidden">
       {/* Ref for CSS animation replay on issue switch — must be a real DOM element */}
       <div ref={contentRef} className="h-full flex flex-col overflow-hidden">
       {/* Header — always rendered; action buttons disabled while loading */}
@@ -1093,7 +1026,23 @@ export function IssueDetailView({ issueId, onClose, onNavigateToIssue }: IssueDe
         />
       )}
     </div>
-    </ContextFileDragZone>
+    </IssueDetailContent>
     </ContextFilesProvider>
+  )
+}
+
+function IssueDetailContent({
+  children,
+  className,
+}: {
+  children: React.ReactNode
+  className: string
+}): React.JSX.Element {
+  const { addFiles } = useContextFiles()
+
+  return (
+    <ContextFileDropZone className={className} onFilesDrop={({ files }) => addFiles(files)}>
+      {children}
+    </ContextFileDropZone>
   )
 }

@@ -6,6 +6,8 @@ import { MessageSquare, Loader2, SquarePen, ChevronDown } from 'lucide-react'
 import { SessionChatLayout } from './SessionChatLayout'
 import { ChatHeroInput } from './ChatHeroInput'
 import { ProjectScopeProvider } from '@/contexts/ProjectScopeContext'
+import { ContextFilesProvider } from '@/contexts/ContextFilesContext'
+import { ContextFileDropZone } from '@/components/DetailPanel/ContextFileDropZone'
 import { PillDropdown } from '@/components/ui/PillDropdown'
 import { formatRelativeTime } from '@/components/DetailPanel/SessionPanel/artifactUtils'
 import { cn } from '@/lib/utils'
@@ -14,6 +16,7 @@ import { useSessionMessages } from '@/hooks/useSessionMessages'
 import type { SessionSnapshot, ManagedSessionMessage, ManagedSessionState, UserMessageContent } from '@shared/types'
 import type { TFunction } from 'i18next'
 import { truncate } from '@shared/unicode'
+import { useContextFiles } from '@/contexts/ContextFilesContext'
 
 // ════════════════════════════════════════════════════════════════════
 // ChatPanel — Compact conversation panel for Files view mode.
@@ -32,11 +35,24 @@ interface ChatPanelProps {
 export function ChatPanel({ agent }: ChatPanelProps): React.JSX.Element {
   return (
     <ProjectScopeProvider projectPath={agent.projectPath} projectId={agent.projectId ?? undefined}>
-      <div className="h-full flex flex-col bg-[hsl(var(--background))]">
-        <ChatPanelHeader agent={agent} />
-        <ChatPanelBody agent={agent} />
-      </div>
+      <ContextFilesProvider>
+        <ChatPanelContainer agent={agent} />
+      </ContextFilesProvider>
     </ProjectScopeProvider>
+  )
+}
+
+function ChatPanelContainer({ agent }: ChatPanelProps): React.JSX.Element {
+  const { addFiles } = useContextFiles()
+
+  return (
+    <ContextFileDropZone
+      className="h-full flex flex-col bg-[hsl(var(--background))]"
+      onFilesDrop={({ files }) => addFiles(files)}
+    >
+      <ChatPanelHeader agent={agent} />
+      <ChatPanelBody agent={agent} />
+    </ContextFileDropZone>
   )
 }
 

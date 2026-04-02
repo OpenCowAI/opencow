@@ -18,6 +18,7 @@ interface ContextFilesContextValue {
   files: ContextFile[]
   addFile: (file: ContextFile) => void
   addFiles: (files: ContextFile[]) => void
+  acknowledgeFiles: (paths: string[]) => void
   removeFile: (path: string) => void
   clear: () => void
 }
@@ -26,6 +27,7 @@ const ContextFilesContext = createContext<ContextFilesContextValue>({
   files: [],
   addFile: () => {},
   addFiles: () => {},
+  acknowledgeFiles: () => {},
   removeFile: () => {},
   clear: () => {},
 })
@@ -45,6 +47,19 @@ export function ContextFilesProvider({ children }: { children: React.ReactNode }
     })
   }, [])
 
+  /**
+   * Acknowledge files that have been consumed by an editor insertion pipeline.
+   * Unacknowledged files remain queued to avoid data loss when editor is not ready.
+   */
+  const acknowledgeFiles = useCallback((paths: string[]) => {
+    if (paths.length === 0) return
+    setFiles((prev) => {
+      const consumed = new Set(paths)
+      const next = prev.filter((f) => !consumed.has(f.path))
+      return next.length === prev.length ? prev : next
+    })
+  }, [])
+
   const removeFile = useCallback((path: string) => {
     setFiles((prev) => prev.filter((f) => f.path !== path))
   }, [])
@@ -52,8 +67,8 @@ export function ContextFilesProvider({ children }: { children: React.ReactNode }
   const clear = useCallback(() => setFiles([]), [])
 
   const value = useMemo(
-    () => ({ files, addFile, addFiles, removeFile, clear }),
-    [files, addFile, addFiles, removeFile, clear],
+    () => ({ files, addFile, addFiles, acknowledgeFiles, removeFile, clear }),
+    [files, addFile, addFiles, acknowledgeFiles, removeFile, clear],
   )
 
   return <ContextFilesContext.Provider value={value}>{children}</ContextFilesContext.Provider>
