@@ -67,7 +67,7 @@ export function EditorStatusBar({ projectPath }: EditorStatusBarProps): React.JS
         <span className={cn('shrink-0', decoration.colorClass)}>{decoration.tooltip}</span>
       )}
       <span className="ml-auto shrink-0">{activeFile.language}</span>
-      {activeFile.isDirty && <span className="shrink-0">{t('editor.modified')}</span>}
+      {activeFile.viewKind === 'text' && activeFile.isDirty && <span className="shrink-0">{t('editor.modified')}</span>}
       {/* Changed files count */}
       {gitSnapshot && gitSnapshot.changedCount > 0 && (
         <span className="shrink-0 text-git-modified">

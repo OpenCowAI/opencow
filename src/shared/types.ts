@@ -210,6 +210,8 @@ export interface IPCChannels {
   /** Recursively search project files by name/path query */
   'search-project-files': { args: [projectPath: string, query: string]; return: FileEntry[] }
   'read-file-content': { args: [projectPath: string, filePath: string]; return: FileContentReadResult }
+  /** Read an image file as data URL for local preview rendering. */
+  'read-image-preview': { args: [projectPath: string, filePath: string]; return: ImagePreviewReadResult }
   /**
    * Read a tool-referenced file within a managed session sandbox.
    * Relative paths are resolved against session.executionContext.cwd.
@@ -751,6 +753,14 @@ export interface FileContentResult {
 
 export type FileContentReadResult = FileAccessResult<FileContentResult>
 export type FileContentWriteResult = FileAccessResult<{ saved: true }>
+
+export interface ImagePreviewResult {
+  dataUrl: string
+  mimeType: string
+  size: number
+}
+
+export type ImagePreviewReadResult = FileAccessResult<ImagePreviewResult>
 
 export interface ViewToolFileContentInput {
   sessionId: string

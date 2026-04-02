@@ -29,6 +29,10 @@ export interface OpenFile {
   content: string
   savedContent: string
   isDirty: boolean
+  /** Rendering kind in IDE pane: plain text editor vs image preview. */
+  viewKind: 'text' | 'image'
+  /** Data URL for image preview files; null for text files. */
+  imageDataUrl: string | null
 }
 
 export interface OpenFileParams {
@@ -36,6 +40,8 @@ export interface OpenFileParams {
   name: string
   language: string
   content: string
+  viewKind?: 'text' | 'image'
+  imageDataUrl?: string | null
 }
 
 /** Parameters for refreshing an open file's content from disk. */
@@ -51,6 +57,8 @@ export interface FileStore {
   openFiles: OpenFile[]
   activeFilePath: string | null
   expandedDirs: Set<string>
+  /** Per-project current directory for FileBrowser mode (relative path, '' = root). */
+  browserSubPathByProject: Record<string, string>
 
   openFile: (params: OpenFileParams) => void
   closeFile: (path: string) => void
@@ -58,6 +66,8 @@ export interface FileStore {
   updateFileContent: (path: string, content: string) => void
   markFileSaved: (path: string) => void
   toggleDir: (path: string) => void
+  setBrowserSubPath: (projectId: string, subPath: string) => void
+  clearBrowserSubPath: (projectId: string) => void
 
   /** Refresh an open file's content from disk. Skips isDirty files and no-ops on same content. */
   refreshFile: (params: RefreshFileParams) => void
@@ -86,6 +96,7 @@ const initialState = {
   openFiles: [] as OpenFile[],
   activeFilePath: null as string | null,
   expandedDirs: new Set<string>(),
+  browserSubPathByProject: {} as Record<string, string>,
   pendingFileWritesByToolId: {} as Record<string, string>,
   pendingFileRefreshPaths: [] as string[],
 }
@@ -97,18 +108,35 @@ export const useFileStore = create<FileStore>((set, get) => ({
 
   // ── Core file operations ──────────────────────────────────────
 
-  openFile: ({ path, name, language, content }) =>
+  openFile: ({ path, name, language, content, viewKind = 'text', imageDataUrl = null }) =>
     set((s) => {
+      const normalizedImageDataUrl = viewKind === 'image' ? imageDataUrl : null
       const existing = s.openFiles.find((f) => f.path === path)
       if (existing) {
         // Already open → switch tab + refresh content (only when not dirty and content differs)
-        if (existing.isDirty || existing.content === content) {
+        if (
+          existing.isDirty ||
+          (
+            existing.content === content &&
+            existing.language === language &&
+            existing.viewKind === viewKind &&
+            existing.imageDataUrl === normalizedImageDataUrl
+          )
+        ) {
           return { activeFilePath: path }
         }
         return {
           openFiles: s.openFiles.map((f) =>
             f.path === path
-              ? { ...f, content, savedContent: content, language, isDirty: false }
+              ? {
+                  ...f,
+                  content,
+                  savedContent: content,
+                  language,
+                  isDirty: false,
+                  viewKind,
+                  imageDataUrl: normalizedImageDataUrl,
+                }
               : f
           ),
           activeFilePath: path
@@ -117,7 +145,16 @@ export const useFileStore = create<FileStore>((set, get) => ({
       return {
         openFiles: [
           ...s.openFiles,
-          { path, name, language, content, savedContent: content, isDirty: false }
+          {
+            path,
+            name,
+            language,
+            content,
+            savedContent: content,
+            isDirty: false,
+            viewKind,
+            imageDataUrl: normalizedImageDataUrl,
+          }
         ],
         activeFilePath: path
       }
@@ -144,14 +181,18 @@ export const useFileStore = create<FileStore>((set, get) => ({
   updateFileContent: (path, content) =>
     set((s) => ({
       openFiles: s.openFiles.map((f) =>
-        f.path === path ? { ...f, content, isDirty: content !== f.savedContent } : f
+        f.path === path && f.viewKind === 'text'
+          ? { ...f, content, isDirty: content !== f.savedContent }
+          : f
       )
     })),
 
   markFileSaved: (path) =>
     set((s) => ({
       openFiles: s.openFiles.map((f) =>
-        f.path === path ? { ...f, savedContent: f.content, isDirty: false } : f
+        f.path === path && f.viewKind === 'text'
+          ? { ...f, savedContent: f.content, isDirty: false }
+          : f
       )
     })),
 
@@ -166,19 +207,39 @@ export const useFileStore = create<FileStore>((set, get) => ({
       return { expandedDirs: next }
     }),
 
+  setBrowserSubPath: (projectId, subPath) =>
+    set((s) => {
+      const current = s.browserSubPathByProject[projectId]
+      if (current === subPath) return {}
+      return {
+        browserSubPathByProject: {
+          ...s.browserSubPathByProject,
+          [projectId]: subPath,
+        },
+      }
+    }),
+
+  clearBrowserSubPath: (projectId) =>
+    set((s) => {
+      if (!(projectId in s.browserSubPathByProject)) return {}
+      const { [projectId]: _dropped, ...rest } = s.browserSubPathByProject
+      return { browserSubPathByProject: rest }
+    }),
+
   // ── File refresh actions ──────────────────────────────────────
 
   refreshFile: ({ path, content, language }) =>
     set((s) => {
       const file = s.openFiles.find((f) => f.path === path)
       if (!file) return {}
+      if (file.viewKind !== 'text') return {}
       if (file.isDirty) return {}            // Has unsaved edits → don't overwrite
       if (file.content === content) return {} // Same content → no-op
 
       return {
         openFiles: s.openFiles.map((f) =>
           f.path === path
-            ? { ...f, content, savedContent: content, language, isDirty: false }
+            ? { ...f, content, savedContent: content, language, isDirty: false, viewKind: 'text', imageDataUrl: null }
             : f
         )
       }
@@ -186,7 +247,7 @@ export const useFileStore = create<FileStore>((set, get) => ({
 
   refreshOpenFiles: async (projectPath) => {
     const { openFiles } = get()
-    const filesToRefresh = openFiles.filter((f) => !f.isDirty)
+    const filesToRefresh = openFiles.filter((f) => !f.isDirty && f.viewKind === 'text')
     if (filesToRefresh.length === 0) return
 
     const results = await Promise.allSettled(
@@ -240,7 +301,7 @@ export const useFileStore = create<FileStore>((set, get) => ({
       pendingFileRefreshPaths: [
         ...new Set([
           ...s.pendingFileRefreshPaths,
-          ...s.openFiles.filter((f) => !f.isDirty).map((f) => f.path)
+          ...s.openFiles.filter((f) => !f.isDirty && f.viewKind === 'text').map((f) => f.path)
         ])
       ]
     })),

@@ -82,6 +82,23 @@ describe('fileStore', () => {
     expect(file.isDirty).toBe(true)
   })
 
+  it('does not mark image file dirty on content update', () => {
+    const store = useFileStore.getState()
+    store.openFile({
+      path: 'assets/logo.png',
+      name: 'logo.png',
+      language: 'image/png',
+      content: '',
+      viewKind: 'image',
+      imageDataUrl: 'data:image/png;base64,abc',
+    })
+
+    store.updateFileContent('assets/logo.png', 'should-not-apply')
+    const file = useFileStore.getState().openFiles[0]
+    expect(file.content).toBe('')
+    expect(file.isDirty).toBe(false)
+  })
+
   it('marks file clean on save', () => {
     const store = useFileStore.getState()
     store.openFile({ path: 'a.ts', name: 'a.ts', language: 'typescript', content: 'original' })
@@ -100,6 +117,22 @@ describe('fileStore', () => {
 
     store.toggleDir('src')
     expect(useFileStore.getState().expandedDirs.has('src')).toBe(false)
+  })
+
+  it('stores browser sub-path per project and supports clearing', () => {
+    const store = useFileStore.getState()
+    store.setBrowserSubPath('project-1', 'src/components')
+    store.setBrowserSubPath('project-2', 'docs')
+
+    expect(useFileStore.getState().browserSubPathByProject).toEqual({
+      'project-1': 'src/components',
+      'project-2': 'docs',
+    })
+
+    store.clearBrowserSubPath('project-1')
+    expect(useFileStore.getState().browserSubPathByProject).toEqual({
+      'project-2': 'docs',
+    })
   })
 })
 
@@ -137,6 +170,28 @@ describe('fileStore - refreshFile', () => {
     const filesAfter = useFileStore.getState().openFiles
     // Same content → no state change → same reference
     expect(filesBefore).toBe(filesAfter)
+  })
+
+  it('refreshFile skips image files', () => {
+    useFileStore.getState().openFile({
+      path: 'assets/logo.png',
+      name: 'logo.png',
+      language: 'image/png',
+      content: '',
+      viewKind: 'image',
+      imageDataUrl: 'data:image/png;base64,aaa',
+    })
+
+    useFileStore.getState().refreshFile({
+      path: 'assets/logo.png',
+      content: 'unexpected',
+      language: 'plaintext',
+    })
+
+    const file = useFileStore.getState().openFiles[0]
+    expect(file.viewKind).toBe('image')
+    expect(file.imageDataUrl).toBe('data:image/png;base64,aaa')
+    expect(file.content).toBe('')
   })
 })
 
@@ -222,6 +277,7 @@ describe('fileStore - reset', () => {
     expect(state.openFiles).toEqual([])
     expect(state.activeFilePath).toBeNull()
     expect(state.expandedDirs.size).toBe(0)
+    expect(state.browserSubPathByProject).toEqual({})
     expect(state.pendingFileWritesByToolId).toEqual({})
     expect(state.pendingFileRefreshPaths).toEqual([])
   })

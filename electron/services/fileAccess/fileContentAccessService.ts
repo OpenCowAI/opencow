@@ -11,6 +11,7 @@ import type {
   BundleFileInfo,
   FileContentReadResult,
   FileContentWriteResult,
+  ImagePreviewReadResult,
   ViewCapabilityBundleFileContentInput,
   ViewToolFileContentInput,
 } from '@shared/types'
@@ -64,6 +65,58 @@ export class FileContentAccessService {
 
       const content = await this.policy.readViewableTextFile(resolvedPath, 'editor')
       return fileAccessSuccess(content)
+    } catch (error) {
+      return asFileAccessFailure(error)
+    }
+  }
+
+  async readProjectImagePreview(projectPath: string, filePath: string): Promise<ImagePreviewReadResult> {
+    try {
+      const normalizedProjectPath = this.requireNonEmpty(projectPath, 'projectPath')
+      const normalizedFilePath = this.requireNonEmpty(filePath, 'filePath')
+
+      const resolvedBase = path.resolve(normalizedProjectPath)
+      const resolvedPath = path.resolve(resolvedBase, normalizedFilePath)
+
+      await this.policy.assertResolvedPathWithinBase({
+        resolvedPath,
+        resolvedBase,
+        deniedMessage: 'Access denied: path outside project directory',
+      })
+
+      const ext = path.extname(resolvedPath).toLowerCase()
+      const mimeTypeMap: Record<string, string> = {
+        '.png': 'image/png',
+        '.jpg': 'image/jpeg',
+        '.jpeg': 'image/jpeg',
+        '.gif': 'image/gif',
+        '.webp': 'image/webp',
+        '.avif': 'image/avif',
+        '.bmp': 'image/bmp',
+        '.ico': 'image/x-icon',
+      }
+      const mimeType = mimeTypeMap[ext]
+      if (!mimeType) {
+        throw new FileAccessServiceError('binary_file_not_supported', 'Image preview supports PNG, JPEG, GIF, WebP, AVIF, BMP, ICO')
+      }
+
+      const stat = await fs.stat(resolvedPath)
+      if (stat.isDirectory()) {
+        throw new FileAccessServiceError('directory_not_supported', 'Cannot open directory as image preview')
+      }
+      if (stat.size > 10 * 1024 * 1024) {
+        throw new FileAccessServiceError(
+          'file_too_large',
+          `Image file too large (${(stat.size / 1024 / 1024).toFixed(1)} MB). Maximum is 10 MB.`,
+        )
+      }
+
+      const buf = await fs.readFile(resolvedPath)
+      return fileAccessSuccess({
+        dataUrl: `data:${mimeType};base64,${buf.toString('base64')}`,
+        mimeType,
+        size: stat.size,
+      })
     } catch (error) {
       return asFileAccessFailure(error)
     }
