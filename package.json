@@ -1,7 +1,7 @@
 {
   "name": "opencow",
   "productName": "OpenCow",
-  "version": "0.3.15",
+  "version": "0.3.16",
   "description": "Task-driven autonomous AI agent platform",
   "packageManager": "pnpm@10.13.1",
   "main": "./out/main/index.js",
