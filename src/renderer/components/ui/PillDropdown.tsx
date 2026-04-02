@@ -17,7 +17,8 @@ export function PillDropdown({
   position = 'above',
   align = 'left',
   hoverMode = false,
-  className
+  className,
+  dropdownClassName
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -29,6 +30,8 @@ export function PillDropdown({
   hoverMode?: boolean
   /** Extra classes for the container element */
   className?: string
+  /** Extra classes for the dropdown panel element */
+  dropdownClassName?: string
 }): React.JSX.Element {
   const containerRef = useRef<HTMLDivElement>(null)
   const dropdownRef = useRef<HTMLDivElement>(null)
@@ -118,6 +121,7 @@ export function PillDropdown({
             style={dropdownStyle}
             className={cn(
               'fixed min-w-[160px] rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--popover))] text-[hsl(var(--popover-foreground))] shadow-md py-1 z-[9999]',
+              dropdownClassName,
               phase === 'enter' && 'dropdown-enter',
               phase === 'exit' && 'dropdown-exit'
             )}
