@@ -88,7 +88,7 @@ describe('EngineBootstrapRegistry', () => {
     await registry.apply({
       engineKind: 'codex',
       config: createConfig({
-        model: 'session-model',
+        model: 'gpt-5.3-codex',
       }),
       sessionEnv: {},
       options,
@@ -106,7 +106,7 @@ describe('EngineBootstrapRegistry', () => {
       },
     })
 
-    expect(options.model).toBe('session-model')
+    expect(options.model).toBe('gpt-5.3-codex')
     expect(options.codexModelReasoningEffort).toBe('high')
     expect(options.codexSandboxMode).toBe('danger-full-access')
     expect(options.codexApprovalPolicy).toBe('never')
@@ -323,5 +323,30 @@ describe('EngineBootstrapRegistry', () => {
     ).resolves.toBeUndefined()
 
     expect(options.codexSandboxMode).toBe('workspace-write')
+  })
+
+  it('always applies explicit session model override as highest priority', async () => {
+    const registry = new EngineBootstrapRegistry({
+      codexCliPathResolver: () => '/tmp/codex-bin',
+    })
+    const options: Record<string, unknown> = {}
+
+    await registry.apply({
+      engineKind: 'codex',
+      config: createConfig({
+        model: 'claude-sonnet-4-6',
+      }),
+      sessionEnv: {
+        OPENAI_API_KEY: 'env-openai-key',
+      },
+      options,
+      deps: createDeps(),
+      logger: {
+        info: vi.fn(),
+        warn: vi.fn(),
+      },
+    })
+
+    expect(options.model).toBe('claude-sonnet-4-6')
   })
 })
