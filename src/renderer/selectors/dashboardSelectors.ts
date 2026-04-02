@@ -16,6 +16,13 @@ import type { SessionStatusCounts } from '@/hooks/useSessionStatusCounts'
 export interface DashboardStats {
   totalSessions: number
   sessionStatusCounts: SessionStatusCounts
+  /**
+   * Backward-compatible task metrics retained for selectors/tests and
+   * potential downstream consumers. Dashboard UI now primarily surfaces
+   * issue-centric metrics.
+   */
+  totalTasks: number
+  taskCompletionRate: number
   totalIssues: number
   issueStatusCounts: Record<IssueStatus, number>
   issueCompletionRate: number
@@ -95,6 +102,9 @@ export function selectDashboardStats(params: StatsParams): DashboardStats {
   const { stats, selectedProjectId } = params
   const sessions = filterByProject(params.sessions, selectedProjectId)
   const issues = filterIssuesByProject(params.issues, selectedProjectId)
+  const allTasks = Object.values(params.tasksByList ?? {}).flat()
+  const totalTasks = allTasks.length
+  const completedTasks = allTasks.filter((task) => task.status === 'completed').length
 
   const sessionStatusCounts: SessionStatusCounts = { active: 0, waiting: 0, completed: 0, error: 0 }
   for (const s of sessions) sessionStatusCounts[s.status]++
@@ -113,6 +123,8 @@ export function selectDashboardStats(params: StatsParams): DashboardStats {
   return {
     totalSessions: sessions.length,
     sessionStatusCounts,
+    totalTasks,
+    taskCompletionRate: totalTasks > 0 ? completedTasks / totalTasks : 0,
     totalIssues,
     issueStatusCounts,
     issueCompletionRate,
