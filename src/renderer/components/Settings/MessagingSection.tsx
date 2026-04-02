@@ -29,7 +29,7 @@ function makeNewConnection(platform: IMPlatformType, t: TFunction): IMConnection
     name: t('messaging.newConnectionName', { platform: platformName }),
     enabled: false,
     allowedUserIds: [],
-    defaultWorkspacePath: '',
+    defaultWorkspace: { scope: 'global' as const },
   }
 
   switch (platform) {

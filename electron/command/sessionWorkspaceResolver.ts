@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { homedir } from 'node:os'
+import { realpathSync, statSync } from 'node:fs'
+import { isAbsolute } from 'node:path'
 import type { SessionWorkspaceInput } from '../../src/shared/types'
 
 export type SessionWorkspaceScope = 'project' | 'global' | 'custom-path'
@@ -16,6 +18,9 @@ export type SessionWorkspaceResolutionErrorCode =
   | 'PROJECT_ID_REQUIRED'
   | 'PROJECT_NOT_FOUND'
   | 'PROJECT_PATH_EMPTY'
+  | 'CUSTOM_CWD_NOT_ABSOLUTE'
+  | 'CUSTOM_CWD_NOT_FOUND'
+  | 'CUSTOM_CWD_NOT_DIRECTORY'
   | 'INVALID_CUSTOM_CWD'
 
 export class SessionWorkspaceResolutionError extends Error {
@@ -62,9 +67,45 @@ export class SessionWorkspaceResolver {
             { workspace },
           )
         }
+        if (!isAbsolute(cwd)) {
+          throw new SessionWorkspaceResolutionError(
+            'CUSTOM_CWD_NOT_ABSOLUTE',
+            'workspace.cwd must be an absolute path for custom-path scope',
+            { cwd },
+          )
+        }
+        let normalizedCwd: string
+        try {
+          normalizedCwd = realpathSync(cwd)
+        } catch {
+          throw new SessionWorkspaceResolutionError(
+            'CUSTOM_CWD_NOT_FOUND',
+            `workspace.cwd does not exist: ${cwd}`,
+            { cwd },
+          )
+        }
+        try {
+          const stat = statSync(normalizedCwd)
+          if (!stat.isDirectory()) {
+            throw new SessionWorkspaceResolutionError(
+              'CUSTOM_CWD_NOT_DIRECTORY',
+              `workspace.cwd must be a directory: ${normalizedCwd}`,
+              { cwd: normalizedCwd },
+            )
+          }
+        } catch (err) {
+          if (err instanceof SessionWorkspaceResolutionError) {
+            throw err
+          }
+          throw new SessionWorkspaceResolutionError(
+            'CUSTOM_CWD_NOT_FOUND',
+            `workspace.cwd cannot be accessed: ${normalizedCwd}`,
+            { cwd: normalizedCwd },
+          )
+        }
         return {
           scope: 'custom-path',
-          cwd,
+          cwd: normalizedCwd,
           projectId: null,
           projectPath: null,
         }

@@ -1,28 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
 
-import type { SessionWorkspaceInput } from '../../../src/shared/types'
+import type { SessionWorkspaceInput, UserConfigurableWorkspaceInput } from '../../../src/shared/types'
 
 /**
- * Resolve bot/runtime workspace bindings to the unified session workspace input.
+ * Resolve a user-configurable workspace selector to session workspace input.
  *
- * Precedence:
- * 1) projectId  -> project workspace (resolved to canonical path by orchestrator)
- * 2) cwd path   -> explicit custom-path workspace
- * 3) fallback   -> global workspace (user home)
+ * In user settings, only `project` and `global` are allowed.
  */
-export function resolveWorkspaceBinding(params: {
-  projectId?: string | null
-  cwd?: string | null
-}): SessionWorkspaceInput {
-  const projectId = params.projectId?.trim()
-  if (projectId) {
-    return { scope: 'project', projectId }
+export function resolveUserWorkspaceBinding(workspace: UserConfigurableWorkspaceInput | undefined): SessionWorkspaceInput {
+  if (!workspace) return { scope: 'global' }
+  if (workspace.scope === 'project') {
+    const projectId = workspace.projectId.trim()
+    return projectId ? { scope: 'project', projectId } : { scope: 'global' }
   }
-
-  const cwd = params.cwd?.trim()
-  if (cwd) {
-    return { scope: 'custom-path', cwd }
-  }
-
   return { scope: 'global' }
 }

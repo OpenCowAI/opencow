@@ -3156,6 +3156,16 @@ export type SessionWorkspaceInput =
   | { scope: 'global' }
   | { scope: 'custom-path'; cwd: string }
 
+/**
+ * Workspace selector exposed in user-facing settings.
+ *
+ * `custom-path` is intentionally excluded — it is reserved for internal/system
+ * callers and must not be user-configurable.
+ */
+export type UserConfigurableWorkspaceInput =
+  | { scope: 'project'; projectId: string }
+  | { scope: 'global' }
+
 export interface StartSessionInput {
   prompt: UserMessageContent
   /** Session origin — determines routing and idempotency behavior. Defaults to {source:'agent'} if omitted. */
@@ -3314,9 +3324,8 @@ interface IMConnectionBase {
   enabled: boolean
   /** User IDs allowed to interact (string[] for all platforms; empty = allow everyone). */
   allowedUserIds: string[]
-  /** Default working directory for sessions started from this connection. */
-  defaultWorkspacePath: string
-  defaultProjectId?: string
+  /** Default workspace for sessions started from this connection. */
+  defaultWorkspace: UserConfigurableWorkspaceInput
 }
 
 /** Telegram connection configuration. */
@@ -3398,8 +3407,7 @@ export interface TelegramBotEntry {
   botToken: string
   /** Telegram user IDs (number[]) — grammy requires numeric IDs. */
   allowedUserIds: number[]
-  defaultWorkspacePath: string
-  defaultProjectId?: string
+  defaultWorkspace: UserConfigurableWorkspaceInput
 }
 
 /** Internal multi-bot settings container for TelegramBotManager. */

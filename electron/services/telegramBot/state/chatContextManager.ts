@@ -5,7 +5,7 @@
  *
  * Stores two kinds of temporary state per (botId, chatId) pair:
  *   - `mode`: current conversation flow mode (e.g. waiting for Issue description)
- *   - `activeProjectPath` / `activeProjectName`: user's temporarily selected project
+ *   - `activeProjectId` / `activeProjectName`: user's temporarily selected project
  *
  * Lifecycle:
  *   - State is kept in memory only — cleared on Bot restart (intentional).
@@ -17,8 +17,6 @@
 interface ChatContext {
   /** Current conversation flow mode */
   mode: 'normal' | 'issue_creation'
-  /** User's temporarily switched project path (overrides Bot global defaultWorkspacePath) */
-  activeProjectPath?: string
   /** User's temporarily switched project name (for display purposes) */
   activeProjectName?: string
   /** User's temporarily switched project ID (used for IssueService filter) */

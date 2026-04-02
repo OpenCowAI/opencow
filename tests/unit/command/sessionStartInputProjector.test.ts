@@ -78,4 +78,14 @@ describe('projectStartSessionInput', () => {
     expect(() => projectStartSessionInput(raw)).toThrowError(/capabilityCategories/)
     expect(() => projectStartSessionInput(raw)).toThrowError(/disableBuiltinTools/)
   })
+
+  it('rejects custom-path workspace from IPC payloads', () => {
+    const raw = {
+      prompt: 'hello',
+      origin: { source: 'agent' as const },
+      workspace: { scope: 'custom-path', cwd: '/tmp/project' },
+    }
+
+    expect(() => projectStartSessionInput(raw)).toThrowError(/Invalid start-session payload/)
+  })
 })

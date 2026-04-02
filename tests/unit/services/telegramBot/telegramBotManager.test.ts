@@ -40,7 +40,7 @@ function makeEntry(overrides: Partial<TelegramBotEntry> = {}): TelegramBotEntry 
     enabled: true,
     botToken: '111:AAA',
     allowedUserIds: [],
-    defaultWorkspacePath: '',
+    defaultWorkspace: { scope: 'global' },
     ...overrides,
   }
 }

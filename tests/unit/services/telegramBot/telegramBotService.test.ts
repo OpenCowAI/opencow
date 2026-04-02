@@ -54,7 +54,7 @@ const TEST_BOT_ENTRY: TelegramBotEntry = {
   enabled: true,
   botToken: '123:ABC',
   allowedUserIds: [],
-  defaultWorkspacePath: '',
+  defaultWorkspace: { scope: 'global' },
 }
 
 function makeDeps(overrides: Partial<TelegramBotServiceDeps> = {}): TelegramBotServiceDeps {

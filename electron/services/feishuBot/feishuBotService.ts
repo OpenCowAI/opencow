@@ -34,7 +34,7 @@ import {
 import { getIMChatId } from '../messaging/types'
 import { findActiveIMSession, routeIMMessage } from '../messaging/sessionRouter'
 import { executeCommand, type CommandResult, type CommandContext } from '../messaging/commandHandler'
-import { resolveWorkspaceBinding } from '../messaging/workspaceBinding'
+import { resolveUserWorkspaceBinding } from '../messaging/workspaceBinding'
 import { CommandRouter } from '../messaging/commandRouter'
 import { createLogger } from '../../platform/logger'
 
@@ -344,10 +344,7 @@ export class FeishuBotService {
       chatId,
       origin: this.getFeishuOrigin(chatId),
       newSessionDefaults: {
-        workspace: resolveWorkspaceBinding({
-          projectId: config.defaultProjectId,
-          cwd: config.defaultWorkspacePath,
-        }),
+        workspace: resolveUserWorkspaceBinding(config.defaultWorkspace),
       },
       onSessionEnd: () => this.releaseStreamingState(chatId),
     }
@@ -452,10 +449,7 @@ export class FeishuBotService {
       connectionId: config.id,
       chatId,
       newSessionDefaults: {
-        workspace: resolveWorkspaceBinding({
-          projectId: config.defaultProjectId,
-          cwd: config.defaultWorkspacePath,
-        }),
+        workspace: resolveUserWorkspaceBinding(config.defaultWorkspace),
       },
     })
 

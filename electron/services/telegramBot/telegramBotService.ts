@@ -27,7 +27,7 @@ import { DraftStreamingStrategy } from './streaming/draftStrategy'
 import { snapToGraphemeBoundary } from '@shared/unicode'
 import { findActiveIMSession, routeIMMessage } from '../messaging/sessionRouter'
 import { executeCommand, resolveSessionId, type CommandResult, type CommandContext } from '../messaging/commandHandler'
-import { resolveWorkspaceBinding } from '../messaging/workspaceBinding'
+import { resolveUserWorkspaceBinding } from '../messaging/workspaceBinding'
 
 const log = createLogger('TelegramBot')
 
@@ -65,7 +65,7 @@ export interface TelegramBotServiceDeps {
   /**
    * Returns the current configuration for this bot instance.
    * Called on every operation — callers should return a live reference so that
-   * hot-updatable fields (allowedUserIds, defaultWorkspacePath) take effect
+   * hot-updatable fields (allowedUserIds, defaultWorkspace) take effect
    * without restarting the bot. Only `botToken` changes require stop + restart.
    */
   getConfig: () => TelegramBotEntry
@@ -546,7 +546,7 @@ export class TelegramBotService {
     const { action, args } = this.router.parse(text)
     const origin = this.getTelegramOrigin(chatId)
     // Workspace binding: per-chat temporary project override takes precedence over
-    // the Bot's global defaultWorkspacePath (set via Bot Settings UI).
+    // the Bot's global defaultWorkspace (set via Bot Settings UI).
     const newSessionDefaults = {
       workspace: this.resolveStartWorkspace(chatId),
     }
@@ -754,10 +754,8 @@ export class TelegramBotService {
    *
    * Precedence:
    * 1) Chat-scoped active project ID
-   * 2) Chat-scoped active project path
-   * 3) Bot default project ID
-   * 4) Bot default workspace path
-   * 5) Global (~)
+   * 2) Bot default workspace
+   * 3) Global (~)
    */
   private resolveStartWorkspace(chatId: string): SessionWorkspaceInput {
     const config = this.deps.getConfig()
@@ -768,15 +766,7 @@ export class TelegramBotService {
       return { scope: 'project', projectId: activeProjectId }
     }
 
-    const activeProjectPath = chatCtx.activeProjectPath?.trim()
-    if (activeProjectPath) {
-      return { scope: 'custom-path', cwd: activeProjectPath }
-    }
-
-    return resolveWorkspaceBinding({
-      projectId: config.defaultProjectId,
-      cwd: config.defaultWorkspacePath,
-    })
+    return resolveUserWorkspaceBinding(config.defaultWorkspace)
   }
 
   /**

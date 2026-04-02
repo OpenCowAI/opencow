@@ -971,7 +971,7 @@ export const ToolUseBlockView = memo(function ToolUseBlockView({
         <div className={rowClasses}>
           <button
             onClick={() => setExpanded((prev) => !prev)}
-            className="inline-flex items-center gap-1.5 min-w-0 max-w-full flex-1 text-left bg-[hsl(var(--muted))] hover:bg-[hsl(var(--muted-foreground)/0.15)] rounded-full px-2 py-0.5 transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[hsl(var(--ring))]"
+            className="inline-flex items-center gap-1.5 min-w-0 max-w-full text-left bg-[hsl(var(--muted))] hover:bg-[hsl(var(--muted-foreground)/0.15)] rounded-full px-2 py-0.5 transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[hsl(var(--ring))]"
             aria-expanded={expanded}
             aria-label={expanded ? 'Collapse tool details' : 'Expand tool details'}
           >
@@ -1041,7 +1041,7 @@ export const ToolUseBlockView = memo(function ToolUseBlockView({
       ) : (
         // Static row (no input, not interactive) — pill style
         <div className={rowClasses}>
-          <span className="inline-flex items-center gap-1.5 bg-[hsl(var(--muted))] rounded-full px-2 py-0.5 min-w-0 max-w-full flex-1">
+          <span className="inline-flex items-center gap-1.5 bg-[hsl(var(--muted))] rounded-full px-2 py-0.5 min-w-0 max-w-full">
             {toolLabel}
           </span>
           {isExecuting && (

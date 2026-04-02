@@ -98,22 +98,16 @@ describe('IPC command:start-session — workspace forwarding', () => {
     )
   })
 
-  it('passes custom-path workspace through to orchestrator', async () => {
+  it('rejects custom-path workspace from IPC payloads', async () => {
     const startSession = vi.fn(async () => 'session-1')
     const handler = registerAndGetStartSessionHandler({
       orchestrator: { startSession } as unknown as IPCDeps['orchestrator'],
     })
 
-    const result = await handler({}, {
+    await expect(handler({}, {
       prompt: 'hello',
       workspace: { scope: 'custom-path', cwd: '/tmp/proj-explicit' },
-    })
-
-    expect(result).toBe('session-1')
-    expect(startSession).toHaveBeenCalledWith(
-      expect.objectContaining({
-        workspace: { scope: 'custom-path', cwd: '/tmp/proj-explicit' },
-      }),
-    )
+    })).rejects.toThrow(/Invalid start-session payload/)
+    expect(startSession).not.toHaveBeenCalled()
   })
 })

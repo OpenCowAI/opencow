@@ -123,10 +123,6 @@ const startSessionInputSchema = z.object({
     z.object({
       scope: z.literal('global'),
     }).strict(),
-    z.object({
-      scope: z.literal('custom-path'),
-      cwd: z.string(),
-    }).strict(),
   ]).optional(),
   model: z.string().optional(),
   maxTurns: z.number().int().positive().optional(),

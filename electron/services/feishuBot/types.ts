@@ -8,6 +8,7 @@ import type {
   IMConnectionStatusType,
   IMOrchestratorDeps,
   DataBusEvent,
+  UserConfigurableWorkspaceInput,
 } from '../../../src/shared/types'
 import type { IssueService } from '../issueService'
 import type { ProjectService } from '../projectService'
@@ -23,8 +24,7 @@ export interface FeishuBotEntry {
   appId: string
   appSecret: string
   allowedUserIds: string[]       // open_id list
-  defaultWorkspacePath: string
-  defaultProjectId?: string
+  defaultWorkspace: UserConfigurableWorkspaceInput
 }
 
 // ── Runtime status ──────────────────────────────────────────────────────────
