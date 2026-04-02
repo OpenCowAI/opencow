@@ -169,7 +169,8 @@
   "filter": {
     "allProjects": "All Projects",
     "archivedProjects": "Archived projects",
-    "archived": "Archived"
+    "archived": "Archived",
+    "all": "All"
   },
   "status": {
     "active": "Active",

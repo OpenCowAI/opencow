@@ -169,7 +169,8 @@
   "filter": {
     "allProjects": "全部",
     "archivedProjects": "归档项目",
-    "archived": "归档"
+    "archived": "归档",
+    "all": "全部"
   },
   "status": {
     "active": "活跃",

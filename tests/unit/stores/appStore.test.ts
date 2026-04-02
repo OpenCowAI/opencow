@@ -114,15 +114,15 @@ describe('appStore - NavigationSlice', () => {
     expect(useAppStore.getState().detailContext).toBeNull()
   })
 
-  it('navigateToProject from schedule restores last saved project tab', () => {
-    // Start on a project, switch to claude tab
+  it('navigateToProject from schedule keeps schedule tab for same project', () => {
+    // Start on a project, switch to chat tab
     useAppStore.getState().navigateToProject('proj-1')
     useAppStore.getState().setMainTab('chat')
-    // Switch to schedule — should NOT overwrite _projectStates lastTab
+    // Switch to schedule — schedule is now a first-class project tab
     useAppStore.getState().setMainTab('schedule')
-    // Navigate back to same project — should restore 'claude', not 'issues'
+    // Clicking the same project is idempotent; active tab remains schedule
     useAppStore.getState().navigateToProject('proj-1')
-    expect(selectMainTab(useAppStore.getState())).toBe('chat')
+    expect(selectMainTab(useAppStore.getState())).toBe('schedule')
   })
 
   it('navigateToProject restores target project saved tab on project switch', () => {
@@ -229,15 +229,15 @@ describe('appStore - NavigationSlice', () => {
     expect(useAppStore.getState().agentChatSessionId).toBe('sess-1')
   })
 
-  // ── Schedule does not pollute _projectStates.lastTab ──────────
-  it('setMainTab(schedule) does not overwrite _projectStates lastTab', () => {
+  // ── Schedule participates in per-project lastTab memory ────────
+  it('setMainTab(schedule) persists schedule as project lastTab', () => {
     useAppStore.getState().navigateToProject('proj-1')
     useAppStore.getState().setMainTab('chat')
     useAppStore.getState().setMainTab('schedule')
-    // Navigate to inbox then back — should restore 'claude', not 'schedule'
+    // Navigate to inbox then back — should restore schedule
     useAppStore.getState().navigateToInbox()
     useAppStore.getState().navigateToProject('proj-1')
-    expect(selectMainTab(useAppStore.getState())).toBe('chat')
+    expect(selectMainTab(useAppStore.getState())).toBe('schedule')
   })
 
   // ── agentSidebarExpanded persistence ───────────────────────────

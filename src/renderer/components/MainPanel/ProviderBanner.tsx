@@ -5,7 +5,7 @@ import { useTranslation } from 'react-i18next'
 import { AlertTriangle, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useSettingsStore } from '@/stores/settingsStore'
-import { useAppStore, selectMainTab } from '@/stores/appStore'
+import { useAppStore } from '@/stores/appStore'
 
 /**
  * ProviderBanner — Shown at the top of MainPanel when the default AI engine
@@ -20,7 +20,6 @@ import { useAppStore, selectMainTab } from '@/stores/appStore'
  *   - Onboarding is not yet completed
  *   - The default engine is authenticated
  *   - The user dismissed the banner
- *   - The schedule full-panel view is active (no tab bar visible)
  */
 export function ProviderBanner(): React.JSX.Element | null {
   const { t } = useTranslation('navigation')
@@ -30,7 +29,6 @@ export function ProviderBanner(): React.JSX.Element | null {
   const providerStatusByEngine = useSettingsStore((s) => s.providerStatusByEngine)
   const openSettingsModal = useSettingsStore((s) => s.openSettingsModal)
   const onboarding = useAppStore((s) => s.onboarding)
-  const activeTab = useAppStore(selectMainTab)
 
   const handleConfigure = useCallback(() => {
     openSettingsModal('provider')
@@ -42,9 +40,6 @@ export function ProviderBanner(): React.JSX.Element | null {
 
   // Don't show during onboarding
   if (!onboarding.completed) return null
-
-  // Don't show during full-panel schedule view (no tab bar = no banner)
-  if (activeTab === 'schedule') return null
 
   // Determine if the default engine is authenticated
   const defaultEngine = settings?.command.defaultEngine ?? 'claude'

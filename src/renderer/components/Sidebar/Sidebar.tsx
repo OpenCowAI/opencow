@@ -29,7 +29,6 @@ import { FolderGit2, Home, ChevronLeft, ChevronRight, Star, Package } from 'luci
 import { surfaceProps } from '@/lib/surface'
 import { Tooltip } from '@/components/ui/Tooltip'
 import { InboxWidget } from './InboxWidget'
-import { ScheduleWidget } from './ScheduleWidget'
 import { AppInfoWidget } from './AppInfoWidget'
 import { ProjectContextMenu, type ProjectContextMenuState } from './ProjectContextMenu'
 import { DeleteProjectDialog } from './DeleteProjectDialog'
@@ -681,7 +680,6 @@ export function Sidebar(): React.JSX.Element {
           </div>
 
           <div className="mt-2 pt-2 border-t border-[hsl(var(--sidebar-border)/0.5)] space-y-1">
-            <ScheduleWidget collapsed />
             <InboxWidget collapsed />
             <SidebarUpdateCard collapsed />
           </div>
@@ -797,9 +795,8 @@ export function Sidebar(): React.JSX.Element {
           </button>
         )}
 
-        {/* Schedule + Inbox nav items */}
+        {/* Inbox nav item */}
         <div className="mt-2 pt-2 border-t border-[hsl(var(--sidebar-border)/0.5)] space-y-0.5">
-          <ScheduleWidget />
           <InboxWidget />
         </div>
         <SidebarUpdateCard />
