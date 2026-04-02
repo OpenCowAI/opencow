@@ -7,6 +7,8 @@
     "modified": "已修改",
     "openFilesAria": "已打开的文件",
     "unsavedChanges": "未保存的更改",
+    "previewModeAria": "编辑器预览模式",
+    "unableToPreviewImage": "无法预览图片",
     "closeFile": "关闭 {{name}}",
     "loadingEditor": "加载编辑器中…",
     "changedCount_one": "{{count}} 处变更",
@@ -26,6 +28,8 @@
     "openFileAria": "打开文件 {{name}}",
     "folderMeta": "修改于 {{modified}}",
     "fileMeta": "{{size}} · {{modified}}",
+    "previewModeAria": "预览模式",
+    "source": "源码",
     "closePreview": "关闭预览",
     "unableToRead": "无法读取文件"
   },

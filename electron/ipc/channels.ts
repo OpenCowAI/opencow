@@ -447,6 +447,10 @@ export function registerIPCHandlers(deps: IPCDeps): void {
     return fileContentAccess.readProjectFile(projectPath, filePath)
   })
 
+  registerHandler('read-image-preview', async (projectPath, filePath) => {
+    return fileContentAccess.readProjectImagePreview(projectPath, filePath)
+  })
+
   registerHandler('view-tool-file-content', async (input) => {
     return fileContentAccess.readSessionToolFile({
       input,

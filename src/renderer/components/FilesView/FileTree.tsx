@@ -23,6 +23,13 @@ interface FileTreeProps {
 }
 
 const EMPTY_FILE_ENTRIES: FileEntry[] = []
+const IMAGE_EXTS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'avif', 'bmp', 'ico'])
+
+function extensionOf(name: string): string {
+  const idx = name.lastIndexOf('.')
+  if (idx <= 0) return ''
+  return name.slice(idx + 1).toLowerCase()
+}
 
 // ── Helpers ────────────────────────────────────────────────────────
 
@@ -124,6 +131,24 @@ export function FileTree({ projectPath, projectName }: FileTreeProps): React.JSX
 
   const handleFileClick = useCallback(async (entry: FileEntry) => {
     try {
+      const ext = extensionOf(entry.name)
+      if (IMAGE_EXTS.has(ext)) {
+        const imageResult = await getAppAPI()['read-image-preview'](projectPath, entry.path)
+        if (!imageResult.ok) {
+          log.error('Failed to open image file', imageResult.error)
+          return
+        }
+        openFile({
+          path: entry.path,
+          name: entry.name,
+          language: imageResult.data.mimeType,
+          content: '',
+          viewKind: 'image',
+          imageDataUrl: imageResult.data.dataUrl,
+        })
+        return
+      }
+
       const rawResult = await getAppAPI()['read-file-content'](projectPath, entry.path)
       const result = normalizeFileContentReadResult(rawResult)
       if (!result.ok) {
@@ -135,6 +160,8 @@ export function FileTree({ projectPath, projectName }: FileTreeProps): React.JSX
         name: entry.name,
         language: result.data.language,
         content: result.data.content,
+        viewKind: 'text',
+        imageDataUrl: null,
       })
     } catch (err) {
       log.error('Failed to open file', err)

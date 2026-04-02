@@ -21,6 +21,7 @@ const invokeChannels: (keyof IPCChannels)[] = [
   'list-project-files',
   'search-project-files',
   'read-file-content',
+  'read-image-preview',
   'view-tool-file-content',
   'save-file-content',
   'download-file',

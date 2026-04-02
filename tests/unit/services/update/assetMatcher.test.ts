@@ -16,10 +16,20 @@ function asset(name: string, url?: string): ReleaseAsset {
 describe('findMatchingAssetUrl (macOS)', () => {
   const platform = 'darwin' as const
 
-  it('prefers universal DMG over arch-specific', () => {
+  it('prefers arch-specific DMG over universal', () => {
     const assets = [
       asset('OpenCow-0.4.0-arm64.dmg'),
       asset('OpenCow-0.4.0-universal.dmg'),
+    ]
+    expect(findMatchingAssetUrl(assets, platform, 'arm64')).toBe(
+      'https://example.com/OpenCow-0.4.0-arm64.dmg',
+    )
+  })
+
+  it('falls back to universal DMG when no arch-specific match', () => {
+    const assets = [
+      asset('OpenCow-0.4.0-universal.dmg'),
+      asset('OpenCow-0.4.0-x64.dmg'),
     ]
     expect(findMatchingAssetUrl(assets, platform, 'arm64')).toBe(
       'https://example.com/OpenCow-0.4.0-universal.dmg',
@@ -57,11 +67,12 @@ describe('findMatchingAssetUrl (macOS)', () => {
   it('matches electron-builder universal output naming', () => {
     // electron-builder --mac --universal produces these exact names
     const assets = [
+      asset('OpenCow-0.4.0-arm64.dmg'),
       asset('OpenCow-0.4.0-universal.dmg'),
       asset('OpenCow-0.4.0-universal-mac.zip'),
     ]
     expect(findMatchingAssetUrl(assets, platform, 'arm64')).toBe(
-      'https://example.com/OpenCow-0.4.0-universal.dmg',
+      'https://example.com/OpenCow-0.4.0-arm64.dmg',
     )
   })
 
@@ -82,7 +93,7 @@ describe('findMatchingAssetUrl (macOS)', () => {
       asset('OpenCow-0.4.0-arm64.dmg.zip'),
     ]
     // .dmg.zip matches /\.zip$/i, but users would get a ZIP containing a DMG
-    // This is acceptable — the primary preference chain (universal DMG → arch DMG → any DMG) is checked first
+    // This is acceptable — the primary preference chain (arch DMG → universal DMG → any DMG) is checked first
     // ZIP fallback only triggers when there's no DMG at all
     expect(findMatchingAssetUrl(assets, platform, 'arm64')).toBe(
       'https://example.com/OpenCow-0.4.0-arm64.dmg.zip',

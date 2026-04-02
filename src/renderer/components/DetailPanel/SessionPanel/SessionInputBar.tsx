@@ -13,7 +13,7 @@ import { StopButtonPopover } from '../../ui/StopButtonPopover'
 import type { SessionControlProps } from '../../ui/StopButtonPopover'
 import { registerSessionInputFocus, unregisterSessionInputFocus } from '../../../hooks/useSlashFocusShortcut'
 import { useProjectScope } from '@/contexts/ProjectScopeContext'
-import { useContextFiles } from '@/contexts/ContextFilesContext'
+import { useContextFilesEditorSync } from '@/hooks/useContextFilesEditorSync'
 import { FILE_INPUT_ACCEPT } from '@/lib/attachmentUtils'
 import type { AIEngineKind, UserMessageContent } from '@shared/types'
 import { ATTACHMENT_LIMITS } from '@shared/types'
@@ -47,7 +47,6 @@ export const SessionInputBar = memo(forwardRef<SessionInputBarHandle, SessionInp
   const { t } = useTranslation('sessions')
   const { t: tCommon } = useTranslation('common')
   const { projectPath } = useProjectScope()
-  const { files: contextFiles, clear: clearContextFiles } = useContextFiles()
 
   const {
     editor,
@@ -83,29 +82,7 @@ export const SessionInputBar = memo(forwardRef<SessionInputBarHandle, SessionInp
   const isStopMode = sessionControl?.isProcessing === true
 
   /* -- Sync drag-drop ContextFiles into editor as fileMention nodes -- */
-  const prevContextLenRef = useRef(0)
-  useEffect(() => {
-    if (!editor || contextFiles.length <= prevContextLenRef.current) {
-      prevContextLenRef.current = contextFiles.length
-      return
-    }
-    // Insert newly added files (those beyond prevLen)
-    const newFiles = contextFiles.slice(prevContextLenRef.current)
-    prevContextLenRef.current = contextFiles.length
-
-    const content = newFiles.flatMap((f) => [
-      {
-        type: 'fileMention' as const,
-        attrs: { path: f.path, name: f.name, isDirectory: f.isDirectory },
-      },
-      { type: 'text' as const, text: ' ' },
-    ])
-
-    editor.chain().focus('end').insertContent(content).run()
-    // Clear ContextFiles since they're now in the editor
-    clearContextFiles()
-    prevContextLenRef.current = 0
-  }, [contextFiles, editor, clearContextFiles])
+  useContextFilesEditorSync(editor)
 
   /* -- Slash command popover state (click-triggered) -- */
   const [isPopoverOpen, setIsPopoverOpen] = useState(false)

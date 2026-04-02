@@ -6,6 +6,8 @@ import { cn } from '@/lib/utils'
 import { FileIcon } from './FileIcon'
 import type { FileEntry } from '@shared/types'
 import type { FileDecoration } from '@/lib/gitDecorations'
+import { writeContextFileDrag } from '@/lib/contextFileDnd'
+import { setContextFileDragPreview } from '@/lib/contextFileDragPreview'
 
 interface FileTreeNodeProps {
   entry: FileEntry
@@ -42,13 +44,17 @@ export function FileTreeNode({
    */
   const handleDragStart = useCallback(
     (e: React.DragEvent) => {
-      const payload = JSON.stringify({
+      writeContextFileDrag(e.dataTransfer, {
         path: entry.path,
         name: entry.name,
         isDirectory: entry.isDirectory,
       })
-      e.dataTransfer.setData('application/x-opencow-file', payload)
-      e.dataTransfer.effectAllowed = 'copy'
+      setContextFileDragPreview(e.dataTransfer, {
+        name: entry.name,
+        isDirectory: entry.isDirectory,
+        sourceElement: e.currentTarget as HTMLElement,
+        pointerClient: { clientX: e.clientX, clientY: e.clientY },
+      })
     },
     [entry.path, entry.name, entry.isDirectory],
   )
@@ -86,6 +92,7 @@ export function FileTreeNode({
           filename={entry.name}
           isDirectory={entry.isDirectory}
           isExpanded={isExpanded}
+          className={entry.isDirectory ? 'h-3.5 w-3.5 shrink-0' : 'h-4 w-4 shrink-0'}
         />
         <span className={cn('truncate', decoration?.colorClass)}>{entry.name}</span>
         {decoration?.badge && (

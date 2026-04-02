@@ -6,6 +6,7 @@ import { useTranslation } from 'react-i18next'
 import { ArrowUp, AtSign, Paperclip, Loader2 } from 'lucide-react'
 import { useMessageComposer } from '@/hooks/useMessageComposer'
 import { useProjectScope } from '@/contexts/ProjectScopeContext'
+import { useContextFilesEditorSync } from '@/hooks/useContextFilesEditorSync'
 import { ContextMentionPopover } from '@/components/DetailPanel/SessionPanel/ContextMentionPopover'
 import { AttachmentPreviewList } from '@/components/ui/AttachmentPreviewList'
 import { StopButtonPopover } from '@/components/ui/StopButtonPopover'
@@ -81,6 +82,8 @@ export function ChatHeroInput({
     registerChatInputFocus(focus)
     return () => unregisterChatInputFocus(focus)
   }, [editor, registerAsChatTabInput])
+
+  useContextFilesEditorSync(editor)
 
   return (
     <div

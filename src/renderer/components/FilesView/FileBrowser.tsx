@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
-import { useCallback, useEffect, useRef, useMemo, useReducer } from 'react'
+import { useCallback, useEffect, useRef, useMemo, useState, useReducer } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { TFunction } from 'i18next'
-import { ChevronRight, Home, X } from 'lucide-react'
+import { ChevronRight, Home, X, FileText, Globe, ImageIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useFocusableListNav } from '@/hooks/useFocusableListNav'
 import { useDialogState } from '@/hooks/useModalAnimation'
@@ -11,8 +11,15 @@ import { normalizeFileContentReadResult } from '@/lib/fileContentReadResult'
 import { FileIcon } from './FileIcon'
 import { FileViewerStarButton } from '../ui/FileViewerStarButton'
 import { Dialog } from '../ui/Dialog'
+import { CodeViewer } from '../ui/code-viewer'
+import { MarkdownPreviewWithToc } from '../ui/MarkdownPreviewWithToc'
+import { wrapHtmlForSafePreview } from '@/lib/htmlSandbox'
+import { ImageLightbox } from '../DetailPanel/ImageLightbox'
 import type { FileEntry } from '@shared/types'
 import { getAppAPI } from '@/windowAPI'
+import { writeContextFileDrag } from '@/lib/contextFileDnd'
+import { setContextFileDragPreview } from '@/lib/contextFileDragPreview'
+import { useFileStore } from '@/stores/fileStore'
 
 interface FileBrowserProps {
   projectPath: string
@@ -48,32 +55,81 @@ interface FilePreview {
   fileName: string
   /** Absolute filesystem path — used as artifact dedup key. */
   absolutePath: string
-  content: string
+  entryPath: string
+  content: string | null
   language: string
+  kind: 'markdown' | 'html' | 'image' | 'code' | 'error'
+  imageDataUrl?: string
 }
 
 interface BrowserState {
-  currentSubPath: string
   entries: FileEntry[]
   loading: boolean
 }
 
 type BrowserAction =
-  | { type: 'navigate'; subPath: string }
   | { type: 'load-start' }
   | { type: 'load-success'; entries: FileEntry[] }
   | { type: 'load-error' }
 
 const initialBrowserState: BrowserState = {
-  currentSubPath: '',
   entries: [],
   loading: false
 }
 
+const IMAGE_EXTS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'avif', 'bmp', 'ico'])
+const THUMBNAIL_FETCH_CONCURRENCY = 4
+const MAX_THUMBNAILS_PER_DIRECTORY = 60
+
+function extensionOf(name: string): string {
+  const i = name.lastIndexOf('.')
+  if (i <= 0) return ''
+  return name.slice(i + 1).toLowerCase()
+}
+
+function inferPreviewKind(name: string, language: string): FilePreview['kind'] {
+  const ext = extensionOf(name)
+  if (IMAGE_EXTS.has(ext)) return 'image'
+  if (language === 'markdown' || ext === 'md') return 'markdown'
+  if (language === 'html' || ext === 'html' || ext === 'htm') return 'html'
+  return 'code'
+}
+
+function imageMimeFromExt(ext: string): string {
+  if (ext === 'png') return 'image/png'
+  if (ext === 'jpg' || ext === 'jpeg') return 'image/jpeg'
+  if (ext === 'gif') return 'image/gif'
+  if (ext === 'webp') return 'image/webp'
+  if (ext === 'avif') return 'image/avif'
+  if (ext === 'bmp') return 'image/bmp'
+  if (ext === 'ico') return 'image/x-icon'
+  return 'image/*'
+}
+
+type PreviewMode = 'preview' | 'source'
+
+async function runWithConcurrency<T>(
+  items: readonly T[],
+  concurrency: number,
+  worker: (item: T) => Promise<void>,
+): Promise<void> {
+  if (items.length === 0) return
+  const limit = Math.max(1, Math.min(concurrency, items.length))
+  let nextIndex = 0
+
+  await Promise.all(
+    Array.from({ length: limit }, async () => {
+      while (nextIndex < items.length) {
+        const current = items[nextIndex]
+        nextIndex += 1
+        await worker(current)
+      }
+    }),
+  )
+}
+
 function browserReducer(state: BrowserState, action: BrowserAction): BrowserState {
   switch (action.type) {
-    case 'navigate':
-      return { ...state, currentSubPath: action.subPath }
     case 'load-start':
       return { ...state, loading: true }
     case 'load-success':
@@ -88,8 +144,14 @@ function browserReducer(state: BrowserState, action: BrowserAction): BrowserStat
 export function FileBrowser({ projectPath, projectName, projectId }: FileBrowserProps): React.JSX.Element {
   const { t } = useTranslation('files')
   const [state, dispatch] = useReducer(browserReducer, initialBrowserState)
-  const { currentSubPath, entries, loading } = state
+  const { entries, loading } = state
+  const currentSubPath =
+    useFileStore((s) => s.browserSubPathByProject[projectId] ?? '')
+  const setBrowserSubPath = useFileStore((s) => s.setBrowserSubPath)
   const previewDialog = useDialogState<FilePreview>()
+  const [previewMode, setPreviewMode] = useState<PreviewMode>('preview')
+  const [lightboxImage, setLightboxImage] = useState<{ src: string; alt: string } | null>(null)
+  const [imageThumbs, setImageThumbs] = useState<Record<string, string>>({})
 
   const listContainerRef = useRef<HTMLDivElement>(null)
 
@@ -120,44 +182,147 @@ export function FileBrowser({ projectPath, projectName, projectId }: FileBrowser
     loadDirectory(currentSubPath)
   }, [currentSubPath, loadDirectory])
 
+  useEffect(() => {
+    setPreviewMode('preview')
+  }, [previewDialog.data?.absolutePath])
+
+  useEffect(() => {
+    // Keep thumbnail cache bounded to the active directory.
+    setImageThumbs({})
+  }, [projectPath, currentSubPath])
+
+  useEffect(() => {
+    let cancelled = false
+    const imageEntries = entries.filter((entry) => {
+      if (entry.isDirectory) return false
+      return IMAGE_EXTS.has(extensionOf(entry.name))
+    })
+    if (imageEntries.length === 0) return
+
+    const existingThumbCount = imageEntries.reduce(
+      (count, entry) => (imageThumbs[entry.path] == null ? count : count + 1),
+      0,
+    )
+    const remainingBudget = Math.max(0, MAX_THUMBNAILS_PER_DIRECTORY - existingThumbCount)
+    if (remainingBudget === 0) return
+
+    const pending = imageEntries
+      .filter((entry) => imageThumbs[entry.path] == null)
+      .slice(0, remainingBudget)
+    if (pending.length === 0) return
+
+    void (async () => {
+      const updates: Record<string, string> = {}
+      await runWithConcurrency(
+        pending,
+        THUMBNAIL_FETCH_CONCURRENCY,
+        async (entry) => {
+          try {
+            const res = await getAppAPI()['read-image-preview'](projectPath, entry.path)
+            if (res.ok) {
+              updates[entry.path] = res.data.dataUrl
+            }
+          } catch {
+            // Ignore thumbnail failures; grid falls back to icon.
+          }
+        },
+      )
+      if (cancelled || Object.keys(updates).length === 0) return
+      setImageThumbs((prev) => ({ ...prev, ...updates }))
+    })()
+
+    return () => {
+      cancelled = true
+    }
+  }, [entries, imageThumbs, projectPath])
+
   // ── Entry actions ──────────────────────────────────────────────
 
   const handleEntryClick = useCallback(
     async (entry: FileEntry) => {
       if (entry.isDirectory) {
         previewDialog.close()
-        dispatch({ type: 'navigate', subPath: entry.path })
+        setBrowserSubPath(projectId, entry.path)
       } else {
-        // Preview file content
+        const absolutePath = `${projectPath}/${entry.path}`
+        const ext = extensionOf(entry.name)
+        if (IMAGE_EXTS.has(ext)) {
+          try {
+            const imageResult = await getAppAPI()['read-image-preview'](projectPath, entry.path)
+            if (!imageResult.ok) {
+              previewDialog.show({
+                fileName: entry.name,
+                absolutePath,
+                entryPath: entry.path,
+                content: imageResult.error.message || t('browser.unableToRead'),
+                language: 'plaintext',
+                kind: 'error',
+              })
+              return
+            }
+            setImageThumbs((prev) => (
+              prev[entry.path] ? prev : { ...prev, [entry.path]: imageResult.data.dataUrl }
+            ))
+            previewDialog.show({
+              fileName: entry.name,
+              absolutePath,
+              entryPath: entry.path,
+              content: null,
+              language: imageResult.data.mimeType,
+              kind: 'image',
+              imageDataUrl: imageResult.data.dataUrl,
+            })
+            return
+          } catch {
+            previewDialog.show({
+              fileName: entry.name,
+              absolutePath,
+              entryPath: entry.path,
+              content: t('browser.unableToRead'),
+              language: 'plaintext',
+              kind: 'error',
+            })
+            return
+          }
+        }
+
+        // Preview text-like file content
         try {
           const rawResult = await getAppAPI()['read-file-content'](projectPath, entry.path)
           const result = normalizeFileContentReadResult(rawResult)
           if (!result.ok) {
             previewDialog.show({
               fileName: entry.name,
-              absolutePath: `${projectPath}/${entry.path}`,
+              absolutePath,
+              entryPath: entry.path,
               content: result.error.message || t('browser.unableToRead'),
               language: 'plaintext',
+              kind: 'error',
             })
             return
           }
+          const kind = inferPreviewKind(entry.name, result.data.language)
           previewDialog.show({
             fileName: entry.name,
-            absolutePath: `${projectPath}/${entry.path}`,
+            absolutePath,
+            entryPath: entry.path,
             content: result.data.content,
             language: result.data.language,
+            kind,
           })
         } catch {
           previewDialog.show({
             fileName: entry.name,
-            absolutePath: `${projectPath}/${entry.path}`,
+            absolutePath,
+            entryPath: entry.path,
             content: t('browser.unableToRead'),
             language: 'plaintext',
+            kind: 'error',
           })
         }
       }
     },
-    [previewDialog, projectPath, t]
+    [previewDialog, projectPath, projectId, setBrowserSubPath, t]
   )
 
   // ── Keyboard navigation ────────────────────────────────────────
@@ -193,12 +358,21 @@ export function FileBrowser({ projectPath, projectName, projectId }: FileBrowser
 
   // ── Render ─────────────────────────────────────────────────────
 
+  const activePreview = previewDialog.data
+  const hasRichPreview =
+    activePreview?.kind === 'markdown' ||
+    activePreview?.kind === 'html'
+  const showPreviewPane = activePreview != null && (
+    activePreview.kind === 'image' ||
+    hasRichPreview
+  )
+
   return (
     <div className="flex-1 flex flex-col min-h-0">
       {/* Breadcrumb */}
       <div className="flex items-center gap-1 px-4 py-2 border-b border-[hsl(var(--border))] text-xs">
         <button
-          onClick={() => dispatch({ type: 'navigate', subPath: '' })}
+          onClick={() => setBrowserSubPath(projectId, '')}
           className={cn(
             'flex items-center gap-1 px-1.5 py-0.5 rounded transition-colors',
             'hover:bg-[hsl(var(--foreground)/0.04)] text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))]',
@@ -218,7 +392,7 @@ export function FileBrowser({ projectPath, projectName, projectId }: FileBrowser
                 aria-hidden="true"
               />
               <button
-                onClick={() => dispatch({ type: 'navigate', subPath: path })}
+                onClick={() => setBrowserSubPath(projectId, path)}
                 className={cn(
                   'px-1.5 py-0.5 rounded transition-colors',
                   'hover:bg-[hsl(var(--foreground)/0.04)]',
@@ -271,6 +445,20 @@ export function FileBrowser({ projectPath, projectName, projectId }: FileBrowser
                     type="button"
                     data-nav-key={entry.path}
                     tabIndex={getTabIndex(entry.path)}
+                    draggable
+                    onDragStart={(e) => {
+                      writeContextFileDrag(e.dataTransfer, {
+                        path: entry.path,
+                        name: entry.name,
+                        isDirectory: entry.isDirectory,
+                      })
+                      setContextFileDragPreview(e.dataTransfer, {
+                        name: entry.name,
+                        isDirectory: entry.isDirectory,
+                        sourceElement: e.currentTarget,
+                        pointerClient: { clientX: e.clientX, clientY: e.clientY },
+                      })
+                    }}
                     className={cn(
                       'group rounded-lg p-2 text-left transition-colors',
                       'hover:bg-[hsl(var(--foreground)/0.04)]',
@@ -289,12 +477,21 @@ export function FileBrowser({ projectPath, projectName, projectId }: FileBrowser
                     }
                     title={entry.name}
                   >
-                    <div className="mx-auto mb-1 flex h-12 w-12 items-center justify-center rounded-md bg-[hsl(var(--muted)/0.25)]">
-                      <FileIcon
-                        filename={entry.name}
-                        isDirectory={entry.isDirectory}
-                        className={cn('h-7 w-7', entry.isDirectory && 'text-[hsl(var(--primary))]')}
-                      />
+                    <div className="mx-auto mb-1 flex h-12 w-12 items-center justify-center rounded-md bg-[hsl(var(--muted)/0.25)] overflow-hidden">
+                      {!entry.isDirectory && imageThumbs[entry.path] ? (
+                        <img
+                          src={imageThumbs[entry.path]}
+                          alt=""
+                          className="h-full w-full object-cover"
+                          loading="lazy"
+                        />
+                      ) : (
+                        <FileIcon
+                          filename={entry.name}
+                          isDirectory={entry.isDirectory}
+                          className={cn('h-7 w-7', entry.isDirectory && 'text-[hsl(var(--primary))]')}
+                        />
+                      )}
                     </div>
                     <p className={cn('line-clamp-2 text-center text-[11px] leading-4 break-all', entry.isDirectory && 'font-medium')}>
                       {entry.name}
@@ -311,25 +508,86 @@ export function FileBrowser({ projectPath, projectName, projectId }: FileBrowser
       </div>
 
       {/* Preview modal */}
-      {previewDialog.data !== null && (
+      {activePreview !== null && (
         <Dialog
           open={previewDialog.open}
           onClose={previewDialog.close}
-          title={previewDialog.data.fileName}
+          title={activePreview.fileName}
           size="3xl"
           className="!max-w-6xl"
         >
           <div className="flex items-center gap-2 px-4 py-2 border-b border-[hsl(var(--border))]">
-            <FileIcon filename={previewDialog.data.fileName} className="h-3.5 w-3.5 shrink-0" />
-            <span className="text-xs font-medium truncate">{previewDialog.data.fileName}</span>
+            {activePreview.kind === 'markdown' ? (
+              <FileText className="h-3.5 w-3.5 shrink-0 text-[hsl(var(--muted-foreground))]" />
+            ) : activePreview.kind === 'html' ? (
+              <Globe className="h-3.5 w-3.5 shrink-0 text-[hsl(var(--muted-foreground))]" />
+            ) : activePreview.kind === 'image' ? (
+              <ImageIcon className="h-3.5 w-3.5 shrink-0 text-[hsl(var(--muted-foreground))]" />
+            ) : (
+              <FileIcon filename={activePreview.fileName} className="h-3.5 w-3.5 shrink-0" />
+            )}
+            <span className="text-xs font-medium truncate">{activePreview.fileName}</span>
             <FileViewerStarButton
-              filePath={previewDialog.data.absolutePath}
-              content={previewDialog.data.content}
+              filePath={activePreview.absolutePath}
+              content={activePreview.content ?? activePreview.imageDataUrl ?? ''}
               starContext={{ type: 'project', projectId }}
+              metadata={{
+                title: activePreview.fileName,
+                mimeType:
+                  activePreview.kind === 'image'
+                    ? imageMimeFromExt(extensionOf(activePreview.fileName))
+                    : activePreview.kind === 'html'
+                    ? 'text/html'
+                    : activePreview.kind === 'markdown'
+                    ? 'text/markdown'
+                    : 'text/plain',
+                fileExtension: (() => {
+                  const ext = extensionOf(activePreview.fileName)
+                  return ext ? `.${ext}` : null
+                })(),
+              }}
             />
             <span className="ml-auto text-[10px] text-[hsl(var(--muted-foreground))] truncate">
-              {previewDialog.data.language}
+              {activePreview.language}
             </span>
+            {showPreviewPane && (
+              <div
+                className="flex rounded-md border border-[hsl(var(--border))] overflow-hidden ml-2"
+                role="tablist"
+                aria-label={t('browser.previewModeAria')}
+              >
+                <button
+                  role="tab"
+                  aria-selected={previewMode === 'preview'}
+                  onClick={() => setPreviewMode('preview')}
+                  className={cn(
+                    'px-2.5 py-1 text-xs font-medium transition-colors',
+                    'focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[hsl(var(--ring))]',
+                    previewMode === 'preview'
+                      ? 'bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))]'
+                      : 'text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] hover:bg-[hsl(var(--foreground)/0.04)]',
+                  )}
+                >
+                  {t('common:preview')}
+                </button>
+                {activePreview.kind !== 'image' && (
+                  <button
+                    role="tab"
+                    aria-selected={previewMode === 'source'}
+                    onClick={() => setPreviewMode('source')}
+                    className={cn(
+                      'px-2.5 py-1 text-xs font-medium transition-colors',
+                      'focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[hsl(var(--ring))]',
+                      previewMode === 'source'
+                        ? 'bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))]'
+                        : 'text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] hover:bg-[hsl(var(--foreground)/0.04)]',
+                    )}
+                  >
+                    {t('browser.source')}
+                  </button>
+                )}
+              </div>
+            )}
             <button
               onClick={previewDialog.close}
               className="p-1 rounded text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] hover:bg-[hsl(var(--foreground)/0.04)] transition-colors"
@@ -339,12 +597,50 @@ export function FileBrowser({ projectPath, projectName, projectId }: FileBrowser
             </button>
           </div>
           <p className="px-4 py-1.5 text-[10px] text-[hsl(var(--muted-foreground))] border-b border-[hsl(var(--border)/0.6)] truncate">
-            {previewDialog.data.absolutePath}
+            {activePreview.absolutePath}
           </p>
-          <pre className="max-h-[78vh] overflow-auto p-4 text-xs font-mono text-[hsl(var(--foreground))] whitespace-pre-wrap break-words bg-[hsl(var(--muted)/0.15)]">
-            {previewDialog.data.content}
-          </pre>
+          {activePreview.kind === 'image' && previewMode === 'preview' ? (
+            <div className="max-h-[78vh] overflow-auto p-4 bg-[hsl(var(--muted)/0.15)]">
+              {activePreview.imageDataUrl ? (
+                <button
+                  type="button"
+                  className="mx-auto block rounded-md border border-[hsl(var(--border))] bg-[hsl(var(--background))] p-2 hover:border-[hsl(var(--primary)/0.5)] transition-colors"
+                  onClick={() => setLightboxImage({ src: activePreview.imageDataUrl!, alt: activePreview.fileName })}
+                >
+                  <img
+                    src={activePreview.imageDataUrl}
+                    alt={activePreview.fileName}
+                    className="max-h-[70vh] max-w-full object-contain"
+                  />
+                </button>
+              ) : (
+                <div className="h-[40vh] flex items-center justify-center text-sm text-[hsl(var(--muted-foreground))]">
+                  {t('browser.unableToRead')}
+                </div>
+              )}
+            </div>
+          ) : activePreview.kind === 'markdown' && previewMode === 'preview' ? (
+            <MarkdownPreviewWithToc content={activePreview.content ?? ''} className="h-[78vh]" />
+          ) : activePreview.kind === 'html' && previewMode === 'preview' ? (
+            <iframe
+              srcDoc={wrapHtmlForSafePreview(activePreview.content ?? '')}
+              sandbox="allow-scripts"
+              title={`HTML preview: ${activePreview.fileName}`}
+              className="w-full h-[78vh] border-0 bg-white"
+            />
+          ) : (
+            <div className="h-[78vh]">
+              <CodeViewer content={activePreview.content ?? ''} language={activePreview.language} />
+            </div>
+          )}
         </Dialog>
+      )}
+      {lightboxImage && (
+        <ImageLightbox
+          src={lightboxImage.src}
+          alt={lightboxImage.alt}
+          onClose={() => setLightboxImage(null)}
+        />
       )}
     </div>
   )

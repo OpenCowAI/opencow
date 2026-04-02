@@ -17,7 +17,7 @@ export interface FileMentionExtensionOptions {
  * Built on @tiptap/suggestion — mirrors the SlashCommandExtension pattern.
  */
 export const FileMentionExtension = Extension.create<FileMentionExtensionOptions>({
-  name: 'fileMention',
+  name: 'fileMentionSuggestion',
 
   addOptions() {
     return {

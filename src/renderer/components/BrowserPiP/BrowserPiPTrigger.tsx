@@ -17,11 +17,10 @@
  * Z-index: z-30 (above AppLayout z-0, below BrowserSheet z-40)
  */
 
-import { useState, useRef, useCallback, useMemo } from 'react'
+import { useState, useRef, useCallback, useMemo, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import { Globe } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { surfaceProps } from '@/lib/surface'
 import { useModalAnimation } from '@/hooks/useModalAnimation'
 import { useBrowserOverlayStore } from '@/stores/browserOverlayStore'
 import { useThumbnail } from '@/lib/thumbnailCache'
@@ -29,6 +28,42 @@ import { getAppAPI } from '@/windowAPI'
 import { useTranslation } from 'react-i18next'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { BrowserPiPPanel } from './BrowserPiPPanel'
+
+const PIP_POSITION_STORAGE_KEY = 'opencow.browser-pip-position.v1'
+const DEFAULT_PIP_LEFT_PX = 16 // Tailwind left-4
+const DEFAULT_PIP_BOTTOM_PX = 128 // Tailwind bottom-32
+const PIP_VIEWPORT_MARGIN_PX = 8
+const PIP_DRAG_THRESHOLD_PX = 4
+const PIP_DRAG_DAMPING = 0.16
+
+interface PiPPosition {
+  left: number
+  bottom: number
+}
+
+function loadPiPPosition(): PiPPosition {
+  try {
+    const raw = window.localStorage.getItem(PIP_POSITION_STORAGE_KEY)
+    if (!raw) return { left: DEFAULT_PIP_LEFT_PX, bottom: DEFAULT_PIP_BOTTOM_PX }
+    const parsed = JSON.parse(raw) as Partial<PiPPosition>
+    const left = Number(parsed.left)
+    const bottom = Number(parsed.bottom)
+    if (!Number.isFinite(left) || !Number.isFinite(bottom)) {
+      return { left: DEFAULT_PIP_LEFT_PX, bottom: DEFAULT_PIP_BOTTOM_PX }
+    }
+    return { left, bottom }
+  } catch {
+    return { left: DEFAULT_PIP_LEFT_PX, bottom: DEFAULT_PIP_BOTTOM_PX }
+  }
+}
+
+function savePiPPosition(position: PiPPosition): void {
+  try {
+    window.localStorage.setItem(PIP_POSITION_STORAGE_KEY, JSON.stringify(position))
+  } catch {
+    // Ignore storage failures (private mode / restricted env).
+  }
+}
 
 /** Extract hostname from a URL string, returns empty string on failure. */
 function extractHostname(url: string | undefined): string {
@@ -52,7 +87,29 @@ export function BrowserPiPTrigger(): React.JSX.Element | null {
 
   const [panelOpen, setPanelOpen] = useState(false)
   const [confirmOpen, setConfirmOpen] = useState(false)
+  const [isDragging, setIsDragging] = useState(false)
+  const [position, setPosition] = useState<PiPPosition>(() => loadPiPPosition())
+  const positionRef = useRef(position)
+  const containerRef = useRef<HTMLDivElement>(null)
+  const suppressClickRef = useRef(false)
   const triggerRef = useRef<HTMLButtonElement>(null)
+
+  const updatePosition = useCallback((next: PiPPosition) => {
+    positionRef.current = next
+    setPosition(next)
+  }, [])
+
+  const clampPosition = useCallback((next: PiPPosition): PiPPosition => {
+    const width = containerRef.current?.offsetWidth ?? 160
+    const height = containerRef.current?.offsetHeight ?? 110
+    const maxLeft = Math.max(PIP_VIEWPORT_MARGIN_PX, window.innerWidth - width - PIP_VIEWPORT_MARGIN_PX)
+    const maxBottom = Math.max(PIP_VIEWPORT_MARGIN_PX, window.innerHeight - height - PIP_VIEWPORT_MARGIN_PX)
+
+    return {
+      left: Math.min(Math.max(next.left, PIP_VIEWPORT_MARGIN_PX), maxLeft),
+      bottom: Math.min(Math.max(next.bottom, PIP_VIEWPORT_MARGIN_PX), maxBottom),
+    }
+  }, [])
 
   // Latest active source (last in array) — drives thumbnail + page info
   const latestSource = useMemo(
@@ -67,6 +124,11 @@ export function BrowserPiPTrigger(): React.JSX.Element | null {
   const hostname = extractHostname(pageInfo?.url)
 
   const handleTriggerClick = useCallback(() => {
+    if (suppressClickRef.current) {
+      suppressClickRef.current = false
+      return
+    }
+
     // Single browser → open directly; multiple → toggle panel
     if (activeSources.length === 1) {
       openBrowserOverlay(activeSources[0].source)
@@ -95,15 +157,102 @@ export function BrowserPiPTrigger(): React.JSX.Element | null {
     // browser:view:closed DataBus event will auto-clean store + thumbnailCache
   }, [latestViewId])
 
+  const handleTitlePointerDown = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    if (e.pointerType === 'mouse' && e.button !== 0) return
+    if ((e.target as HTMLElement | null)?.closest('[data-pip-no-drag="true"]')) return
+
+    e.preventDefault()
+
+    const dragState = {
+      pointerId: e.pointerId,
+      startX: e.clientX,
+      startY: e.clientY,
+      startLeft: positionRef.current.left,
+      startBottom: positionRef.current.bottom,
+      lastTarget: positionRef.current,
+      didDrag: false,
+    }
+
+    const handlePointerMove = (ev: PointerEvent): void => {
+      if (ev.pointerId !== dragState.pointerId) return
+      const dx = ev.clientX - dragState.startX
+      const dy = ev.clientY - dragState.startY
+
+      if (!dragState.didDrag && Math.hypot(dx, dy) < PIP_DRAG_THRESHOLD_PX) return
+      if (!dragState.didDrag) dragState.didDrag = true
+
+      setIsDragging(true)
+      const target = clampPosition({
+        left: dragState.startLeft + dx,
+        bottom: dragState.startBottom - dy,
+      })
+      dragState.lastTarget = target
+
+      // Full-time damping: move towards pointer target with a smoothing factor.
+      const current = positionRef.current
+      updatePosition({
+        left: current.left + (target.left - current.left) * PIP_DRAG_DAMPING,
+        bottom: current.bottom + (target.bottom - current.bottom) * PIP_DRAG_DAMPING,
+      })
+    }
+
+    const handlePointerEnd = (ev: PointerEvent): void => {
+      if (ev.pointerId !== dragState.pointerId) return
+      window.removeEventListener('pointermove', handlePointerMove)
+      window.removeEventListener('pointerup', handlePointerEnd)
+      window.removeEventListener('pointercancel', handlePointerEnd)
+
+      setIsDragging(false)
+      if (dragState.didDrag) {
+        // Snap to the last pointer target on release to avoid residual offset.
+        updatePosition(dragState.lastTarget)
+        suppressClickRef.current = true
+        savePiPPosition(dragState.lastTarget)
+      }
+    }
+
+    window.addEventListener('pointermove', handlePointerMove)
+    window.addEventListener('pointerup', handlePointerEnd)
+    window.addEventListener('pointercancel', handlePointerEnd)
+  }, [clampPosition, updatePosition])
+
+  // Keep PiP inside viewport on resize and when content height changes (panel open/close).
+  useEffect(() => {
+    if (!mounted) return
+    const clamped = clampPosition(positionRef.current)
+    if (clamped.left !== positionRef.current.left || clamped.bottom !== positionRef.current.bottom) {
+      updatePosition(clamped)
+      savePiPPosition(clamped)
+    }
+  }, [mounted, panelOpen, activeSources.length, clampPosition, updatePosition])
+
+  useEffect(() => {
+    if (!mounted) return
+    const handleResize = (): void => {
+      const clamped = clampPosition(positionRef.current)
+      if (clamped.left === positionRef.current.left && clamped.bottom === positionRef.current.bottom) return
+      updatePosition(clamped)
+      savePiPPosition(clamped)
+    }
+
+    window.addEventListener('resize', handleResize)
+    return () => window.removeEventListener('resize', handleResize)
+  }, [mounted, clampPosition, updatePosition])
+
   if (!mounted) return null
 
   return createPortal(
     <>
       <div
+        ref={containerRef}
         className={cn(
-          'fixed bottom-20 left-4 z-30 no-drag',
+          'fixed z-30 no-drag',
           'flex flex-col items-start',
         )}
+        style={{
+          left: `${position.left}px`,
+          bottom: `${position.bottom}px`,
+        }}
       >
         {/* Expandable card panel — renders above the trigger */}
         {panelOpen && (
@@ -139,14 +288,16 @@ export function BrowserPiPTrigger(): React.JSX.Element | null {
         >
           {/* ── Title bar ── */}
           <div
+            onPointerDown={handleTitlePointerDown}
             className={cn(
               'h-6 shrink-0 flex items-center gap-1.5 px-2',
               'border-b border-[hsl(var(--border)/0.6)]',
               'bg-[hsl(var(--popover))]',
+              isDragging ? 'cursor-grabbing' : 'cursor-grab',
             )}
           >
             {/* Traffic-light dots — red dot is clickable (close) */}
-            <div className="flex items-center gap-[3px]" aria-hidden>
+            <div className="flex items-center gap-[3px]" aria-hidden data-pip-no-drag="true">
               <span
                 role="button"
                 tabIndex={-1}

@@ -85,6 +85,14 @@ Then **stop and wait for the user's confirmation** before proceeding.
 - For straightforward tasks, just start working; do not narrate the assessment.
 </task-approach>`
 
+const BROWSER_TOOL_PREFERENCE = `
+<browser-tool-preference>
+When the user asks to open a website/URL or navigate web pages:
+- Prefer the MCP browser tools first (\`browser_navigate\`, \`browser_click\`, \`browser_type\`, etc.).
+- Do NOT run shell launch commands (\`open\`, \`start\`, \`xdg-open\`, PowerShell \`Start-Process\`) just to open a URL.
+- Use shell launch commands only when the user explicitly asks for the OS default external browser.
+</browser-tool-preference>`
+
 // ── Desktop variant (interactive cards available) ─────────────────────────
 
 const INTERACTION_PREFERENCE_DESKTOP = `
@@ -147,6 +155,6 @@ When the user asks what you know about them, their preferences, or their backgro
 - If no <opencow-memory> section exists or it is empty, say you haven't learned enough about them yet
 </knowledge-boundary>`
 
-const BASE_SYSTEM_PROMPT = TASK_APPROACH + INTERACTION_PREFERENCE_DESKTOP + KNOWLEDGE_BOUNDARY
+const BASE_SYSTEM_PROMPT = TASK_APPROACH + BROWSER_TOOL_PREFERENCE + INTERACTION_PREFERENCE_DESKTOP + KNOWLEDGE_BOUNDARY
 
-const BASE_SYSTEM_PROMPT_IM = TASK_APPROACH + INTERACTION_PREFERENCE_IM + KNOWLEDGE_BOUNDARY
+const BASE_SYSTEM_PROMPT_IM = TASK_APPROACH + BROWSER_TOOL_PREFERENCE + INTERACTION_PREFERENCE_IM + KNOWLEDGE_BOUNDARY
