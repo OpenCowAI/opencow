@@ -13,7 +13,7 @@
  */
 
 import { useCallback, useRef, useEffect } from 'react'
-import type { FileEntry } from '@shared/types'
+import type { FileEntry, FileSearchMatch } from '@shared/types'
 import { useProjectScope } from '../contexts/ProjectScopeContext'
 import { createLogger } from '@/lib/logger'
 import { getAppAPI } from '@/windowAPI'
@@ -124,7 +124,7 @@ export function useFileSearch(): UseFileSearchResult {
     try {
       const results = await getAppAPI()['search-project-files'](pp, query)
       if (generation !== searchGenerationRef.current) return [] // stale
-      return results
+      return (results as FileSearchMatch[]).map((match) => match.entry)
     } catch {
       // Fallback to local filter on the pre-loaded flat list
       const q = query.toLowerCase()

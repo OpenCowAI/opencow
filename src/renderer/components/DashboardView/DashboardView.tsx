@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
+import { useTranslation } from 'react-i18next'
+import { Settings } from 'lucide-react'
 import { useStoreWithEqualityFn } from 'zustand/traditional'
 import { useAppStore, selectProjectId } from '@/stores/appStore'
 import { useIssueStore, selectIssuesArray } from '@/stores/issueStore'
@@ -14,6 +16,7 @@ import {
   selectProjectRanking
 } from '@/selectors/dashboardSelectors'
 import type { ActivityDatum } from '@/selectors/dashboardSelectors'
+import { ProjectSettingsModal } from '@/components/ProjectSettings/ProjectSettingsModal'
 import { StatsCards } from './StatsCards'
 import { ActivityHeatmap } from './ActivityHeatmap'
 import { ProjectRanking } from './ProjectRanking'
@@ -38,12 +41,15 @@ function activityDataEqual(a: ActivityDatum[], b: ActivityDatum[]): boolean {
 }
 
 export function DashboardView(): React.JSX.Element {
+  const { t } = useTranslation('navigation')
+  const projectSettingsLabel = t('projectActions.settings')
   const sessions = useAppStore((s) => s.sessions)
   const projects = useAppStore((s) => s.projects)
   const stats = useStatsStore((s) => s.stats)
   const tasksByList = useTasksStore((s) => s.tasksByList)
   const selectedProjectId = useAppStore(selectProjectId)
   const issues = useIssueStore(selectIssuesArray)
+  const [settingsProjectId, setSettingsProjectId] = useState<string | null>(null)
 
   const dashboardStats = useMemo(
     () => selectDashboardStats({ sessions, issues, stats, tasksByList, selectedProjectId }),
@@ -76,10 +82,42 @@ export function DashboardView(): React.JSX.Element {
 
   return (
     <div className="flex-1 overflow-y-auto p-4 space-y-4">
-      <StatsCards stats={dashboardStats} />
+      <StatsCards
+        stats={dashboardStats}
+        actions={(
+          <>
+            {selectedProjectId ? (
+              <button
+                type="button"
+                onClick={() => setSettingsProjectId(selectedProjectId)}
+                className="inline-flex h-6 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md px-2.5 text-xs text-[hsl(var(--muted-foreground))] transition-colors hover:bg-[hsl(var(--foreground)/0.04)] hover:text-[hsl(var(--foreground))]"
+                aria-label={projectSettingsLabel}
+              >
+                <Settings className="h-3.5 w-3.5" aria-hidden="true" />
+                {projectSettingsLabel}
+              </button>
+            ) : (
+              <span
+                aria-hidden="true"
+                className="invisible inline-flex h-6 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md px-2.5 text-xs"
+              >
+                <Settings className="h-3.5 w-3.5" />
+                {projectSettingsLabel}
+              </span>
+            )}
+          </>
+        )}
+      />
       <ActivityHeatmap data={activityData} />
       {!selectedProjectId && <ProjectRanking data={projectRanking} />}
       <RecentIssues items={recentIssues} onSelectIssue={selectIssue} />
+
+      {settingsProjectId && (
+        <ProjectSettingsModal
+          projectId={settingsProjectId}
+          onClose={() => setSettingsProjectId(null)}
+        />
+      )}
     </div>
   )
 }

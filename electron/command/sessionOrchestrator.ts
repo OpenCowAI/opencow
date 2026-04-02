@@ -571,9 +571,13 @@ export class SessionOrchestrator {
       env: sessionEnv,
     }
 
+    const modelOverride = session.getModelOverride()
     await this.engineBootstrapRegistry.apply({
       engineKind,
-      config,
+      config: {
+        ...config,
+        ...(modelOverride ? { model: modelOverride } : {}),
+      },
       resume: extra?.resume,
       sessionEnv,
       options,

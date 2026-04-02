@@ -35,7 +35,12 @@ beforeEach(() => {
     }),
     'on:opencow:event': vi.fn(() => () => {}),
     'list-project-files': vi.fn().mockResolvedValue([]),
-    'search-project-files': vi.fn().mockResolvedValue([]),
+    'search-project-files': vi.fn().mockResolvedValue([] as Array<{
+      entry: { name: string; path: string; isDirectory: boolean; size: number; modifiedAt: number }
+      score: number
+      nameHighlights: number[]
+      pathHighlights: number[]
+    }>),
   }
 })
 

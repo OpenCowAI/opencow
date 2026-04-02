@@ -16,11 +16,16 @@ import type { SessionStatusCounts } from '@/hooks/useSessionStatusCounts'
 export interface DashboardStats {
   totalSessions: number
   sessionStatusCounts: SessionStatusCounts
+  /**
+   * Backward-compatible task metrics retained for selectors/tests and
+   * potential downstream consumers. Dashboard UI now primarily surfaces
+   * issue-centric metrics.
+   */
+  totalTasks: number
+  taskCompletionRate: number
   totalIssues: number
   issueStatusCounts: Record<IssueStatus, number>
   issueCompletionRate: number
-  totalTasks: number
-  taskCompletionRate: number
   todayTokens: number
   todayCost: number
 }
@@ -51,7 +56,7 @@ interface StatsParams {
   sessions: Session[]
   issues: IssueSummary[]
   stats: StatsSnapshot | null
-  tasksByList: Record<string, TaskFull[]>
+  tasksByList?: Record<string, TaskFull[]>
   selectedProjectId: string | null
 }
 
@@ -94,9 +99,12 @@ function filterManagedByProject(
 // === Selectors ===
 
 export function selectDashboardStats(params: StatsParams): DashboardStats {
-  const { stats, tasksByList, selectedProjectId } = params
+  const { stats, selectedProjectId } = params
   const sessions = filterByProject(params.sessions, selectedProjectId)
   const issues = filterIssuesByProject(params.issues, selectedProjectId)
+  const allTasks = Object.values(params.tasksByList ?? {}).flat()
+  const totalTasks = allTasks.length
+  const completedTasks = allTasks.filter((task) => task.status === 'completed').length
 
   const sessionStatusCounts: SessionStatusCounts = { active: 0, waiting: 0, completed: 0, error: 0 }
   for (const s of sessions) sessionStatusCounts[s.status]++
@@ -109,20 +117,17 @@ export function selectDashboardStats(params: StatsParams): DashboardStats {
   }
   for (const issue of issues) issueStatusCounts[issue.status]++
 
-  const allTasks = Object.values(tasksByList).flat()
-  const totalTasks = allTasks.length
-  const completedTasks = allTasks.filter((t) => t.status === 'completed').length
   const totalIssues = issues.length
   const issueCompletionRate = totalIssues > 0 ? issueStatusCounts.done / totalIssues : 0
 
   return {
     totalSessions: sessions.length,
     sessionStatusCounts,
+    totalTasks,
+    taskCompletionRate: totalTasks > 0 ? completedTasks / totalTasks : 0,
     totalIssues,
     issueStatusCounts,
     issueCompletionRate,
-    totalTasks,
-    taskCompletionRate: totalTasks > 0 ? completedTasks / totalTasks : 0,
     todayTokens: stats?.todayTokens ?? 0,
     todayCost: stats?.todayCostUSD ?? 0
   }

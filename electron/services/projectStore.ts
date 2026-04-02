@@ -3,12 +3,14 @@
 import type { Kysely } from 'kysely'
 import type { Database, ProjectTable } from '../database/types'
 import { generateId } from '../shared/identity'
-import type { AIEngineKind } from '../../src/shared/types'
+import type { AIEngineKind, ProjectPreferences, ProjectPreferencesPatch } from '../../src/shared/types'
+import { normalizeProjectPreferences } from '../../src/shared/projectPreferences'
 
 export interface StoredProject {
   id: string
   name: string
   canonicalPath: string
+  preferences: ProjectPreferences
   pinOrder: number | null
   archivedAt: number | null
   displayOrder: number
@@ -39,11 +41,13 @@ export interface ExternalProjectRefQuery {
 interface CreateProjectInput {
   name: string
   canonicalPath: string
+  preferences?: ProjectPreferencesPatch
 }
 
 interface UpdateProjectInput {
   name?: string
   canonicalPath?: string
+  preferences?: ProjectPreferencesPatch
   pinOrder?: number | null
   archivedAt?: number | null
   displayOrder?: number
@@ -55,10 +59,14 @@ export class ProjectStore {
   async create(input: CreateProjectInput): Promise<StoredProject> {
     const now = Date.now()
     const nextOrder = await this.nextDisplayOrder()
+    const preferences = normalizeProjectPreferences(input.preferences)
     const row: ProjectTable = {
       id: generateId(),
       name: input.name,
       canonical_path: input.canonicalPath,
+      default_tab: preferences.defaultTab,
+      default_chat_view_mode: preferences.defaultChatViewMode,
+      default_files_display_mode: preferences.defaultFilesDisplayMode,
       pin_order: null,
       archived_at: null,
       display_order: nextOrder,
@@ -111,6 +119,14 @@ export class ProjectStore {
     const setClauses: Partial<ProjectTable> = { updated_at: Date.now() }
     if (input.name !== undefined) setClauses.name = input.name
     if (input.canonicalPath !== undefined) setClauses.canonical_path = input.canonicalPath
+    if (input.preferences !== undefined) {
+      const existing = await this.getById(id)
+      if (!existing) return null
+      const merged = normalizeProjectPreferences({ ...existing.preferences, ...input.preferences })
+      setClauses.default_tab = merged.defaultTab
+      setClauses.default_chat_view_mode = merged.defaultChatViewMode
+      setClauses.default_files_display_mode = merged.defaultFilesDisplayMode
+    }
     if (input.pinOrder !== undefined) setClauses.pin_order = input.pinOrder
     if (input.archivedAt !== undefined) setClauses.archived_at = input.archivedAt
     if (input.displayOrder !== undefined) setClauses.display_order = input.displayOrder
@@ -288,6 +304,11 @@ function rowToProject(row: ProjectTable): StoredProject {
     id: row.id,
     name: row.name,
     canonicalPath: row.canonical_path,
+    preferences: normalizeProjectPreferences({
+      defaultTab: row.default_tab as ProjectPreferences['defaultTab'],
+      defaultChatViewMode: row.default_chat_view_mode as ProjectPreferences['defaultChatViewMode'],
+      defaultFilesDisplayMode: row.default_files_display_mode as ProjectPreferences['defaultFilesDisplayMode'],
+    }),
     pinOrder: row.pin_order,
     archivedAt: row.archived_at,
     displayOrder: row.display_order,

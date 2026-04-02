@@ -8,6 +8,7 @@
     "openFilesAria": "Open files",
     "unsavedChanges": "Unsaved changes",
     "previewModeAria": "Editor preview mode",
+    "markdownContents": "Contents",
     "unableToPreviewImage": "Unable to preview image",
     "closeFile": "Close {{name}}",
     "loadingEditor": "Loading editor…",
@@ -43,5 +44,35 @@
     "selectProject": "Select a project to view files",
     "editorTab": "Editor",
     "browserTab": "Browser"
+  },
+  "search": {
+    "openButton": "Search",
+    "openButtonAria": "Search files",
+    "shortcutHint": "Search files (⌘/Ctrl+G)",
+    "fabAria": "Open file search",
+    "shortcutChip": "⌘/Ctrl+G"
+  },
+  "searchOverlay": {
+    "dialogAria": "File search",
+    "searchPlaceholder": "Search files...",
+    "searchInputAria": "Search files",
+    "lineIndicator": "line {{line}}",
+    "resultsAria": "File search results",
+    "searching": "Searching...",
+    "emptyResults": "No matching files",
+    "actions": {
+      "open": "Open",
+      "openFolder": "Open folder",
+      "revealInTree": "Reveal in tree",
+      "openInEditor": "Open in editor",
+      "revealParent": "Reveal parent",
+      "reveal": "Reveal"
+    },
+    "shortcuts": {
+      "navigate": "↑↓ Navigate",
+      "editorPrefix": "⌘/Ctrl+Enter",
+      "revealPrefix": "Alt+Enter",
+      "close": "Esc Close"
+    }
   }
 }

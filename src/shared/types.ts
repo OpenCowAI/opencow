@@ -18,6 +18,38 @@ export interface Project {
   displayOrder: number
   /** Epoch ms — last time the project record was touched (created, renamed, etc.). */
   updatedAt: number
+  /**
+   * Project-level UI defaults used on first entry (before per-project runtime
+   * state is established). Optional for backward compatibility.
+   */
+  preferences?: ProjectPreferences
+}
+
+export type ProjectDefaultTab = 'issues' | 'chat' | 'schedule'
+
+interface ProjectPreferencesBase {
+  /** Default top tab when first opening a project (before state restore exists). */
+  defaultTab: ProjectDefaultTab
+}
+
+export type ProjectPreferences =
+  | (ProjectPreferencesBase & {
+      /** Default Chat page layout when first opening a project. */
+      defaultChatViewMode: 'default'
+      /** `null` keeps legacy auto-detection behavior for Files layout. */
+      defaultFilesDisplayMode: FilesDisplayMode | null
+    })
+  | (ProjectPreferencesBase & {
+      /** Default Chat page layout when first opening a project. */
+      defaultChatViewMode: 'files'
+      /** Files mode requires an explicit default layout. */
+      defaultFilesDisplayMode: FilesDisplayMode
+    })
+
+export interface ProjectPreferencesPatch {
+  defaultTab?: ProjectDefaultTab
+  defaultChatViewMode?: ChatViewMode
+  defaultFilesDisplayMode?: FilesDisplayMode | null
 }
 
 export type SessionStatus = 'active' | 'waiting' | 'completed' | 'error'
@@ -107,6 +139,28 @@ export interface SessionSearchMatch {
 export interface SessionSearchResult {
   sessionId: string
   matches: SessionSearchMatch[] // Max 3 per session
+}
+
+export interface FileSearchMatch {
+  entry: {
+    name: string
+    path: string
+    isDirectory: boolean
+    size: number
+    modifiedAt: number
+  }
+  score: number
+  nameHighlights: number[]
+  pathHighlights: number[]
+}
+
+export type FileSearchRecentKind = 'file' | 'directory'
+
+export interface FileSearchRecentSelection {
+  path: string
+  name: string
+  kind: FileSearchRecentKind
+  selectedAt: number
 }
 
 export interface HookEvent {
@@ -207,8 +261,8 @@ export interface IPCChannels {
   'git:file-diff': { args: [projectPath: string, filePath: string]; return: GitLineDiff[] }
   // File operations
   'list-project-files': { args: [projectPath: string, subPath?: string]; return: FileEntry[] }
-  /** Recursively search project files by name/path query */
-  'search-project-files': { args: [projectPath: string, query: string]; return: FileEntry[] }
+  /** Recursively search project files with score + highlight metadata. */
+  'search-project-files': { args: [projectPath: string, query: string]; return: FileSearchMatch[] }
   'read-file-content': { args: [projectPath: string, filePath: string]; return: FileContentReadResult }
   /** Read an image file as data URL for local preview rendering. */
   'read-image-preview': { args: [projectPath: string, filePath: string]; return: ImagePreviewReadResult }
@@ -522,7 +576,10 @@ export interface IPCChannels {
   'create-project': { args: [input: { path: string; name?: string }]; return: Project }
   'create-new-project': { args: [input: { parentPath: string; name: string }]; return: Project }
   'list-all-projects': { args: []; return: Project[] }
-  'update-project': { args: [id: string, patch: { name?: string }]; return: Project | null }
+  'update-project': {
+    args: [id: string, patch: { name?: string; preferences?: ProjectPreferencesPatch }]
+    return: Project | null
+  }
   'rename-project': { args: [input: { id: string; newName: string }]; return: Project }
   'delete-project': { args: [id: string]; return: boolean }
   // Directory picker (native OS dialog)

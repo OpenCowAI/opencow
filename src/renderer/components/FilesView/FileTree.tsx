@@ -20,9 +20,12 @@ const log = createLogger('FileTree')
 interface FileTreeProps {
   projectPath: string
   projectName: string
+  projectId: string
+  onOpenSearch?: () => void
 }
 
 const EMPTY_FILE_ENTRIES: FileEntry[] = []
+const EMPTY_EXPANDED_DIRS: ReadonlySet<string> = new Set()
 const IMAGE_EXTS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'avif', 'bmp', 'ico'])
 
 function extensionOf(name: string): string {
@@ -69,12 +72,15 @@ function parentPath(path: string): string | null {
 
 // ── Component ──────────────────────────────────────────────────────
 
-export function FileTree({ projectPath, projectName }: FileTreeProps): React.JSX.Element {
+export function FileTree({ projectPath, projectName, projectId, onOpenSearch }: FileTreeProps): React.JSX.Element {
   const { t } = useTranslation('files')
-  const expandedDirs = useFileStore((s) => s.expandedDirs)
-  const toggleDir = useFileStore((s) => s.toggleDir)
-  const activeFilePath = useFileStore((s) => s.activeFilePath)
+  const expandedDirs = useFileStore((s) => s.expandedTreeDirsByProject[projectId] ?? EMPTY_EXPANDED_DIRS)
+  const toggleDir = useFileStore((s) => s.toggleTreeDir)
+  const expandDirs = useFileStore((s) => s.expandTreeDirs)
+  const activeFilePath = useFileStore((s) => s.activeFilePathByProject[projectId] ?? null)
   const openFile = useFileStore((s) => s.openFile)
+  const peekTreeRevealIntent = useFileStore((s) => s.peekTreeRevealIntent)
+  const ackTreeRevealIntent = useFileStore((s) => s.ackTreeRevealIntent)
   const gitSnapshot = useGitStore((s) => selectGitSnapshot(s, projectPath))
 
   // Cache: directory path → entries
@@ -138,7 +144,7 @@ export function FileTree({ projectPath, projectName }: FileTreeProps): React.JSX
           log.error('Failed to open image file', imageResult.error)
           return
         }
-        openFile({
+        openFile(projectId, {
           path: entry.path,
           name: entry.name,
           language: imageResult.data.mimeType,
@@ -155,7 +161,7 @@ export function FileTree({ projectPath, projectName }: FileTreeProps): React.JSX
         log.error('Failed to open file', result.error)
         return
       }
-      openFile({
+      openFile(projectId, {
         path: entry.path,
         name: entry.name,
         language: result.data.language,
@@ -166,7 +172,7 @@ export function FileTree({ projectPath, projectName }: FileTreeProps): React.JSX
     } catch (err) {
       log.error('Failed to open file', err)
     }
-  }, [projectPath, openFile])
+  }, [projectId, projectPath, openFile])
 
   // ── Keyboard navigation ────────────────────────────────────────
 
@@ -198,12 +204,12 @@ export function FileTree({ projectPath, projectName }: FileTreeProps): React.JSX
       const entry = entryByPath.get(key)
       if (!entry) return
       if (entry.isDirectory) {
-        toggleDir(entry.path)
+        toggleDir(projectId, entry.path)
       } else {
         handleFileClick(entry)
       }
     },
-    [entryByPath, toggleDir, handleFileClick]
+    [entryByPath, handleFileClick, projectId, toggleDir]
   )
 
   const { focusedKey, setFocusedKey, handleKeyDown: baseHandleKeyDown, getTabIndex } =
@@ -213,6 +219,27 @@ export function FileTree({ projectPath, projectName }: FileTreeProps): React.JSX
       containerRef: treeContainerRef,
       itemAttribute: 'data-tree-path'
     })
+
+  useEffect(() => {
+    const intent = peekTreeRevealIntent(projectId)
+    if (!intent) return
+    const revealPath = intent.payload.path
+
+    const parts = revealPath.split('/').filter(Boolean)
+    if (parts.length <= 1) {
+      setFocusedKey(revealPath)
+      ackTreeRevealIntent(projectId, intent.id)
+      return
+    }
+
+    const parentDirs: string[] = []
+    for (let i = 0; i < parts.length - 1; i += 1) {
+      parentDirs.push(parts.slice(0, i + 1).join('/'))
+    }
+    expandDirs(projectId, parentDirs)
+    setFocusedKey(revealPath)
+    ackTreeRevealIntent(projectId, intent.id)
+  }, [ackTreeRevealIntent, expandDirs, peekTreeRevealIntent, projectId, setFocusedKey])
 
   // Tree-specific keyboard: ArrowLeft/Right for expand/collapse
   const handleKeyDown = useCallback(
@@ -234,7 +261,7 @@ export function FileTree({ projectPath, projectName }: FileTreeProps): React.JSX
           if (!entry.isDirectory) return
           if (!expandedDirs.has(entry.path)) {
             // Expand collapsed directory
-            toggleDir(entry.path)
+            toggleDir(projectId, entry.path)
           } else {
             // Already expanded → step into first child
             const children = dirCache[entry.path]
@@ -247,7 +274,7 @@ export function FileTree({ projectPath, projectName }: FileTreeProps): React.JSX
           e.preventDefault()
           if (entry.isDirectory && expandedDirs.has(entry.path)) {
             // Collapse expanded directory
-            toggleDir(entry.path)
+            toggleDir(projectId, entry.path)
           } else {
             // Jump to parent directory
             const parent = parentPath(entry.path)
@@ -262,7 +289,7 @@ export function FileTree({ projectPath, projectName }: FileTreeProps): React.JSX
       // All other keys → delegate to generic list nav
       baseHandleKeyDown(e)
     },
-    [focusedKey, entryByPath, expandedDirs, dirCache, toggleDir, setFocusedKey, baseHandleKeyDown]
+    [focusedKey, entryByPath, expandedDirs, dirCache, projectId, toggleDir, setFocusedKey, baseHandleKeyDown]
   )
 
   // ── Click handler ──────────────────────────────────────────────
@@ -272,12 +299,12 @@ export function FileTree({ projectPath, projectName }: FileTreeProps): React.JSX
     (entry: FileEntry) => {
       setFocusedKey(entry.path)
       if (entry.isDirectory) {
-        toggleDir(entry.path)
+        toggleDir(projectId, entry.path)
       } else {
         handleFileClick(entry)
       }
     },
-    [setFocusedKey, toggleDir, handleFileClick]
+    [setFocusedKey, projectId, toggleDir, handleFileClick]
   )
 
   // ── Render ─────────────────────────────────────────────────────
@@ -309,7 +336,19 @@ export function FileTree({ projectPath, projectName }: FileTreeProps): React.JSX
   return (
     <div className="h-full flex flex-col min-w-0">
       <div className="px-3 h-9 flex items-center text-xs font-semibold uppercase tracking-wider text-[hsl(var(--muted-foreground))] border-b border-[hsl(var(--border))]">
-        {projectName}
+        <span className="truncate">{projectName}</span>
+        {onOpenSearch && (
+          <button
+            type="button"
+            className="ml-auto inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-normal normal-case tracking-normal text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] hover:bg-[hsl(var(--foreground)/0.05)] transition-colors"
+            onClick={onOpenSearch}
+            aria-label={t('search.openButtonAria', { defaultValue: 'Search files' })}
+            title={t('search.shortcutHint', { defaultValue: 'Search files (⌘/Ctrl+G)' })}
+          >
+            <span>{t('search.openButton', { defaultValue: 'Search' })}</span>
+            <kbd className="font-mono text-[9px]">⌘G</kbd>
+          </button>
+        )}
       </div>
       <div
         ref={treeContainerRef}

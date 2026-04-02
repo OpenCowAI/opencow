@@ -8,6 +8,7 @@
     "openFilesAria": "已打开的文件",
     "unsavedChanges": "未保存的更改",
     "previewModeAria": "编辑器预览模式",
+    "markdownContents": "目录",
     "unableToPreviewImage": "无法预览图片",
     "closeFile": "关闭 {{name}}",
     "loadingEditor": "加载编辑器中…",
@@ -43,5 +44,35 @@
     "selectProject": "选择项目以查看文件",
     "editorTab": "编辑器",
     "browserTab": "浏览器"
+  },
+  "search": {
+    "openButton": "搜索",
+    "openButtonAria": "搜索文件",
+    "shortcutHint": "搜索文件（⌘/Ctrl+G）",
+    "fabAria": "打开文件搜索",
+    "shortcutChip": "⌘/Ctrl+G"
+  },
+  "searchOverlay": {
+    "dialogAria": "文件搜索",
+    "searchPlaceholder": "搜索文件...",
+    "searchInputAria": "搜索文件",
+    "lineIndicator": "第 {{line}} 行",
+    "resultsAria": "文件搜索结果",
+    "searching": "搜索中...",
+    "emptyResults": "没有匹配的文件",
+    "actions": {
+      "open": "打开",
+      "openFolder": "打开文件夹",
+      "revealInTree": "在树中定位",
+      "openInEditor": "在编辑器中打开",
+      "revealParent": "定位父目录",
+      "reveal": "定位"
+    },
+    "shortcuts": {
+      "navigate": "↑↓ 导航",
+      "editorPrefix": "⌘/Ctrl+Enter",
+      "revealPrefix": "Alt+Enter",
+      "close": "Esc 关闭"
+    }
   }
 }

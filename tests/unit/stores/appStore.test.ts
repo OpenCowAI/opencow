@@ -9,7 +9,7 @@ import {
 } from '../../../src/renderer/stores/appStore'
 import { useIssueStore } from '../../../src/renderer/stores/issueStore'
 import { selectIssue } from '../../../src/renderer/actions/issueActions'
-import type { AppView } from '../../../src/shared/types'
+import type { AppView, Project } from '../../../src/shared/types'
 
 // selectIssue (now in issueActions) triggers loadIssueDetail which calls
 // getAppAPI()['get-issue'].  Navigation tests don't need real IPC — stub
@@ -27,12 +27,61 @@ vi.mock('@/windowAPI', () => ({
 
 describe('appStore - NavigationSlice', () => {
   beforeEach(() => {
+    const projects: Project[] = [
+      {
+        id: 'proj-1',
+        path: '/tmp/proj-1',
+        name: 'Project 1',
+        sessionCount: 0,
+        pinOrder: null,
+        archivedAt: null,
+        displayOrder: 0,
+        updatedAt: Date.now(),
+        preferences: {
+          defaultTab: 'issues',
+          defaultChatViewMode: 'default',
+          defaultFilesDisplayMode: null,
+        },
+      },
+      {
+        id: 'proj-2',
+        path: '/tmp/proj-2',
+        name: 'Project 2',
+        sessionCount: 0,
+        pinOrder: null,
+        archivedAt: null,
+        displayOrder: 1,
+        updatedAt: Date.now(),
+        preferences: {
+          defaultTab: 'issues',
+          defaultChatViewMode: 'default',
+          defaultFilesDisplayMode: null,
+        },
+      },
+      {
+        id: 'proj-pref',
+        path: '/tmp/proj-pref',
+        name: 'Project Pref',
+        sessionCount: 0,
+        pinOrder: null,
+        archivedAt: null,
+        displayOrder: 2,
+        updatedAt: Date.now(),
+        preferences: {
+          defaultTab: 'chat',
+          defaultChatViewMode: 'files',
+          defaultFilesDisplayMode: 'browser',
+        },
+      },
+    ]
     useAppStore.setState({
+      projects,
       appView: { mode: 'projects', tab: 'dashboard', projectId: null } as AppView,
       statusFilter: 'all',
       detailContext: null,
       selectedSessionDetail: null,
       chatSubTab: 'sessions',
+      chatViewMode: 'default',
       _tabDetails: { ...EMPTY_TAB_DETAILS },
       _projectStates: {},
       selectedIssueId: null,
@@ -102,10 +151,54 @@ describe('appStore - NavigationSlice', () => {
   })
 
   it('navigateToProject sets project id and stays on current tab', () => {
-    useAppStore.getState().setMainTab('chat')
+    useAppStore.getState().setMainTab('issues')
+    // Seed proj-1 state so this is a return visit (should restore saved state,
+    // not apply first-visit project preference).
+    useAppStore.setState((s) => ({
+      _projectStates: {
+        ...s._projectStates,
+        'proj-1': {
+          lastTab: 'issues',
+          tabDetails: { ...EMPTY_TAB_DETAILS },
+          selectedIssueId: null,
+          activeViewId: '__all__',
+          ephemeralFilters: {},
+          allViewDisplay: { groupBy: null, sort: { field: 'updatedAt', order: 'desc' } },
+          chatSubTab: 'conversation',
+          agentChatSessionId: null,
+          chatViewMode: 'default',
+          statusFilter: 'all',
+          searchQuery: '',
+          sessionsViewMode: 'list',
+        },
+      },
+    }))
     useAppStore.getState().navigateToProject('proj-1')
     expect(selectProjectId(useAppStore.getState())).toBe('proj-1')
+    expect(selectMainTab(useAppStore.getState())).toBe('issues')
+  })
+
+  it('navigateToProject uses project preference defaults on first visit', () => {
+    useAppStore.getState().navigateToProject('proj-pref')
     expect(selectMainTab(useAppStore.getState())).toBe('chat')
+    expect(useAppStore.getState().chatViewMode).toBe('files')
+  })
+
+  it('navigateToProject still restores saved state instead of preference on return visit', () => {
+    // First visit uses preference -> chat/files
+    useAppStore.getState().navigateToProject('proj-pref')
+    expect(selectMainTab(useAppStore.getState())).toBe('chat')
+    expect(useAppStore.getState().chatViewMode).toBe('files')
+
+    // User changes state and leaves project
+    useAppStore.getState().setMainTab('issues')
+    useAppStore.getState().setChatViewMode('default')
+    useAppStore.getState().navigateToProject('proj-2')
+
+    // Return visit restores saved state, not default preference
+    useAppStore.getState().navigateToProject('proj-pref')
+    expect(selectMainTab(useAppStore.getState())).toBe('issues')
+    expect(useAppStore.getState().chatViewMode).toBe('default')
   })
 
   it('navigateToProject clears detailContext', () => {
@@ -650,5 +743,18 @@ describe('appStore - UISlice sessionsViewMode', () => {
     useAppStore.getState().setSessionsViewMode('list')
     useAppStore.getState().setSessionsViewMode('grid')
     expect(useAppStore.getState().sessionsViewMode).toBe('grid')
+  })
+})
+
+describe('appStore - files display mode', () => {
+  beforeEach(() => {
+    useAppStore.setState({ filesDisplayModeByProject: { 'proj-1': 'ide' } })
+  })
+
+  it('setFilesDisplayMode is idempotent for same value', () => {
+    const before = useAppStore.getState().filesDisplayModeByProject
+    useAppStore.getState().setFilesDisplayMode('proj-1', 'ide')
+    const after = useAppStore.getState().filesDisplayModeByProject
+    expect(after).toBe(before)
   })
 })

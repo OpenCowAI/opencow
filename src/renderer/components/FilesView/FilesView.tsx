@@ -1,21 +1,27 @@
 // SPDX-License-Identifier: Apache-2.0
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Group, Panel, Separator } from 'react-resizable-panels'
 import { useAppStore, selectProjectId } from '@/stores/appStore'
 import { useFileSync } from '@/hooks/useFileSync'
 import { useGitStatus } from '@/hooks/useGitStatus'
+import { useFileStore } from '@/stores/fileStore'
 import { FileTree } from './FileTree'
 import { EditorTabs } from './EditorTabs'
 import { EditorPane } from './EditorPane'
 import { EditorStatusBar } from './EditorStatusBar'
 import { FileBrowser } from './FileBrowser'
-import { Code2, FolderOpen } from 'lucide-react'
+import { Code2, FolderOpen, Search } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { inferDisplayModeFromFiles } from '@shared/projectTypeDetection'
 import type { FilesDisplayMode } from '@shared/types'
 import { getAppAPI } from '@/windowAPI'
+import { FileSearchOverlay } from './FileSearchOverlay'
+import { createFileSearchNavigationExecutor } from '@/lib/fileSearchNavigation'
+import { normalizeProjectPreferences } from '@shared/projectPreferences'
+
+const EMPTY_OPEN_FILES: ReadonlyArray<{ path: string; name: string }> = []
 
 // === Mode Toggle Button ===
 
@@ -88,11 +94,15 @@ function EditorResizeHandle(): React.JSX.Element {
 function IDEMode({
   projectPath,
   projectName,
+  projectId,
   modeToggleSafeInset,
+  onOpenSearch,
 }: {
   projectPath: string
   projectName: string
+  projectId: string
   modeToggleSafeInset: number
+  onOpenSearch: () => void
 }): React.JSX.Element {
   return (
     <Group
@@ -110,6 +120,8 @@ function IDEMode({
         <FileTree
           projectPath={projectPath}
           projectName={projectName}
+          projectId={projectId}
+          onOpenSearch={onOpenSearch}
         />
       </Panel>
 
@@ -118,11 +130,11 @@ function IDEMode({
       {/* Right: Editor */}
       <Panel id="file-editor" minSize="40%">
         <div className="h-full flex flex-col min-w-0">
-          <EditorTabs projectPath={projectPath} rightSafeInset={modeToggleSafeInset} />
+          <EditorTabs projectId={projectId} projectPath={projectPath} rightSafeInset={modeToggleSafeInset} />
           <div className="flex-1 min-h-0">
-            <EditorPane projectPath={projectPath} />
+            <EditorPane projectPath={projectPath} projectId={projectId} />
           </div>
-          <EditorStatusBar projectPath={projectPath} />
+          <EditorStatusBar projectId={projectId} projectPath={projectPath} />
         </div>
       </Panel>
     </Group>
@@ -135,17 +147,60 @@ export function FilesView(): React.JSX.Element {
   const { t } = useTranslation('files')
   const projects = useAppStore((s) => s.projects)
   const selectedProjectId = useAppStore(selectProjectId)
-  const filesDisplayModeByProject = useAppStore((s) => s.filesDisplayModeByProject)
-  const setFilesDisplayMode = useAppStore((s) => s.setFilesDisplayMode)
-
   const selectedProject = projects.find((p) => p.id === selectedProjectId)
   const projectId = selectedProject?.id
+  const filesDisplayModeByProject = useAppStore((s) => s.filesDisplayModeByProject)
+  const setFilesDisplayMode = useAppStore((s) => s.setFilesDisplayMode)
+  const openFiles = useFileStore((s) => {
+    if (!projectId) return EMPTY_OPEN_FILES
+    return s.openFilesByProject[projectId] ?? EMPTY_OPEN_FILES
+  })
+  const openFile = useFileStore((s) => s.openFile)
+  const setBrowserSubPath = useFileStore((s) => s.setBrowserSubPath)
+  const enqueueEditorJumpIntent = useFileStore((s) => s.enqueueEditorJumpIntent)
+  const enqueueTreeRevealIntent = useFileStore((s) => s.enqueueTreeRevealIntent)
+
   const mode = projectId ? filesDisplayModeByProject[projectId] : undefined
+  const preferredMode = selectedProject
+    ? normalizeProjectPreferences(selectedProject.preferences).defaultFilesDisplayMode
+    : null
   const modeToggleWrapRef = useRef<HTMLDivElement>(null)
   const [modeToggleSafeInset, setModeToggleSafeInset] = useState(180)
+  const [searchOpen, setSearchOpen] = useState(false)
+  const [browserExternalOpenPath, setBrowserExternalOpenPath] = useState<string | null>(null)
+
+  const searchNavigation = useMemo(() => {
+    if (!selectedProject || !projectId) return null
+    return createFileSearchNavigationExecutor({
+      project: {
+        id: projectId,
+        path: selectedProject.path,
+      },
+      readers: {
+        readFileContent: getAppAPI()['read-file-content'],
+        readImagePreview: getAppAPI()['read-image-preview'],
+      },
+      writers: {
+        setFilesDisplayMode,
+        setBrowserSubPath,
+        setBrowserExternalOpenPath,
+        openFile: (request) => openFile(projectId, request),
+        enqueueEditorJumpIntent,
+        enqueueTreeRevealIntent,
+      },
+    })
+  }, [
+    enqueueEditorJumpIntent,
+    enqueueTreeRevealIntent,
+    openFile,
+    projectId,
+    selectedProject,
+    setBrowserSubPath,
+    setFilesDisplayMode,
+  ])
 
   // Coordinate file content sync (Agent writes, external edits, view switches)
-  useFileSync(selectedProject?.path)
+  useFileSync(projectId, selectedProject?.path)
 
   // Initialise git status — cold-start IPC, subsequent updates via DataBus
   useGitStatus(selectedProject?.path)
@@ -153,6 +208,12 @@ export function FilesView(): React.JSX.Element {
   // Auto-detect project type once (only when no cached mode exists)
   useEffect(() => {
     if (!selectedProject || !projectId || mode) return
+
+    // Project preference comes before heuristic detection.
+    if (preferredMode) {
+      setFilesDisplayMode(projectId, preferredMode)
+      return
+    }
 
     let cancelled = false
     async function detect(): Promise<void> {
@@ -169,7 +230,7 @@ export function FilesView(): React.JSX.Element {
     }
     detect()
     return () => { cancelled = true }
-  }, [projectId, mode, selectedProject, setFilesDisplayMode])
+  }, [projectId, mode, preferredMode, selectedProject, setFilesDisplayMode])
 
   // Reserve space on the editor tabs row so tabs never render beneath
   // the top-right floating mode switch.
@@ -192,6 +253,19 @@ export function FilesView(): React.JSX.Element {
       window.removeEventListener('resize', updateSafeInset)
     }
   }, [])
+
+  useEffect(() => {
+    if (!selectedProject) return
+    const onKeyDown = (e: KeyboardEvent): void => {
+      if (e.key.toLowerCase() !== 'g') return
+      if (!(e.metaKey || e.ctrlKey)) return
+      if ((e as KeyboardEvent & { isComposing?: boolean }).isComposing) return
+      e.preventDefault()
+      setSearchOpen((prev) => !prev)
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [selectedProject])
 
   if (!selectedProject || !projectId) {
     return (
@@ -222,10 +296,44 @@ export function FilesView(): React.JSX.Element {
         <IDEMode
           projectPath={selectedProject.path}
           projectName={selectedProject.name}
+          projectId={projectId}
           modeToggleSafeInset={modeToggleSafeInset}
+          onOpenSearch={() => setSearchOpen(true)}
         />
       ) : (
-        <FileBrowser projectPath={selectedProject.path} projectName={selectedProject.name} projectId={projectId} />
+        <FileBrowser
+          projectPath={selectedProject.path}
+          projectName={selectedProject.name}
+          projectId={projectId}
+          onOpenSearch={() => setSearchOpen(true)}
+          externalOpenPath={browserExternalOpenPath}
+          onExternalOpenConsumed={() => setBrowserExternalOpenPath(null)}
+        />
+      )}
+
+      <FileSearchOverlay
+        open={searchOpen}
+        projectId={projectId}
+        projectPath={selectedProject.path}
+        currentMode={effectiveMode}
+        openFiles={openFiles}
+        onClose={() => setSearchOpen(false)}
+        onExecuteCommand={(command) => {
+          if (!searchNavigation) return
+          void searchNavigation.execute(command)
+        }}
+      />
+
+      {!searchOpen && (
+        <button
+          type="button"
+          onClick={() => setSearchOpen(true)}
+          className="absolute bottom-3 right-3 z-30 inline-flex items-center gap-1.5 rounded-md border border-[hsl(var(--border))] bg-[hsl(var(--popover))] px-2 py-1 text-[11px] text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] transition-colors"
+          aria-label={t('search.fabAria')}
+        >
+          <Search className="h-3.5 w-3.5" />
+          <span>{t('search.shortcutChip')}</span>
+        </button>
       )}
     </div>
   )

@@ -2,14 +2,13 @@
 
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Plus } from 'lucide-react'
+import { X } from 'lucide-react'
 import { Dialog } from '@/components/ui/Dialog'
 import { resolveModalExitDurationMs } from '@/hooks/useModalAnimation'
 import { useIssueProviderStore } from '@/stores/issueProviderStore'
-import { ProviderCard } from './ProviderCard'
-import { AddProviderWizard } from './AddProviderWizard'
-import { EditProviderDialog } from './EditProviderDialog'
-import type { IssueProvider } from '@shared/types'
+import { cn } from '@/lib/utils'
+import { ProjectGeneralSettingsPanel } from './ProjectGeneralSettingsPanel'
+import { IssueIntegrationPanel } from './IssueIntegrationPanel'
 
 interface ProjectSettingsModalProps {
   projectId: string
@@ -18,9 +17,8 @@ interface ProjectSettingsModalProps {
 
 export function ProjectSettingsModal({ projectId, onClose }: ProjectSettingsModalProps): React.JSX.Element {
   const { t } = useTranslation('projectSettings')
-  const { providers, loading, loadProviders } = useIssueProviderStore()
-  const [showWizard, setShowWizard] = useState(false)
-  const [editingProvider, setEditingProvider] = useState<IssueProvider | null>(null)
+  const loadProviders = useIssueProviderStore((s) => s.loadProviders)
+  const [activeTab, setActiveTab] = useState<'general' | 'issueIntegration'>('general')
 
   // Two-phase close: play exit animation before unmounting
   const [open, setOpen] = useState(true)
@@ -36,77 +34,53 @@ export function ProjectSettingsModal({ projectId, onClose }: ProjectSettingsModa
   }, [projectId, loadProviders])
 
   return (
-    <>
-      <Dialog open={open} onClose={requestClose} title={t('title')} size="2xl">
-        <div className="flex flex-col h-[60vh]">
-          {/* Header */}
-          <div className="flex items-center justify-between px-6 py-4 border-b border-[hsl(var(--border))]">
-            <div>
-              <h3 className="text-sm font-medium">{t('issueIntegration.title')}</h3>
-              <p className="text-xs text-[hsl(var(--muted-foreground))] mt-0.5">
-                {t('issueIntegration.description')}
-              </p>
-            </div>
+    <Dialog open={open} onClose={requestClose} title={t('title')} size="4xl" className="flex flex-col h-[72vh]">
+      <div className="flex items-center justify-between px-5 py-3 border-b border-[hsl(var(--border))]">
+        <h2 className="text-base font-semibold">{t('title')}</h2>
+        <button
+          onClick={requestClose}
+          className="p-1 rounded-md hover:bg-[hsl(var(--foreground)/0.04)] transition-colors"
+          aria-label={t('closeAria')}
+        >
+          <X className="h-4 w-4" aria-hidden="true" />
+        </button>
+      </div>
+
+      <div className="flex flex-1 min-h-0">
+        <nav className="w-52 shrink-0 border-r border-[hsl(var(--border))] p-3 space-y-1" aria-label={t('tabs.ariaLabel')} role="tablist">
+          {(['general', 'issueIntegration'] as const).map((tab) => (
             <button
-              onClick={() => setShowWizard(true)}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))] hover:opacity-90 transition-opacity"
+              key={tab}
+              id={`project-settings-tab-${tab}`}
+              type="button"
+              role="tab"
+              aria-selected={activeTab === tab}
+              aria-controls="project-settings-tabpanel"
+              onClick={() => setActiveTab(tab)}
+              className={cn(
+                'w-full text-left px-3 py-2 rounded-md text-sm transition-colors',
+                activeTab === tab
+                  ? 'bg-[hsl(var(--primary)/0.08)] text-[hsl(var(--accent-foreground))] font-medium'
+                  : 'text-[hsl(var(--muted-foreground))] hover:bg-[hsl(var(--foreground)/0.04)] hover:text-[hsl(var(--foreground))]',
+              )}
             >
-              <Plus className="h-3.5 w-3.5" />
-              {t('issueIntegration.addIntegration')}
+              {t(`tabs.${tab}`)}
             </button>
-          </div>
-
-          {/* Provider List */}
-          <div className="flex-1 overflow-y-auto px-6 py-4">
-            {loading ? (
-              <div className="flex items-center justify-center h-32 text-sm text-[hsl(var(--muted-foreground))]">
-                Loading...
-              </div>
-            ) : providers.length === 0 ? (
-              <div className="flex flex-col items-center justify-center h-32 text-center">
-                <p className="text-sm text-[hsl(var(--muted-foreground))]">
-                  {t('issueIntegration.noProviders')}
-                </p>
-                <p className="text-xs text-[hsl(var(--muted-foreground))] mt-1">
-                  {t('issueIntegration.noProvidersHint')}
-                </p>
-              </div>
-            ) : (
-              <div className="space-y-3">
-                {providers.map((provider) => (
-                  <ProviderCard
-                    key={provider.id}
-                    provider={provider}
-                    onEdit={setEditingProvider}
-                  />
-                ))}
-              </div>
-            )}
-          </div>
+          ))}
+        </nav>
+        <div
+          id="project-settings-tabpanel"
+          className="flex-1 min-w-0 min-h-0"
+          role="tabpanel"
+          aria-labelledby={`project-settings-tab-${activeTab}`}
+        >
+          {activeTab === 'general' ? (
+            <ProjectGeneralSettingsPanel projectId={projectId} />
+          ) : (
+            <IssueIntegrationPanel projectId={projectId} />
+          )}
         </div>
-      </Dialog>
-
-      {showWizard && (
-        <AddProviderWizard
-          projectId={projectId}
-          onClose={() => setShowWizard(false)}
-          onCreated={() => {
-            loadProviders(projectId)
-            setShowWizard(false)
-          }}
-        />
-      )}
-
-      {editingProvider && (
-        <EditProviderDialog
-          provider={editingProvider}
-          onClose={() => setEditingProvider(null)}
-          onSaved={() => {
-            loadProviders(projectId)
-            setEditingProvider(null)
-          }}
-        />
-      )}
-    </>
+      </div>
+    </Dialog>
   )
 }

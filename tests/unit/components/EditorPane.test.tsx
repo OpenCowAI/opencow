@@ -54,7 +54,7 @@ describe('EditorPane', () => {
   })
 
   it('renders editable source editor for markdown files and updates store on change', async () => {
-    useFileStore.getState().openFile({
+    useFileStore.getState().openFile('project-1', {
       path: 'README.md',
       name: 'README.md',
       language: 'markdown',
@@ -62,7 +62,7 @@ describe('EditorPane', () => {
       viewKind: 'text',
     })
 
-    render(<EditorPane projectPath="/tmp/project" />)
+    render(<EditorPane projectPath="/tmp/project" projectId="project-1" />)
 
     expect(await screen.findByTestId('md-preview')).toBeInTheDocument()
 
@@ -72,9 +72,8 @@ describe('EditorPane', () => {
     expect(await screen.findByTestId('monaco-editor')).toBeInTheDocument()
     await userEvent.click(screen.getByTestId('monaco-type'))
 
-    const file = useFileStore.getState().openFiles.find((f) => f.path === 'README.md')
+    const file = (useFileStore.getState().openFilesByProject['project-1'] ?? []).find((f) => f.path === 'README.md')
     expect(file?.content).toBe('__edited_source__')
     expect(file?.isDirty).toBe(true)
   })
 })
-

@@ -5,7 +5,7 @@ import BetterSqlite3 from 'better-sqlite3'
 import { Kysely, SqliteDialect, Migrator } from 'kysely'
 import { migrationProvider } from '../../../electron/database/migrations/provider'
 
-describe('004_create_projects migration', () => {
+describe('projects migrations', () => {
   let db: Kysely<unknown>
   let raw: BetterSqlite3.Database
 
@@ -26,6 +26,9 @@ describe('004_create_projects migration', () => {
     expect(names).toContain('id')
     expect(names).toContain('name')
     expect(names).toContain('canonical_path')
+    expect(names).toContain('default_tab')
+    expect(names).toContain('default_chat_view_mode')
+    expect(names).toContain('default_files_display_mode')
     expect(names).toContain('created_at')
     expect(names).toContain('updated_at')
   })
@@ -63,5 +66,22 @@ describe('004_create_projects migration', () => {
     raw.exec(`DELETE FROM projects WHERE id = 'p1'`)
     const rows = raw.prepare('SELECT * FROM project_claude_mappings WHERE project_id = ?').all('p1')
     expect(rows).toHaveLength(0)
+  })
+
+  it('rejects invalid project preferences at DB level', () => {
+    const now = Date.now()
+    expect(() => {
+      raw.exec(`
+        INSERT INTO projects (
+          id, name, canonical_path,
+          default_tab, default_chat_view_mode, default_files_display_mode,
+          created_at, updated_at
+        ) VALUES (
+          'bad-pref', 'Bad', '/bad',
+          'issues', 'files', NULL,
+          ${now}, ${now}
+        )
+      `)
+    }).toThrow()
   })
 })

@@ -8,7 +8,7 @@ import { cn } from '@/lib/utils'
 import { useProjectScope } from '@/contexts/ProjectScopeContext'
 import { useContextFiles, type ContextFile } from '@/contexts/ContextFilesContext'
 import { getAppAPI } from '@/windowAPI'
-import type { FileEntry } from '@shared/types'
+import type { FileEntry, FileSearchMatch } from '@shared/types'
 
 /* ------------------------------------------------------------------ */
 /*  ContextMentionPopover                                              */
@@ -161,8 +161,9 @@ export function ContextMentionPopover({ onClose, onSelectFile }: ContextMentionP
     const timer = setTimeout(async () => {
       try {
         const results = await getAppAPI()['search-project-files'](projectPath, query)
+        const entries = results.map((match: FileSearchMatch) => match.entry)
         if (!cancelled) {
-          setFlatSearchResults(results.slice(0, 50))
+          setFlatSearchResults(entries.slice(0, 50))
           setIsSearchLoading(false)
         }
       } catch {

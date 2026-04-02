@@ -9,15 +9,27 @@ import { getFileDecoration } from '@/lib/gitDecorations'
 import { selectGitSnapshot } from '@/hooks/useGitStatus'
 
 interface EditorTabsProps {
+  projectId: string
   projectPath: string
   /** Right-side reserved space to avoid overlap with floating mode switch. */
   rightSafeInset?: number
 }
 
-export function EditorTabs({ projectPath, rightSafeInset = 0 }: EditorTabsProps): React.JSX.Element {
+const EMPTY_OPEN_FILES: ReadonlyArray<{
+  path: string
+  name: string
+  language: string
+  content: string
+  savedContent: string
+  isDirty: boolean
+  viewKind: 'text' | 'image'
+  imageDataUrl: string | null
+}> = []
+
+export function EditorTabs({ projectId, projectPath, rightSafeInset = 0 }: EditorTabsProps): React.JSX.Element {
   const { t } = useTranslation('files')
-  const openFiles = useFileStore((s) => s.openFiles)
-  const activeFilePath = useFileStore((s) => s.activeFilePath)
+  const openFiles = useFileStore((s) => s.openFilesByProject[projectId] ?? EMPTY_OPEN_FILES)
+  const activeFilePath = useFileStore((s) => s.activeFilePathByProject[projectId] ?? null)
   const setActiveFile = useFileStore((s) => s.setActiveFile)
   const closeFile = useFileStore((s) => s.closeFile)
   const gitSnapshot = useGitStore((s) => selectGitSnapshot(s, projectPath))
@@ -48,9 +60,9 @@ export function EditorTabs({ projectPath, rightSafeInset = 0 }: EditorTabsProps)
                   ? 'bg-[hsl(var(--background))] text-[hsl(var(--foreground))]'
                   : 'text-[hsl(var(--muted-foreground))] hover:bg-[hsl(var(--foreground)/0.04)]'
               )}
-              onClick={() => setActiveFile(file.path)}
+              onClick={() => setActiveFile(projectId, file.path)}
               onKeyDown={(e) => {
-                if (e.key === 'Enter' || e.key === ' ') setActiveFile(file.path)
+                if (e.key === 'Enter' || e.key === ' ') setActiveFile(projectId, file.path)
               }}
               title={decoration.tooltip ?? undefined}
             >
@@ -67,7 +79,7 @@ export function EditorTabs({ projectPath, rightSafeInset = 0 }: EditorTabsProps)
                 className="p-0.5 rounded hover:bg-[hsl(var(--foreground)/0.04)] transition-colors shrink-0"
                 onClick={(e) => {
                   e.stopPropagation()
-                  closeFile(file.path)
+                  closeFile(projectId, file.path)
                 }}
                 aria-label={t('editor.closeFile', { name: file.name })}
               >

@@ -135,6 +135,16 @@ export class ManagedSession {
   private state: ManagedSessionState = 'creating'
   private config: ManagedSessionRuntimeConfig
   private messages: ManagedSessionMessage[] = []
+  /**
+   * Session-level startup override selected by the caller.
+   *
+   * Important: this is NOT the runtime-resolved model reported by the engine.
+   * It only influences lifecycle bootstrap for the next spawn.
+   */
+  private modelOverride: string | null = null
+  /**
+   * Runtime-resolved model reported by the engine (for UI/telemetry only).
+   */
   private model: string | null
   private createdAt: number
   private lastActivity: number
@@ -156,14 +166,16 @@ export class ManagedSession {
     this.sessionId = `ccb-${nanoid(12)}`
     const engineKind: AIEngineKind = config.engineKind ?? 'claude'
     const engineState: Record<string, unknown> | null = config.engineState ?? null
+    const { model: startupModelOverride, ...configWithoutModel } = config
     this.config = {
-      ...config,
+      ...configWithoutModel,
       engineKind,
       engineState,
     }
     this.engineKind = engineKind
     this.engineState = engineState
-    this.model = config.model ?? null
+    this.modelOverride = startupModelOverride ?? null
+    this.model = null
     const now = Date.now()
     this.createdAt = now
     this.lastActivity = now
@@ -221,9 +233,14 @@ export class ManagedSession {
     const oldEngine = this.engineKind
     if (oldEngine === newEngine) return
 
+    const hadModelOverride = this.modelOverride != null
+
     // 1. Update both storage locations (dual storage invariant)
     this.engineKind = newEngine
     this.config = { ...this.config, engineKind: newEngine }
+    this.modelOverride = null
+    this.model = null
+    this.clearContextState()
 
     // 2. Clear engine-specific state (cannot resume cross-engine)
     this.engineSessionRef = null
@@ -248,6 +265,7 @@ export class ManagedSession {
       from: oldEngine,
       to: newEngine,
       summaryLength: contextSummary?.length ?? 0,
+      clearedModelOverride: hadModelOverride,
     })
     this.lastActivity = Date.now()
   }
@@ -255,6 +273,11 @@ export class ManagedSession {
   /** Cheap model accessor for projection/runtime logic. */
   getModel(): string | null {
     return this.model
+  }
+
+  /** Session-level startup model override (if explicitly configured). */
+  getModelOverride(): string | null {
+    return this.modelOverride
   }
 
   private setError(message: string): void {
@@ -971,7 +994,8 @@ export class ManagedSession {
       startupCwd: info.executionContext?.cwd ?? info.projectPath ?? process.cwd(),
       projectPath: info.projectPath ?? undefined,
       projectId: info.projectId ?? undefined,
-      model: info.model ?? undefined,
+      // IMPORTANT: persisted `info.model` is runtime-observed model telemetry,
+      // not a startup override. Never feed it back into bootstrap config.
     })
     // Override auto-generated id with the persisted one
     session.sessionId = info.id
@@ -980,6 +1004,7 @@ export class ManagedSession {
     }
     session.state = info.state
     session._stopReason = info.stopReason ?? null
+    session.modelOverride = null
     session.model = info.model
     session.messages = info.messages.map((m) => ({ ...m }))
     session.createdAt = info.createdAt

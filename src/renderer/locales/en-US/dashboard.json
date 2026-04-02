@@ -7,7 +7,7 @@
     "sessions": "sessions"
   },
   "stats": {
-    "totalTasks": "Total Tasks",
+    "totalIssues": "Total Issues",
     "completion": "Completion",
     "tokensToday": "Tokens Today",
     "costToday": "Cost Today",

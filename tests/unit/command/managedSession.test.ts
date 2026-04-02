@@ -623,4 +623,65 @@ describe('ManagedSession', () => {
     expect(info.contextState).toBeNull()
     expect(info.lastInputTokens).toBe(0)
   })
+
+  it('switchEngine clears model overrides and context state', () => {
+    const session = new ManagedSession({
+      ...baseConfig,
+      engineKind: 'claude',
+      model: 'claude-sonnet-4-6',
+    })
+    session.setModel('claude-sonnet-4-6')
+    session.applyContextSnapshot({
+      usedTokens: 1024,
+      limitTokens: 200_000,
+      source: 'claude.assistant_usage',
+      confidence: 'estimated',
+      updatedAtMs: Date.now(),
+    })
+
+    session.switchEngine({ newEngine: 'codex', contextSummary: 'summary' })
+
+    const info = session.getInfo()
+    expect(info.engineKind).toBe('codex')
+    expect(info.model).toBeNull()
+    expect(info.contextState).toBeNull()
+    expect(session.getModelOverride()).toBeNull()
+    const cfg = session.getConfig()
+    expect(cfg.engineKind).toBe('codex')
+  })
+
+  it('fromInfo restores runtime model but does not restore startup model override', () => {
+    const now = Date.now()
+    const restored = ManagedSession.fromInfo({
+      id: 'ccb-restored',
+      engineKind: 'codex',
+      engineSessionRef: 'engine-ref',
+      engineState: null,
+      state: 'idle',
+      stopReason: 'completed',
+      origin: { source: 'agent' },
+      projectPath: '/tmp/project',
+      projectId: 'project-1',
+      model: 'claude-sonnet-4-6',
+      messages: [],
+      createdAt: now - 1000,
+      lastActivity: now,
+      activeDurationMs: 0,
+      activeStartedAt: null,
+      totalCostUsd: 0,
+      inputTokens: 0,
+      outputTokens: 0,
+      lastInputTokens: 0,
+      contextLimitOverride: null,
+      contextState: null,
+      contextTelemetry: null,
+      activity: null,
+      error: null,
+      executionContext: null,
+    })
+
+    expect(restored.getModel()).toBe('claude-sonnet-4-6')
+    expect(restored.getModelOverride()).toBeNull()
+    expect(restored.getConfig().model).toBeUndefined()
+  })
 })

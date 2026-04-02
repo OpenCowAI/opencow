@@ -1,11 +1,62 @@
 {
   "title": "项目设置",
+  "closeAria": "关闭项目设置",
   "tabs": {
+    "ariaLabel": "项目设置标签页",
+    "general": "通用",
     "issueIntegration": "Issue 集成"
+  },
+  "general": {
+    "title": "通用",
+    "description": "设置项目级默认入口页与 Chat 版面偏好。",
+    "save": "保存",
+    "saving": "保存中...",
+    "saved": "设置已保存",
+    "saveFailed": "保存失败",
+    "projectNotFound": "未找到项目。",
+    "defaultTab": {
+      "title": "默认顶部 Tab",
+      "description": "首次打开该项目时使用。",
+      "hints": {
+        "issues": "从 Issue 跟踪与处理开始。",
+        "chat": "直接进入 Chat 工作区。",
+        "schedule": "优先进入计划与执行视图。"
+      },
+      "options": {
+        "issues": "Issues",
+        "chat": "Chat",
+        "schedule": "Schedule"
+      }
+    },
+    "chatDefaultMode": {
+      "title": "Chat 默认版面",
+      "description": "选择默认使用极简模式或文件模式。",
+      "hints": {
+        "default": "对话优先，界面更专注。",
+        "files": "Chat 与 Files 并排，适合开发流。"
+      },
+      "options": {
+        "default": "极简",
+        "files": "文件"
+      }
+    },
+    "filesDefaultMode": {
+      "title": "文件默认陈列方式",
+      "description": "当 Chat 默认是文件模式时，选择 Files 的默认形态。",
+      "hints": {
+        "ide": "树形 + 标签 + 编辑器优先。",
+        "browser": "浏览器式文件探索与预览。"
+      },
+      "options": {
+        "ide": "编辑器",
+        "browser": "浏览器"
+      }
+    }
   },
   "issueIntegration": {
     "title": "Issue 集成",
     "description": "连接 GitHub、GitLab 或 Linear，将远端 Issue 同步到本项目。",
+    "loading": "加载中…",
     "addIntegration": "添加集成",
     "noProviders": "尚未配置集成。",
     "noProvidersHint": "连接 GitHub、GitLab 或 Linear 工作区以开始同步 Issue。",

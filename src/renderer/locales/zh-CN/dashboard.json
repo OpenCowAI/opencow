@@ -7,7 +7,7 @@
     "sessions": "个会话"
   },
   "stats": {
-    "totalTasks": "总任务数",
+    "totalIssues": "总 Issue 数",
     "completion": "完成率",
     "tokensToday": "今日 Tokens",
     "costToday": "今日费用",

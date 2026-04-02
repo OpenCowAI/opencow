@@ -13,7 +13,7 @@ import {
   __resetCodexSdkLoaderForTest,
   __setCodexSdkLoaderForTest,
 } from '../../../electron/command/codexQueryLifecycle'
-import type { StartSessionInput, DataBusEvent } from '../../../src/shared/types'
+import type { StartSessionInput, DataBusEvent, ManagedSessionInfo } from '../../../src/shared/types'
 import type { Database } from '../../../electron/database/types'
 import type { CapabilityCenter } from '../../../electron/services/capabilityCenter'
 import type { CapabilityPlan } from '../../../electron/services/capabilityCenter/sessionInjector'
@@ -153,6 +153,35 @@ function createCapabilityPlan(overrides: Partial<CapabilityPlan> = {}): Capabili
       skippedByBudget: [],
       skillDecisions: [],
     },
+    ...overrides,
+  }
+}
+
+function makePersistedSession(overrides: Partial<ManagedSessionInfo> = {}): ManagedSessionInfo {
+  const now = Date.now()
+  return {
+    id: `ccb-persisted-${Math.random().toString(36).slice(2, 8)}`,
+    engineKind: 'claude',
+    engineSessionRef: 'claude-session-ref',
+    engineState: null,
+    state: 'idle',
+    stopReason: null,
+    origin: { source: 'agent' },
+    projectPath: null,
+    projectId: null,
+    model: 'claude-sonnet-4-6',
+    messages: [],
+    createdAt: now - 1000,
+    lastActivity: now,
+    activeDurationMs: 0,
+    activeStartedAt: null,
+    totalCostUsd: 0,
+    inputTokens: 0,
+    outputTokens: 0,
+    lastInputTokens: 0,
+    activity: null,
+    error: null,
+    executionContext: null,
     ...overrides,
   }
 }
@@ -419,6 +448,50 @@ describe('SessionOrchestrator.startSession — idempotency', () => {
     )
 
     await orchestrator.stopSession(sessionId)
+  })
+
+  it('does not reuse persisted Claude runtime model after engine drift switch to codex', async () => {
+    deps = {
+      ...makeDeps(db, tmpDir, 'codex'),
+      getProviderDefaultModel: (engineKind) =>
+        engineKind === 'codex' ? 'gpt-5' : undefined,
+    }
+    orchestrator = new SessionOrchestrator(deps)
+
+    const persistedSession = makePersistedSession({
+      id: 'ccb-persisted-engine-drift',
+      engineKind: 'claude',
+      engineSessionRef: 'claude-thread-legacy',
+      model: 'claude-sonnet-4-6',
+      state: 'idle',
+    })
+    await deps.store.save(persistedSession)
+
+    codexMocks.state.turnPlans.push([
+      { type: 'thread.started', thread_id: 'codex-thread-after-drift' },
+      { type: 'item.completed', item: { type: 'agent_message', text: 'engine-switched' } },
+      { type: 'turn.completed', usage: { input_tokens: 1, cached_input_tokens: 0, output_tokens: 1 } },
+    ])
+
+    const accepted = await orchestrator.sendMessage(persistedSession.id, 'continue after default engine switch')
+    expect(accepted).toBe(true)
+
+    for (let i = 0; i < 20 && codexMocks.mockCodexStartThread.mock.calls.length === 0; i++) {
+      await new Promise((resolve) => setTimeout(resolve, 10))
+    }
+
+    expect(codexMocks.mockCodexResumeThread).not.toHaveBeenCalled()
+    expect(codexMocks.mockCodexStartThread).toHaveBeenCalled()
+    const threadOptions = codexMocks.mockCodexStartThread.mock.calls.at(-1)?.[0] as
+      | { model?: string }
+      | undefined
+    expect(threadOptions?.model).toBe('gpt-5')
+    expect(threadOptions?.model).not.toBe('claude-sonnet-4-6')
+
+    const info = await orchestrator.getSession(persistedSession.id)
+    expect(info?.engineKind).toBe('codex')
+    expect(info?.model).toBe('gpt-5')
+    expect(info?.model).not.toBe('claude-sonnet-4-6')
   })
 
   it('injects capability prompt into codex first-turn system prefix when CapabilityCenter is configured', async () => {

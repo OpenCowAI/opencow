@@ -174,7 +174,10 @@ function applySharedSessionOverrides(ctx: EngineBootstrapContext): void {
   // Startup cwd is resolved once by SessionWorkspaceResolver and stored in session config.
   ctx.options.cwd = ctx.config.startupCwd
   if (ctx.resume) ctx.options.resume = ctx.resume
-  if (ctx.config.model) ctx.options.model = ctx.config.model
+  const modelOverride = ctx.config.model ?? null
+  if (typeof modelOverride === 'string' && modelOverride.trim().length > 0) {
+    ctx.options.model = modelOverride
+  }
 }
 
 function parseCodexApprovalPolicy(value: unknown): CodexApprovalPolicy | null {

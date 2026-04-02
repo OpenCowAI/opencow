@@ -14,7 +14,7 @@ import {
   discoverProjects,
   parseSessionMetadata,
 } from '../parsers/sessionParser'
-import type { DiscoveredProjectCandidate } from '@shared/types'
+import type { DiscoveredProjectCandidate, ProjectPreferencesPatch } from '@shared/types'
 
 export interface DiscoveredProject {
   folderName: string
@@ -347,9 +347,23 @@ export class ProjectService {
   // ── CRUD delegations ──
 
   async getById(id: string): Promise<StoredProject | null> { return this.store.getById(id) }
-  async listAll(): Promise<StoredProject[]> { return this.store.listAll() }
+  /**
+   * Canonical project listing order shared by all consumers:
+   * 1) pinned (pinOrder asc)
+   * 2) active non-pinned (displayOrder asc)
+   * 3) archived (name asc)
+   */
+  async listAll(): Promise<StoredProject[]> {
+    const projects = await this.store.listAll()
+    return sortProjectsForPresentation(projects)
+  }
   async findByCanonicalPath(path: string): Promise<StoredProject | null> { return this.store.findByCanonicalPath(path) }
-  async update(id: string, input: { name?: string }): Promise<StoredProject | null> { return this.store.update(id, input) }
+  async update(
+    id: string,
+    input: { name?: string; preferences?: ProjectPreferencesPatch },
+  ): Promise<StoredProject | null> {
+    return this.store.update(id, input)
+  }
 
   /**
    * Delete a project and all its associated data.
@@ -381,6 +395,31 @@ export class ProjectService {
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
+
+function sortProjectsForPresentation(projects: StoredProject[]): StoredProject[] {
+  const rank = (p: StoredProject): 0 | 1 | 2 => {
+    if (p.pinOrder !== null) return 0
+    if (p.archivedAt === null) return 1
+    return 2
+  }
+
+  return [...projects].sort((a, b) => {
+    const aRank = rank(a)
+    const bRank = rank(b)
+    if (aRank !== bRank) return aRank - bRank
+
+    if (aRank === 0) {
+      return (a.pinOrder ?? Number.MAX_SAFE_INTEGER) - (b.pinOrder ?? Number.MAX_SAFE_INTEGER)
+    }
+    if (aRank === 1) {
+      return a.displayOrder - b.displayOrder
+    }
+
+    const byName = a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })
+    if (byName !== 0) return byName
+    return a.id.localeCompare(b.id)
+  })
+}
 
 /** Return fs.Stats if the path exists, or `null` for ENOENT. Rethrows other errors. */
 async function statOrNull(path: string): Promise<Stats | null> {

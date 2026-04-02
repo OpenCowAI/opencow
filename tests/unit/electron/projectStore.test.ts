@@ -78,6 +78,55 @@ describe('ProjectStore', () => {
     expect(updated?.updatedAt).toBeGreaterThanOrEqual(project.updatedAt)
   })
 
+  it('applies default project preferences on create', async () => {
+    const project = await store.create({ name: 'Pref', canonicalPath: '/pref' })
+    expect(project.preferences).toEqual({
+      defaultTab: 'issues',
+      defaultChatViewMode: 'default',
+      defaultFilesDisplayMode: null,
+    })
+  })
+
+  it('merges partial preference updates without dropping existing values', async () => {
+    const created = await store.create({
+      name: 'PrefMerge',
+      canonicalPath: '/pref-merge',
+      preferences: {
+        defaultTab: 'schedule',
+        defaultChatViewMode: 'files',
+        defaultFilesDisplayMode: 'browser',
+      },
+    })
+
+    const updated = await store.update(created.id, {
+      preferences: { defaultTab: 'chat' },
+    })
+
+    expect(updated?.preferences).toEqual({
+      defaultTab: 'chat',
+      defaultChatViewMode: 'files',
+      defaultFilesDisplayMode: 'browser',
+    })
+  })
+
+  it('normalizes files chat mode to explicit files display mode', async () => {
+    const created = await store.create({
+      name: 'PrefNormalize',
+      canonicalPath: '/pref-normalize',
+      preferences: {
+        defaultTab: 'issues',
+        defaultChatViewMode: 'files',
+        defaultFilesDisplayMode: null,
+      },
+    })
+
+    expect(created.preferences).toEqual({
+      defaultTab: 'issues',
+      defaultChatViewMode: 'files',
+      defaultFilesDisplayMode: 'ide',
+    })
+  })
+
   it('cascades delete to mappings', async () => {
     const project = await store.create({ name: 'P', canonicalPath: '/p' })
     await store.addClaudeMapping('folder1', project.id)

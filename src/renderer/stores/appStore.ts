@@ -43,8 +43,10 @@ import type {
   ViewDisplayConfig,
   EphemeralFilters,
   RuntimeVersions,
+  ProjectPreferences,
 } from '@shared/types'
 import { ALL_VIEW } from '@shared/types'
+import { normalizeProjectPreferences } from '@shared/projectPreferences'
 import { getAppAPI } from '@/windowAPI'
 // Circular dependency note: appStore → issueStore for navigation side-effects
 // (clearDetailCache, loadIssueDetail, removeIssuesForProject, issueById read).
@@ -328,6 +330,21 @@ function projectStateToStore(target: ProjectViewState): Partial<AppStore> {
   }
 }
 
+function resolveFirstVisitProjectState(
+  project: Project | null,
+  currentTab: MainTab,
+): Pick<ProjectViewState, 'lastTab' | 'chatViewMode'> & { filesDisplayMode: FilesDisplayMode | null } {
+  if (!project) {
+    return { lastTab: currentTab, chatViewMode: 'default', filesDisplayMode: null }
+  }
+  const preferences = normalizeProjectPreferences(project.preferences)
+  return {
+    lastTab: preferences.defaultTab,
+    chatViewMode: preferences.defaultChatViewMode,
+    filesDisplayMode: preferences.defaultFilesDisplayMode,
+  }
+}
+
 /**
  * Cross-project navigation side-effect: clear the issue detail cache
  * so that stale data from the previous project is never rendered.
@@ -353,6 +370,7 @@ interface SessionsSlice {
   _tabDetails: Record<DetailSlotKey, DetailContext | null>
   statusFilter: StatusFilter
   setProjects: (projects: Project[]) => void
+  updateProjectById: (projectId: string, updater: (project: Project) => Project) => void
   setSessions: (sessions: Session[]) => void
   selectSession: (sessionId: string | null, highlightTurnIndex?: number) => void
   openDetail: (ctx: DetailContext) => void
@@ -470,6 +488,10 @@ export const useAppStore = create<AppStore>((set, get) => ({
   _tabDetails: { ...EMPTY_TAB_DETAILS },
   statusFilter: 'all',
   setProjects: (projects) => set({ projects }),
+  updateProjectById: (projectId, updater) =>
+    set((s) => ({
+      projects: s.projects.map((project) => (project.id === projectId ? updater(project) : project)),
+    })),
   setSessions: (sessions) => set({ sessions }),
   selectSession: (sessionId, highlightTurnIndex) => {
     if (sessionId) {
@@ -532,17 +554,21 @@ export const useAppStore = create<AppStore>((set, get) => ({
       const targetKey = projectMemoryKey(projectId)
       const hasSavedState = targetKey in updatedStates
       const target = getProjectState(updatedStates, projectId)
+      const project = projectId ? s.projects.find((p) => p.id === projectId) : null
+      const firstVisit = resolveFirstVisitProjectState(project ?? null, s.appView.mode === 'projects' ? s.appView.tab : 'issues')
 
       // For return visits, restore the saved tab.
-      // For first-visit projects, inherit current tab (UX continuity).
-      const currentTab = s.appView.mode === 'projects' ? s.appView.tab : 'issues'
-      const fallbackTab: MainTab = currentTab
-      const tab = hasSavedState ? target.lastTab : fallbackTab
+      // For first-visit projects, use project preference when available.
+      const tab = hasSavedState ? target.lastTab : firstVisit.lastTab
 
       // Use the target project's chatSubTab (not the current global one)
       // so that the detail slot resolves to the correct sub-tab context.
       const targetChatSubTab = target.chatSubTab
       const slot = activeSlotForTab(tab, targetChatSubTab)
+      const nextFilesDisplayModeByProject =
+        !hasSavedState && projectId && firstVisit.filesDisplayMode
+          ? { ...s.filesDisplayModeByProject, [projectId]: firstVisit.filesDisplayMode }
+          : s.filesDisplayModeByProject
 
       return {
         _projectStates: updatedStates,
@@ -552,6 +578,8 @@ export const useAppStore = create<AppStore>((set, get) => ({
         selectedSessionDetail: null,
         // Restore all per-project state from the target snapshot
         ...projectStateToStore(target),
+        ...(hasSavedState ? {} : { chatViewMode: firstVisit.chatViewMode }),
+        filesDisplayModeByProject: nextFilesDisplayModeByProject,
       }
     })
 
@@ -759,9 +787,12 @@ export const useAppStore = create<AppStore>((set, get) => ({
   setAgentChatSessionId: (sessionId) => set({ agentChatSessionId: sessionId }),
   setChatViewMode: (mode) => set({ chatViewMode: mode }),
   setFilesDisplayMode: (projectId, mode) =>
-    set((s) => ({
-      filesDisplayModeByProject: { ...s.filesDisplayModeByProject, [projectId]: mode }
-    })),
+    set((s) => {
+      if (s.filesDisplayModeByProject[projectId] === mode) return {}
+      return {
+        filesDisplayModeByProject: { ...s.filesDisplayModeByProject, [projectId]: mode }
+      }
+    }),
   setOnboarding: (state) => set({ onboarding: state }),
   addProject: async () => {
     const selectedPath = await getAppAPI()['select-directory']()

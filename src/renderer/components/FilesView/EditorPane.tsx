@@ -23,16 +23,29 @@ loader.config({ monaco })
 
 interface EditorPaneProps {
   projectPath: string
+  projectId: string
 }
 
 type EditorViewMode = 'preview' | 'source'
+const EMPTY_OPEN_FILES: ReadonlyArray<{
+  path: string
+  name: string
+  language: string
+  content: string
+  savedContent: string
+  isDirty: boolean
+  viewKind: 'text' | 'image'
+  imageDataUrl: string | null
+}> = []
 
-export function EditorPane({ projectPath }: EditorPaneProps): React.JSX.Element {
+export function EditorPane({ projectPath, projectId }: EditorPaneProps): React.JSX.Element {
   const { t } = useTranslation('files')
-  const openFiles = useFileStore((s) => s.openFiles)
-  const activeFilePath = useFileStore((s) => s.activeFilePath)
+  const openFiles = useFileStore((s) => s.openFilesByProject[projectId] ?? EMPTY_OPEN_FILES)
+  const activeFilePath = useFileStore((s) => s.activeFilePathByProject[projectId] ?? null)
   const updateFileContent = useFileStore((s) => s.updateFileContent)
   const markFileSaved = useFileStore((s) => s.markFileSaved)
+  const peekEditorJumpIntent = useFileStore((s) => s.peekEditorJumpIntent)
+  const ackEditorJumpIntent = useFileStore((s) => s.ackEditorJumpIntent)
   const monacoTheme = useMonacoTheme()
 
   const editorRef = useRef<editor.IStandaloneCodeEditor | null>(null)
@@ -73,9 +86,9 @@ export function EditorPane({ projectPath }: EditorPaneProps): React.JSX.Element 
       label: t('editor.saveFile'),
       keybindings: [monacoInstance.KeyMod.CtrlCmd | monacoInstance.KeyCode.KeyS],
       run: async () => {
-        const path = useFileStore.getState().activeFilePath
+        const path = useFileStore.getState().activeFilePathByProject[projectId] ?? null
         if (!path) return
-        const file = useFileStore.getState().openFiles.find((f) => f.path === path)
+        const file = (useFileStore.getState().openFilesByProject[projectId] ?? []).find((f) => f.path === path)
         if (!file || file.viewKind !== 'text' || !file.isDirty) return
 
         try {
@@ -84,19 +97,34 @@ export function EditorPane({ projectPath }: EditorPaneProps): React.JSX.Element 
             log.error('Failed to save file', result.error)
             return
           }
-          markFileSaved(path)
+          markFileSaved(projectId, path)
         } catch (err) {
           log.error('Failed to save file', err)
         }
       },
     })
-  }, [projectPath, markFileSaved, t])
+  }, [projectId, projectPath, markFileSaved, t])
+
+  useEffect(() => {
+    if (!activeFilePath) return
+    if (!editorRef.current) return
+    const intent = peekEditorJumpIntent(projectId)
+    if (!intent) return
+    const pendingJump = intent.payload
+    if (pendingJump.path !== activeFilePath) return
+
+    const line = Math.max(1, pendingJump.line)
+    editorRef.current.revealLineInCenter(line)
+    editorRef.current.setPosition({ lineNumber: line, column: 1 })
+    editorRef.current.focus()
+    ackEditorJumpIntent(projectId, intent.id)
+  }, [ackEditorJumpIntent, activeFilePath, peekEditorJumpIntent, projectId])
 
   const handleChange = useCallback((value: string | undefined) => {
     if (value !== undefined && activeFilePath && activeFile?.viewKind === 'text') {
-      updateFileContent(activeFilePath, value)
+      updateFileContent(projectId, activeFilePath, value)
     }
-  }, [activeFilePath, activeFile?.viewKind, updateFileContent])
+  }, [activeFilePath, activeFile?.viewKind, projectId, updateFileContent])
 
   if (!activeFile) {
     return (
@@ -200,7 +228,13 @@ export function EditorPane({ projectPath }: EditorPaneProps): React.JSX.Element 
             )}
           </div>
         ) : isMarkdown && activeViewMode === 'preview' ? (
-          <MarkdownPreviewWithToc content={activeFile.content} className="h-full" />
+          <MarkdownPreviewWithToc
+            content={activeFile.content}
+            className="h-full"
+            tocLabel={t('editor.markdownContents')}
+            enableTocCollapse
+            defaultTocCollapsed
+          />
         ) : isHtml && activeViewMode === 'preview' ? (
           <iframe
             srcDoc={wrapHtmlForSafePreview(activeFile.content)}
