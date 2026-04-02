@@ -1175,7 +1175,13 @@ export class TelegramBotService {
       // If the previous placeholder was showing Evose progress, "commit" it
       // as a permanent message before Claude's text overwrites it.
       // This preserves the agent summary (tool calls + text) for the user.
-      await this.commitEvoseProgress(chatId)
+      // IMPORTANT: only await when Evose content actually exists.
+      // Awaiting an already-resolved async function still yields to the event loop,
+      // opening a race window where `command:session:idle` can clear strategy
+      // placeholder state before we finalize it in-place.
+      if (this.lastEvoseContent.has(chatId) || this.lastEvoseCommitContent.has(chatId)) {
+        await this.commitEvoseProgress(chatId)
+      }
 
       const content = this.fmt.streamingPlaceholder(rawText, toolActivity)
 
@@ -1197,7 +1203,9 @@ export class TelegramBotService {
     // a permanent message before the finalize overwrites the bubble.
     // Same protection as the streaming branch above — handles the case where
     // the SDK turn finalizes (isStreaming=false) instead of streaming first.
-    await this.commitEvoseProgress(chatId)
+    if (this.lastEvoseContent.has(chatId) || this.lastEvoseCommitContent.has(chatId)) {
+      await this.commitEvoseProgress(chatId)
+    }
 
     const htmlChunks = this.fmt.formatAssistantBlocks(message.content)
 

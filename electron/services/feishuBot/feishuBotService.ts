@@ -478,7 +478,13 @@ export class FeishuBotService {
       if (!textContent) return
 
       // Commit any Evose progress before starting Claude stream
-      await this.commitEvoseProgress(chatId)
+      // IMPORTANT: only await when Evose content actually exists.
+      // Awaiting an already-resolved async function still yields to the event loop,
+      // which opens a race window where `command:session:idle` may clear the
+      // placeholder state before this streaming/final handler captures it.
+      if (this.lastEvoseContent.has(chatId)) {
+        await this.commitEvoseProgress(chatId)
+      }
 
       const cardJson = buildStreamingCard({
         content: textContent,
@@ -489,7 +495,11 @@ export class FeishuBotService {
       await this.sendOrEditCard(chatId, cardJson, sessionId)
     } else {
       // Final message
-      await this.commitEvoseProgress(chatId)
+      // Same race protection as streaming branch above: avoid yielding in the
+      // normal non-Evose path so placeholder finalization can run atomically.
+      if (this.lastEvoseContent.has(chatId)) {
+        await this.commitEvoseProgress(chatId)
+      }
 
       if (!textContent) return
 

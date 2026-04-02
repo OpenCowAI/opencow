@@ -105,7 +105,7 @@ export class SessionContext {
       onFlushMessage: () => {
         // Dispatch queued system event messages first — ensures the
         // renderer sees them in the same batch as the streaming message.
-        this._flushPendingMessageIds()
+        const flushedQueued = this._flushPendingMessageIds()
 
         // Fast path: read snapshot from the streaming buffer — O(1).
         // The buffer holds a direct reference to the message in ManagedSession.messages[],
@@ -124,7 +124,14 @@ export class SessionContext {
           // Fallback: buffer not active but stream is (edge case, e.g. relay).
           this.dispatchMessageById(this.stream.streamingMessageId)
         } else {
-          this.dispatchLastMessage()
+          // IMPORTANT:
+          // When queued messages were already flushed above, calling
+          // dispatchLastMessage() can duplicate the same final assistant message
+          // in the same tick (common for tool_use finalization path).
+          // Skip fallback in that case.
+          if (!flushedQueued) {
+            this.dispatchLastMessage()
+          }
         }
       },
       onFlushSession: () => this.dispatchSessionUpdated(),
@@ -149,13 +156,14 @@ export class SessionContext {
    * queueing and flushing (e.g., session reset), `dispatchMessageById`
    * silently skips it (`getMessageById` returns null).
    */
-  private _flushPendingMessageIds(): void {
-    if (this._pendingMessageIds.length === 0) return
+  private _flushPendingMessageIds(): boolean {
+    if (this._pendingMessageIds.length === 0) return false
     const ids = this._pendingMessageIds
     this._pendingMessageIds = []
     for (const id of ids) {
       this.dispatchMessageById(id)
     }
+    return true
   }
 
   /**
