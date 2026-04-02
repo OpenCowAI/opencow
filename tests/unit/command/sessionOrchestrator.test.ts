@@ -191,7 +191,7 @@ describe('SessionOrchestrator.startSession — idempotency', () => {
     const input: StartSessionInput = {
       prompt: 'Fix the bug',
       origin: { source: 'issue', issueId: 'issue-1' },
-      workspace: { scope: 'custom-path', cwd: '/tmp/project' },
+      workspace: { scope: 'custom-path', cwd: tmpDir },
     }
 
     const id1 = await orchestrator.startSession(input)
