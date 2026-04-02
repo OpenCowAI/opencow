@@ -8,6 +8,7 @@ import type { IssueStatus } from '@shared/types'
 
 interface StatsCardsProps {
   stats: DashboardStats
+  actions?: React.ReactNode
 }
 
 const ISSUE_STATUS_I18N_KEY: Record<IssueStatus, string> = {
@@ -18,7 +19,7 @@ const ISSUE_STATUS_I18N_KEY: Record<IssueStatus, string> = {
   cancelled: 'cancelled'
 }
 
-export function StatsCards({ stats }: StatsCardsProps): React.JSX.Element {
+export function StatsCards({ stats, actions }: StatsCardsProps): React.JSX.Element {
   const { t } = useTranslation('dashboard')
   const { t: tIssues } = useTranslation('issues')
   const issueStatusItems = ISSUE_STATUS_RING_ORDER
@@ -27,7 +28,7 @@ export function StatsCards({ stats }: StatsCardsProps): React.JSX.Element {
 
   return (
     <div
-      className="flex items-center gap-4 rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] px-4 py-2"
+      className="flex min-h-8 items-center gap-4 rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] px-4 py-2"
       role="region"
       aria-label={t('stats.aria')}
     >
@@ -37,10 +38,10 @@ export function StatsCards({ stats }: StatsCardsProps): React.JSX.Element {
           aria-hidden="true"
         />
         <span className="text-xs text-[hsl(var(--muted-foreground))] whitespace-nowrap">
-          {t('stats.totalTasks')}
+          {t('stats.totalIssues')}
         </span>
         <span className="text-sm font-semibold tabular-nums text-[hsl(var(--foreground))]">
-          {stats.totalTasks}
+          {stats.totalIssues}
         </span>
       </div>
 
@@ -72,6 +73,12 @@ export function StatsCards({ stats }: StatsCardsProps): React.JSX.Element {
           </div>
         )}
       </div>
+
+      {actions && (
+        <div className="ml-auto flex shrink-0 items-center gap-2">
+          {actions}
+        </div>
+      )}
     </div>
   )
 }

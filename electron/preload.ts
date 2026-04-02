@@ -15,6 +15,8 @@ const invokeChannels: (keyof IPCChannels)[] = [
   'unpin-project',
   'archive-project',
   'unarchive-project',
+  'reorder-projects',
+  'reorder-pinned-projects',
   'get-onboarding-state',
   'complete-onboarding',
   'check-prerequisites',

@@ -3,88 +3,94 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { useFileStore } from '../../../src/renderer/stores/fileStore'
 
+const PROJECT_A = 'project-a'
+const PROJECT_B = 'project-b'
+
+function openText(projectId: string, path: string, content = ''): void {
+  useFileStore.getState().openFile(projectId, {
+    path,
+    name: path.split('/').at(-1) ?? path,
+    language: 'typescript',
+    content,
+    viewKind: 'text',
+    imageDataUrl: null,
+  })
+}
+
 describe('fileStore', () => {
   beforeEach(() => {
     useFileStore.getState().reset()
   })
 
-  it('initial state has empty files', () => {
+  it('initial state is empty', () => {
     const state = useFileStore.getState()
-    expect(state.openFiles).toEqual([])
-    expect(state.activeFilePath).toBeNull()
-    expect(state.expandedDirs.size).toBe(0)
+    expect(state.openFilesByProject).toEqual({})
+    expect(state.activeFilePathByProject).toEqual({})
+    expect(state.expandedTreeDirsByProject).toEqual({})
     expect(state.pendingFileWritesByToolId).toEqual({})
-    expect(state.pendingFileRefreshPaths).toEqual([])
+    expect(state.pendingFileRefreshPathsByProject).toEqual({})
   })
 
-  it('opens a file and sets it as active', () => {
-    const store = useFileStore.getState()
-    store.openFile({
-      path: 'src/App.tsx',
-      name: 'App.tsx',
-      language: 'typescriptreact',
-      content: 'export function App() {}'
-    })
+  it('opens a file and sets it active for the project', () => {
+    openText(PROJECT_A, 'src/App.tsx', 'export function App() {}')
 
     const state = useFileStore.getState()
-    expect(state.openFiles).toHaveLength(1)
-    expect(state.openFiles[0].path).toBe('src/App.tsx')
-    expect(state.openFiles[0].isDirty).toBe(false)
-    expect(state.activeFilePath).toBe('src/App.tsx')
+    expect(state.openFilesByProject[PROJECT_A]).toHaveLength(1)
+    expect(state.openFilesByProject[PROJECT_A]?.[0].path).toBe('src/App.tsx')
+    expect(state.openFilesByProject[PROJECT_A]?.[0].isDirty).toBe(false)
+    expect(state.activeFilePathByProject[PROJECT_A]).toBe('src/App.tsx')
   })
 
-  it('does not duplicate already-open files', () => {
-    const store = useFileStore.getState()
-    store.openFile({
-      path: 'src/App.tsx',
-      name: 'App.tsx',
-      language: 'typescriptreact',
-      content: 'content'
-    })
-    store.openFile({
-      path: 'src/App.tsx',
-      name: 'App.tsx',
-      language: 'typescriptreact',
-      content: 'content'
-    })
+  it('does not duplicate already-open files in same project', () => {
+    openText(PROJECT_A, 'src/App.tsx', 'content')
+    openText(PROJECT_A, 'src/App.tsx', 'content')
 
-    expect(useFileStore.getState().openFiles).toHaveLength(1)
-    expect(useFileStore.getState().activeFilePath).toBe('src/App.tsx')
+    expect(useFileStore.getState().openFilesByProject[PROJECT_A]).toHaveLength(1)
+    expect(useFileStore.getState().activeFilePathByProject[PROJECT_A]).toBe('src/App.tsx')
   })
 
-  it('closes a file and activates neighbor', () => {
-    const store = useFileStore.getState()
-    store.openFile({ path: 'a.ts', name: 'a.ts', language: 'typescript', content: '' })
-    store.openFile({ path: 'b.ts', name: 'b.ts', language: 'typescript', content: '' })
+  it('allows same file path opened in different projects without leaking state', () => {
+    openText(PROJECT_A, 'src/shared.ts', 'a')
+    openText(PROJECT_B, 'src/shared.ts', 'b')
 
-    store.closeFile('b.ts')
     const state = useFileStore.getState()
-    expect(state.openFiles).toHaveLength(1)
-    expect(state.activeFilePath).toBe('a.ts')
+    expect(state.openFilesByProject[PROJECT_A]?.[0].content).toBe('a')
+    expect(state.openFilesByProject[PROJECT_B]?.[0].content).toBe('b')
+    expect(state.activeFilePathByProject[PROJECT_A]).toBe('src/shared.ts')
+    expect(state.activeFilePathByProject[PROJECT_B]).toBe('src/shared.ts')
   })
 
-  it('sets activeFilePath', () => {
-    const store = useFileStore.getState()
-    store.openFile({ path: 'a.ts', name: 'a.ts', language: 'typescript', content: '' })
-    store.openFile({ path: 'b.ts', name: 'b.ts', language: 'typescript', content: '' })
+  it('closes a file and activates neighbor within same project', () => {
+    openText(PROJECT_A, 'a.ts')
+    openText(PROJECT_A, 'b.ts')
 
-    store.setActiveFile('a.ts')
-    expect(useFileStore.getState().activeFilePath).toBe('a.ts')
+    useFileStore.getState().closeFile(PROJECT_A, 'b.ts')
+    const state = useFileStore.getState()
+    expect(state.openFilesByProject[PROJECT_A]).toHaveLength(1)
+    expect(state.activeFilePathByProject[PROJECT_A]).toBe('a.ts')
   })
 
-  it('marks file dirty on content change', () => {
-    const store = useFileStore.getState()
-    store.openFile({ path: 'a.ts', name: 'a.ts', language: 'typescript', content: 'original' })
+  it('setActiveFile only affects the specified project', () => {
+    openText(PROJECT_A, 'a.ts')
+    openText(PROJECT_A, 'b.ts')
+    openText(PROJECT_B, 'x.ts')
 
-    store.updateFileContent('a.ts', 'modified')
-    const file = useFileStore.getState().openFiles[0]
-    expect(file.content).toBe('modified')
-    expect(file.isDirty).toBe(true)
+    useFileStore.getState().setActiveFile(PROJECT_A, 'a.ts')
+    expect(useFileStore.getState().activeFilePathByProject[PROJECT_A]).toBe('a.ts')
+    expect(useFileStore.getState().activeFilePathByProject[PROJECT_B]).toBe('x.ts')
+  })
+
+  it('marks text file dirty on content change', () => {
+    openText(PROJECT_A, 'a.ts', 'original')
+
+    useFileStore.getState().updateFileContent(PROJECT_A, 'a.ts', 'modified')
+    const file = useFileStore.getState().openFilesByProject[PROJECT_A]?.[0]
+    expect(file?.content).toBe('modified')
+    expect(file?.isDirty).toBe(true)
   })
 
   it('does not mark image file dirty on content update', () => {
-    const store = useFileStore.getState()
-    store.openFile({
+    useFileStore.getState().openFile(PROJECT_A, {
       path: 'assets/logo.png',
       name: 'logo.png',
       language: 'image/png',
@@ -93,46 +99,106 @@ describe('fileStore', () => {
       imageDataUrl: 'data:image/png;base64,abc',
     })
 
-    store.updateFileContent('assets/logo.png', 'should-not-apply')
-    const file = useFileStore.getState().openFiles[0]
-    expect(file.content).toBe('')
-    expect(file.isDirty).toBe(false)
+    useFileStore.getState().updateFileContent(PROJECT_A, 'assets/logo.png', 'should-not-apply')
+    const file = useFileStore.getState().openFilesByProject[PROJECT_A]?.[0]
+    expect(file?.content).toBe('')
+    expect(file?.isDirty).toBe(false)
   })
 
   it('marks file clean on save', () => {
-    const store = useFileStore.getState()
-    store.openFile({ path: 'a.ts', name: 'a.ts', language: 'typescript', content: 'original' })
-    store.updateFileContent('a.ts', 'modified')
-    store.markFileSaved('a.ts')
+    openText(PROJECT_A, 'a.ts', 'original')
+    useFileStore.getState().updateFileContent(PROJECT_A, 'a.ts', 'modified')
+    useFileStore.getState().markFileSaved(PROJECT_A, 'a.ts')
 
-    const file = useFileStore.getState().openFiles[0]
-    expect(file.isDirty).toBe(false)
-    expect(file.savedContent).toBe('modified')
+    const file = useFileStore.getState().openFilesByProject[PROJECT_A]?.[0]
+    expect(file?.isDirty).toBe(false)
+    expect(file?.savedContent).toBe('modified')
   })
 
   it('toggles directory expanded state', () => {
     const store = useFileStore.getState()
-    store.toggleDir('src')
-    expect(useFileStore.getState().expandedDirs.has('src')).toBe(true)
+    store.toggleTreeDir(PROJECT_A, 'src')
+    expect(useFileStore.getState().expandedTreeDirsByProject[PROJECT_A]?.has('src')).toBe(true)
 
-    store.toggleDir('src')
-    expect(useFileStore.getState().expandedDirs.has('src')).toBe(false)
+    store.toggleTreeDir(PROJECT_A, 'src')
+    expect(useFileStore.getState().expandedTreeDirsByProject[PROJECT_A]?.has('src')).toBe(false)
   })
 
   it('stores browser sub-path per project and supports clearing', () => {
     const store = useFileStore.getState()
-    store.setBrowserSubPath('project-1', 'src/components')
-    store.setBrowserSubPath('project-2', 'docs')
+    store.setBrowserSubPath(PROJECT_A, 'src/components')
+    store.setBrowserSubPath(PROJECT_B, 'docs')
 
     expect(useFileStore.getState().browserSubPathByProject).toEqual({
-      'project-1': 'src/components',
-      'project-2': 'docs',
+      [PROJECT_A]: 'src/components',
+      [PROJECT_B]: 'docs',
     })
 
-    store.clearBrowserSubPath('project-1')
+    store.clearBrowserSubPath(PROJECT_A)
     expect(useFileStore.getState().browserSubPathByProject).toEqual({
-      'project-2': 'docs',
+      [PROJECT_B]: 'docs',
     })
+  })
+
+  it('stores and consumes pending refresh paths per project', () => {
+    useFileStore.getState().markFileNeedsRefresh(PROJECT_A, '/src/a.ts')
+    useFileStore.getState().markFileNeedsRefresh(PROJECT_A, '/src/b.ts')
+    useFileStore.getState().markFileNeedsRefresh(PROJECT_A, '/src/a.ts')
+    useFileStore.getState().markFileNeedsRefresh(PROJECT_B, '/src/other.ts')
+
+    expect(useFileStore.getState().pendingFileRefreshPathsByProject[PROJECT_A]).toEqual(['/src/a.ts', '/src/b.ts'])
+    expect(useFileStore.getState().pendingFileRefreshPathsByProject[PROJECT_B]).toEqual(['/src/other.ts'])
+
+    const consumedA = useFileStore.getState().consumePendingFileRefresh(PROJECT_A)
+    expect(consumedA).toEqual(['/src/a.ts', '/src/b.ts'])
+    expect(useFileStore.getState().pendingFileRefreshPathsByProject[PROJECT_A]).toEqual([])
+    expect(useFileStore.getState().pendingFileRefreshPathsByProject[PROJECT_B]).toEqual(['/src/other.ts'])
+  })
+
+  it('markAllOpenFilesNeedRefresh only includes non-dirty text files in target project', () => {
+    openText(PROJECT_A, 'a.ts', 'a')
+    openText(PROJECT_A, 'b.ts', 'b')
+    useFileStore.getState().updateFileContent(PROJECT_A, 'b.ts', 'dirty-b')
+
+    openText(PROJECT_B, 'x.ts', 'x')
+
+    useFileStore.getState().markAllOpenFilesNeedRefresh(PROJECT_A)
+    expect(useFileStore.getState().pendingFileRefreshPathsByProject[PROJECT_A]).toEqual(['a.ts'])
+    expect(useFileStore.getState().pendingFileRefreshPathsByProject[PROJECT_B]).toBeUndefined()
+  })
+
+  it('tracks pending file write with project scope and resolves atomically', () => {
+    useFileStore.getState().trackPendingFileWrite('tool-1', '/src/file.ts', PROJECT_A)
+
+    expect(useFileStore.getState().pendingFileWritesByToolId['tool-1']).toEqual({
+      path: '/src/file.ts',
+      projectId: PROJECT_A,
+    })
+
+    const result = useFileStore.getState().resolvePendingFileWrite('tool-1')
+    expect(result).toEqual({ path: '/src/file.ts', projectId: PROJECT_A })
+    expect(useFileStore.getState().pendingFileWritesByToolId['tool-1']).toBeUndefined()
+  })
+
+  it('reset() restores initial state', () => {
+    openText(PROJECT_A, 'a.ts')
+    useFileStore.getState().toggleTreeDir(PROJECT_A, 'src')
+    useFileStore.getState().trackPendingFileWrite('tool-1', '/src/a.ts', PROJECT_A)
+    useFileStore.getState().markFileNeedsRefresh(PROJECT_A, '/src/a.ts')
+
+    useFileStore.getState().reset()
+
+    const state = useFileStore.getState()
+    expect(state.openFilesByProject).toEqual({})
+    expect(state.activeFilePathByProject).toEqual({})
+    expect(state.expandedTreeDirsByProject).toEqual({})
+    expect(state.browserSubPathByProject).toEqual({})
+    expect(state.fileSearchQueryByProject).toEqual({})
+    expect(state.recentFileSearchSelectionsByProject).toEqual({})
+    expect(state.pendingEditorJumpIntentsByProject).toEqual({})
+    expect(state.pendingTreeRevealIntentsByProject).toEqual({})
+    expect(state.pendingFileWritesByToolId).toEqual({})
+    expect(state.pendingFileRefreshPathsByProject).toEqual({})
   })
 })
 
@@ -142,38 +208,36 @@ describe('fileStore - refreshFile', () => {
   })
 
   it('refreshFile updates content for non-dirty open file', () => {
-    useFileStore.getState().openFile({ path: 'a.ts', name: 'a.ts', language: 'typescript', content: 'old' })
+    openText(PROJECT_A, 'a.ts', 'old')
 
-    useFileStore.getState().refreshFile({ path: 'a.ts', content: 'new', language: 'typescript' })
-    const file = useFileStore.getState().openFiles[0]
-    expect(file.content).toBe('new')
-    expect(file.savedContent).toBe('new')
-    expect(file.isDirty).toBe(false)
+    useFileStore.getState().refreshFile(PROJECT_A, { path: 'a.ts', content: 'new', language: 'typescript' })
+    const file = useFileStore.getState().openFilesByProject[PROJECT_A]?.[0]
+    expect(file?.content).toBe('new')
+    expect(file?.savedContent).toBe('new')
+    expect(file?.isDirty).toBe(false)
   })
 
   it('refreshFile skips dirty files', () => {
-    useFileStore.getState().openFile({ path: 'a.ts', name: 'a.ts', language: 'typescript', content: 'original' })
-    useFileStore.getState().updateFileContent('a.ts', 'user-edit')
+    openText(PROJECT_A, 'a.ts', 'original')
+    useFileStore.getState().updateFileContent(PROJECT_A, 'a.ts', 'user-edit')
 
-    useFileStore.getState().refreshFile({ path: 'a.ts', content: 'from-disk', language: 'typescript' })
-    const file = useFileStore.getState().openFiles[0]
-    expect(file.content).toBe('user-edit')
-    expect(file.isDirty).toBe(true)
+    useFileStore.getState().refreshFile(PROJECT_A, { path: 'a.ts', content: 'from-disk', language: 'typescript' })
+    const file = useFileStore.getState().openFilesByProject[PROJECT_A]?.[0]
+    expect(file?.content).toBe('user-edit')
+    expect(file?.isDirty).toBe(true)
   })
 
-  it('refreshFile no-ops when content is the same', () => {
-    useFileStore.getState().openFile({ path: 'a.ts', name: 'a.ts', language: 'typescript', content: 'same' })
+  it('refreshFile no-ops when content is same (keeps same array ref)', () => {
+    openText(PROJECT_A, 'a.ts', 'same')
 
-    // Get reference before refresh
-    const filesBefore = useFileStore.getState().openFiles
-    useFileStore.getState().refreshFile({ path: 'a.ts', content: 'same', language: 'typescript' })
-    const filesAfter = useFileStore.getState().openFiles
-    // Same content → no state change → same reference
-    expect(filesBefore).toBe(filesAfter)
+    const before = useFileStore.getState().openFilesByProject[PROJECT_A]
+    useFileStore.getState().refreshFile(PROJECT_A, { path: 'a.ts', content: 'same', language: 'typescript' })
+    const after = useFileStore.getState().openFilesByProject[PROJECT_A]
+    expect(before).toBe(after)
   })
 
   it('refreshFile skips image files', () => {
-    useFileStore.getState().openFile({
+    useFileStore.getState().openFile(PROJECT_A, {
       path: 'assets/logo.png',
       name: 'logo.png',
       language: 'image/png',
@@ -182,103 +246,36 @@ describe('fileStore - refreshFile', () => {
       imageDataUrl: 'data:image/png;base64,aaa',
     })
 
-    useFileStore.getState().refreshFile({
+    useFileStore.getState().refreshFile(PROJECT_A, {
       path: 'assets/logo.png',
       content: 'unexpected',
       language: 'plaintext',
     })
 
-    const file = useFileStore.getState().openFiles[0]
-    expect(file.viewKind).toBe('image')
-    expect(file.imageDataUrl).toBe('data:image/png;base64,aaa')
-    expect(file.content).toBe('')
+    const file = useFileStore.getState().openFilesByProject[PROJECT_A]?.[0]
+    expect(file?.viewKind).toBe('image')
+    expect(file?.imageDataUrl).toBe('data:image/png;base64,aaa')
+    expect(file?.content).toBe('')
   })
 })
 
-describe('fileStore - pending file write tracking', () => {
+// Explicit regression lock for the bug:
+// Project A opened file must not appear as active/open in project B editor.
+describe('fileStore - cross-project editor isolation regression', () => {
   beforeEach(() => {
     useFileStore.getState().reset()
   })
 
-  it('trackPendingFileWrite stores toolUseId → filePath mapping', () => {
-    useFileStore.getState().trackPendingFileWrite('tool-1', '/src/file.ts')
-    expect(useFileStore.getState().pendingFileWritesByToolId['tool-1']).toBe('/src/file.ts')
-  })
+  it('keeps open tabs and active file isolated by project', () => {
+    openText(PROJECT_A, 'src/F1.ts', 'A')
+    openText(PROJECT_B, 'src/F2.ts', 'B')
 
-  it('resolvePendingFileWrite returns and removes the mapping atomically', () => {
-    useFileStore.getState().trackPendingFileWrite('tool-1', '/src/file.ts')
+    expect(useFileStore.getState().activeFilePathByProject[PROJECT_A]).toBe('src/F1.ts')
+    expect(useFileStore.getState().activeFilePathByProject[PROJECT_B]).toBe('src/F2.ts')
+    expect((useFileStore.getState().openFilesByProject[PROJECT_A] ?? []).map((f) => f.path)).toEqual(['src/F1.ts'])
+    expect((useFileStore.getState().openFilesByProject[PROJECT_B] ?? []).map((f) => f.path)).toEqual(['src/F2.ts'])
 
-    const result = useFileStore.getState().resolvePendingFileWrite('tool-1')
-    expect(result).toBe('/src/file.ts')
-    expect(useFileStore.getState().pendingFileWritesByToolId['tool-1']).toBeUndefined()
-  })
-
-  it('resolvePendingFileWrite returns null for unknown toolUseId', () => {
-    const result = useFileStore.getState().resolvePendingFileWrite('unknown')
-    expect(result).toBeNull()
-  })
-})
-
-describe('fileStore - pending file refresh paths', () => {
-  beforeEach(() => {
-    useFileStore.getState().reset()
-  })
-
-  it('markFileNeedsRefresh adds unique paths', () => {
-    useFileStore.getState().markFileNeedsRefresh('/src/a.ts')
-    useFileStore.getState().markFileNeedsRefresh('/src/b.ts')
-    useFileStore.getState().markFileNeedsRefresh('/src/a.ts') // duplicate
-
-    expect(useFileStore.getState().pendingFileRefreshPaths).toEqual(['/src/a.ts', '/src/b.ts'])
-  })
-
-  it('markAllOpenFilesNeedRefresh adds all non-dirty open file paths', () => {
-    useFileStore.getState().openFile({ path: 'a.ts', name: 'a.ts', language: 'typescript', content: 'a' })
-    useFileStore.getState().openFile({ path: 'b.ts', name: 'b.ts', language: 'typescript', content: 'b' })
-    useFileStore.getState().updateFileContent('b.ts', 'dirty-b') // make b dirty
-
-    useFileStore.getState().markAllOpenFilesNeedRefresh()
-    // Only non-dirty file (a.ts) should be added
-    expect(useFileStore.getState().pendingFileRefreshPaths).toContain('a.ts')
-    expect(useFileStore.getState().pendingFileRefreshPaths).not.toContain('b.ts')
-  })
-
-  it('consumePendingFileRefresh atomically returns and clears paths', () => {
-    useFileStore.getState().markFileNeedsRefresh('/src/a.ts')
-    useFileStore.getState().markFileNeedsRefresh('/src/b.ts')
-
-    const consumed = useFileStore.getState().consumePendingFileRefresh()
-    expect(consumed).toEqual(['/src/a.ts', '/src/b.ts'])
-    expect(useFileStore.getState().pendingFileRefreshPaths).toEqual([])
-  })
-
-  it('consumePendingFileRefresh returns empty array when nothing pending', () => {
-    const consumed = useFileStore.getState().consumePendingFileRefresh()
-    expect(consumed).toEqual([])
-  })
-
-  it('clearPendingFileRefresh empties the queue', () => {
-    useFileStore.getState().markFileNeedsRefresh('/src/a.ts')
-    useFileStore.getState().clearPendingFileRefresh()
-    expect(useFileStore.getState().pendingFileRefreshPaths).toEqual([])
-  })
-})
-
-describe('fileStore - reset', () => {
-  it('reset() restores initial state', () => {
-    useFileStore.getState().openFile({ path: 'a.ts', name: 'a.ts', language: 'typescript', content: '' })
-    useFileStore.getState().toggleDir('src')
-    useFileStore.getState().trackPendingFileWrite('tool-1', '/src/a.ts')
-    useFileStore.getState().markFileNeedsRefresh('/src/a.ts')
-
-    useFileStore.getState().reset()
-
-    const state = useFileStore.getState()
-    expect(state.openFiles).toEqual([])
-    expect(state.activeFilePath).toBeNull()
-    expect(state.expandedDirs.size).toBe(0)
-    expect(state.browserSubPathByProject).toEqual({})
-    expect(state.pendingFileWritesByToolId).toEqual({})
-    expect(state.pendingFileRefreshPaths).toEqual([])
+    useFileStore.getState().setActiveFile(PROJECT_A, 'src/F1.ts')
+    expect(useFileStore.getState().activeFilePathByProject[PROJECT_B]).toBe('src/F2.ts')
   })
 })

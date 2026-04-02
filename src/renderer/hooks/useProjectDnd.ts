@@ -139,7 +139,14 @@ export function useProjectDnd(grouped: GroupedProjects): UseProjectDndReturn {
         // ── Same-group reorder ──
         const list = sourceGroup === 'pinned' ? [...grouped.pinned] : [...grouped.projects]
         const oldIdx = list.findIndex((p) => p.id === activeId)
-        const newIdx = list.findIndex((p) => p.id === overId)
+
+        // Dropping over the section container (instead of an item) means
+        // "append to the end" in the same group.
+        const overContainerGroup = containerIdToGroup(overId)
+        const newIdx = overContainerGroup === sourceGroup
+          ? list.length - 1
+          : list.findIndex((p) => p.id === overId)
+
         if (oldIdx === -1 || newIdx === -1 || oldIdx === newIdx) return
 
         const reordered = arrayMove(list, oldIdx, newIdx)

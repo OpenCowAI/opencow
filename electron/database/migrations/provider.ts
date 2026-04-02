@@ -51,6 +51,7 @@ import * as m047 from './047_create_issue_sync_logs'
 import * as m048 from './048_extend_issues_for_phase2'
 import * as m049 from './049_extend_issue_providers_for_phase2'
 import * as m050 from './050_extend_issue_providers_for_linear'
+import * as m051 from './051_add_project_preferences'
 
 /**
  * Compile-time migration provider.
@@ -115,6 +116,7 @@ class CodeMigrationProvider implements MigrationProvider {
       '048_extend_issues_for_phase2': m048,
       '049_extend_issue_providers_for_phase2': m049,
       '050_extend_issue_providers_for_linear': m050,
+      '051_add_project_preferences': m051,
     }
   }
 }

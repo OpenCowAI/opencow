@@ -215,4 +215,26 @@ describe('ProjectService', () => {
       expect(unarchived!.archivedAt).toBeNull()
     })
   })
+
+  describe('listAll ordering contract', () => {
+    it('returns pinned first, then active by displayOrder, then archived by name', async () => {
+      const alpha = await store.create({ name: 'Alpha', canonicalPath: '/alpha' })
+      const beta = await store.create({ name: 'Beta', canonicalPath: '/beta' })
+      const gamma = await store.create({ name: 'Gamma', canonicalPath: '/gamma' })
+      const zoo = await store.create({ name: 'Zoo', canonicalPath: '/zoo' })
+
+      // Active ordering
+      await store.update(beta.id, { displayOrder: 0 })
+      await store.update(alpha.id, { displayOrder: 1 })
+
+      // Pinned ordering
+      await store.update(gamma.id, { pinOrder: 0 })
+
+      // Archived bucket
+      await store.update(zoo.id, { archivedAt: Date.now() })
+
+      const all = await service.listAll()
+      expect(all.map((p) => p.id)).toEqual([gamma.id, beta.id, alpha.id, zoo.id])
+    })
+  })
 })

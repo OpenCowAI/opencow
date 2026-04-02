@@ -1,11 +1,62 @@
 {
   "title": "Project Settings",
+  "closeAria": "Close project settings",
   "tabs": {
+    "ariaLabel": "Project settings tabs",
+    "general": "General",
     "issueIntegration": "Issue Integration"
+  },
+  "general": {
+    "title": "General",
+    "description": "Set project-level defaults for entry tab and chat layout.",
+    "save": "Save",
+    "saving": "Saving...",
+    "saved": "Settings saved",
+    "saveFailed": "Save failed",
+    "projectNotFound": "Project not found.",
+    "defaultTab": {
+      "title": "Default Top Tab",
+      "description": "Used the first time you open this project.",
+      "hints": {
+        "issues": "Start from issue tracking and triage.",
+        "chat": "Land directly in the chat workspace.",
+        "schedule": "Open with planning and upcoming runs."
+      },
+      "options": {
+        "issues": "Issues",
+        "chat": "Chat",
+        "schedule": "Schedule"
+      }
+    },
+    "chatDefaultMode": {
+      "title": "Chat Default Layout",
+      "description": "Choose whether Chat opens in minimal mode or files mode by default.",
+      "hints": {
+        "default": "Conversation-first with a clean layout.",
+        "files": "Chat + files side-by-side for coding flow."
+      },
+      "options": {
+        "default": "Minimal",
+        "files": "Files"
+      }
+    },
+    "filesDefaultMode": {
+      "title": "Files Default Layout",
+      "description": "When Chat defaults to files mode, choose the Files layout.",
+      "hints": {
+        "ide": "Tree + tabs + editor-first workspace.",
+        "browser": "Explorer-style browsing with quick preview."
+      },
+      "options": {
+        "ide": "Editor",
+        "browser": "Browser"
+      }
+    }
   },
   "issueIntegration": {
     "title": "Issue Integration",
     "description": "Connect GitHub, GitLab, or Linear to sync issues into this project.",
+    "loading": "Loading...",
     "addIntegration": "Add Integration",
     "noProviders": "No integrations configured yet.",
     "noProvidersHint": "Connect a GitHub, GitLab, or Linear workspace to start syncing issues.",

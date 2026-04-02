@@ -19,8 +19,6 @@ export interface DashboardStats {
   totalIssues: number
   issueStatusCounts: Record<IssueStatus, number>
   issueCompletionRate: number
-  totalTasks: number
-  taskCompletionRate: number
   todayTokens: number
   todayCost: number
 }
@@ -51,7 +49,7 @@ interface StatsParams {
   sessions: Session[]
   issues: IssueSummary[]
   stats: StatsSnapshot | null
-  tasksByList: Record<string, TaskFull[]>
+  tasksByList?: Record<string, TaskFull[]>
   selectedProjectId: string | null
 }
 
@@ -94,7 +92,7 @@ function filterManagedByProject(
 // === Selectors ===
 
 export function selectDashboardStats(params: StatsParams): DashboardStats {
-  const { stats, tasksByList, selectedProjectId } = params
+  const { stats, selectedProjectId } = params
   const sessions = filterByProject(params.sessions, selectedProjectId)
   const issues = filterIssuesByProject(params.issues, selectedProjectId)
 
@@ -109,9 +107,6 @@ export function selectDashboardStats(params: StatsParams): DashboardStats {
   }
   for (const issue of issues) issueStatusCounts[issue.status]++
 
-  const allTasks = Object.values(tasksByList).flat()
-  const totalTasks = allTasks.length
-  const completedTasks = allTasks.filter((t) => t.status === 'completed').length
   const totalIssues = issues.length
   const issueCompletionRate = totalIssues > 0 ? issueStatusCounts.done / totalIssues : 0
 
@@ -121,8 +116,6 @@ export function selectDashboardStats(params: StatsParams): DashboardStats {
     totalIssues,
     issueStatusCounts,
     issueCompletionRate,
-    totalTasks,
-    taskCompletionRate: totalTasks > 0 ? completedTasks / totalTasks : 0,
     todayTokens: stats?.todayTokens ?? 0,
     todayCost: stats?.todayCostUSD ?? 0
   }

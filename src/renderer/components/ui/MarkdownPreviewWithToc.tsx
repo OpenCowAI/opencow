@@ -2,7 +2,7 @@
 
 import { memo, useRef, useMemo, useState, useCallback, useEffect } from 'react'
 import { Group, Panel, Separator } from 'react-resizable-panels'
-import { List } from 'lucide-react'
+import { ChevronLeft, List } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { MarkdownContent } from './MarkdownContent'
 import { TextSearchBar, SearchTrigger } from './TextSearchBar'
@@ -25,15 +25,25 @@ interface MarkdownPreviewWithTocProps {
   content: string
   /** Passed to the outermost container (typically `h-[82vh]`). */
   className?: string
+  /** Optional TOC title text. */
+  tocLabel?: string
+  /** Enable user-controlled TOC collapse/expand behavior. */
+  enableTocCollapse?: boolean
+  /** Initial TOC state when collapse is enabled. */
+  defaultTocCollapsed?: boolean
 }
 
 export const MarkdownPreviewWithToc = memo(function MarkdownPreviewWithToc({
   content,
   className,
+  tocLabel = 'Contents',
+  enableTocCollapse = false,
+  defaultTocCollapsed = false,
 }: MarkdownPreviewWithTocProps): React.JSX.Element {
   const scrollRef = useRef<HTMLDivElement>(null)
   const tocEntries = useMemo(() => extractToc(content), [content])
   const [activeHeadingId, setActiveHeadingId] = useState<string | null>(null)
+  const [isTocOpen, setIsTocOpen] = useState<boolean>(() => !defaultTocCollapsed)
 
   // ── Text search ─────────────────────────────────────────────────────────
   const search = useTextSearch({ containerRef: scrollRef })
@@ -118,7 +128,7 @@ export const MarkdownPreviewWithToc = memo(function MarkdownPreviewWithToc({
 
     for (const el of observedEls) observer.observe(el)
     return () => observer.disconnect()
-  }, [tocEntries, content])
+  }, [tocEntries, content, isTocOpen])
 
   // ── Search overlay ──────────────────────────────────────────────────────
   // Rendered inside the scrollable content area, NOT as a sibling of Group.
@@ -144,6 +154,19 @@ export const MarkdownPreviewWithToc = memo(function MarkdownPreviewWithToc({
     )
   }
 
+  const showCollapsedToc = enableTocCollapse && !isTocOpen
+  if (showCollapsedToc) {
+    return (
+      <div className={cn('overflow-hidden relative', className)}>
+        {searchOverlay}
+        <TocCollapsedTrigger label={tocLabel} onExpand={() => setIsTocOpen(true)} />
+        <div ref={scrollRef} className="h-full overflow-y-auto px-6 pt-8 pb-4">
+          <MarkdownContent content={content} />
+        </div>
+      </div>
+    )
+  }
+
   // Wrap Group in a fixed-height container because react-resizable-panels
   // sets `height: 100%` via inline styles on Group, which would override
   // any Tailwind height class applied directly to Group.
@@ -156,6 +179,8 @@ export const MarkdownPreviewWithToc = memo(function MarkdownPreviewWithToc({
             entries={tocEntries}
             activeId={activeHeadingId}
             onSelect={handleTocSelect}
+            label={tocLabel}
+            onCollapse={enableTocCollapse ? () => setIsTocOpen(false) : undefined}
           />
         </Panel>
 
@@ -187,6 +212,8 @@ interface TocSidebarProps {
   entries: TocEntry[]
   activeId: string | null
   onSelect: (id: string) => void
+  label: string
+  onCollapse?: () => void
 }
 
 /** Per-level left padding: level 1 → 12px, level 2 → 28px, etc. */
@@ -198,6 +225,8 @@ const TocSidebar = memo(function TocSidebar({
   entries,
   activeId,
   onSelect,
+  label,
+  onCollapse,
 }: TocSidebarProps): React.JSX.Element {
   const navRef = useRef<HTMLElement>(null)
 
@@ -215,7 +244,23 @@ const TocSidebar = memo(function TocSidebar({
       {/* Header — matches FileTree header style */}
       <div className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold uppercase tracking-wider text-[hsl(var(--muted-foreground))] border-b border-[hsl(var(--border))]">
         <List className="h-3 w-3" aria-hidden="true" />
-        Contents
+        <span className="truncate">{label}</span>
+        {onCollapse && (
+          <button
+            type="button"
+            className={cn(
+              'ml-auto p-0.5 rounded transition-colors',
+              'text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))]',
+              'hover:bg-[hsl(var(--foreground)/0.06)]',
+              'focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[hsl(var(--ring))]',
+            )}
+            onClick={onCollapse}
+            aria-label={label}
+            title={label}
+          >
+            <ChevronLeft className="h-3 w-3" aria-hidden="true" />
+          </button>
+        )}
       </div>
 
       {/* TOC items */}
@@ -246,5 +291,37 @@ const TocSidebar = memo(function TocSidebar({
         })}
       </nav>
     </div>
+  )
+})
+
+interface TocCollapsedTriggerProps {
+  label: string
+  onExpand: () => void
+}
+
+const TocCollapsedTrigger = memo(function TocCollapsedTrigger({
+  label,
+  onExpand,
+}: TocCollapsedTriggerProps): React.JSX.Element {
+  return (
+    <button
+      type="button"
+      onClick={onExpand}
+      className={cn(
+        'absolute top-2 left-4 z-20',
+        'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg',
+        'text-[11px] font-medium text-[hsl(var(--muted-foreground))]',
+        'bg-[hsl(var(--card)/0.95)] backdrop-blur-sm',
+        'border border-[hsl(var(--border))]',
+        'hover:text-[hsl(var(--foreground))] hover:bg-[hsl(var(--foreground)/0.04)]',
+        'transition-colors',
+        'focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[hsl(var(--ring))]',
+      )}
+      aria-label={label}
+      title={label}
+    >
+      <List className="h-3.5 w-3.5" aria-hidden="true" />
+      <span className="uppercase tracking-wider">{label}</span>
+    </button>
   )
 })

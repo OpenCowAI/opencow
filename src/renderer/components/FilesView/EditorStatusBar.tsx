@@ -10,8 +10,20 @@ import { selectGitSnapshot } from '@/hooks/useGitStatus'
 import type { GitRepositorySnapshot } from '@shared/gitTypes'
 
 interface EditorStatusBarProps {
+  projectId: string
   projectPath: string
 }
+
+const EMPTY_OPEN_FILES: ReadonlyArray<{
+  path: string
+  name: string
+  language: string
+  content: string
+  savedContent: string
+  isDirty: boolean
+  viewKind: 'text' | 'image'
+  imageDataUrl: string | null
+}> = []
 
 /** Branch + sync status indicator — extracted to avoid duplication. */
 function BranchIndicator({ snapshot }: { snapshot: GitRepositorySnapshot | undefined }): React.JSX.Element | null {
@@ -39,10 +51,10 @@ function BranchIndicator({ snapshot }: { snapshot: GitRepositorySnapshot | undef
   )
 }
 
-export function EditorStatusBar({ projectPath }: EditorStatusBarProps): React.JSX.Element {
+export function EditorStatusBar({ projectId, projectPath }: EditorStatusBarProps): React.JSX.Element {
   const { t } = useTranslation('files')
-  const openFiles = useFileStore((s) => s.openFiles)
-  const activeFilePath = useFileStore((s) => s.activeFilePath)
+  const openFiles = useFileStore((s) => s.openFilesByProject[projectId] ?? EMPTY_OPEN_FILES)
+  const activeFilePath = useFileStore((s) => s.activeFilePathByProject[projectId] ?? null)
   const gitSnapshot = useGitStore((s) => selectGitSnapshot(s, projectPath))
 
   const activeFile = openFiles.find((f) => f.path === activeFilePath)

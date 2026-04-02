@@ -220,6 +220,7 @@ export function registerIPCHandlers(deps: IPCDeps): void {
       pinOrder: stored.pinOrder, archivedAt: stored.archivedAt,
       displayOrder: stored.displayOrder,
       updatedAt: stored.updatedAt,
+      preferences: stored.preferences,
     }
   }
 
@@ -230,7 +231,6 @@ export function registerIPCHandlers(deps: IPCDeps): void {
     const runtimeProjectMap = new Map(state.projects.map((p) => [p.id, p]))
     const projects = stored
       .map((sp) => toProject(sp, runtimeProjectMap.get(sp.id)))
-      .sort((a, b) => a.displayOrder - b.displayOrder)
 
     bus.dispatch({
       type: 'sessions:updated',
@@ -436,11 +436,8 @@ export function registerIPCHandlers(deps: IPCDeps): void {
   })
 
   registerHandler('search-project-files', async (projectPath, query) => {
-    // Build or retrieve cached file index, then apply fuzzy search
     const allEntries = await getFileIndex(projectPath)
-    const matches = searchFiles(allEntries, query, { maxResults: 50 })
-    // Return FileEntry[] for backward compatibility (Phase 3 will switch to FileSearchMatch[])
-    return matches.map((m) => m.entry)
+    return searchFiles(allEntries, query, { maxResults: 80 })
   })
 
   registerHandler('read-file-content', async (projectPath, filePath) => {

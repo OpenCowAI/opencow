@@ -129,6 +129,9 @@ export interface ProjectTable {
   id: string
   name: string
   canonical_path: string
+  default_tab: string
+  default_chat_view_mode: string
+  default_files_display_mode: string | null
   pin_order: number | null
   archived_at: number | null
   display_order: number

@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useMemo, useState, useReducer } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { TFunction } from 'i18next'
-import { ChevronRight, Home, X, FileText, Globe, ImageIcon } from 'lucide-react'
+import { ChevronRight, Home, X, FileText, Globe, ImageIcon, Search } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useFocusableListNav } from '@/hooks/useFocusableListNav'
 import { useDialogState } from '@/hooks/useModalAnimation'
@@ -25,6 +25,10 @@ interface FileBrowserProps {
   projectPath: string
   projectName: string
   projectId: string
+  onOpenSearch?: () => void
+  /** Optional external open request (e.g. quick-open result) */
+  externalOpenPath?: string | null
+  onExternalOpenConsumed?: () => void
 }
 
 // ── Formatters ─────────────────────────────────────────────────────
@@ -141,7 +145,14 @@ function browserReducer(state: BrowserState, action: BrowserAction): BrowserStat
 
 // ── Component ──────────────────────────────────────────────────────
 
-export function FileBrowser({ projectPath, projectName, projectId }: FileBrowserProps): React.JSX.Element {
+export function FileBrowser({
+  projectPath,
+  projectName,
+  projectId,
+  onOpenSearch,
+  externalOpenPath,
+  onExternalOpenConsumed,
+}: FileBrowserProps): React.JSX.Element {
   const { t } = useTranslation('files')
   const [state, dispatch] = useReducer(browserReducer, initialBrowserState)
   const { entries, loading } = state
@@ -325,6 +336,15 @@ export function FileBrowser({ projectPath, projectName, projectId }: FileBrowser
     [previewDialog, projectPath, projectId, setBrowserSubPath, t]
   )
 
+  useEffect(() => {
+    if (!externalOpenPath) return
+    const entry = entries.find((e) => e.path === externalOpenPath)
+    if (!entry) return
+    void handleEntryClick(entry).finally(() => {
+      onExternalOpenConsumed?.()
+    })
+  }, [entries, externalOpenPath, handleEntryClick, onExternalOpenConsumed])
+
   // ── Keyboard navigation ────────────────────────────────────────
 
   const entryKeys = useMemo(() => entries.map((e) => e.path), [entries])
@@ -406,6 +426,19 @@ export function FileBrowser({ projectPath, projectName, projectId }: FileBrowser
             </span>
           )
         })}
+        {onOpenSearch && (
+          <button
+            type="button"
+            onClick={onOpenSearch}
+            className="ml-auto inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] hover:bg-[hsl(var(--foreground)/0.05)] transition-colors"
+            aria-label={t('search.openButtonAria', { defaultValue: 'Search files' })}
+            title={t('search.shortcutHint', { defaultValue: 'Search files (⌘/Ctrl+G)' })}
+          >
+            <Search className="h-3 w-3" />
+            <span>{t('search.openButton', { defaultValue: 'Search' })}</span>
+            <kbd className="font-mono text-[9px]">⌘G</kbd>
+          </button>
+        )}
       </div>
 
       {/* Content area */}

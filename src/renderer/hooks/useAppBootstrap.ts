@@ -323,6 +323,7 @@ export function useAppBootstrap(): void {
             const fs = useFileStore.getState()
 
             if (msg.role === 'assistant' && Array.isArray(msg.content)) {
+              const sessionProjectId = useCommandStore.getState().sessionById[event.payload.sessionId]?.projectId ?? null
               for (const block of msg.content) {
                 if (
                   block.type === 'tool_use' &&
@@ -331,7 +332,8 @@ export function useAppBootstrap(): void {
                 ) {
                   fs.trackPendingFileWrite(
                     block.id,
-                    (block.input as Record<string, unknown>).file_path as string
+                    (block.input as Record<string, unknown>).file_path as string,
+                    sessionProjectId,
                   )
                 }
               }
@@ -340,9 +342,9 @@ export function useAppBootstrap(): void {
             if (msg.role === 'user' && Array.isArray(msg.content)) {
               for (const block of msg.content) {
                 if (block.type === 'tool_result') {
-                  const filePath = fs.resolvePendingFileWrite(block.toolUseId)
-                  if (filePath) {
-                    fs.markFileNeedsRefresh(filePath)
+                  const resolved = fs.resolvePendingFileWrite(block.toolUseId)
+                  if (resolved?.projectId) {
+                    fs.markFileNeedsRefresh(resolved.projectId, resolved.path)
                   }
                 }
               }
@@ -369,7 +371,9 @@ export function useAppBootstrap(): void {
               fireAndForget(getAppAPI()['update-issue'](issueId, { lastAgentActivityAt: now }), 'DataBus.command:session:stopped.patchIssue(lastAgentActivityAt)')
             }
           }
-          useFileStore.getState().markAllOpenFilesNeedRefresh()
+          if (ended?.projectId) {
+            useFileStore.getState().markAllOpenFilesNeedRefresh(ended.projectId)
+          }
           break
         }
         case 'settings:updated': {
