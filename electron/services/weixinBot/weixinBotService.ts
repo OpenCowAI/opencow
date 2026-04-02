@@ -34,7 +34,6 @@ import { routeIMMessage } from '../messaging/sessionRouter'
 import { executeCommand } from '../messaging/commandHandler'
 import type { CommandResult, SessionSummary } from '../messaging/commandHandler'
 import { resolveUserWorkspaceBinding } from '../messaging/workspaceBinding'
-import { extractTextFromBlocks } from '../messaging/contentExtractor'
 import { splitMessage } from '../messaging/messageSplitter'
 import { createLogger } from '../../platform/logger'
 import type { IssueService } from '../issueService'
@@ -213,13 +212,22 @@ export class WeixinBotService {
    * Images are uploaded to the Weixin CDN (AES-128-ECB encrypted) and sent as
    * IMAGE items. Text is sent as plain text with long-message splitting.
    * Each image is sent as a separate message (iLink requires one item per message).
+   *
+   * IMPORTANT:
+   * WeChat has no message-edit API, so tool-phase snapshots (`tool_use`) can
+   * appear as duplicate noise (e.g. repeated "Using: Bash"). To keep UX clean,
+   * WeChat forwarding includes text/image blocks only and intentionally ignores
+   * tool_use/tool_result/thinking blocks.
    */
   private async relayToUser(origin: SessionOrigin, message: ManagedSessionMessage): Promise<void> {
     if (origin.source !== 'weixin') return
 
     if (!('content' in message)) return
     const blocks = message.content
-    const text = extractTextFromBlocks(blocks)
+    const text = blocks
+      .filter((b): b is ContentBlock & { type: 'text'; text: string } => b.type === 'text')
+      .map((b) => b.text)
+      .join('')
     const imageBlocks = blocks.filter((b: ContentBlock): b is ImageBlock => b.type === 'image')
 
     // Send text first (if any)
