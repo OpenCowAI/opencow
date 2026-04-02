@@ -3,7 +3,7 @@
 import { useState, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { CalendarClock, Plus, Sparkles, MoreHorizontal } from 'lucide-react'
-import { useAppStore } from '@/stores/appStore'
+import { useAppStore, selectProjectId } from '@/stores/appStore'
 import { useScheduleStore } from '@/stores/scheduleStore'
 import { useScheduleCountdown } from '@/hooks/useScheduleCountdown'
 import { formatFrequencySummary } from '@/lib/scheduleFormatters'
@@ -16,6 +16,26 @@ import { cn } from '@/lib/utils'
 import type { Schedule } from '@shared/types'
 
 // Frequency formatting is handled by the shared utility: @/lib/scheduleFormatters
+
+// ─── Scope Model ─────────────────────────────────────────────────────────────
+
+type ScheduleScope =
+  | { kind: 'all-projects'; filterProjectId: string | null }
+  | { kind: 'project'; projectId: string }
+
+function resolveScheduleScope(
+  selectedProjectId: string | null,
+  allProjectsFilterProjectId: string | null,
+): ScheduleScope {
+  if (selectedProjectId) {
+    return { kind: 'project', projectId: selectedProjectId }
+  }
+  return { kind: 'all-projects', filterProjectId: allProjectsFilterProjectId }
+}
+
+function effectiveProjectIdFromScope(scope: ScheduleScope): string | null {
+  return scope.kind === 'project' ? scope.projectId : scope.filterProjectId
+}
 
 // ─── ScheduleListItem ─────────────────────────────────────────────────────────
 
@@ -135,7 +155,7 @@ function ProjectFilterBar({
   return (
     <div className="flex items-center gap-1.5 px-4 py-2 border-b border-[hsl(var(--border)/0.5)] overflow-x-auto no-scrollbar shrink-0">
       <FilterPill active={selected === null} onClick={() => onSelect(null)}>
-        {t('filter.allProjects', { defaultValue: 'All' })}
+        {t('filter.all', { defaultValue: 'All' })}
       </FilterPill>
 
       {visibleProjects.map((p) => (
@@ -202,31 +222,44 @@ function ProjectFilterBar({
 export function ScheduleView(): React.JSX.Element {
   const { t } = useTranslation('schedule')
 
-  // Schedule list is global — not dependent on the sidebar's selected project
+  // Schedule list follows the current sidebar project context:
+  // - All Projects (projectId = null): global list + local filter bar
+  // - Specific project: project-scoped list, filter bar hidden
   const allSchedules = useScheduleStore((s) => s.schedules)
   const allPipelines = useScheduleStore((s) => s.pipelines)
   const projects = useAppStore((s) => s.projects)
+  const selectedProjectId = useAppStore(selectProjectId)
 
   const [showForm, setShowForm] = useState(false)
   const [showAICreator, setShowAICreator] = useState(false)
-  // Independent project filter state within the list; null = all
-  const [filterProjectId, setFilterProjectId] = useState<string | null>(null)
+  // Local filter only applies to All Projects scope.
+  const [allProjectsFilterProjectId, setAllProjectsFilterProjectId] = useState<string | null>(null)
 
-  // Show the filter bar as long as there are projects in the store (regardless of whether any schedule is bound to a project)
-  const showFilterBar = projects.length > 0
+  // Single source of truth for scope semantics.
+  const scope = useMemo(
+    () => resolveScheduleScope(selectedProjectId, allProjectsFilterProjectId),
+    [selectedProjectId, allProjectsFilterProjectId]
+  )
+  const effectiveFilterProjectId = useMemo(
+    () => effectiveProjectIdFromScope(scope),
+    [scope]
+  )
 
-  // Filter by local filterProjectId
+  // Project filter bar is shown only in All Projects scope.
+  const showFilterBar = scope.kind === 'all-projects' && projects.length > 0
+
+  // Filter by effective project scope.
   const schedules = useMemo(
-    () => filterProjectId
-      ? allSchedules.filter((s) => s.projectId === filterProjectId)
+    () => effectiveFilterProjectId
+      ? allSchedules.filter((s) => s.projectId === effectiveFilterProjectId)
       : allSchedules,
-    [allSchedules, filterProjectId]
+    [allSchedules, effectiveFilterProjectId]
   )
   const pipelines = useMemo(
-    () => filterProjectId
-      ? allPipelines.filter((p) => p.projectId === filterProjectId)
+    () => effectiveFilterProjectId
+      ? allPipelines.filter((p) => p.projectId === effectiveFilterProjectId)
       : allPipelines,
-    [allPipelines, filterProjectId]
+    [allPipelines, effectiveFilterProjectId]
   )
 
   // In the "all" view, look up the project name for each schedule to display
@@ -238,21 +271,34 @@ export function ScheduleView(): React.JSX.Element {
 
   const activeSchedules = schedules.filter((s) => s.status === 'active')
   const pausedSchedules = schedules.filter((s) => s.status === 'paused')
+  const selectedProject = useMemo(
+    () => scope.kind === 'project'
+      ? projects.find((p) => p.id === scope.projectId) ?? null
+      : null,
+    [projects, scope]
+  )
 
-  // In the "all projects" view, when there are multiple projects in the store, annotate each card with its owning project name
-  const isAllProjectsView = filterProjectId === null && projects.length > 1
+  // In the true "all projects" view, annotate cards with owning project names.
+  const isAllProjectsView =
+    scope.kind === 'all-projects' &&
+    scope.filterProjectId === null &&
+    projects.length > 1
 
   return (
     <div className="h-full flex flex-col">
       {/* Header */}
       <div className="drag-region flex items-center justify-between px-4 py-2 border-b border-[hsl(var(--border))]">
-        <div className="flex items-center gap-2">
-          <CalendarClock className="h-4 w-4 text-[hsl(var(--muted-foreground))]" aria-hidden="true" />
-          <h1 className="text-sm font-semibold no-drag">{t('title')}</h1>
+        <div className="no-drag min-w-0 flex items-center gap-1.5">
+          <span className="text-xs text-[hsl(var(--muted-foreground))] truncate">
+            {selectedProject?.name ?? t('filter.allProjects', { defaultValue: 'All Projects' })}
+          </span>
           {activeSchedules.length > 0 && (
-            <span className="text-xs text-[hsl(var(--muted-foreground))]">
-              {activeSchedules.length} {t('active').toLowerCase()}
-            </span>
+            <>
+              <span className="text-[hsl(var(--muted-foreground)/0.4)] shrink-0">·</span>
+              <span className="text-xs text-[hsl(var(--muted-foreground))] tabular-nums shrink-0">
+                {activeSchedules.length} {t('active').toLowerCase()}
+              </span>
+            </>
           )}
         </div>
         <div className="no-drag flex items-center gap-1.5">
@@ -277,11 +323,11 @@ export function ScheduleView(): React.JSX.Element {
         </div>
       </div>
 
-      {/* Project filter bar — only shown when there are multiple projects in the list */}
+      {/* Project filter bar — only shown in All Projects context */}
       {showFilterBar && (
         <ProjectFilterBar
-          selected={filterProjectId}
-          onSelect={setFilterProjectId}
+          selected={scope.kind === 'all-projects' ? scope.filterProjectId : null}
+          onSelect={setAllProjectsFilterProjectId}
         />
       )}
 

@@ -15,8 +15,7 @@ export function toDiscordBotEntry(conn: DiscordConnection): DiscordBotEntry {
     botToken: conn.botToken,
     guildId: conn.guildId,
     allowedUserIds: conn.allowedUserIds,
-    defaultWorkspacePath: conn.defaultWorkspacePath,
-    defaultProjectId: conn.defaultProjectId,
+    defaultWorkspace: conn.defaultWorkspace,
   }
 }
 

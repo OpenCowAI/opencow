@@ -329,10 +329,10 @@
     "allowedUserIds": "允许的用户 ID",
     "allowedUserIdsPlaceholder": "逗号分隔的 ID（留空允许所有人）",
     "defaultWorkspace": "默认工作目录",
-    "workspaceDesc": "来自此连接的会话将使用此工作目录。",
-    "workspacePlaceholder": "例如 /Users/me/workspace/project（留空不绑定）",
+    "workspaceDesc": "来自此连接的会话将使用“全局（Home）”或指定项目工作区。",
+    "workspaceGlobal": "全局（Home）",
+    "workspaceProject": "项目",
     "chooseFolder": "选择文件夹",
-    "orPickProject": "或选择项目：",
     "selectProject": "选择项目…",
     "platforms": {
       "telegram": "Telegram",

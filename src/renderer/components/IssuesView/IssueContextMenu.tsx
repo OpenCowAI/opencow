@@ -406,15 +406,14 @@ export function IssueContextMenu({
     try {
       const fullIssue = await getAppAPI()['get-issue'](latestIssue.id)
       if (!fullIssue) return
-      const { prompt, projectPath } = await buildIssueSessionPrompt(fullIssue, {
+      const { prompt, workspace } = await buildIssueSessionPrompt(fullIssue, {
         projects,
         actionText: t('pleaseWorkOnIssue'),
       })
       await startSession({
         prompt,
         origin: { source: 'issue', issueId: fullIssue.id },
-        projectPath,
-        projectId: fullIssue.projectId ?? undefined,
+        workspace,
       })
       requestClose()
     } catch {

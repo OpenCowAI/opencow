@@ -7,7 +7,7 @@
  * Protocol: JSON over HTTPS, base URL `https://ilinkai.weixin.qq.com`.
  */
 
-import type { IMConnectionStatusType } from '../../../src/shared/types'
+import type { IMConnectionStatusType, UserConfigurableWorkspaceInput } from '../../../src/shared/types'
 
 // ── Common ───────────────────────────────────────────────────────────────────
 
@@ -243,8 +243,7 @@ export interface WeixinBotEntry {
   botToken: string
   baseUrl?: string
   allowedUserIds: string[]
-  defaultWorkspacePath: string
-  defaultProjectId?: string
+  defaultWorkspace: UserConfigurableWorkspaceInput
 }
 
 /** Runtime status for a WeChat Bot instance (parallels TelegramBotStatus). */

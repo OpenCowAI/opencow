@@ -5,6 +5,14 @@ import type { PrerequisiteItem, PrerequisiteCheckResult } from '@shared/types'
 import { getShellEnvironment } from '../platform/shellPath'
 
 /**
+ * Feature switch for onboarding Node.js prerequisite probing.
+ *
+ * Keep the implementation in place for possible future re-enable,
+ * but disable execution so onboarding no longer blocks on system Node.
+ */
+const ENABLE_NODE_PREREQUISITE_CHECK = false
+
+/**
  * Build a child-process env with the shell-resolved PATH.
  *
  * Electron on macOS launches with a minimal PATH (`/usr/bin:/bin`) that
@@ -66,20 +74,22 @@ function isNodeVersionOk(version: string): boolean {
 export async function checkPrerequisites(): Promise<PrerequisiteCheckResult> {
   const items: PrerequisiteItem[] = []
 
-  // ── Node.js ────────────────────────────────────────────────────────
-  const nodeRaw = await execVersion('node', ['--version'])
-  const nodeVersion = nodeRaw ? extractVersion(nodeRaw) : null
-  const nodeSatisfied = nodeVersion !== null && isNodeVersionOk(nodeVersion)
+  // ── Node.js (legacy, currently disabled) ───────────────────────────
+  if (ENABLE_NODE_PREREQUISITE_CHECK) {
+    const nodeRaw = await execVersion('node', ['--version'])
+    const nodeVersion = nodeRaw ? extractVersion(nodeRaw) : null
+    const nodeSatisfied = nodeVersion !== null && isNodeVersionOk(nodeVersion)
 
-  items.push({
-    name: 'Node.js',
-    required: true,
-    satisfied: nodeSatisfied,
-    version: nodeVersion,
-    hint: nodeSatisfied
-      ? ''
-      : 'Node.js >= 18 is required. Download from https://nodejs.org',
-  })
+    items.push({
+      name: 'Node.js',
+      required: true,
+      satisfied: nodeSatisfied,
+      version: nodeVersion,
+      hint: nodeSatisfied
+        ? ''
+        : 'Node.js >= 18 is required. Download from https://nodejs.org',
+    })
+  }
 
   // ── Claude Code CLI ────────────────────────────────────────────────
   const claudeRaw = await execVersion('claude', ['--version'])
@@ -96,6 +106,7 @@ export async function checkPrerequisites(): Promise<PrerequisiteCheckResult> {
       : 'Claude Code CLI is optional. Install it to enable session monitoring and hooks.',
   })
 
+  // Keep canProceed semantics for required checks (if any are enabled).
   const canProceed = items.filter((i) => i.required).every((i) => i.satisfied)
 
   return { canProceed, items }

@@ -20,8 +20,7 @@ export function toWeixinBotEntry(conn: WeixinConnection): WeixinBotEntry {
     botToken: conn.botToken,
     baseUrl: conn.baseUrl,
     allowedUserIds: conn.allowedUserIds,
-    defaultWorkspacePath: conn.defaultWorkspacePath,
-    defaultProjectId: conn.defaultProjectId,
+    defaultWorkspace: conn.defaultWorkspace,
   }
 }
 

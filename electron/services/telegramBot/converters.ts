@@ -24,8 +24,7 @@ export function toTelegramBotEntry(conn: TelegramConnection): TelegramBotEntry {
     enabled: conn.enabled,
     botToken: conn.botToken,
     allowedUserIds: conn.allowedUserIds.map(Number).filter((n) => !isNaN(n)),
-    defaultWorkspacePath: conn.defaultWorkspacePath,
-    defaultProjectId: conn.defaultProjectId,
+    defaultWorkspace: conn.defaultWorkspace,
   }
 }
 

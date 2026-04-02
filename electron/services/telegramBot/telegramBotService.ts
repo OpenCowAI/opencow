@@ -10,6 +10,7 @@ import type {
   SessionSnapshot,
   ManagedSessionMessage,
   SessionOrigin,
+  SessionWorkspaceInput,
   UserMessageContent,
 } from '../../../src/shared/types'
 import { CommandRouter } from '../messaging/commandRouter'
@@ -26,6 +27,7 @@ import { DraftStreamingStrategy } from './streaming/draftStrategy'
 import { snapToGraphemeBoundary } from '@shared/unicode'
 import { findActiveIMSession, routeIMMessage } from '../messaging/sessionRouter'
 import { executeCommand, resolveSessionId, type CommandResult, type CommandContext } from '../messaging/commandHandler'
+import { resolveUserWorkspaceBinding } from '../messaging/workspaceBinding'
 
 const log = createLogger('TelegramBot')
 
@@ -63,7 +65,7 @@ export interface TelegramBotServiceDeps {
   /**
    * Returns the current configuration for this bot instance.
    * Called on every operation — callers should return a live reference so that
-   * hot-updatable fields (allowedUserIds, defaultWorkspacePath) take effect
+   * hot-updatable fields (allowedUserIds, defaultWorkspace) take effect
    * without restarting the bot. Only `botToken` changes require stop + restart.
    */
   getConfig: () => TelegramBotEntry
@@ -480,11 +482,10 @@ export class TelegramBotService {
           this.pendingNewPrompts.delete(chatId)
           const prompt = text.trim()
           if (prompt) {
-            const cfg = this.deps.getConfig()
             await this.deps.orchestrator.startSession({
               prompt,
               origin: this.getTelegramOrigin(chatId),
-              projectPath: cfg.defaultWorkspacePath || undefined,
+              workspace: this.resolveStartWorkspace(chatId),
             })
           }
           return // Streaming response is the only feedback
@@ -545,12 +546,9 @@ export class TelegramBotService {
     const { action, args } = this.router.parse(text)
     const origin = this.getTelegramOrigin(chatId)
     // Workspace binding: per-chat temporary project override takes precedence over
-    // the Bot's global defaultWorkspacePath (set via Bot Settings UI).
-    const chatCtxForCmd = this.chatContext.get(config.id, chatId)
-    const projectPath = chatCtxForCmd.activeProjectPath ?? (config.defaultWorkspacePath || undefined)
+    // the Bot's global defaultWorkspace (set via Bot Settings UI).
     const newSessionDefaults = {
-      projectPath,
-      projectId: config.defaultProjectId,
+      workspace: this.resolveStartWorkspace(chatId),
     }
 
     // ── chat action: shared session routing via routeIMMessage ─────────────
@@ -586,7 +584,7 @@ export class TelegramBotService {
     origin: SessionOrigin,
     connectionId: string,
     chatId: string,
-    newSessionDefaults?: { projectPath?: string; projectId?: string },
+    newSessionDefaults?: CommandContext['newSessionDefaults'],
   ): Promise<FormattedMessage | null> {
     const prompt = args.prompt?.trim()
     if (!prompt) return null
@@ -717,13 +715,13 @@ export class TelegramBotService {
     }
 
     const origin = this.getTelegramOrigin(chatId)
-    const projectPath = config.defaultWorkspacePath || undefined
+    const workspace = this.resolveStartWorkspace(chatId)
 
     // ForceReply intercept: chat is awaiting new session prompt → use image (with caption) as prompt
     const pendingMsgId = this.pendingNewPrompts.get(chatId)
     if (pendingMsgId !== undefined) {
       this.pendingNewPrompts.delete(chatId)
-      await this.deps.orchestrator.startSession({ prompt: content, origin, projectPath })
+      await this.deps.orchestrator.startSession({ prompt: content, origin, workspace })
       return 'ok'
     }
 
@@ -731,7 +729,7 @@ export class TelegramBotService {
     const active = await this.findActiveSession(chatId)
 
     if (!active) {
-      await this.deps.orchestrator.startSession({ prompt: content, origin, projectPath })
+      await this.deps.orchestrator.startSession({ prompt: content, origin, workspace })
       return 'ok'
     }
 
@@ -746,9 +744,29 @@ export class TelegramBotService {
 
     // Continue failed (session terminated, etc.) → start new session
     if (!ok) {
-      await this.deps.orchestrator.startSession({ prompt: content, origin, projectPath })
+      await this.deps.orchestrator.startSession({ prompt: content, origin, workspace })
     }
     return 'ok'
+  }
+
+  /**
+   * Resolve workspace binding for new sessions in this chat.
+   *
+   * Precedence:
+   * 1) Chat-scoped active project ID
+   * 2) Bot default workspace
+   * 3) Global (~)
+   */
+  private resolveStartWorkspace(chatId: string): SessionWorkspaceInput {
+    const config = this.deps.getConfig()
+    const chatCtx = this.chatContext.get(config.id, chatId)
+
+    const activeProjectId = chatCtx.activeProjectId?.trim()
+    if (activeProjectId) {
+      return { scope: 'project', projectId: activeProjectId }
+    }
+
+    return resolveUserWorkspaceBinding(config.defaultWorkspace)
   }
 
   /**
@@ -1157,7 +1175,13 @@ export class TelegramBotService {
       // If the previous placeholder was showing Evose progress, "commit" it
       // as a permanent message before Claude's text overwrites it.
       // This preserves the agent summary (tool calls + text) for the user.
-      await this.commitEvoseProgress(chatId)
+      // IMPORTANT: only await when Evose content actually exists.
+      // Awaiting an already-resolved async function still yields to the event loop,
+      // opening a race window where `command:session:idle` can clear strategy
+      // placeholder state before we finalize it in-place.
+      if (this.lastEvoseContent.has(chatId) || this.lastEvoseCommitContent.has(chatId)) {
+        await this.commitEvoseProgress(chatId)
+      }
 
       const content = this.fmt.streamingPlaceholder(rawText, toolActivity)
 
@@ -1179,7 +1203,9 @@ export class TelegramBotService {
     // a permanent message before the finalize overwrites the bubble.
     // Same protection as the streaming branch above — handles the case where
     // the SDK turn finalizes (isStreaming=false) instead of streaming first.
-    await this.commitEvoseProgress(chatId)
+    if (this.lastEvoseContent.has(chatId) || this.lastEvoseCommitContent.has(chatId)) {
+      await this.commitEvoseProgress(chatId)
+    }
 
     const htmlChunks = this.fmt.formatAssistantBlocks(message.content)
 

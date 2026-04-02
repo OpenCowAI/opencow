@@ -16,14 +16,15 @@ import { ProviderBanner } from './ProviderBanner'
 import { getChatInputFocus } from '@/lib/chatInputRegistry'
 import type { MainTab } from '@shared/types'
 import { cn } from '@/lib/utils'
-import { CircleDot, MessageSquare, LayoutDashboard, Star, EllipsisVertical, Blocks, Brain } from 'lucide-react'
+import { CircleDot, MessageSquare, LayoutDashboard, Star, EllipsisVertical, Blocks, Brain, CalendarClock } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 
 // Core tabs — Files has been moved into ChatView's view mode toggle
-type MainTabLabelKey = 'mainTabs.issues' | 'mainTabs.chat'
+type MainTabLabelKey = 'mainTabs.issues' | 'mainTabs.chat' | 'mainTabs.schedule'
 const tabs: { value: MainTab; labelKey: MainTabLabelKey; icon: typeof CircleDot }[] = [
   { value: 'issues', labelKey: 'mainTabs.issues', icon: CircleDot },
   { value: 'chat', labelKey: 'mainTabs.chat', icon: MessageSquare },
+  { value: 'schedule', labelKey: 'mainTabs.schedule', icon: CalendarClock },
 ]
 
 // === More Menu Item (extracted to avoid repetition) ===
@@ -158,8 +159,7 @@ function MainPanelTabs(): React.JSX.Element {
 // render in every code path, otherwise switching to Schedule would
 // unmount the project tabs and destroy their preserved state.
 //
-// Schedule is a full-panel global view — the tab bar is hidden
-// when it is active.
+// Schedule is rendered as a first-class tab via KeepAliveTab.
 // ════════════════════════════════════════════════════════════════════
 
 export function MainPanel(): React.JSX.Element {
@@ -200,8 +200,7 @@ export function MainPanel(): React.JSX.Element {
 
   return (
     <div className="h-full flex flex-col min-w-0 overflow-hidden">
-      {/* Tab bar hidden when Schedule is active (full-panel view) */}
-      {activeTab !== 'schedule' && <MainPanelTabs />}
+      <MainPanelTabs />
 
       {/* Provider not configured reminder */}
       <ProviderBanner />

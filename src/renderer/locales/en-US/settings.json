@@ -329,10 +329,10 @@
     "allowedUserIds": "Allowed User IDs",
     "allowedUserIdsPlaceholder": "Comma-separated IDs (leave blank to allow everyone)",
     "defaultWorkspace": "Default Workspace",
-    "workspaceDesc": "Sessions from this connection use this working directory.",
-    "workspacePlaceholder": "e.g. /Users/me/workspace/project (leave blank for no binding)",
+    "workspaceDesc": "Sessions from this connection use either Global or a selected Project workspace.",
+    "workspaceGlobal": "Global (Home)",
+    "workspaceProject": "Project",
     "chooseFolder": "Choose folder",
-    "orPickProject": "Or pick a project:",
     "selectProject": "Select project…",
     "platforms": {
       "telegram": "Telegram",

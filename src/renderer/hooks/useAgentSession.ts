@@ -142,8 +142,7 @@ export function useAgentSession(): AgentSessionHandle {
       try {
         const sessionId = await base.startSession({
           prompt: message,
-          projectPath: base.projectPath,
-          projectId: base.selectedProjectId ?? undefined
+          workspace: base.startWorkspace,
         })
         if (sessionId) {
           setChatSessionId(sessionId)

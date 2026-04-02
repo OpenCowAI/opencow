@@ -279,6 +279,7 @@ describe('SettingsService', () => {
       expect(conn.botToken).toBe('123:ABC')
     }
     expect(conn.allowedUserIds).toEqual([])
+    expect(conn.defaultWorkspace).toEqual({ scope: 'global' })
     // After migration, a UUID should be generated
     expect(typeof conn.id).toBe('string')
     expect(conn.id.length).toBeGreaterThan(0)
@@ -289,7 +290,14 @@ describe('SettingsService', () => {
       join(tempDir, 'settings.json'),
       JSON.stringify({
         telegramBots: {
-          bots: [{ id: 'test-id', name: 'Test Bot', enabled: true, botToken: '456:DEF', allowedUserIds: [123] }]
+          bots: [{
+            id: 'test-id',
+            name: 'Test Bot',
+            enabled: true,
+            botToken: '456:DEF',
+            allowedUserIds: [123],
+            defaultProjectId: 'proj_legacy',
+          }]
         }
       }),
       'utf-8'
@@ -303,11 +311,142 @@ describe('SettingsService', () => {
     expect(conn.name).toBe('Test Bot')
     // allowedUserIds: number[] → string[] migration
     expect(conn.allowedUserIds).toEqual(['123'])
+    expect(conn.defaultWorkspace).toEqual({ scope: 'project', projectId: 'proj_legacy' })
+  })
+
+  it('migrates messaging.connections legacy defaultProjectId to defaultWorkspace', async () => {
+    await writeFile(
+      join(tempDir, 'settings.json'),
+      JSON.stringify({
+        messaging: {
+          connections: [
+            {
+              id: 'conn-1',
+              name: 'Telegram A',
+              platform: 'telegram',
+              enabled: true,
+              botToken: '789:GHI',
+              allowedUserIds: ['10001'],
+              defaultProjectId: 'proj-msg-1',
+            },
+            {
+              id: 'conn-2',
+              name: 'Telegram B',
+              platform: 'telegram',
+              enabled: false,
+              botToken: '111:XYZ',
+              allowedUserIds: [],
+            },
+            {
+              id: 'conn-3',
+              name: 'Telegram C',
+              platform: 'telegram',
+              enabled: false,
+              botToken: '222:XYZ',
+              allowedUserIds: [],
+              defaultWorkspace: { scope: 'project', projectId: 'proj-new' },
+              defaultProjectId: 'proj-legacy-ignored',
+            },
+          ],
+        },
+      }),
+      'utf-8'
+    )
+    const fresh = new SettingsService(join(tempDir, 'settings.json'))
+    const settings = await fresh.load()
+    expect(settings.messaging.connections).toHaveLength(3)
+
+    const [a, b, c] = settings.messaging.connections
+    expect(a.defaultWorkspace).toEqual({ scope: 'project', projectId: 'proj-msg-1' })
+    expect(b.defaultWorkspace).toEqual({ scope: 'global' })
+    expect(c.defaultWorkspace).toEqual({ scope: 'project', projectId: 'proj-new' })
+  })
+
+  it('normalizes legacy imBridge connections to include defaultWorkspace', async () => {
+    await writeFile(
+      join(tempDir, 'settings.json'),
+      JSON.stringify({
+        imBridge: {
+          connections: [
+            {
+              id: 'discord-legacy',
+              name: 'Discord Legacy',
+              platform: 'discord',
+              enabled: true,
+              botToken: 'discord-token',
+              allowedUserIds: ['u1'],
+              defaultProjectId: 'proj-imbridge',
+            },
+            {
+              id: 'feishu-legacy',
+              name: 'Feishu Legacy',
+              platform: 'feishu',
+              enabled: false,
+              appId: 'app-id',
+              appSecret: 'app-secret',
+              allowedUserIds: [],
+            },
+          ],
+        },
+      }),
+      'utf-8'
+    )
+
+    const fresh = new SettingsService(join(tempDir, 'settings.json'))
+    const settings = await fresh.load()
+    expect(settings.messaging.connections).toHaveLength(2)
+
+    const [discord, feishu] = settings.messaging.connections
+    expect(discord.platform).toBe('discord')
+    expect(discord.defaultWorkspace).toEqual({ scope: 'project', projectId: 'proj-imbridge' })
+    expect(feishu.platform).toBe('feishu')
+    expect(feishu.defaultWorkspace).toEqual({ scope: 'global' })
   })
 
   it('getTelegramBotSettings extracts and converts from messaging.connections', async () => {
-    await service.load()
-    const settings = service.getTelegramBotSettings()
-    expect(settings).toEqual({ bots: [] })
+    await writeFile(
+      join(tempDir, 'settings.json'),
+      JSON.stringify({
+        messaging: {
+          connections: [
+            {
+              id: 'tg-1',
+              name: 'Telegram 1',
+              platform: 'telegram',
+              enabled: true,
+              botToken: '123:ABC',
+              allowedUserIds: ['123', '456', 'not-a-number'],
+              defaultWorkspace: { scope: 'project', projectId: 'proj-a' },
+            },
+            {
+              id: 'discord-1',
+              name: 'Discord 1',
+              platform: 'discord',
+              enabled: true,
+              botToken: 'discord-token',
+              allowedUserIds: [],
+              defaultWorkspace: { scope: 'global' },
+            },
+          ],
+        },
+      }),
+      'utf-8'
+    )
+
+    const fresh = new SettingsService(join(tempDir, 'settings.json'))
+    await fresh.load()
+    const settings = fresh.getTelegramBotSettings()
+    expect(settings).toEqual({
+      bots: [
+        {
+          id: 'tg-1',
+          name: 'Telegram 1',
+          enabled: true,
+          botToken: '123:ABC',
+          allowedUserIds: [123, 456],
+          defaultWorkspace: { scope: 'project', projectId: 'proj-a' },
+        },
+      ],
+    })
   })
 })

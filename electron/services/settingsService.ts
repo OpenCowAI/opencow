@@ -19,6 +19,7 @@ import {
   type ProviderEngineSettings,
   type ProviderSettings,
   type CodexReasoningEffort,
+  type UserConfigurableWorkspaceInput,
   type TelegramBotEntry,
   type TelegramBotSettings,
   type TelegramConnection,
@@ -288,10 +289,26 @@ function migrateToMessaging(p: PartialWithLegacy): MessagingSettings {
 
   // 4. Merge old imBridge.connections (feishu/discord)
   if (Array.isArray(p.imBridge?.connections)) {
-    result.push(...p.imBridge!.connections)
+    // Normalize each entry so new required fields (e.g. defaultWorkspace)
+    // are always present after migration.
+    result.push(...p.imBridge!.connections.map(normalizeIMConnection))
   }
 
   return { connections: result }
+}
+
+function normalizeUserConfigurableWorkspace(raw: unknown): UserConfigurableWorkspaceInput {
+  if (raw && typeof raw === 'object') {
+    const obj = raw as Record<string, unknown>
+    const scope = obj.scope
+    if (scope === 'project' && typeof obj.projectId === 'string' && obj.projectId.trim()) {
+      return { scope: 'project', projectId: obj.projectId.trim() }
+    }
+    if (scope === 'global') {
+      return { scope: 'global' }
+    }
+  }
+  return { scope: 'global' }
 }
 
 /**
@@ -302,13 +319,22 @@ function normalizeIMConnection(raw: unknown): IMConnection {
   const r = (raw ?? {}) as Record<string, unknown>
   const platform = r.platform as string
 
+  const hasDefaultWorkspace = Object.prototype.hasOwnProperty.call(r, 'defaultWorkspace')
+  const normalizedDefaultWorkspace = normalizeUserConfigurableWorkspace(
+    (r as { defaultWorkspace?: unknown }).defaultWorkspace,
+  )
+  const legacyDefaultProjectId = typeof r.defaultProjectId === 'string' ? r.defaultProjectId.trim() : ''
+  const legacyDefaultWorkspace: UserConfigurableWorkspaceInput =
+    legacyDefaultProjectId
+      ? { scope: 'project', projectId: legacyDefaultProjectId }
+      : { scope: 'global' }
+
   const base = {
     id:                   typeof r.id === 'string' && r.id     ? r.id   : randomUUID(),
     name:                 typeof r.name === 'string' && r.name ? r.name : 'My Connection',
     enabled:              r.enabled === true,
     allowedUserIds:       Array.isArray(r.allowedUserIds) ? (r.allowedUserIds as string[]) : [],
-    defaultWorkspacePath: typeof r.defaultWorkspacePath === 'string' ? r.defaultWorkspacePath : '',
-    ...(typeof r.defaultProjectId === 'string' ? { defaultProjectId: r.defaultProjectId } : {}),
+    defaultWorkspace: hasDefaultWorkspace ? normalizedDefaultWorkspace : legacyDefaultWorkspace,
   }
 
   switch (platform) {
@@ -355,13 +381,21 @@ function normalizeIMConnection(raw: unknown): IMConnection {
  */
 function normalizeLegacyBotEntry(raw: unknown): TelegramBotEntry {
   const r = (raw ?? {}) as Record<string, unknown>
+  const hasDefaultWorkspace = Object.prototype.hasOwnProperty.call(r, 'defaultWorkspace')
+  const normalizedDefaultWorkspace = normalizeUserConfigurableWorkspace(
+    (r as { defaultWorkspace?: unknown }).defaultWorkspace,
+  )
+  const defaultProjectId = typeof r.defaultProjectId === 'string' ? r.defaultProjectId.trim() : ''
+  const defaultWorkspace: UserConfigurableWorkspaceInput = defaultProjectId
+    ? { scope: 'project', projectId: defaultProjectId }
+    : { scope: 'global' }
   return {
     id:                   typeof r.id === 'string'   && r.id   ? r.id   : randomUUID(),
     name:                 typeof r.name === 'string' && r.name ? r.name : 'My Bot',
     enabled:              r.enabled === true,
     botToken:             typeof r.botToken === 'string'             ? r.botToken             : '',
     allowedUserIds:       Array.isArray(r.allowedUserIds)            ? (r.allowedUserIds as number[]) : [],
-    defaultWorkspacePath: typeof r.defaultWorkspacePath === 'string' ? r.defaultWorkspacePath : '',
+    defaultWorkspace: hasDefaultWorkspace ? normalizedDefaultWorkspace : defaultWorkspace,
   }
 }
 
@@ -377,7 +411,7 @@ function legacyBotEntryToTelegramConnection(entry: TelegramBotEntry): TelegramCo
     enabled: entry.enabled,
     botToken: entry.botToken,
     allowedUserIds: entry.allowedUserIds.map(String),
-    defaultWorkspacePath: entry.defaultWorkspacePath,
+    defaultWorkspace: entry.defaultWorkspace,
   }
 }
 

@@ -10,9 +10,11 @@ import { selectGitSnapshot } from '@/hooks/useGitStatus'
 
 interface EditorTabsProps {
   projectPath: string
+  /** Right-side reserved space to avoid overlap with floating mode switch. */
+  rightSafeInset?: number
 }
 
-export function EditorTabs({ projectPath }: EditorTabsProps): React.JSX.Element {
+export function EditorTabs({ projectPath, rightSafeInset = 0 }: EditorTabsProps): React.JSX.Element {
   const { t } = useTranslation('files')
   const openFiles = useFileStore((s) => s.openFiles)
   const activeFilePath = useFileStore((s) => s.activeFilePath)
@@ -23,55 +25,65 @@ export function EditorTabs({ projectPath }: EditorTabsProps): React.JSX.Element 
   if (openFiles.length === 0) return <div className="h-9 border-b border-[hsl(var(--border))]" />
 
   return (
-    <div
-      className="flex items-center h-9 border-b border-[hsl(var(--border))] overflow-x-auto bg-[hsl(var(--muted)/0.2)]"
-      role="tablist"
-      aria-label={t('editor.openFilesAria')}
-    >
-      {openFiles.map((file) => {
-        const isActive = file.path === activeFilePath
-        const decoration = getFileDecoration(gitSnapshot, file.path)
-        return (
-          <div
-            key={file.path}
-            role="tab"
-            aria-selected={isActive}
-            tabIndex={0}
-            className={cn(
-              'flex items-center gap-1.5 px-3 h-full text-[13px] cursor-pointer select-none shrink-0',
-              'border-r border-[hsl(var(--border)/0.5)] transition-colors',
-              isActive
-                ? 'bg-[hsl(var(--background))] text-[hsl(var(--foreground))]'
-                : 'text-[hsl(var(--muted-foreground))] hover:bg-[hsl(var(--foreground)/0.04)]'
-            )}
-            onClick={() => setActiveFile(file.path)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' || e.key === ' ') setActiveFile(file.path)
-            }}
-            title={decoration.tooltip ?? undefined}
-          >
-            {file.isDirty && (
-              <span className="w-2 h-2 rounded-full bg-[hsl(var(--foreground))] shrink-0" aria-label={t('editor.unsavedChanges')} />
-            )}
-            <span className={cn('truncate max-w-[160px]', decoration.colorClass)}>{file.name}</span>
-            {decoration.badge && (
-              <span className={cn('text-[10px] font-mono shrink-0', decoration.colorClass)}>
-                {decoration.badge}
-              </span>
-            )}
-            <button
-              className="p-0.5 rounded hover:bg-[hsl(var(--foreground)/0.04)] transition-colors shrink-0"
-              onClick={(e) => {
-                e.stopPropagation()
-                closeFile(file.path)
+    <div className="relative h-9 border-b border-[hsl(var(--border))] bg-[hsl(var(--muted)/0.2)]">
+      <div
+        className="flex items-center h-full overflow-x-auto"
+        role="tablist"
+        aria-label={t('editor.openFilesAria')}
+        style={{ paddingRight: rightSafeInset > 0 ? `${rightSafeInset}px` : undefined }}
+      >
+        {openFiles.map((file) => {
+          const isActive = file.path === activeFilePath
+          const decoration = getFileDecoration(gitSnapshot, file.path)
+          return (
+            <div
+              key={file.path}
+              role="tab"
+              aria-selected={isActive}
+              tabIndex={0}
+              className={cn(
+                'flex items-center gap-1.5 px-3 h-full text-[13px] cursor-pointer select-none shrink-0',
+                'border-r border-[hsl(var(--border)/0.5)] transition-colors',
+                isActive
+                  ? 'bg-[hsl(var(--background))] text-[hsl(var(--foreground))]'
+                  : 'text-[hsl(var(--muted-foreground))] hover:bg-[hsl(var(--foreground)/0.04)]'
+              )}
+              onClick={() => setActiveFile(file.path)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') setActiveFile(file.path)
               }}
-              aria-label={t('editor.closeFile', { name: file.name })}
+              title={decoration.tooltip ?? undefined}
             >
-              <X className="h-3 w-3" />
-            </button>
-          </div>
-        )
-      })}
+              {file.isDirty && (
+                <span className="w-2 h-2 rounded-full bg-[hsl(var(--foreground))] shrink-0" aria-label={t('editor.unsavedChanges')} />
+              )}
+              <span className={cn('truncate max-w-[160px]', decoration.colorClass)}>{file.name}</span>
+              {decoration.badge && (
+                <span className={cn('text-[10px] font-mono shrink-0', decoration.colorClass)}>
+                  {decoration.badge}
+                </span>
+              )}
+              <button
+                className="p-0.5 rounded hover:bg-[hsl(var(--foreground)/0.04)] transition-colors shrink-0"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  closeFile(file.path)
+                }}
+                aria-label={t('editor.closeFile', { name: file.name })}
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </div>
+          )
+        })}
+      </div>
+      {rightSafeInset > 0 && (
+        <div
+          aria-hidden="true"
+          className="absolute top-0 right-0 h-full pointer-events-none bg-gradient-to-l from-[hsl(var(--muted)/0.2)] to-transparent"
+          style={{ width: `${Math.max(16, rightSafeInset)}px` }}
+        />
+      )}
     </div>
   )
 }

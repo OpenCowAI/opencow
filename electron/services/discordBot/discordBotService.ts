@@ -44,6 +44,7 @@ import {
 import { getIMChatId } from '../messaging/types'
 import { findActiveIMSession, routeIMMessage } from '../messaging/sessionRouter'
 import { executeCommand, type CommandResult, type CommandContext } from '../messaging/commandHandler'
+import { resolveUserWorkspaceBinding } from '../messaging/workspaceBinding'
 import { CommandRouter } from '../messaging/commandRouter'
 import { createLogger } from '../../platform/logger'
 import {
@@ -319,8 +320,7 @@ export class DiscordBotService {
       chatId: channelId,
       origin: this.getDiscordOrigin(channelId, guildId),
       newSessionDefaults: {
-        projectPath: config.defaultWorkspacePath,
-        projectId: config.defaultProjectId,
+        workspace: resolveUserWorkspaceBinding(config.defaultWorkspace),
       },
       onSessionEnd: () => this.releaseStreamingState(channelId),
     }
@@ -424,8 +424,7 @@ export class DiscordBotService {
       connectionId: config.id,
       chatId: channelId,
       newSessionDefaults: {
-        projectPath: config.defaultWorkspacePath,
-        projectId: config.defaultProjectId,
+        workspace: resolveUserWorkspaceBinding(config.defaultWorkspace),
       },
     })
 

@@ -968,6 +968,7 @@ export class ManagedSession {
       origin: info.origin,
       engineKind: info.engineKind,
       engineState: info.engineState,
+      startupCwd: info.executionContext?.cwd ?? info.projectPath ?? process.cwd(),
       projectPath: info.projectPath ?? undefined,
       projectId: info.projectId ?? undefined,
       model: info.model ?? undefined,

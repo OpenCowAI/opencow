@@ -114,7 +114,6 @@ export class ProjectHandler {
       }
 
       this.deps.chatContext.patch(this.deps.botId, chatId, {
-        activeProjectPath: project.canonicalPath,
         activeProjectName: project.name,
         activeProjectId:   project.id,
       })

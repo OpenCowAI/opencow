@@ -29,8 +29,7 @@ describe('projectStartSessionInput', () => {
       prompt: [{ type: 'text', text: 'hello' }],
       origin: { source: 'issue', issueId: 'issue-1' },
       engineKind: 'claude',
-      projectPath: '/tmp/project',
-      projectId: 'project-1',
+      workspace: { scope: 'project', projectId: 'project-1' },
       model: 'gpt-5.4',
       maxTurns: 8,
       systemPrompt: 'system',
@@ -78,5 +77,15 @@ describe('projectStartSessionInput', () => {
     expect(() => projectStartSessionInput(raw)).toThrowError(/Invalid start-session payload/)
     expect(() => projectStartSessionInput(raw)).toThrowError(/capabilityCategories/)
     expect(() => projectStartSessionInput(raw)).toThrowError(/disableBuiltinTools/)
+  })
+
+  it('rejects custom-path workspace from IPC payloads', () => {
+    const raw = {
+      prompt: 'hello',
+      origin: { source: 'agent' as const },
+      workspace: { scope: 'custom-path', cwd: '/tmp/project' },
+    }
+
+    expect(() => projectStartSessionInput(raw)).toThrowError(/Invalid start-session payload/)
   })
 })

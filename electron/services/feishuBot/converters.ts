@@ -16,8 +16,7 @@ export function toFeishuBotEntry(conn: FeishuConnection): FeishuBotEntry {
     appId: conn.appId,
     appSecret: conn.appSecret,
     allowedUserIds: conn.allowedUserIds,
-    defaultWorkspacePath: conn.defaultWorkspacePath,
-    defaultProjectId: conn.defaultProjectId,
+    defaultWorkspace: conn.defaultWorkspace,
   }
 }
 

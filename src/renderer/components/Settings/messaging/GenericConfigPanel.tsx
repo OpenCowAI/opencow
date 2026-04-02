@@ -90,8 +90,8 @@ export function GenericConfigPanel<C extends IMConnection>({
             />
 
             <WorkspacePathPicker
-              value={connection.defaultWorkspacePath}
-              onChange={(path) => patch({ defaultWorkspacePath: path } as Partial<C>)}
+              workspace={connection.defaultWorkspace}
+              onChange={(defaultWorkspace) => patch({ defaultWorkspace } as Partial<C>)}
             />
           </div>
         )}

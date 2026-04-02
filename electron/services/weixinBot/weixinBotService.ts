@@ -33,7 +33,7 @@ import { CommandRouter } from '../messaging/commandRouter'
 import { routeIMMessage } from '../messaging/sessionRouter'
 import { executeCommand } from '../messaging/commandHandler'
 import type { CommandResult, SessionSummary } from '../messaging/commandHandler'
-import { extractTextFromBlocks } from '../messaging/contentExtractor'
+import { resolveUserWorkspaceBinding } from '../messaging/workspaceBinding'
 import { splitMessage } from '../messaging/messageSplitter'
 import { createLogger } from '../../platform/logger'
 import type { IssueService } from '../issueService'
@@ -83,6 +83,15 @@ export class WeixinBotService {
    * Without it, replies are silently dropped.
    */
   private readonly contextTokenCache = new Map<string, string>()
+
+  /**
+   * Outbound idempotency cache for forwarded session messages.
+   *
+   * Key: `${userId}:${message.id}`.
+   * Used to suppress duplicate deliveries when the same managed message is
+   * dispatched more than once in a short window.
+   */
+  private readonly deliveredMessageKeys = new Map<string, number>()
 
   /** Session pause state for errcode -14 recovery. */
   private pausedUntil: number | null = null
@@ -181,6 +190,7 @@ export class WeixinBotService {
     // every intermediate chunk would flood the user with ~200 messages per
     // response. We wait for the finalized message (isStreaming=false).
     if ('isStreaming' in message && message.isStreaming) return
+    if (!this.shouldRelayMessage(origin, message)) return
     await this.relayToUser(origin, message)
   }
 
@@ -191,6 +201,7 @@ export class WeixinBotService {
   ): Promise<void> {
     // Skip streaming partials for the same reason as handleAssistantMessage.
     if ('isStreaming' in message && message.isStreaming) return
+    if (!this.shouldRelayMessage(origin, message)) return
     await this.relayToUser(origin, message)
   }
 
@@ -201,13 +212,22 @@ export class WeixinBotService {
    * Images are uploaded to the Weixin CDN (AES-128-ECB encrypted) and sent as
    * IMAGE items. Text is sent as plain text with long-message splitting.
    * Each image is sent as a separate message (iLink requires one item per message).
+   *
+   * IMPORTANT:
+   * WeChat has no message-edit API, so tool-phase snapshots (`tool_use`) can
+   * appear as duplicate noise (e.g. repeated "Using: Bash"). To keep UX clean,
+   * WeChat forwarding includes text/image blocks only and intentionally ignores
+   * tool_use/tool_result/thinking blocks.
    */
   private async relayToUser(origin: SessionOrigin, message: ManagedSessionMessage): Promise<void> {
     if (origin.source !== 'weixin') return
 
     if (!('content' in message)) return
     const blocks = message.content
-    const text = extractTextFromBlocks(blocks)
+    const text = blocks
+      .filter((b): b is ContentBlock & { type: 'text'; text: string } => b.type === 'text')
+      .map((b) => b.text)
+      .join('')
     const imageBlocks = blocks.filter((b: ContentBlock): b is ImageBlock => b.type === 'image')
 
     // Send text first (if any)
@@ -387,8 +407,7 @@ export class WeixinBotService {
           connectionId: config.id,
           chatId: userId,
           newSessionDefaults: {
-            projectPath: config.defaultWorkspacePath,
-            projectId: config.defaultProjectId,
+            workspace: resolveUserWorkspaceBinding(config.defaultWorkspace),
           },
         })
       } else {
@@ -400,8 +419,7 @@ export class WeixinBotService {
           chatId: userId,
           origin,
           newSessionDefaults: {
-            projectPath: config.defaultWorkspacePath,
-            projectId: config.defaultProjectId,
+            workspace: resolveUserWorkspaceBinding(config.defaultWorkspace),
           },
         })
         const text = this.renderCommandResult(result)
@@ -632,5 +650,31 @@ export class WeixinBotService {
         { once: true },
       )
     })
+  }
+
+  /**
+   * Deduplicate outbound forwarding by message ID per WeChat user.
+   */
+  private shouldRelayMessage(origin: SessionOrigin, message: ManagedSessionMessage): boolean {
+    if (origin.source !== 'weixin') return false
+    if (!origin.userId) return false
+    if (!message?.id) return true
+
+    const key = `${origin.userId}:${message.id}`
+    const now = Date.now()
+    const ttlMs = 2 * 60 * 1000
+
+    // Best-effort cleanup to keep map bounded.
+    for (const [k, ts] of this.deliveredMessageKeys) {
+      if (now - ts > ttlMs) this.deliveredMessageKeys.delete(k)
+    }
+
+    const seenAt = this.deliveredMessageKeys.get(key)
+    if (seenAt && now - seenAt <= ttlMs) {
+      return false
+    }
+
+    this.deliveredMessageKeys.set(key, now)
+    return true
   }
 }

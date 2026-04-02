@@ -36,8 +36,6 @@ interface ParsedBotOutputBase {
   name: string
   /** Optional user IDs allowed to interact. */
   allowedUserIds?: string[]
-  /** Optional default workspace path. */
-  defaultWorkspacePath?: string
   /** Body content — setup notes / instructions for the user. */
   notes: string
 }
@@ -168,7 +166,6 @@ function mapToBotOutput(
   const base: ParsedBotOutputBase = {
     name,
     allowedUserIds: parseStringArray(attributes.allowedUserIds ?? attributes['allowed-user-ids']),
-    defaultWorkspacePath: parseString(attributes.defaultWorkspacePath ?? attributes['default-workspace-path']),
     notes: body.trim()
   }
 

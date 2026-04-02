@@ -115,8 +115,15 @@ const startSessionInputSchema = z.object({
   prompt: userMessageContentSchema,
   origin: sessionOriginSchema.optional(),
   engineKind: z.enum(['claude', 'codex']).optional(),
-  projectPath: z.string().optional(),
-  projectId: z.string().optional(),
+  workspace: z.discriminatedUnion('scope', [
+    z.object({
+      scope: z.literal('project'),
+      projectId: z.string(),
+    }).strict(),
+    z.object({
+      scope: z.literal('global'),
+    }).strict(),
+  ]).optional(),
   model: z.string().optional(),
   maxTurns: z.number().int().positive().optional(),
   systemPrompt: z.string().optional(),

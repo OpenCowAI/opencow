@@ -20,7 +20,7 @@ import { FilesView } from '@/components/FilesView/FilesView'
 //
 // Two modes:
 //   • default: AgentChatView (left ~75%) + AgentSidebar (right ~25%)
-//   • files:   FilesView (left ~60%)    + ChatPanel (right ~40%)
+//   • files:   ChatPanel (left ~40%)    + FilesView (right ~60%)
 //
 // The ViewModeToggle is rendered once in a stable toolbar row at the
 // top — it never changes position between modes, ensuring zero jitter
@@ -102,18 +102,7 @@ function FilesChatLayout({
       orientation="horizontal"
       className="flex-1 min-h-0"
     >
-      {/* Left — Files */}
-      <Panel
-        id="claude-files-pane"
-        defaultSize="60%"
-        minSize="35%"
-      >
-        <FilesView />
-      </Panel>
-
-      <FilesResizeHandle />
-
-      {/* Right — Chat */}
+      {/* Left — Chat */}
       <Panel
         id="claude-chat-pane"
         defaultSize="40%"
@@ -121,6 +110,17 @@ function FilesChatLayout({
         maxSize="60%"
       >
         <ChatPanel agent={agent} />
+      </Panel>
+
+      <FilesResizeHandle />
+
+      {/* Right — Files */}
+      <Panel
+        id="claude-files-pane"
+        defaultSize="60%"
+        minSize="35%"
+      >
+        <FilesView />
       </Panel>
     </Group>
   )

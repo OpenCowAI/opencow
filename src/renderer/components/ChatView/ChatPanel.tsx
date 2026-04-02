@@ -95,7 +95,7 @@ function ChatPanelHeader({ agent }: { agent: AgentSessionHandle }): React.JSX.El
   const title = agent.session ? sessionTitle(messages, t) : t('agentChat.chat')
 
   return (
-    <div className="flex items-center gap-1.5 px-2 py-1.5 border-b border-[hsl(var(--border)/0.3)] shrink-0">
+    <div className="mt-9 flex items-center gap-1.5 px-2 py-1.5 border-b border-[hsl(var(--border)/0.3)] shrink-0">
       {/* Session title + picker trigger */}
       <PillDropdown
         open={pickerOpen}
@@ -103,6 +103,7 @@ function ChatPanelHeader({ agent }: { agent: AgentSessionHandle }): React.JSX.El
         position="below"
         align="left"
         className="min-w-0"
+        dropdownClassName="w-[min(360px,calc(100vw-24px))]"
         trigger={
           <button
             onClick={() => setPickerOpen((v) => !v)}

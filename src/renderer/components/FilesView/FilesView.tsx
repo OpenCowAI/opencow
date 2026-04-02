@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-import { useEffect } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Group, Panel, Separator } from 'react-resizable-panels'
 import { useAppStore, selectProjectId } from '@/stores/appStore'
@@ -29,7 +29,7 @@ function ModeToggle({
   const { t } = useTranslation('files')
   return (
     <div
-      className="flex items-center gap-0.5 rounded-lg bg-[hsl(var(--muted)/0.35)] p-0.5"
+      className="inline-flex items-center gap-0.5 rounded-lg bg-[hsl(var(--background))] p-0.5"
       role="radiogroup"
       aria-label={t('view.modeSwitchAria')}
     >
@@ -85,7 +85,15 @@ function EditorResizeHandle(): React.JSX.Element {
   )
 }
 
-function IDEMode({ projectPath, projectName }: { projectPath: string; projectName: string }): React.JSX.Element {
+function IDEMode({
+  projectPath,
+  projectName,
+  modeToggleSafeInset,
+}: {
+  projectPath: string
+  projectName: string
+  modeToggleSafeInset: number
+}): React.JSX.Element {
   return (
     <Group
       id="files-editor-layout"
@@ -110,7 +118,7 @@ function IDEMode({ projectPath, projectName }: { projectPath: string; projectNam
       {/* Right: Editor */}
       <Panel id="file-editor" minSize="40%">
         <div className="h-full flex flex-col min-w-0">
-          <EditorTabs projectPath={projectPath} />
+          <EditorTabs projectPath={projectPath} rightSafeInset={modeToggleSafeInset} />
           <div className="flex-1 min-h-0">
             <EditorPane projectPath={projectPath} />
           </div>
@@ -133,6 +141,8 @@ export function FilesView(): React.JSX.Element {
   const selectedProject = projects.find((p) => p.id === selectedProjectId)
   const projectId = selectedProject?.id
   const mode = projectId ? filesDisplayModeByProject[projectId] : undefined
+  const modeToggleWrapRef = useRef<HTMLDivElement>(null)
+  const [modeToggleSafeInset, setModeToggleSafeInset] = useState(180)
 
   // Coordinate file content sync (Agent writes, external edits, view switches)
   useFileSync(selectedProject?.path)
@@ -161,6 +171,28 @@ export function FilesView(): React.JSX.Element {
     return () => { cancelled = true }
   }, [projectId, mode, selectedProject, setFilesDisplayMode])
 
+  // Reserve space on the editor tabs row so tabs never render beneath
+  // the top-right floating mode switch.
+  useEffect(() => {
+    const el = modeToggleWrapRef.current
+    if (!el) return
+
+    const updateSafeInset = (): void => {
+      const next = Math.ceil(el.getBoundingClientRect().width) + 8
+      setModeToggleSafeInset((prev) => (prev === next ? prev : next))
+    }
+
+    updateSafeInset()
+    const ro = new ResizeObserver(updateSafeInset)
+    ro.observe(el)
+    window.addEventListener('resize', updateSafeInset)
+
+    return () => {
+      ro.disconnect()
+      window.removeEventListener('resize', updateSafeInset)
+    }
+  }, [])
+
   if (!selectedProject || !projectId) {
     return (
       <div className="h-full flex items-center justify-center text-[hsl(var(--muted-foreground))] text-sm">
@@ -173,9 +205,12 @@ export function FilesView(): React.JSX.Element {
   const effectiveMode = mode ?? 'ide'
 
   return (
-    <div className="h-full flex flex-col min-h-0">
-      {/* Toolbar */}
-      <div className="flex items-center justify-end px-3 py-1.5 border-b border-[hsl(var(--border)/0.4)] shrink-0">
+    <div className="relative h-full flex flex-col min-h-0">
+      {/* Top-right header-height overlay for mode switch */}
+      <div
+        ref={modeToggleWrapRef}
+        className="absolute top-0 right-0 z-20 h-[34px] px-3 flex items-center bg-[hsl(var(--background))]"
+      >
         <ModeToggle
           mode={effectiveMode}
           onChange={(newMode) => setFilesDisplayMode(projectId, newMode)}
@@ -184,7 +219,11 @@ export function FilesView(): React.JSX.Element {
 
       {/* Mode content */}
       {effectiveMode === 'ide' ? (
-        <IDEMode projectPath={selectedProject.path} projectName={selectedProject.name} />
+        <IDEMode
+          projectPath={selectedProject.path}
+          projectName={selectedProject.name}
+          modeToggleSafeInset={modeToggleSafeInset}
+        />
       ) : (
         <FileBrowser projectPath={selectedProject.path} projectName={selectedProject.name} projectId={projectId} />
       )}

@@ -54,7 +54,7 @@ export function useReviewSession(
   context: ReviewContext,
   fileChanges: FileChangesResult,
 ): ReviewSessionState {
-  const { projectPath } = useProjectScope()
+  const { projectId } = useProjectScope()
 
   // ── Store ──
   const sendMessage = useCommandStore((s) => s.sendMessage)
@@ -120,7 +120,9 @@ export function useReviewSession(
           const newId = await startSession({
             prompt: content,
             origin,
-            projectPath,
+            workspace: projectId
+              ? { scope: 'project', projectId }
+              : { scope: 'global' },
             contextSystemPrompt: contextPrompt,
           })
 
@@ -145,7 +147,7 @@ export function useReviewSession(
     },
     [
       isSending, isCreating, resolvedSessionId, isResumable,
-      fileChanges, context, projectPath,
+      fileChanges, context, projectId,
       sendMessage, resumeSession,
     ],
   )

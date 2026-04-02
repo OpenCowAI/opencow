@@ -7,10 +7,11 @@
     "starredArtifacts": "收藏产物",
     "capabilities": "能力",
     "memories": "记忆",
-    "market": "技能市场"
+    "market": "技能市场",
+    "schedule": "计划"
   },
   "sidebar": {
-    "allProjects": "全部项目",
+    "allProjects": "首页",
     "projectList": "项目列表",
     "addProject": "添加项目",
     "pinned": "置顶",

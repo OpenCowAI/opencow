@@ -53,7 +53,7 @@ export class TelegramBotManager extends BaseBotManager<
   /**
    * Construct a TelegramBotService whose getConfig() closure reads from the
    * entries map.  This ensures hot-updatable fields (allowedUserIds,
-   * defaultWorkspacePath) are visible on the next call without recreating
+   * defaultWorkspace) are visible on the next call without recreating
    * the service instance.
    */
   protected createService(entryId: string): TelegramBotService {

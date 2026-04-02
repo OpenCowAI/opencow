@@ -80,8 +80,8 @@ function projectMemoryKey(projectId: string | null): string {
  */
 export interface ProjectViewState {
   // ── Navigation ────────────────────────────────────────────────────
-  /** Last active non-schedule tab (restored on return). */
-  lastTab: ProjectTab
+  /** Last active tab (restored on return). */
+  lastTab: MainTab
   /** Per-slot detail panel state (source of truth when not active). */
   tabDetails: Record<DetailSlotKey, DetailContext | null>
   /** Selected issue ID (keeps list highlighting in sync on restore). */
@@ -254,23 +254,17 @@ type ProjectScopedStore = Pick<AppStore,
 /**
  * Build a `ProjectViewState` snapshot from the live store.
  *
- * @param prev  Previously saved state for this project (if any).
- *              Used to preserve `lastTab` when the current tab is Schedule
- *              (Schedule is a cross-project overlay, not a "real" tab).
  * @param overrides  Partial overrides applied on top (e.g. `setMainTab`
  *                   overriding `lastTab` with the newly selected tab).
  */
 function captureProjectSnapshot(
   s: ProjectScopedStore,
-  prev?: ProjectViewState | null,
   overrides?: Partial<ProjectViewState>,
 ): ProjectViewState {
   const currentTab = s.appView.mode === 'projects' ? s.appView.tab : 'issues'
   return {
     // Navigation
-    lastTab: currentTab !== 'schedule'
-      ? currentTab
-      : (prev?.lastTab ?? 'issues'),
+    lastTab: currentTab,
     tabDetails: { ...s._tabDetails },
     selectedIssueId: s.selectedIssueId,
     // Issues tab
@@ -299,10 +293,9 @@ function saveCurrentProjectState(
 ): Record<string, ProjectViewState> {
   if (s.appView.mode !== 'projects') return s._projectStates
   const key = projectMemoryKey(s.appView.projectId)
-  const existing = s._projectStates[key] ?? null
   return {
     ...s._projectStates,
-    [key]: captureProjectSnapshot(s, existing),
+    [key]: captureProjectSnapshot(s),
   }
 }
 
@@ -516,32 +509,14 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
   navigateToProject: (projectId) => {
     const prev = get()
-    const comingFromInbox = prev.appView.mode === 'inbox'
-    const comingFromSchedule = prev.appView.mode === 'projects' && prev.appView.tab === 'schedule'
     const isSameProject =
-      !comingFromInbox && !comingFromSchedule &&
       prev.appView.mode === 'projects' && prev.appView.projectId === projectId
     // Determine cross-project transition BEFORE set() for issueStore side-effect
-    const isCrossProject = !isSameProject && !(
-      comingFromSchedule && prev.appView.mode === 'projects' && prev.appView.projectId === projectId
-    )
+    const isCrossProject = !isSameProject
 
     set((s) => {
       // ── Same-project click is a no-op (idempotent) ─────────────
       if (isSameProject) return {}
-
-      // ── Schedule → same project: minimal restore ───────────────
-      // _tabDetails still holds this project's data (Schedule doesn't
-      // clear it), so just restore the remembered tab.
-      if (comingFromSchedule && s.appView.mode === 'projects' && s.appView.projectId === projectId) {
-        const saved = getProjectState(s._projectStates, projectId)
-        const slot = activeSlotForTab(saved.lastTab, saved.chatSubTab)
-        return {
-          appView: { mode: 'projects' as const, tab: saved.lastTab, projectId },
-          detailContext: s._tabDetails[slot] ?? null,
-          selectedSessionDetail: null,
-        }
-      }
 
       // ── All other transitions: save outgoing + restore target ──
       //
@@ -561,9 +536,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
       // For return visits, restore the saved tab.
       // For first-visit projects, inherit current tab (UX continuity).
       const currentTab = s.appView.mode === 'projects' ? s.appView.tab : 'issues'
-      const fallbackTab: ProjectTab = currentTab !== 'schedule'
-        ? currentTab
-        : 'issues'
+      const fallbackTab: MainTab = currentTab
       const tab = hasSavedState ? target.lastTab : fallbackTab
 
       // Use the target project's chatSubTab (not the current global one)
@@ -720,17 +693,14 @@ export const useAppStore = create<AppStore>((set, get) => ({
       const projectId = s.appView.mode === 'projects' ? s.appView.projectId : null
       const slot = activeSlotForTab(tab, s.chatSubTab)
 
-      // Eagerly persist non-schedule tabs to _projectStates so that
-      // "Schedule → same project" can restore the correct tab.
+      // Eagerly persist tabs to _projectStates so project-switch and inbox-return
+      // can restore the exact last tab for that project (including schedule).
       const key = projectMemoryKey(projectId)
-      const existing = s._projectStates[key] ?? null
-      // Eagerly persist a full snapshot so that "Schedule → same project"
-      // can restore the correct tab (and all other per-project state).
-      const saveTab: Partial<AppStore> = tab !== 'schedule'
-        ? { _projectStates: { ...s._projectStates, [key]:
-            captureProjectSnapshot(s, existing, { lastTab: tab }),
-          } }
-        : {}
+      const saveTab: Partial<AppStore> = {
+        _projectStates: { ...s._projectStates, [key]:
+          captureProjectSnapshot(s, { lastTab: tab }),
+        }
+      }
 
       return {
         ...saveTab,
@@ -768,16 +738,13 @@ export const useAppStore = create<AppStore>((set, get) => ({
       if (s.chatSubTab === subTab) return {}
       const slot = activeSlotForTab('chat', subTab)
 
-      // Eagerly persist chatSubTab to _projectStates so that
-      // "Schedule → same project" resolves the correct detail slot.
-      // (Same pattern as setMainTab's eager persist for lastTab.)
+      // Eagerly persist chatSubTab to _projectStates so project restore resolves
+      // the correct chat detail slot.
       const projectId = s.appView.mode === 'projects' ? s.appView.projectId : null
       const key = projectMemoryKey(projectId)
-      const existing = s._projectStates[key] ?? null
-      // Full snapshot with chatSubTab override (same pattern as setMainTab).
       const updatedStates: Partial<AppStore> = {
         _projectStates: { ...s._projectStates, [key]:
-          captureProjectSnapshot(s, existing, { chatSubTab: subTab }),
+          captureProjectSnapshot(s, { chatSubTab: subTab }),
         },
       }
 

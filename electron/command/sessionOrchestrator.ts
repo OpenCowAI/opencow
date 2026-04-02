@@ -51,6 +51,9 @@ import {
   type CodexAuthConfig,
 } from './engineBootstrapOptions'
 import {
+  SessionWorkspaceResolver,
+} from './sessionWorkspaceResolver'
+import {
   applyClaudeSessionPolicy,
 } from './enginePolicy'
 import { type SessionLaunchOptions, toSdkOptions } from './sessionLaunchOptions'
@@ -109,6 +112,8 @@ export interface OrchestratorDeps {
   engineBootstrapRegistry?: EngineBootstrapRegistry
   /** Optional memory context provider — injects persistent memories into system prompt. */
   getMemoryContext?: (projectId: string | null) => Promise<{ formatted: string; memories: Array<{ id: string }> } | null>
+  /** Optional project resolver used by SessionWorkspaceResolver. */
+  resolveProjectById?: ((projectId: string) => Promise<{ id: string; canonicalPath: string } | null>) | null
 }
 
 // Re-export for downstream consumers (e.g. marketplace service)
@@ -213,6 +218,7 @@ export class SessionOrchestrator {
   private store: ManagedSessionStore
   private readonly capabilityRuntime: EngineCapabilityRuntime
   private readonly engineBootstrapRegistry: EngineBootstrapRegistry
+  private readonly workspaceResolver: SessionWorkspaceResolver
   private auditTimer: ReturnType<typeof setInterval> | null = null
 
   constructor(deps: OrchestratorDeps) {
@@ -220,6 +226,7 @@ export class SessionOrchestrator {
     this.store = deps.store
     this.capabilityRuntime = new EngineCapabilityRuntime({ capabilityCenter: deps.capabilityCenter })
     this.engineBootstrapRegistry = deps.engineBootstrapRegistry ?? new EngineBootstrapRegistry()
+    this.workspaceResolver = new SessionWorkspaceResolver({ resolveProjectById: deps.resolveProjectById ?? null })
   }
 
   async start(): Promise<void> {
@@ -326,10 +333,12 @@ export class SessionOrchestrator {
     const origin: SessionOrigin = input.origin ?? { source: 'agent' }
     const defaultEngine = this.deps.getCommandDefaults().defaultEngine
     const engineKind: AIEngineKind = input.engineKind ?? defaultEngine
+    const resolvedWorkspace = await this.workspaceResolver.resolve(input.workspace)
     log.info('startSession requested', {
       origin: origin.source,
       engineKind,
-      projectId: input.projectId ?? null,
+      projectId: resolvedWorkspace.projectId,
+      workspaceScope: resolvedWorkspace.scope,
       hasCustomMcpServers: !!(input.customMcpServers && Object.keys(input.customMcpServers).length > 0),
     })
 
@@ -407,8 +416,9 @@ export class SessionOrchestrator {
       prompt: input.prompt,
       origin,
       engineKind,
-      projectPath: input.projectPath,
-      projectId: input.projectId,
+      startupCwd: resolvedWorkspace.cwd,
+      projectPath: resolvedWorkspace.projectPath ?? undefined,
+      projectId: resolvedWorkspace.projectId ?? undefined,
       model: input.model,
       maxTurns: input.maxTurns,
       // Browser Agent extensions
@@ -625,8 +635,7 @@ export class SessionOrchestrator {
 
         // Resolve initial execution context (branch, worktree) from the session's cwd.
         // Fire-and-forget — failure is non-fatal (executionContext stays null).
-        const initialCwd = config.projectPath || process.cwd()
-        resolveExecutionContext(initialCwd, config.projectPath ?? null, this.deps.gitCommandExecutor ?? null)
+        resolveExecutionContext(config.startupCwd, config.projectPath ?? null, this.deps.gitCommandExecutor ?? null)
           .then((ctx) => {
             session.initExecutionContext(ctx)
             this.deps.dispatch({ type: 'command:session:updated', payload: session.snapshot() })

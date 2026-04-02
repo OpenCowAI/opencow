@@ -512,12 +512,11 @@ function IssueFormContent({
   /** Fire-and-forget: start a session linked to the given issue. */
   const fireStartSession = (targetIssue: Issue): void => {
     buildIssueSessionPrompt(targetIssue, { projects, actionText: t('pleaseWorkOnIssue') })
-      .then(({ prompt, projectPath }) =>
+      .then(({ prompt, workspace }) =>
         startSession({
           prompt,
           origin: { source: 'issue', issueId: targetIssue.id },
-          projectPath,
-          projectId: targetIssue.projectId ?? undefined,
+          workspace,
         })
       )
       .catch((err) => {

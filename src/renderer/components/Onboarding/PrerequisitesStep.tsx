@@ -82,6 +82,12 @@ export function PrerequisitesStep({
   const [phase, setPhase] = useState<PrereqPhase>('checking')
   const [result, setResult] = useState<PrerequisiteCheckResult | null>(null)
 
+  // Defensive UI filter: Node.js check is intentionally hidden in onboarding.
+  // This protects the UI even if backend payloads still include a legacy item.
+  const visibleItems = result
+    ? result.items.filter((item) => item.name !== 'Node.js')
+    : []
+
   // Auto-run on mount. onResult is stable (useCallback with [] deps in parent).
   useEffect(() => {
     let cancelled = false
@@ -155,7 +161,7 @@ export function PrerequisitesStep({
           </div>
         ) : result ? (
           <div className="divide-y divide-[hsl(var(--border))]">
-            {result.items.map((item) => (
+            {visibleItems.map((item) => (
               <PrerequisiteRow key={item.name} item={item} />
             ))}
           </div>

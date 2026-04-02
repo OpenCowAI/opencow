@@ -702,8 +702,20 @@ function tryDispatchSession(sessionId: string): void {
   populateAllFromStorage()
 
   useCommandStore.subscribe((state, prevState) => {
-    // Only react to managedSessions changes
-    if (state.managedSessions === prevState.managedSessions) return
+    // React when EITHER session list OR session index changes.
+    //
+    // Why both:
+    // - managedSessions ref changes on structural updates (create/delete/new id)
+    // - sessionById ref can change alone on metadata/state updates via
+    //   commandStore.batchUpsertManagedSessions fast path
+    //
+    // Queue dispatch readiness depends on session.state, which lives on the
+    // SessionSnapshot in sessionById. If we only watch managedSessions refs,
+    // "sessionById-only" updates (streaming -> idle) won't trigger dispatch.
+    if (
+      state.managedSessions === prevState.managedSessions
+      && state.sessionById === prevState.sessionById
+    ) return
 
     // Fast path: no pending queues — nothing to do.
     // This keeps the subscription essentially free during normal streaming
@@ -811,6 +823,10 @@ export function useMessageQueue(options: UseMessageQueueOptions): UseMessageQueu
         queuedAt: Date.now(),
       }
       setQueue((prev) => [...prev, msg])
+      // Best-effort immediate dispatch attempt for the common case where the
+      // session is already ready when enqueue happens. Guards in
+      // tryDispatchSession prevent overlap and non-ready dispatch.
+      tryDispatchSession(sessionIdRef.current)
     },
     [setQueue],
   )

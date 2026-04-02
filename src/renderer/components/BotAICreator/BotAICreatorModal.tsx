@@ -47,7 +47,7 @@ function toIMConnection(parsed: ParsedBotOutput): IMConnection {
     name: parsed.name,
     enabled: false,
     allowedUserIds: parsed.allowedUserIds ?? [],
-    defaultWorkspacePath: parsed.defaultWorkspacePath ?? '',
+    defaultWorkspace: { scope: 'global' as const },
   }
 
   switch (parsed.platform) {

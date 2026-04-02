@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-import type { Issue, IssueProvider, UserMessageContent } from '@shared/types'
+import type { Issue, IssueProvider, UserMessageContent, SessionWorkspaceInput } from '@shared/types'
 import { buildIssuePrompt, type IssueRemoteContext } from '@shared/issuePromptBuilder'
 import { getAppAPI } from '@/windowAPI'
 
@@ -8,7 +8,7 @@ import { getAppAPI } from '@/windowAPI'
 
 export interface IssueSessionPromptResult {
   prompt: UserMessageContent
-  projectPath: string | undefined
+  workspace: SessionWorkspaceInput
 }
 
 export interface BuildIssueSessionPromptOptions {
@@ -85,5 +85,9 @@ export async function buildIssueSessionPrompt(
     remoteContext,
   })
 
-  return { prompt, projectPath }
+  const workspace: SessionWorkspaceInput = issue.projectId
+    ? { scope: 'project', projectId: issue.projectId }
+    : { scope: 'global' }
+
+  return { prompt, workspace }
 }

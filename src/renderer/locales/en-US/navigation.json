@@ -7,10 +7,11 @@
     "starredArtifacts": "Starred Artifacts",
     "capabilities": "Capabilities",
     "memories": "Memories",
-    "market": "Skills Market"
+    "market": "Skills Market",
+    "schedule": "Schedule"
   },
   "sidebar": {
-    "allProjects": "All Projects",
+    "allProjects": "Home",
     "projectList": "Project list",
     "addProject": "Add project",
     "pinned": "Pinned",

@@ -217,10 +217,12 @@ export function useCreatorSession<TParsed>(
       autoContinuationCount.current = 0
       try {
         const systemPrompt = config.prompt.build(i18n.language)
+        const workspace = config.project?.id
+          ? { scope: 'project', projectId: config.project.id } as const
+          : base.startWorkspace
         const id = await base.startSession({
           prompt: message,
-          projectPath: base.projectPath,
-          projectId: config.project?.id ?? base.selectedProjectId ?? undefined,
+          workspace,
           origin: config.identity.origin,
           systemPrompt
         })
