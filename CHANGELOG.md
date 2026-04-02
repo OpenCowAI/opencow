@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.3.17] - 2026-04-02
+
+### Added
+- Comprehensive File mode experience upgrade: rich Markdown/HTML/image preview flows, image thumbnail/lightbox interactions, drag-drop file context insertion across chat/session inputs, and Browser PiP draggable positioning with persisted placement
+
+### Changed
+-
+
+### Fixed
+-
+
 ## [0.3.16] - 2026-04-02
 
 ### Added
