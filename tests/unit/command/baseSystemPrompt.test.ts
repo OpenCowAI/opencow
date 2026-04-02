@@ -34,4 +34,14 @@ describe('getBaseSystemPrompt', () => {
     expect(prompt).toContain('**Plan → Act**')
     expect(prompt).toContain('**Propose → Confirm → Act**')
   })
+
+  it('prefers embedded browser tools for URL open requests', () => {
+    const prompt = getBaseSystemPrompt('agent')!
+    expect(prompt).toContain('<browser-tool-preference>')
+    expect(prompt).toContain('Prefer the MCP browser tools first')
+    expect(prompt).toContain('Do NOT run shell launch commands')
+    expect(prompt).toContain('open')
+    expect(prompt).toContain('start')
+    expect(prompt).toContain('xdg-open')
+  })
 })

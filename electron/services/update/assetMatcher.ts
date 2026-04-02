@@ -4,7 +4,7 @@
  * assetMatcher — Finds the correct download asset for the current platform.
  *
  * Strategy per platform:
- *   - macOS: universal DMG → arch-specific DMG → any DMG → ZIP
+ *   - macOS: arch-specific DMG → universal DMG → any DMG → ZIP
  *   - Windows: .exe
  *   - Linux: .AppImage → .deb
  *
@@ -29,14 +29,14 @@ export function findMatchingAssetUrl(
   arch: string = process.arch,
 ): string | null {
   if (platform === 'darwin') {
-    // Prefer universal DMG, then architecture-specific DMG, then any DMG, then ZIP
-    const universalDmg = assets.find((a) => /universal\.dmg$/i.test(a.name))
-    if (universalDmg) return universalDmg.downloadUrl
-
+    // Prefer architecture-specific DMG first, then universal, then any DMG, then ZIP
     const archDmg = assets.find((a) =>
       new RegExp(`${arch}\\.dmg$`, 'i').test(a.name),
     )
     if (archDmg) return archDmg.downloadUrl
+
+    const universalDmg = assets.find((a) => /universal\.dmg$/i.test(a.name))
+    if (universalDmg) return universalDmg.downloadUrl
 
     const anyDmg = assets.find((a) => /\.dmg$/i.test(a.name))
     if (anyDmg) return anyDmg.downloadUrl

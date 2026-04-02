@@ -219,7 +219,8 @@ export class BrowserNativeCapability extends BaseNativeCapability {
       {
         name: 'browser_navigate',
         description:
-          'Navigate the embedded browser to a URL. Opens the browser window if not already visible. Returns the page title after navigation completes.',
+          'Navigate the embedded browser to a URL. Opens the browser window if not already visible. Returns the page title after navigation completes. ' +
+          'Prefer this tool for "open website" requests instead of running OS shell launch commands like open/start/xdg-open.',
         schema: {
           url: z.url('Must be a valid URL (e.g. https://example.com)'),
         },
