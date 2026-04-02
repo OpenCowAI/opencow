@@ -176,20 +176,20 @@
       "iconSize": 128,
       "contents": [
         {
-          "x": 180,
-          "y": 170,
+          "x": 150,
+          "y": 190,
           "type": "file"
         },
         {
-          "x": 480,
-          "y": 170,
+          "x": 390,
+          "y": 190,
           "type": "link",
           "path": "/Applications"
         }
       ],
       "window": {
-        "width": 660,
-        "height": 400
+        "width": 540,
+        "height": 380
       }
     },
     "win": {
