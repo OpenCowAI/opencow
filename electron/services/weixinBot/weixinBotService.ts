@@ -33,6 +33,7 @@ import { CommandRouter } from '../messaging/commandRouter'
 import { routeIMMessage } from '../messaging/sessionRouter'
 import { executeCommand } from '../messaging/commandHandler'
 import type { CommandResult, SessionSummary } from '../messaging/commandHandler'
+import { resolveWorkspaceBinding } from '../messaging/workspaceBinding'
 import { extractTextFromBlocks } from '../messaging/contentExtractor'
 import { splitMessage } from '../messaging/messageSplitter'
 import { createLogger } from '../../platform/logger'
@@ -387,8 +388,10 @@ export class WeixinBotService {
           connectionId: config.id,
           chatId: userId,
           newSessionDefaults: {
-            projectPath: config.defaultWorkspacePath,
-            projectId: config.defaultProjectId,
+            workspace: resolveWorkspaceBinding({
+              projectId: config.defaultProjectId,
+              cwd: config.defaultWorkspacePath,
+            }),
           },
         })
       } else {
@@ -400,8 +403,10 @@ export class WeixinBotService {
           chatId: userId,
           origin,
           newSessionDefaults: {
-            projectPath: config.defaultWorkspacePath,
-            projectId: config.defaultProjectId,
+            workspace: resolveWorkspaceBinding({
+              projectId: config.defaultProjectId,
+              cwd: config.defaultWorkspacePath,
+            }),
           },
         })
         const text = this.renderCommandResult(result)

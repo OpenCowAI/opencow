@@ -38,11 +38,6 @@ interface InboxServiceLike {
   createScheduleNotification(scheduleId: string, scheduleName: string, message: string): void
 }
 
-/** Minimal interface for project resolution (projectId → file system path) */
-interface ProjectStoreLike {
-  getById(id: string): Promise<{ canonicalPath: string } | null>
-}
-
 export class ActionExecutor implements PipelineMiddleware {
   readonly name = 'ActionExecutor'
 
@@ -52,7 +47,6 @@ export class ActionExecutor implements PipelineMiddleware {
       issueService?: IssueServiceLike
       webhookService?: WebhookServiceLike
       inboxService?: InboxServiceLike
-      projectStore?: ProjectStoreLike
     }
   ) {}
 
@@ -83,15 +77,12 @@ export class ActionExecutor implements PipelineMiddleware {
             ? { source: 'issue', issueId: action.issueId }
             : { source: 'schedule', scheduleId: schedule.id }
 
-          // Resolve projectId → canonicalPath (file system path) for cwd.
-          // projectId is a database identifier, NOT a file system path.
-          const projectPath = await this.resolveProjectPath(action.projectId)
-
           const input: StartSessionInput = {
             prompt: ctx.resolvedPrompt ?? action.session?.promptTemplate ?? '',
             origin,
-            projectPath,
-            projectId: action.projectId ?? undefined,
+            workspace: action.projectId
+              ? { scope: 'project', projectId: action.projectId }
+              : { scope: 'global' },
             model: action.session?.model,
             maxTurns: action.session?.maxTurns,
           }
@@ -193,17 +184,5 @@ export class ActionExecutor implements PipelineMiddleware {
     }
 
     await next()
-  }
-
-  /**
-   * Resolve a projectId to its canonical file system path.
-   * Returns undefined if no projectId or project not found.
-   */
-  private async resolveProjectPath(projectId: string | undefined): Promise<string | undefined> {
-    if (!projectId) return undefined
-    if (!this.deps.projectStore) return undefined
-
-    const project = await this.deps.projectStore.getById(projectId)
-    return project?.canonicalPath
   }
 }

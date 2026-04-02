@@ -10,6 +10,7 @@ import type {
   SessionSnapshot,
   ManagedSessionMessage,
   SessionOrigin,
+  SessionWorkspaceInput,
   UserMessageContent,
 } from '../../../src/shared/types'
 import { CommandRouter } from '../messaging/commandRouter'
@@ -26,6 +27,7 @@ import { DraftStreamingStrategy } from './streaming/draftStrategy'
 import { snapToGraphemeBoundary } from '@shared/unicode'
 import { findActiveIMSession, routeIMMessage } from '../messaging/sessionRouter'
 import { executeCommand, resolveSessionId, type CommandResult, type CommandContext } from '../messaging/commandHandler'
+import { resolveWorkspaceBinding } from '../messaging/workspaceBinding'
 
 const log = createLogger('TelegramBot')
 
@@ -480,11 +482,10 @@ export class TelegramBotService {
           this.pendingNewPrompts.delete(chatId)
           const prompt = text.trim()
           if (prompt) {
-            const cfg = this.deps.getConfig()
             await this.deps.orchestrator.startSession({
               prompt,
               origin: this.getTelegramOrigin(chatId),
-              projectPath: cfg.defaultWorkspacePath || undefined,
+              workspace: this.resolveStartWorkspace(chatId),
             })
           }
           return // Streaming response is the only feedback
@@ -546,11 +547,8 @@ export class TelegramBotService {
     const origin = this.getTelegramOrigin(chatId)
     // Workspace binding: per-chat temporary project override takes precedence over
     // the Bot's global defaultWorkspacePath (set via Bot Settings UI).
-    const chatCtxForCmd = this.chatContext.get(config.id, chatId)
-    const projectPath = chatCtxForCmd.activeProjectPath ?? (config.defaultWorkspacePath || undefined)
     const newSessionDefaults = {
-      projectPath,
-      projectId: config.defaultProjectId,
+      workspace: this.resolveStartWorkspace(chatId),
     }
 
     // ── chat action: shared session routing via routeIMMessage ─────────────
@@ -586,7 +584,7 @@ export class TelegramBotService {
     origin: SessionOrigin,
     connectionId: string,
     chatId: string,
-    newSessionDefaults?: { projectPath?: string; projectId?: string },
+    newSessionDefaults?: CommandContext['newSessionDefaults'],
   ): Promise<FormattedMessage | null> {
     const prompt = args.prompt?.trim()
     if (!prompt) return null
@@ -717,13 +715,13 @@ export class TelegramBotService {
     }
 
     const origin = this.getTelegramOrigin(chatId)
-    const projectPath = config.defaultWorkspacePath || undefined
+    const workspace = this.resolveStartWorkspace(chatId)
 
     // ForceReply intercept: chat is awaiting new session prompt → use image (with caption) as prompt
     const pendingMsgId = this.pendingNewPrompts.get(chatId)
     if (pendingMsgId !== undefined) {
       this.pendingNewPrompts.delete(chatId)
-      await this.deps.orchestrator.startSession({ prompt: content, origin, projectPath })
+      await this.deps.orchestrator.startSession({ prompt: content, origin, workspace })
       return 'ok'
     }
 
@@ -731,7 +729,7 @@ export class TelegramBotService {
     const active = await this.findActiveSession(chatId)
 
     if (!active) {
-      await this.deps.orchestrator.startSession({ prompt: content, origin, projectPath })
+      await this.deps.orchestrator.startSession({ prompt: content, origin, workspace })
       return 'ok'
     }
 
@@ -746,9 +744,39 @@ export class TelegramBotService {
 
     // Continue failed (session terminated, etc.) → start new session
     if (!ok) {
-      await this.deps.orchestrator.startSession({ prompt: content, origin, projectPath })
+      await this.deps.orchestrator.startSession({ prompt: content, origin, workspace })
     }
     return 'ok'
+  }
+
+  /**
+   * Resolve workspace binding for new sessions in this chat.
+   *
+   * Precedence:
+   * 1) Chat-scoped active project ID
+   * 2) Chat-scoped active project path
+   * 3) Bot default project ID
+   * 4) Bot default workspace path
+   * 5) Global (~)
+   */
+  private resolveStartWorkspace(chatId: string): SessionWorkspaceInput {
+    const config = this.deps.getConfig()
+    const chatCtx = this.chatContext.get(config.id, chatId)
+
+    const activeProjectId = chatCtx.activeProjectId?.trim()
+    if (activeProjectId) {
+      return { scope: 'project', projectId: activeProjectId }
+    }
+
+    const activeProjectPath = chatCtx.activeProjectPath?.trim()
+    if (activeProjectPath) {
+      return { scope: 'custom-path', cwd: activeProjectPath }
+    }
+
+    return resolveWorkspaceBinding({
+      projectId: config.defaultProjectId,
+      cwd: config.defaultWorkspacePath,
+    })
   }
 
   /**

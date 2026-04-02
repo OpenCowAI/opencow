@@ -710,18 +710,16 @@ export type SessionsViewMode = 'grid' | 'list'
 /**
  * Tabs scoped to a project context.
  * These represent content views that belong to a project and should
- * be remembered/restored when the user returns from a global view.
+ * be remembered/restored per project.
  */
-export type ProjectTab = 'dashboard' | 'issues' | 'chat' | 'starred' | 'capabilities' | 'memories'
+export type ProjectTab = 'dashboard' | 'issues' | 'chat' | 'schedule' | 'starred' | 'capabilities' | 'memories'
 
 /**
- * Full navigation tab union — includes both project-scoped tabs
- * and global meta-views (schedule).
- *
- * Schedule is semantically a "global meta-view" (not project-scoped),
- * but rendered inside the projects mode layout for UI consistency.
+ * Full navigation tab union.
+ * Currently equal to ProjectTab, kept as a semantic alias for
+ * navigation-layer readability.
  */
-export type MainTab = ProjectTab | 'schedule'
+export type MainTab = ProjectTab
 
 // === Chat Sub-Tabs (Conversation + Sessions inside Chat tab) ===
 
@@ -2981,6 +2979,8 @@ export interface ManagedSessionConfig {
   engineKind?: AIEngineKind
   /** Engine-specific checkpoint/thread state. */
   engineState?: Record<string, unknown> | null
+  /** Resolved startup cwd for engine lifecycle bootstrap (single source of truth). */
+  startupCwd: string
   projectPath?: string
   /** Resolved Project ID — set at session creation time, persisted for resume. */
   projectId?: string
@@ -3144,15 +3144,26 @@ export interface ManagedSessionInfo extends SessionSnapshot {
   messages: ManagedSessionMessage[]
 }
 
+/**
+ * Session workspace selector (input contract).
+ *
+ * - `project`     : bind to a known project by stable projectId
+ * - `global`      : run from user home (~)
+ * - `custom-path` : explicit filesystem path (internal/system callers only)
+ */
+export type SessionWorkspaceInput =
+  | { scope: 'project'; projectId: string }
+  | { scope: 'global' }
+  | { scope: 'custom-path'; cwd: string }
+
 export interface StartSessionInput {
   prompt: UserMessageContent
   /** Session origin — determines routing and idempotency behavior. Defaults to {source:'agent'} if omitted. */
   origin?: SessionOrigin
   /** Conversation engine kind. Defaults to 'claude'. */
   engineKind?: AIEngineKind
-  projectPath?: string
-  /** Pre-resolved Project ID. Frontend passes this directly; IPC handler resolves as fallback for non-frontend callers. */
-  projectId?: string
+  /** Session workspace scope. Defaults to `{ scope: 'global' }` when omitted. */
+  workspace?: SessionWorkspaceInput
   model?: string
   maxTurns?: number
   // ── Tool & capability control ──

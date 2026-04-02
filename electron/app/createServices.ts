@@ -427,6 +427,11 @@ export async function createAppServices(deps: ServiceFactoryDeps): Promise<AppSe
     pendingQuestionRegistry,
     capabilityCenter,
     gitCommandExecutor: new GitCommandExecutor(),
+    resolveProjectById: async (projectId: string) => {
+      const project = await projectStore.getById(projectId)
+      if (!project) return null
+      return { id: project.id, canonicalPath: project.canonicalPath }
+    },
     getMemoryContext: async (projectId: string | null) => {
       try {
         return await memoryService.getContextForSession({ projectId })
@@ -485,7 +490,6 @@ export async function createAppServices(deps: ServiceFactoryDeps): Promise<AppSe
   const actionExecutor = new ActionExecutor({
     sessionOrchestrator: orchestrator,
     issueService,
-    projectStore,
     // webhookService and inboxService don't yet implement the *Like interfaces
     // (dispatchEvent / createScheduleNotification). Pass undefined; the executor
     // guards every call with `if (this.deps.*)`.

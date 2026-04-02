@@ -24,6 +24,7 @@
 import type {
   IMOrchestratorDeps,
   IMPlatformType,
+  SessionWorkspaceInput,
 } from '../../../src/shared/types'
 import { findActiveIMSession } from './sessionRouter'
 import { getIMConnectionId } from './types'
@@ -112,10 +113,9 @@ export interface CommandContext {
   readonly connectionId: string
   /** Chat/channel identifier for session scoping. */
   readonly chatId: string
-  /** Defaults for new session creation (workspace path, project ID, etc.). */
+  /** Defaults for new session creation. */
   readonly newSessionDefaults?: {
-    readonly projectPath?: string
-    readonly projectId?: string
+    readonly workspace?: SessionWorkspaceInput
   }
   /** Session origin for new session creation. */
   readonly origin: import('../../../src/shared/types').SessionOrigin

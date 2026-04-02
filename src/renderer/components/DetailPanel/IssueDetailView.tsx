@@ -482,12 +482,11 @@ export function IssueDetailView({ issueId, onClose, onNavigateToIssue }: IssueDe
     if (!currentIssue) return
     setIsStarting(true)
     try {
-      const { prompt, projectPath: resolvedPath } = await buildIssueSessionPrompt(currentIssue, { projects: useAppStore.getState().projects, actionText })
+      const { prompt, workspace } = await buildIssueSessionPrompt(currentIssue, { projects: useAppStore.getState().projects, actionText })
       await startSession({
         prompt,
         origin: { source: 'issue', issueId: currentIssue.id },
-        projectPath: resolvedPath,
-        projectId: currentIssue.projectId ?? undefined,
+        workspace,
       })
     } catch (err) {
       log.error('Failed to create session', err)
@@ -510,14 +509,15 @@ export function IssueDetailView({ issueId, onClose, onNavigateToIssue }: IssueDe
   const handleComposeStart = useCallback(async (content: UserMessageContent): Promise<boolean | void> => {
     const currentIssue = useIssueStore.getState().issueDetailCache.get(issueId)
     if (!currentIssue) return false
-    const resolvedPath = resolveProjectPath(currentIssue.projectId, useAppStore.getState().projects)
+    const workspace = currentIssue.projectId
+      ? { scope: 'project', projectId: currentIssue.projectId } as const
+      : { scope: 'global' as const }
     setIsStarting(true)
     try {
       await startSession({
         prompt: content,
         origin: { source: 'issue', issueId: currentIssue.id },
-        projectPath: resolvedPath,
-        projectId: currentIssue.projectId ?? undefined,
+        workspace,
       })
       setComposeMode(false)
     } catch (err) {

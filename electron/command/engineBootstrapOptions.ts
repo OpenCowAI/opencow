@@ -171,7 +171,8 @@ export function resolveCodexCliPath(): string | undefined {
 }
 
 function applySharedSessionOverrides(ctx: EngineBootstrapContext): void {
-  if (ctx.config.projectPath) ctx.options.cwd = ctx.config.projectPath
+  // Startup cwd is resolved once by SessionWorkspaceResolver and stored in session config.
+  ctx.options.cwd = ctx.config.startupCwd
   if (ctx.resume) ctx.options.resume = ctx.resume
   if (ctx.config.model) ctx.options.model = ctx.config.model
 }
@@ -352,4 +353,3 @@ export class EngineBootstrapRegistry {
     applySharedSessionOverrides(ctx)
   }
 }
-

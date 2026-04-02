@@ -27,6 +27,7 @@ import { useMessageQueue, type UseMessageQueueReturn } from '@/hooks/useMessageQ
 import type {
   SessionSnapshot,
   ManagedSessionState,
+  SessionWorkspaceInput,
   StartSessionInput,
   UserMessageContent
 } from '@shared/types'
@@ -63,6 +64,8 @@ export interface SessionBaseHandle {
   projectName: string | null
   /** Selected project ID. */
   selectedProjectId: string | null
+  /** Start workspace derived from current project selection. */
+  startWorkspace: SessionWorkspaceInput
 
   /** Send a message to the active session. */
   handleSend: (message: UserMessageContent) => Promise<boolean>
@@ -122,6 +125,9 @@ export function useSessionBase(options: UseSessionBaseOptions): SessionBaseHandl
 
   const projectPath = selectedProject?.path
   const projectName = selectedProject?.name ?? null
+  const startWorkspace: SessionWorkspaceInput = selectedProjectId
+    ? { scope: 'project', projectId: selectedProjectId }
+    : { scope: 'global' }
 
   const state = session?.state ?? null
   const isProcessing = state === 'creating' || state === 'streaming'
@@ -186,6 +192,7 @@ export function useSessionBase(options: UseSessionBaseOptions): SessionBaseHandl
     projectPath,
     projectName,
     selectedProjectId,
+    startWorkspace,
     handleSend,
     handleResume,
     handleStop,

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, it, vi } from 'vitest'
+import { homedir } from 'node:os'
 
 vi.mock('electron', () => ({
   app: {
@@ -17,6 +18,7 @@ function createConfig(overrides?: Partial<ManagedSessionRuntimeConfig>): Managed
   return {
     prompt: 'hello',
     origin: { source: 'agent' },
+    startupCwd: homedir(),
     ...overrides,
   }
 }
@@ -41,7 +43,7 @@ describe('EngineBootstrapRegistry', () => {
       engineKind: 'claude',
       config: createConfig({
         model: 'claude-session-model',
-        projectPath: '/tmp/project',
+        startupCwd: '/tmp/project',
       }),
       resume: 'resume-id',
       sessionEnv: {},
@@ -53,6 +55,26 @@ describe('EngineBootstrapRegistry', () => {
     expect(options.model).toBe('claude-session-model')
     expect(options.cwd).toBe('/tmp/project')
     expect(options.resume).toBe('resume-id')
+  })
+
+  it('uses startupCwd for global (all-projects) sessions', async () => {
+    const registry = new EngineBootstrapRegistry({
+      claudeCliPathResolver: () => '/tmp/claude-cli.js',
+    })
+    const options: Record<string, unknown> = {}
+
+    await registry.apply({
+      engineKind: 'claude',
+      config: createConfig({
+        model: 'claude-session-model',
+        startupCwd: homedir(),
+      }),
+      sessionEnv: {},
+      options,
+      deps: createDeps(),
+    })
+
+    expect(options.cwd).toBe(homedir())
   })
 
   it('applies Codex defaults/auth and injects managed provider via SDK config', async () => {

@@ -2,7 +2,7 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { mkdtemp, rm } from 'fs/promises'
-import { tmpdir } from 'os'
+import { homedir, tmpdir } from 'os'
 import { join } from 'path'
 import type { Kysely } from 'kysely'
 import { createTestDb } from '../../helpers/testDb'
@@ -191,7 +191,7 @@ describe('SessionOrchestrator.startSession — idempotency', () => {
     const input: StartSessionInput = {
       prompt: 'Fix the bug',
       origin: { source: 'issue', issueId: 'issue-1' },
-      projectPath: '/tmp/project'
+      workspace: { scope: 'custom-path', cwd: '/tmp/project' },
     }
 
     const id1 = await orchestrator.startSession(input)
@@ -245,6 +245,38 @@ describe('SessionOrchestrator.startSession — idempotency', () => {
     const id2 = await orchestrator.startSession({ prompt: 'prompt 2' })
 
     expect(id1).not.toBe(id2)
+  })
+
+  it('uses home as initial execution cwd for global (all-projects) session', async () => {
+    const sessionId = await orchestrator.startSession({ prompt: 'global session cwd check' })
+
+    // Wait until lifecycle enters next() so we can emit an init event.
+    for (let i = 0; i < 20 && pendingNextResolvers.length === 0; i++) {
+      await new Promise((resolve) => setTimeout(resolve, 10))
+    }
+
+    if (pendingNextResolvers.length > 0) {
+      pendingNextResolvers[0]({
+        value: { type: 'system', subtype: 'init', session_id: 'test-ref-home', model: 'claude-sonnet-4-6' },
+        done: false,
+      })
+      pendingNextResolvers.splice(0, 1)
+      await new Promise((resolve) => setTimeout(resolve, 50))
+    }
+
+    const updatedEvents = (deps.dispatch as ReturnType<typeof vi.fn>).mock.calls
+      .map(([event]: [DataBusEvent]) => event)
+      .filter(
+        (event): event is Extract<DataBusEvent, { type: 'command:session:updated' }> =>
+          event.type === 'command:session:updated' && event.payload.id === sessionId,
+      )
+
+    const withExecutionContext = [...updatedEvents]
+      .reverse()
+      .find((event) => event.payload.executionContext !== null)
+
+    expect(withExecutionContext).toBeTruthy()
+    expect(withExecutionContext?.payload.executionContext?.cwd).toBe(homedir())
   })
 
   it('supports starting a codex-managed session', async () => {

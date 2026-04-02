@@ -417,7 +417,7 @@ export class MarketplaceService {
       prompt: prepared.userMessage,
       origin: { source: 'market-analyzer', slug, marketplaceId },
       systemPrompt: prepared.systemPrompt,
-      projectPath: repoDir,
+      workspace: { scope: 'custom-path', cwd: repoDir },
       customTools: { name: prepared.toolServerName, tools: prepared.tools },
       onComplete: (result) => this.handleAnalysisComplete(sessionId, result),
     }

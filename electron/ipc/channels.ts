@@ -985,17 +985,6 @@ export function registerIPCHandlers(deps: IPCDeps): void {
       // so backend-only fields cannot be injected from renderer callers.
       const sessionInput = projectStartSessionInput(input)
 
-      // Defensive projectId resolution for non-frontend callers (e.g. Telegram, Schedule).
-      // Frontend already passes projectId directly — this is a fallback, not the primary path.
-      if (projectService && sessionInput.projectPath && !sessionInput.projectId) {
-        try {
-          const project = await projectService.findByCanonicalPath(sessionInput.projectPath)
-          if (project) sessionInput.projectId = project.id
-        } catch (err) {
-          log.warn('Failed to resolve projectId from projectPath — starting session without project context', err)
-        }
-      }
-
       // Auto-resolve contextRefs for issue-originated sessions
       if (contextRefResolver && !sessionInput.contextSystemPrompt && sessionInput.origin?.source === 'issue') {
         try {
