@@ -184,7 +184,7 @@ export function applyConversationDomainEffects(params: {
         const blocks = toManagedContentBlocks(effect.payload.blocks)
         if (blocks.length === 0) break
 
-        let streamingMessageId: string | null = null
+        let streamingMessageId: string | null
         if (!ctx.stream.isStreaming) {
           // First partial: create the message in ManagedSession, then
           // grab a direct reference for the buffer — O(1) from here on.

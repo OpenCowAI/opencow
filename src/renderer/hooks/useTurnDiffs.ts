@@ -13,7 +13,7 @@
  * settled (not streaming/creating).
  */
 
-import { useRef, useMemo } from 'react'
+import { useRef, useMemo, useEffect } from 'react'
 import { useDialogState } from '@/hooks/useModalAnimation'
 import { hasFileChanges, countChangedFiles } from '@/components/DetailPanel/SessionPanel/extractFileChanges'
 import { getUserMessageDisplayInfo } from '@/components/DetailPanel/SessionPanel/messageDisplayUtils'
@@ -134,7 +134,9 @@ export function useTurnDiffs(
   // renderItem stable while still picking up the latest diffs on the next
   // natural re-render.
   const turnDiffMapRef = useRef(turnDiffMap)
-  turnDiffMapRef.current = turnDiffMap
+  useEffect(() => {
+    turnDiffMapRef.current = turnDiffMap
+  }, [turnDiffMap])
 
   const turnDiffDialog = useDialogState<TurnDiffDialogData>()
 
