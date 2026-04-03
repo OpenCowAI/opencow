@@ -11,6 +11,11 @@
     "markdownContents": "Contents",
     "unableToPreviewImage": "Unable to preview image",
     "closeFile": "Close {{name}}",
+    "close": "Close",
+    "closeOthers": "Close Others",
+    "closeToRight": "Close Tabs to the Right",
+    "closeAll": "Close All",
+    "tabMenuAria": "Tab actions",
     "loadingEditor": "Loading editor…",
     "changedCount_one": "{{count}} changed",
     "changedCount_other": "{{count}} changed"
@@ -74,5 +79,35 @@
       "revealPrefix": "Alt+Enter",
       "close": "Esc Close"
     }
+  },
+  "actions": {
+    "itemMenuAria": "File actions",
+    "newFile": "New File",
+    "newFolder": "New Folder",
+    "newFilePlaceholder": "Enter file name",
+    "newFolderPlaceholder": "Enter folder name",
+    "createIn": "Create in",
+    "createConfirm": "Create",
+    "createInvalidName": "Please enter a valid name.",
+    "createFailed": "Create failed.",
+    "createFileSuccess": "File created.",
+    "createFolderSuccess": "Folder created.",
+    "renameFile": "Rename File",
+    "renameFolder": "Rename Folder",
+    "deleteFile": "Delete File",
+    "deleteFolder": "Delete Folder",
+    "renameInvalidName": "Please enter a valid name.",
+    "renameFailed": "Rename failed.",
+    "renameSuccess": "Renamed.",
+    "deleteFailed": "Delete failed.",
+    "deleteSuccess": "Deleted.",
+    "undoDelete": "Undo",
+    "undoDeleteFailed": "Undo delete failed.",
+    "undoDeleteSuccess": "Restore completed.",
+    "deleteConfirm": "Delete",
+    "deleteFileConfirmTitle": "Delete \"{{name}}\"?",
+    "deleteFolderConfirmTitle": "Delete folder \"{{name}}\"?",
+    "deleteFileConfirmMessage": "This action cannot be undone.",
+    "deleteFolderConfirmMessage": "All files and folders inside will also be deleted. This action cannot be undone."
   }
 }

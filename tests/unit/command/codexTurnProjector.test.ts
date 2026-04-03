@@ -148,7 +148,7 @@ describe('CodexTurnProjector', () => {
     const todoToolUse = projection.blocks.find((b) => b.type === 'tool_use' && b.id === 'todo-1')
     expect(todoToolUse?.name).toBe('TodoWrite')
     const todos = (todoToolUse?.input as { todos?: Array<{ status: string }> } | undefined)?.todos ?? []
-    expect(todos.map((t) => t.status)).toEqual(['in_progress', 'pending', 'completed'])
+    expect(todos.map((t) => t.status)).toEqual(['pending', 'pending', 'completed'])
   })
 
   it('normalizes mcp tool name and renders result text', () => {

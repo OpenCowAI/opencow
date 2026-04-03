@@ -19,12 +19,7 @@ import type { ManagedSessionInfo } from '../../src/shared/types'
  * Call in `beforeEach` to guarantee isolation between tests.
  */
 export function resetCommandStore(): void {
-  useCommandStore.setState({
-    managedSessions: [],
-    sessionById: {},
-    sessionMessages: {},
-    activeManagedSessionId: null,
-  })
+  useCommandStore.getState().reset()
 }
 
 /**
@@ -49,5 +44,8 @@ export function setCommandStoreSessions(sessions: ManagedSessionInfo[]): void {
     managedSessions: sessions,
     sessionById,
     sessionMessages,
+    streamingMessageBySession: {},
+    latestTodosBySession: {},
+    activeManagedSessionId: null,
   })
 }

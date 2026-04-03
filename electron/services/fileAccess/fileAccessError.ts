@@ -25,6 +25,9 @@ export function asFileAccessFailure(error: unknown): FileAccessFailure {
   if (errnoCode === 'EACCES' || errnoCode === 'EPERM') {
     return fileAccessFailure('access_denied', 'Access denied')
   }
+  if (errnoCode === 'EEXIST' || errnoCode === 'ENOTEMPTY') {
+    return fileAccessFailure('already_exists', 'A file or folder with this name already exists')
+  }
   if (errnoCode === 'ELOOP') {
     return fileAccessFailure('access_denied', 'Access denied')
   }

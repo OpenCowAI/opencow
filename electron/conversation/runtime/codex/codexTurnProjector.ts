@@ -223,14 +223,17 @@ function mapFileChangeItem(item: FileChangeItem, stage: CodexThreadItemStage): S
 }
 
 function mapTodoListItem(item: TodoListItem): SDKContentBlock[] {
-  const firstOpenIdx = item.items.findIndex((todo) => !todo.completed)
   const todos: CodexTodoItem[] = item.items.map((todo, idx) => {
     if (todo.completed) {
       return { content: todo.text, status: 'completed' }
     }
+    // Codex todo_list only reports a boolean completed flag. It does NOT expose
+    // a canonical "active item" marker, so inferring one as in_progress creates
+    // misleading progress stats (e.g. ◉1 when there is no active task signal).
+    // Keep all open items as pending and let the UI reflect uncertainty honestly.
     return {
       content: todo.text,
-      status: idx === firstOpenIdx ? 'in_progress' : 'pending',
+      status: 'pending',
     }
   })
 

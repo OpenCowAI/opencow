@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { useCommandStore } from '../../../src/renderer/stores/commandStore'
+import { useCommandStore, selectLatestOpenTodos } from '../../../src/renderer/stores/commandStore'
 import { makeManagedSession } from '../../helpers'
 import type { ManagedSessionMessage } from '../../../src/shared/types'
 
@@ -121,5 +121,78 @@ describe('commandStore.batchAppendSessionMessages', () => {
     })
     expect((bAfterMerge as Extract<ManagedSessionMessage, { role: 'assistant' }> | undefined)?.activeToolUseId).not.toBe('tool-b')
     expect(storeAfterMerge.streamingMessageBySession[sessionId]).toBeNull()
+  })
+
+  it('derives latest open todos from current turn and overlay', () => {
+    const sessionId = 'session-todo'
+    const snapshot = makeManagedSession({
+      id: sessionId,
+      state: 'streaming',
+      messages: [],
+    })
+
+    useCommandStore.setState({
+      managedSessions: [snapshot],
+      sessionById: { [sessionId]: snapshot },
+      sessionMessages: {
+        [sessionId]: [
+          {
+            id: 'u1',
+            role: 'user',
+            timestamp: 1,
+            content: [{ type: 'text', text: 'turn1' }],
+          },
+          {
+            id: 'a1',
+            role: 'assistant',
+            timestamp: 2,
+            content: [
+              {
+                type: 'tool_use',
+                id: 'todo-1',
+                name: 'TodoWrite',
+                input: {
+                  todos: [
+                    { content: 'old', status: 'pending' },
+                  ],
+                },
+              },
+            ],
+            isStreaming: false,
+          },
+          {
+            id: 'u2',
+            role: 'user',
+            timestamp: 3,
+            content: [{ type: 'text', text: 'turn2' }],
+          },
+        ],
+      },
+      streamingMessageBySession: {
+        [sessionId]: {
+          id: 'a2',
+          role: 'assistant',
+          timestamp: 4,
+          isStreaming: true,
+          content: [
+            {
+              type: 'tool_use',
+              id: 'todo-2',
+              name: 'TodoWrite',
+              input: {
+                todos: [
+                  { content: 'new', status: 'pending' },
+                ],
+              },
+            },
+          ],
+        },
+      },
+      latestTodosBySession: {},
+      activeManagedSessionId: sessionId,
+    })
+
+    const derived = selectLatestOpenTodos(useCommandStore.getState(), sessionId)
+    expect(derived).toEqual([{ content: 'new', status: 'pending' }])
   })
 })

@@ -7,6 +7,7 @@ import { useAppStore, selectProjectId } from '@/stores/appStore'
 import { useFileSync } from '@/hooks/useFileSync'
 import { useGitStatus } from '@/hooks/useGitStatus'
 import { useFileStore } from '@/stores/fileStore'
+import { useProjectFileOperations } from '@/hooks/useProjectFileOperations'
 import { FileTree } from './FileTree'
 import { EditorTabs } from './EditorTabs'
 import { EditorPane } from './EditorPane'
@@ -20,6 +21,7 @@ import { getAppAPI } from '@/windowAPI'
 import { FileSearchOverlay } from './FileSearchOverlay'
 import { createFileSearchNavigationExecutor } from '@/lib/fileSearchNavigation'
 import { normalizeProjectPreferences } from '@shared/projectPreferences'
+import { isInsideEditor } from '@/lib/domUtils'
 
 const EMPTY_OPEN_FILES: ReadonlyArray<{ path: string; name: string }> = []
 
@@ -179,11 +181,19 @@ function FilesViewCore({
   const setBrowserSubPath = useFileStore((s) => s.setBrowserSubPath)
   const enqueueEditorJumpIntent = useFileStore((s) => s.enqueueEditorJumpIntent)
   const enqueueTreeRevealIntent = useFileStore((s) => s.enqueueTreeRevealIntent)
+  const peekLatestDeleteUndo = useFileStore((s) => s.peekLatestDeleteUndo)
+  const {
+    undoLatestDelete,
+  } = useProjectFileOperations({
+    projectId,
+    projectPath: project.path,
+  })
 
   const mode = filesDisplayModeByProject[projectId]
   const preferredMode = projectPreferencesSource?.defaultFilesDisplayMode ?? null
   const searchFabBottomOffsetPx = layout?.searchFabBottomOffsetPx ?? 12
   const modeToggleWrapRef = useRef<HTMLDivElement>(null)
+  const filesViewRootRef = useRef<HTMLDivElement>(null)
   const [modeToggleSafeInset, setModeToggleSafeInset] = useState(180)
   const [searchOpen, setSearchOpen] = useState(false)
   const [browserExternalOpenPath, setBrowserExternalOpenPath] = useState<string | null>(null)
@@ -284,11 +294,33 @@ function FilesViewCore({
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [])
 
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.key.toLowerCase() !== 'z') return
+      if (!(event.metaKey || event.ctrlKey) || event.shiftKey || event.altKey) return
+      if (event.defaultPrevented) return
+      if (isInsideEditor(event.target)) return
+
+      const root = filesViewRootRef.current
+      if (!root) return
+      const target = event.target
+      if (target instanceof Node && !root.contains(target)) return
+
+      const pendingUndo = peekLatestDeleteUndo(projectId)
+      if (!pendingUndo) return
+
+      event.preventDefault()
+      void undoLatestDelete()
+    }
+    document.addEventListener('keydown', onKeyDown)
+    return () => document.removeEventListener('keydown', onKeyDown)
+  }, [peekLatestDeleteUndo, projectId, undoLatestDelete])
+
   // Default to 'ide' while detection is pending
   const effectiveMode = mode ?? 'ide'
 
   return (
-    <div className="relative h-full flex flex-col min-h-0">
+    <div ref={filesViewRootRef} className="relative h-full flex flex-col min-h-0">
       {/* Top-right header-height overlay for mode switch */}
       <div
         ref={modeToggleWrapRef}

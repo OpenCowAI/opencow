@@ -14,7 +14,6 @@
  *     • ChatHeroInput
  */
 
-import { useMemo } from 'react'
 import { useSessionMessages } from '@/hooks/useSessionMessages'
 import { SessionMessageList } from '@/components/DetailPanel/SessionPanel/SessionMessageList'
 import { StreamingFooter } from '@/components/DetailPanel/SessionPanel/StreamingFooter'
@@ -23,10 +22,10 @@ import { TodoStatusPill } from '@/components/DetailPanel/SessionPanel/TodoWidget
 import { ContentViewerProvider } from '@/components/DetailPanel/SessionPanel/ContentViewerContext'
 import { ConnectedContentViewer } from '@/components/DetailPanel/SessionPanel/ConnectedContentViewer'
 import { ChatHeroInput } from './ChatHeroInput'
-import { getLatestTodos } from '@/lib/sessionHelpers'
 import { cn } from '@/lib/utils'
 import type { SessionSnapshot, UserMessageContent } from '@shared/types'
 import type { UseMessageQueueReturn } from '@/hooks/useMessageQueue'
+import { useCommandStore, selectLatestOpenTodos } from '@/stores/commandStore'
 
 // ─── Props ───────────────────────────────────────────────────────────────────
 
@@ -85,9 +84,9 @@ export function SessionChatLayout({
   hideContentViewer,
   registerAsChatTabInput = false,
 }: SessionChatLayoutProps): React.JSX.Element {
-  // Messages: lazy-loads persisted data on mount + subscribes to streaming updates.
-  const messages = useSessionMessages(session.id)
-  const latestTodos = useMemo(() => getLatestTodos(messages), [messages])
+  // Keep message lazy-load side effect for archived/resumed sessions.
+  useSessionMessages(session.id)
+  const latestTodos = useCommandStore((s) => selectLatestOpenTodos(s, session.id))
 
   const controlsWrapperCn = controlsMaxW
     ? cn('w-full mx-auto shrink-0', controlsMaxW, controlsClassName)

@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
+import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { X } from 'lucide-react'
 import { useFileStore } from '@/stores/fileStore'
@@ -7,6 +8,7 @@ import { useGitStore } from '@/stores/gitStore'
 import { cn } from '@/lib/utils'
 import { getFileDecoration } from '@/lib/gitDecorations'
 import { selectGitSnapshot } from '@/hooks/useGitStatus'
+import { TabContextMenu, type TabContextMenuState } from './TabContextMenu'
 
 interface EditorTabsProps {
   projectId: string
@@ -32,7 +34,22 @@ export function EditorTabs({ projectId, projectPath, rightSafeInset = 0 }: Edito
   const activeFilePath = useFileStore((s) => s.activeFilePathByProject[projectId] ?? null)
   const setActiveFile = useFileStore((s) => s.setActiveFile)
   const closeFile = useFileStore((s) => s.closeFile)
+  const closeOtherFiles = useFileStore((s) => s.closeOtherFiles)
+  const closeAllFiles = useFileStore((s) => s.closeAllFiles)
+  const closeFilesToRight = useFileStore((s) => s.closeFilesToRight)
   const gitSnapshot = useGitStore((s) => selectGitSnapshot(s, projectPath))
+  const [contextMenu, setContextMenu] = useState<TabContextMenuState | null>(null)
+
+  const contextMeta = useMemo(() => {
+    if (!contextMenu) return null
+    const currentIdx = openFiles.findIndex((file) => file.path === contextMenu.path)
+    if (currentIdx < 0) return null
+    return {
+      canCloseOthers: openFiles.length > 1,
+      canCloseToRight: currentIdx < openFiles.length - 1,
+      canCloseAll: openFiles.length > 0,
+    }
+  }, [contextMenu, openFiles])
 
   if (openFiles.length === 0) return <div className="h-9 border-b border-[hsl(var(--border))]" />
 
@@ -61,6 +78,14 @@ export function EditorTabs({ projectId, projectPath, rightSafeInset = 0 }: Edito
                   : 'text-[hsl(var(--muted-foreground))] hover:bg-[hsl(var(--foreground)/0.04)]'
               )}
               onClick={() => setActiveFile(projectId, file.path)}
+              onContextMenu={(e) => {
+                e.preventDefault()
+                setContextMenu({
+                  x: e.clientX,
+                  y: e.clientY,
+                  path: file.path,
+                })
+              }}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' || e.key === ' ') setActiveFile(projectId, file.path)
               }}
@@ -94,6 +119,19 @@ export function EditorTabs({ projectId, projectPath, rightSafeInset = 0 }: Edito
           aria-hidden="true"
           className="absolute top-0 right-0 h-full pointer-events-none bg-gradient-to-l from-[hsl(var(--muted)/0.2)] to-transparent"
           style={{ width: `${Math.max(16, rightSafeInset)}px` }}
+        />
+      )}
+      {contextMenu && contextMeta && (
+        <TabContextMenu
+          state={contextMenu}
+          canCloseOthers={contextMeta.canCloseOthers}
+          canCloseToRight={contextMeta.canCloseToRight}
+          canCloseAll={contextMeta.canCloseAll}
+          onClose={() => setContextMenu(null)}
+          onCloseCurrent={(path) => closeFile(projectId, path)}
+          onCloseOthers={(path) => closeOtherFiles(projectId, path)}
+          onCloseToRight={(path) => closeFilesToRight(projectId, path)}
+          onCloseAll={() => closeAllFiles(projectId)}
         />
       )}
     </div>

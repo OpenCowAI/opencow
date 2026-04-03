@@ -184,14 +184,17 @@ export function applyConversationDomainEffects(params: {
         const blocks = toManagedContentBlocks(effect.payload.blocks)
         if (blocks.length === 0) break
 
+        let streamingMessageId: string | null = null
         if (!ctx.stream.isStreaming) {
           // First partial: create the message in ManagedSession, then
           // grab a direct reference for the buffer — O(1) from here on.
           const messageId = ctx.session.addMessage('assistant', blocks, true)
+          streamingMessageId = messageId
           ctx.stream.beginStreaming(messageId)
           const ref = ctx.session.getLastMessageRef()
           if (ref) ctx.buffer.begin(ref)
         } else {
+          streamingMessageId = ctx.stream.streamingMessageId
           // Subsequent partials: O(1) direct mutation via buffer.
           // Replaces the O(M) session.updateMessageBlocks() find().
           ctx.buffer.updateBlocks(blocks)
@@ -214,6 +217,14 @@ export function applyConversationDomainEffects(params: {
         const activity = deriveActivity(blocks)
         if (activity !== null) {
           ctx.session.setActivity(activity)
+        }
+
+        // Codex emits MCP tool_call items as partial updates while the tool is
+        // running. Register Evose relay at partial time so SSE chunks can be
+        // consumed immediately, instead of waiting for assistant.final (which
+        // may arrive only after tool completion).
+        if (streamingMessageId) {
+          registerEvoseRelayForProjection(blocks, streamingMessageId, ctx)
         }
 
         // IPC dispatch: throttled — assistant streaming tokens arrive at high frequency,

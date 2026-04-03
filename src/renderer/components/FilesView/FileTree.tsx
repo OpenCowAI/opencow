@@ -5,6 +5,10 @@ import { useTranslation } from 'react-i18next'
 import { useFileStore } from '@/stores/fileStore'
 import { useGitStore } from '@/stores/gitStore'
 import { useFocusableListNav } from '@/hooks/useFocusableListNav'
+import {
+  resolveCreateParentPath,
+  useProjectFileOperations,
+} from '@/hooks/useProjectFileOperations'
 import { FileTreeNode } from './FileTreeNode'
 import { getFileDecoration, getDirDecoration } from '@/lib/gitDecorations'
 import { selectGitSnapshot } from '@/hooks/useGitStatus'
@@ -12,6 +16,12 @@ import { normalizeFileContentReadResult } from '@/lib/fileContentReadResult'
 import type { FileEntry } from '@shared/types'
 import { createLogger } from '@/lib/logger'
 import { getAppAPI } from '@/windowAPI'
+import { ConfirmDialog } from '@/components/ui/confirm-dialog'
+import { Dialog } from '@/components/ui/Dialog'
+import {
+  FilesItemContextMenu,
+  type FilesItemContextMenuState,
+} from './FilesItemContextMenu'
 
 const log = createLogger('FileTree')
 
@@ -75,6 +85,7 @@ function parentPath(path: string): string | null {
 export function FileTree({ projectPath, projectName, projectId, onOpenSearch }: FileTreeProps): React.JSX.Element {
   const { t } = useTranslation('files')
   const expandedDirs = useFileStore((s) => s.expandedTreeDirsByProject[projectId] ?? EMPTY_EXPANDED_DIRS)
+  const fileStructureVersion = useFileStore((s) => s.fileStructureVersionByProject[projectId] ?? 0)
   const toggleDir = useFileStore((s) => s.toggleTreeDir)
   const expandDirs = useFileStore((s) => s.expandTreeDirs)
   const activeFilePath = useFileStore((s) => s.activeFilePathByProject[projectId] ?? null)
@@ -82,22 +93,35 @@ export function FileTree({ projectPath, projectName, projectId, onOpenSearch }: 
   const peekTreeRevealIntent = useFileStore((s) => s.peekTreeRevealIntent)
   const ackTreeRevealIntent = useFileStore((s) => s.ackTreeRevealIntent)
   const gitSnapshot = useGitStore((s) => selectGitSnapshot(s, projectPath))
+  const {
+    renameProjectPath,
+    createProjectPath,
+    deleteProjectPath,
+  } = useProjectFileOperations({
+    projectId,
+    projectPath,
+  })
 
   // Cache: directory path → entries
   const [dirCache, setDirCache] = useState<Record<string, FileEntry[]>>({})
   const [loadingDirs, setLoadingDirs] = useState<Set<string>>(new Set())
+  const [contextMenu, setContextMenu] = useState<FilesItemContextMenuState | null>(null)
+  const [renameTargetPath, setRenameTargetPath] = useState<string | null>(null)
+  const [renameDraft, setRenameDraft] = useState('')
+  const [deleteTarget, setDeleteTarget] = useState<{ path: string; name: string; isDirectory: boolean } | null>(null)
+  const [createDialog, setCreateDialog] = useState<{ kind: 'file' | 'folder'; parentPath: string } | null>(null)
+  const [createName, setCreateName] = useState('')
 
   const treeContainerRef = useRef<HTMLDivElement>(null)
+  const createInputRef = useRef<HTMLInputElement>(null)
 
   // ── Directory loading ──────────────────────────────────────────
 
-  const loadDir = useCallback(async (subPath?: string) => {
-    const key = subPath ?? ''
-    if (dirCache[key] || loadingDirs.has(key)) return
-
+  const refreshDirectory = useCallback(async (subPath: string) => {
+    const key = subPath || ''
     setLoadingDirs((prev) => new Set(prev).add(key))
     try {
-      const entries = await getAppAPI()['list-project-files'](projectPath, subPath)
+      const entries = await getAppAPI()['list-project-files'](projectPath, key || undefined)
       setDirCache((prev) => ({ ...prev, [key]: entries }))
     } finally {
       setLoadingDirs((prev) => {
@@ -106,23 +130,25 @@ export function FileTree({ projectPath, projectName, projectId, onOpenSearch }: 
         return next
       })
     }
-  }, [projectPath, dirCache, loadingDirs])
+  }, [projectPath])
+
+  const refreshDirectories = useCallback(async (subPaths: string[]) => {
+    const uniqueSubPaths = Array.from(new Set(subPaths.map((subPath) => subPath || '')))
+    await Promise.all(uniqueSubPaths.map((subPath) => refreshDirectory(subPath)))
+  }, [refreshDirectory])
+
+  const loadDir = useCallback(async (subPath?: string) => {
+    const key = subPath ?? ''
+    if (dirCache[key] || loadingDirs.has(key)) return
+    await refreshDirectory(key)
+  }, [dirCache, loadingDirs, refreshDirectory])
 
   // Load root on mount or project change
   useEffect(() => {
     setDirCache({})
     setLoadingDirs(new Set())
-    const load = async (): Promise<void> => {
-      setLoadingDirs(new Set(['']))
-      try {
-        const entries = await getAppAPI()['list-project-files'](projectPath)
-        setDirCache({ '': entries })
-      } finally {
-        setLoadingDirs(new Set())
-      }
-    }
-    load()
-  }, [projectPath])
+    void refreshDirectory('')
+  }, [projectPath, refreshDirectory])
 
   // Load expanded directories that aren't cached yet
   useEffect(() => {
@@ -132,6 +158,15 @@ export function FileTree({ projectPath, projectName, projectId, onOpenSearch }: 
       }
     }
   }, [expandedDirs, dirCache, loadingDirs, loadDir])
+
+  // Refresh visible/cached directories when file structure changes (create/rename/delete/restore).
+  useEffect(() => {
+    const targets = ['']
+    for (const dirPath of expandedDirs) {
+      targets.push(dirPath)
+    }
+    void refreshDirectories(targets)
+  }, [expandedDirs, fileStructureVersion, refreshDirectories])
 
   // ── File actions ───────────────────────────────────────────────
 
@@ -307,6 +342,65 @@ export function FileTree({ projectPath, projectName, projectId, onOpenSearch }: 
     [setFocusedKey, projectId, toggleDir, handleFileClick]
   )
 
+  const startRename = useCallback((entry: FileEntry) => {
+    setRenameTargetPath(entry.path)
+    setRenameDraft(entry.name)
+  }, [])
+
+  const cancelRename = useCallback(() => {
+    setRenameTargetPath(null)
+    setRenameDraft('')
+  }, [])
+
+  const confirmRename = useCallback(async () => {
+    if (!renameTargetPath) return
+    const didRename = await renameProjectPath({
+      targetPath: renameTargetPath,
+      nextName: renameDraft,
+    })
+    if (!didRename) return
+    setRenameTargetPath(null)
+    setRenameDraft('')
+  }, [renameDraft, renameProjectPath, renameTargetPath])
+
+  const confirmDelete = useCallback(async () => {
+    if (!deleteTarget) return
+    const didDelete = await deleteProjectPath({
+      targetPath: deleteTarget.path,
+    })
+    if (!didDelete) return
+    setDeleteTarget(null)
+  }, [deleteProjectPath, deleteTarget])
+
+  const openCreateDialog = useCallback((kind: 'file' | 'folder', path: string, isDirectory: boolean) => {
+    const parentPath = resolveCreateParentPath({ path, isDirectory })
+    setCreateDialog({ kind, parentPath })
+    setCreateName('')
+  }, [])
+
+  const confirmCreate = useCallback(async () => {
+    if (!createDialog) return
+    const didCreate = await createProjectPath({
+      kind: createDialog.kind,
+      parentPath: createDialog.parentPath,
+      name: createName,
+    })
+    if (!didCreate) return
+    setCreateDialog(null)
+    setCreateName('')
+  }, [createDialog, createName, createProjectPath])
+
+  useEffect(() => {
+    if (!createDialog) return
+    const timer = window.setTimeout(() => {
+      const input = createInputRef.current
+      if (!input) return
+      input.focus()
+      input.select()
+    }, 0)
+    return () => window.clearTimeout(timer)
+  }, [createDialog])
+
   // ── Render ─────────────────────────────────────────────────────
 
   const renderEntries = (entries: FileEntry[], depth: number): React.JSX.Element[] => {
@@ -323,6 +417,22 @@ export function FileTree({ projectPath, projectName, projectId, onOpenSearch }: 
           isActive={activeFilePath === entry.path}
           tabIndex={getTabIndex(entry.path)}
           onClick={handleNodeClick}
+          onContextMenu={(event, node) => {
+            event.preventDefault()
+            setFocusedKey(node.path)
+            setContextMenu({
+              x: event.clientX,
+              y: event.clientY,
+              path: node.path,
+              name: node.name,
+              isDirectory: node.isDirectory,
+            })
+          }}
+          isRenaming={renameTargetPath === entry.path}
+          renameValue={renameDraft}
+          onRenameChange={(value) => setRenameDraft(value)}
+          onRenameConfirm={confirmRename}
+          onRenameCancel={cancelRename}
           decoration={decoration}
         >
           {entry.isDirectory && expandedDirs.has(entry.path) && dirCache[entry.path]
@@ -356,6 +466,19 @@ export function FileTree({ projectPath, projectName, projectId, onOpenSearch }: 
         role="tree"
         aria-label={t('tree.aria')}
         onKeyDown={handleKeyDown}
+        onContextMenu={(event) => {
+          const target = event.target as HTMLElement | null
+          if (target?.closest('[data-tree-path]')) return
+          event.preventDefault()
+          setContextMenu({
+            x: event.clientX,
+            y: event.clientY,
+            path: '',
+            name: projectName,
+            isDirectory: true,
+            scope: 'directory',
+          })
+        }}
       >
         {rootEntries.length === 0 ? (
           <div className="px-3 py-4 text-xs text-[hsl(var(--muted-foreground))]">
@@ -365,6 +488,106 @@ export function FileTree({ projectPath, projectName, projectId, onOpenSearch }: 
           renderEntries(rootEntries, 0)
         )}
       </div>
+      {contextMenu && (
+        <FilesItemContextMenu
+          state={contextMenu}
+          onClose={() => setContextMenu(null)}
+          onCreateFile={(path, isDirectory) => {
+            openCreateDialog('file', path, isDirectory)
+          }}
+          onCreateFolder={(path, isDirectory) => {
+            openCreateDialog('folder', path, isDirectory)
+          }}
+          onRename={(path) => {
+            const node = visibleEntries.find((entry) => entry.path === path)
+            if (!node) return
+            startRename(node)
+          }}
+          onDelete={(path, isDirectory, name) => {
+            setDeleteTarget({ path, isDirectory, name })
+          }}
+        />
+      )}
+      {deleteTarget && (
+        <ConfirmDialog
+          open={deleteTarget !== null}
+          title={
+            deleteTarget.isDirectory
+              ? t('actions.deleteFolderConfirmTitle', { name: deleteTarget.name })
+              : t('actions.deleteFileConfirmTitle', { name: deleteTarget.name })
+          }
+          message={
+            deleteTarget.isDirectory
+              ? t('actions.deleteFolderConfirmMessage')
+              : t('actions.deleteFileConfirmMessage')
+          }
+          confirmLabel={t('actions.deleteConfirm')}
+          cancelLabel={t('common:cancel')}
+          variant="destructive"
+          onConfirm={() => {
+            void confirmDelete()
+          }}
+          onCancel={() => setDeleteTarget(null)}
+        />
+      )}
+      {createDialog && (
+        <Dialog
+          open={createDialog !== null}
+          onClose={() => {
+            setCreateDialog(null)
+            setCreateName('')
+          }}
+          title={createDialog.kind === 'file' ? t('actions.newFile') : t('actions.newFolder')}
+          size="sm"
+        >
+          <div className="p-4 space-y-3">
+            <p className="text-xs text-[hsl(var(--muted-foreground))]">
+              {createDialog.parentPath
+                ? `${t('actions.createIn')}: ${createDialog.parentPath}`
+                : `${t('actions.createIn')}: /`}
+            </p>
+            <input
+              ref={createInputRef}
+              autoFocus
+              value={createName}
+              onChange={(event) => setCreateName(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') {
+                  event.preventDefault()
+                  void confirmCreate()
+                }
+                if (event.key === 'Escape') {
+                  event.preventDefault()
+                  setCreateDialog(null)
+                  setCreateName('')
+                }
+              }}
+              className="w-full rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--ring))]"
+              placeholder={createDialog.kind === 'file' ? t('actions.newFilePlaceholder') : t('actions.newFolderPlaceholder')}
+              aria-label={createDialog.kind === 'file' ? t('actions.newFile') : t('actions.newFolder')}
+            />
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setCreateDialog(null)
+                  setCreateName('')
+                }}
+                className="px-3 py-1.5 text-sm rounded-lg border border-[hsl(var(--border))] hover:bg-[hsl(var(--foreground)/0.04)] transition-colors"
+              >
+                {t('common:cancel')}
+              </button>
+              <button
+                type="button"
+                onClick={() => { void confirmCreate() }}
+                className="px-3 py-1.5 text-sm rounded-lg bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))] hover:opacity-90 transition-opacity"
+              >
+                {t('actions.createConfirm')}
+              </button>
+            </div>
+          </div>
+        </Dialog>
+      )}
     </div>
   )
 }

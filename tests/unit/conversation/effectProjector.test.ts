@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { applyConversationDomainEffects } from '../../../electron/conversation/projection/effectProjector'
 import type { ConversationDomainEffect } from '../../../electron/conversation/domain/effects'
 import type { SessionContext } from '../../../electron/command/sessionContext'
+import { MCP_SERVER_QUALIFIED_NAME } from '../../../src/shared/appIdentity'
 
 function makeTurnResultEffect(params?: {
   outcome?: 'success' | 'max_turns' | 'execution_error' | 'budget_exceeded' | 'structured_output_error'
@@ -23,6 +24,8 @@ function makeTurnResultEffect(params?: {
 function makeContext(params: { engineKind: 'claude' | 'codex' }) {
   const session = {
     origin: { source: 'issue' },
+    addMessage: vi.fn(() => 'assistant-new-1'),
+    getLastMessageRef: vi.fn(() => ({ id: 'assistant-new-1', role: 'assistant' })),
     recordTurnUsage: vi.fn(),
     getEngineKind: vi.fn(() => params.engineKind),
     applyContextSnapshot: vi.fn(() => true),
@@ -56,7 +59,7 @@ function makeContext(params: { engineKind: 'claude' | 'codex' }) {
     timers: { cancel: vi.fn(), set: vi.fn() },
     throttle: { scheduleSession: vi.fn(), scheduleMessage: vi.fn(), scheduleProgress: vi.fn(), flushNow: vi.fn() },
     buffer: { isActive: false, begin: vi.fn(), updateBlocks: vi.fn(), setActiveToolUseId: vi.fn(), appendToolProgress: vi.fn(), getSnapshot: vi.fn(() => null), finalize: vi.fn(() => null), clear: vi.fn() },
-    stream: { finalizeStreaming: vi.fn(() => null) },
+    stream: { finalizeStreaming: vi.fn(() => null), beginStreaming: vi.fn(), isStreaming: false, streamingMessageId: null },
     relay: { clear: vi.fn() },
     onResultReceived: vi.fn(),
     persistSession: vi.fn(() => Promise.resolve()),
@@ -217,5 +220,37 @@ describe('applyConversationDomainEffects', () => {
         type: 'command:session:error',
       }),
     )
+  })
+
+  it('registers evose relay during assistant.partial when tool_use appears', () => {
+    const relayRegister = vi.fn()
+    const sessionSetActiveToolUseId = vi.fn()
+    const ctx = makeContext({ engineKind: 'codex' })
+    ctx.relay = { ...ctx.relay, register: relayRegister } as never
+    ctx.session.setActiveToolUseId = sessionSetActiveToolUseId as never
+    ctx.stream.isStreaming = false as never
+
+    const effects: ConversationDomainEffect[] = [
+      {
+        type: 'apply_assistant_partial',
+        payload: {
+          blocks: [
+            {
+              type: 'tool_use',
+              id: 'tool-evose-1',
+              name: `${MCP_SERVER_QUALIFIED_NAME}__evose_run_agent`,
+              input: { app_id: '92226822732779520', input: 'test' },
+            },
+          ],
+        },
+      },
+    ]
+
+    applyConversationDomainEffects({ effects, ctx })
+
+    expect(relayRegister).toHaveBeenCalledTimes(1)
+    const [relayKey] = relayRegister.mock.calls[0] ?? []
+    expect(relayKey).toBe('evose_run_agent:92226822732779520')
+    expect(sessionSetActiveToolUseId).toHaveBeenCalledWith(expect.any(String), 'tool-evose-1')
   })
 })

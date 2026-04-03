@@ -819,7 +819,7 @@ describe('CodexNativeBridgeManager', () => {
         handleRequest: (req: IncomingMessage, res: ServerResponse) => Promise<void>
       }).handleRequest(req, res)
 
-      await vi.advanceTimersByTimeAsync(120_000)
+      await vi.advanceTimersByTimeAsync(600_000)
       await callPromise
 
       expect(abortedBySignal).toBe(true)

@@ -30,12 +30,17 @@
 import { create } from 'zustand'
 import { useStoreWithEqualityFn } from 'zustand/traditional'
 import { shallow } from 'zustand/shallow'
+import {
+  getLatestTodoSnapshotInCurrentTurnWithOverlay,
+  hasOpenTodos,
+} from '@/lib/todoSnapshot'
 import type {
   SessionSnapshot,
   ManagedSessionMessage,
   ManagedSessionState,
   StartSessionInput,
   UserMessageContent,
+  TodoWriteItem,
 } from '@shared/types'
 import { getAppAPI } from '@/windowAPI'
 import { perfEnabled, perfLog, perfWarn } from '@/lib/perfLogger'
@@ -116,6 +121,8 @@ export interface CommandStore {
    * `selectSessionMessages` to render the live streaming content in Virtuoso.
    */
   streamingMessageBySession: Record<string, ManagedSessionMessage | null>
+  /** Latest open todos for the current turn, derived from messages+overlay. */
+  latestTodosBySession: Record<string, TodoWriteItem[] | null>
   activeManagedSessionId: string | null
 
   setManagedSessions: (sessions: SessionSnapshot[]) => void
@@ -215,6 +222,37 @@ function indexSessions(sessions: SessionSnapshot[]): Record<string, SessionSnaps
   return map
 }
 
+function todoItemsEqual(
+  a: readonly TodoWriteItem[] | null,
+  b: readonly TodoWriteItem[] | null,
+): boolean {
+  if (a === b) return true
+  if (!a || !b) return false
+  if (a.length !== b.length) return false
+  for (let i = 0; i < a.length; i++) {
+    const left = a[i]
+    const right = b[i]
+    if (
+      left.content !== right.content ||
+      left.status !== right.status ||
+      left.activeForm !== right.activeForm
+    ) {
+      return false
+    }
+  }
+  return true
+}
+
+function deriveLatestOpenTodos(
+  messages: ManagedSessionMessage[],
+  overlay: ManagedSessionMessage | null,
+): TodoWriteItem[] | null {
+  const snapshot = getLatestTodoSnapshotInCurrentTurnWithOverlay(messages, overlay)
+  if (!snapshot) return null
+  if (!hasOpenTodos(snapshot.items)) return null
+  return snapshot.items
+}
+
 
 
 // ─── Default State ────────────────────────────────────────────────────
@@ -224,6 +262,7 @@ const initialState = {
   sessionById: {} as Record<string, SessionSnapshot>,
   sessionMessages: {} as Record<string, ManagedSessionMessage[]>,
   streamingMessageBySession: {} as Record<string, ManagedSessionMessage | null>,
+  latestTodosBySession: {} as Record<string, TodoWriteItem[] | null>,
   activeManagedSessionId: null as string | null,
 }
 
@@ -371,7 +410,20 @@ export const useCommandStore = create<CommandStore>((set, get) => ({
         // Append new message
         nextList = [...existing, message]
       }
-      return { sessionMessages: { ...s.sessionMessages, [sessionId]: nextList } }
+      const overlay = s.streamingMessageBySession[sessionId] ?? null
+      const derived = deriveLatestOpenTodos(nextList, overlay)
+      const prevTodos = s.latestTodosBySession[sessionId] ?? null
+      return {
+        sessionMessages: { ...s.sessionMessages, [sessionId]: nextList },
+        ...(todoItemsEqual(prevTodos, derived)
+          ? {}
+          : {
+              latestTodosBySession: {
+                ...s.latestTodosBySession,
+                [sessionId]: derived,
+              },
+            }),
+      }
     }),
 
   batchAppendSessionMessages: (entries) =>
@@ -503,11 +555,25 @@ export const useCommandStore = create<CommandStore>((set, get) => ({
         }
       }
 
+      // Derive latest open todos only for touched sessions.
+      let nextTodos: Record<string, TodoWriteItem[] | null> | null = null
+      for (const [sid] of entries) {
+        const msgs = (nextMsgs ?? s.sessionMessages)[sid] ?? EMPTY_SESSION_MESSAGES
+        const overlay = (nextStreaming ?? s.streamingMessageBySession)[sid] ?? null
+        const derived = deriveLatestOpenTodos(msgs, overlay)
+        const prev = s.latestTodosBySession[sid] ?? null
+        if (!todoItemsEqual(prev, derived)) {
+          if (!nextTodos) nextTodos = { ...s.latestTodosBySession }
+          nextTodos[sid] = derived
+        }
+      }
+
       // Only include fields that actually changed — Zustand merges
       // shallowly, so omitting a field preserves its current reference.
-      const update: Partial<Pick<CommandStore, 'sessionMessages' | 'streamingMessageBySession'>> = {}
+      const update: Partial<Pick<CommandStore, 'sessionMessages' | 'streamingMessageBySession' | 'latestTodosBySession'>> = {}
       if (nextMsgs) update.sessionMessages = nextMsgs
       if (nextStreaming) update.streamingMessageBySession = nextStreaming
+      if (nextTodos) update.latestTodosBySession = nextTodos
       if (_t0) {
         const path = nextMsgs ? 'slow' : nextStreaming ? 'fast' : 'no-op'
         const dt = performance.now() - _t0
@@ -539,21 +605,34 @@ export const useCommandStore = create<CommandStore>((set, get) => ({
         // Overlay message not found in list — append it.
         // This can happen if the overlay was written before the message
         // was ever added to sessionMessages (edge case).
+        const mergedList = [...currentList, overlay]
+        const derived = deriveLatestOpenTodos(mergedList, null)
+        const prevTodos = s.latestTodosBySession[sessionId] ?? null
         return {
           sessionMessages: {
             ...s.sessionMessages,
-            [sessionId]: [...currentList, overlay],
+            [sessionId]: mergedList,
           },
           streamingMessageBySession: {
             ...s.streamingMessageBySession,
             [sessionId]: null,
           },
+          ...(todoItemsEqual(prevTodos, derived)
+            ? {}
+            : {
+                latestTodosBySession: {
+                  ...s.latestTodosBySession,
+                  [sessionId]: derived,
+                },
+              }),
         }
       }
 
       // Replace the stale entry with the overlay version.
       const newList = [...currentList]
       newList[pos] = overlay
+      const derived = deriveLatestOpenTodos(newList, null)
+      const prevTodos = s.latestTodosBySession[sessionId] ?? null
       return {
         sessionMessages: {
           ...s.sessionMessages,
@@ -563,6 +642,14 @@ export const useCommandStore = create<CommandStore>((set, get) => ({
           ...s.streamingMessageBySession,
           [sessionId]: null,
         },
+        ...(todoItemsEqual(prevTodos, derived)
+          ? {}
+          : {
+              latestTodosBySession: {
+                ...s.latestTodosBySession,
+                [sessionId]: derived,
+              },
+            }),
       }
     }),
 
@@ -575,11 +662,13 @@ export const useCommandStore = create<CommandStore>((set, get) => ({
       const { [sessionId]: _removedSession, ...remainingById } = s.sessionById
       const { [sessionId]: _removedMessages, ...remainingMessages } = s.sessionMessages
       const { [sessionId]: _removedStreaming, ...remainingStreaming } = s.streamingMessageBySession
+      const { [sessionId]: _removedTodos, ...remainingTodos } = s.latestTodosBySession
       return {
         managedSessions: s.managedSessions.filter((ms) => ms.id !== sessionId),
         sessionById: remainingById,
         sessionMessages: remainingMessages,
         streamingMessageBySession: remainingStreaming,
+        latestTodosBySession: remainingTodos,
         activeManagedSessionId:
           s.activeManagedSessionId === sessionId ? null : s.activeManagedSessionId,
       }
@@ -615,11 +704,23 @@ export const useCommandStore = create<CommandStore>((set, get) => ({
 
         const existing = s.sessionMessages[sessionId] ?? []
         const tail = existing.filter((m) => !fetchedIds.has(m.id))
+        const merged = tail.length > 0 ? [...fetched, ...tail] : fetched
+        const overlay = s.streamingMessageBySession[sessionId] ?? null
+        const derived = deriveLatestOpenTodos(merged, overlay)
+        const prevTodos = s.latestTodosBySession[sessionId] ?? null
         return {
           sessionMessages: {
             ...s.sessionMessages,
-            [sessionId]: tail.length > 0 ? [...fetched, ...tail] : fetched,
+            [sessionId]: merged,
           },
+          ...(todoItemsEqual(prevTodos, derived)
+            ? {}
+            : {
+                latestTodosBySession: {
+                  ...s.latestTodosBySession,
+                  [sessionId]: derived,
+                },
+              }),
         }
       })
       _historyFetched.add(sessionId)
@@ -931,4 +1032,21 @@ export function selectSessionMessages(store: CommandStore, sessionId: string | n
 export function selectStreamingMessage(store: CommandStore, sessionId: string | null): ManagedSessionMessage | null {
   if (!sessionId) return null
   return store.streamingMessageBySession[sessionId] ?? null
+}
+
+/**
+ * Selector for latest open todos derived from current turn.
+ *
+ * This is projection-level state maintained by commandStore mutations, so
+ * UI components no longer scan message arrays on every render.
+ */
+export function selectLatestOpenTodos(store: CommandStore, sessionId: string | null): TodoWriteItem[] | null {
+  if (!sessionId) return null
+  if (sessionId in store.latestTodosBySession) {
+    return store.latestTodosBySession[sessionId] ?? null
+  }
+  // Fallback for pre-derivation states (e.g. tests/manual state injection).
+  const messages = store.sessionMessages[sessionId] ?? EMPTY_SESSION_MESSAGES
+  const overlay = store.streamingMessageBySession[sessionId] ?? null
+  return deriveLatestOpenTodos(messages, overlay)
 }

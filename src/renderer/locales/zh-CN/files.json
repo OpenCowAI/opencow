@@ -11,6 +11,11 @@
     "markdownContents": "目录",
     "unableToPreviewImage": "无法预览图片",
     "closeFile": "关闭 {{name}}",
+    "close": "关闭",
+    "closeOthers": "关闭其他",
+    "closeToRight": "关闭右侧标签",
+    "closeAll": "关闭全部",
+    "tabMenuAria": "标签操作",
     "loadingEditor": "加载编辑器中…",
     "changedCount_one": "{{count}} 处变更",
     "changedCount_other": "{{count}} 处变更"
@@ -74,5 +79,35 @@
       "revealPrefix": "Alt+Enter",
       "close": "Esc 关闭"
     }
+  },
+  "actions": {
+    "itemMenuAria": "文件操作",
+    "newFile": "新建文件",
+    "newFolder": "新建文件夹",
+    "newFilePlaceholder": "输入文件名",
+    "newFolderPlaceholder": "输入文件夹名",
+    "createIn": "创建到",
+    "createConfirm": "创建",
+    "createInvalidName": "请输入有效名称。",
+    "createFailed": "创建失败。",
+    "createFileSuccess": "文件已创建。",
+    "createFolderSuccess": "文件夹已创建。",
+    "renameFile": "重命名文件",
+    "renameFolder": "重命名文件夹",
+    "deleteFile": "删除文件",
+    "deleteFolder": "删除文件夹",
+    "renameInvalidName": "请输入有效名称。",
+    "renameFailed": "重命名失败。",
+    "renameSuccess": "已重命名。",
+    "deleteFailed": "删除失败。",
+    "deleteSuccess": "已删除。",
+    "undoDelete": "撤销",
+    "undoDeleteFailed": "撤销删除失败。",
+    "undoDeleteSuccess": "已恢复。",
+    "deleteConfirm": "删除",
+    "deleteFileConfirmTitle": "删除「{{name}}」？",
+    "deleteFolderConfirmTitle": "删除文件夹「{{name}}」？",
+    "deleteFileConfirmMessage": "此操作不可撤销。",
+    "deleteFolderConfirmMessage": "其中的所有文件与文件夹都会被删除，此操作不可撤销。"
   }
 }

@@ -6,6 +6,10 @@ import type { TFunction } from 'i18next'
 import { ChevronRight, Home, X, FileText, Globe, ImageIcon, Search } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useFocusableListNav } from '@/hooks/useFocusableListNav'
+import {
+  resolveCreateParentPath,
+  useProjectFileOperations,
+} from '@/hooks/useProjectFileOperations'
 import { useDialogState } from '@/hooks/useModalAnimation'
 import { normalizeFileContentReadResult } from '@/lib/fileContentReadResult'
 import { FileIcon } from './FileIcon'
@@ -20,6 +24,11 @@ import { getAppAPI } from '@/windowAPI'
 import { writeContextFileDrag } from '@/lib/contextFileDnd'
 import { setContextFileDragPreview } from '@/lib/contextFileDragPreview'
 import { useFileStore } from '@/stores/fileStore'
+import { ConfirmDialog } from '@/components/ui/confirm-dialog'
+import {
+  FilesItemContextMenu,
+  type FilesItemContextMenuState,
+} from './FilesItemContextMenu'
 
 interface FileBrowserProps {
   projectPath: string
@@ -158,13 +167,30 @@ export function FileBrowser({
   const { entries, loading } = state
   const currentSubPath =
     useFileStore((s) => s.browserSubPathByProject[projectId] ?? '')
+  const fileStructureVersion = useFileStore((s) => s.fileStructureVersionByProject[projectId] ?? 0)
   const setBrowserSubPath = useFileStore((s) => s.setBrowserSubPath)
   const previewDialog = useDialogState<FilePreview>()
+  const {
+    renameProjectPath,
+    createProjectPath,
+    deleteProjectPath,
+  } = useProjectFileOperations({
+    projectId,
+    projectPath,
+  })
   const [previewMode, setPreviewMode] = useState<PreviewMode>('preview')
   const [lightboxImage, setLightboxImage] = useState<{ src: string; alt: string } | null>(null)
   const [imageThumbs, setImageThumbs] = useState<Record<string, string>>({})
+  const [contextMenu, setContextMenu] = useState<FilesItemContextMenuState | null>(null)
+  const [renameTargetPath, setRenameTargetPath] = useState<string | null>(null)
+  const [renameDraft, setRenameDraft] = useState('')
+  const [deleteTarget, setDeleteTarget] = useState<{ path: string; name: string; isDirectory: boolean } | null>(null)
+  const [createDialog, setCreateDialog] = useState<{ kind: 'file' | 'folder'; parentPath: string } | null>(null)
+  const [createName, setCreateName] = useState('')
 
   const listContainerRef = useRef<HTMLDivElement>(null)
+  const skipSubmitOnBlurRef = useRef(false)
+  const createInputRef = useRef<HTMLInputElement>(null)
 
   // ── Directory loading ──────────────────────────────────────────
 
@@ -190,8 +216,8 @@ export function FileBrowser({
   )
 
   useEffect(() => {
-    loadDirectory(currentSubPath)
-  }, [currentSubPath, loadDirectory])
+    void loadDirectory(currentSubPath)
+  }, [currentSubPath, fileStructureVersion, loadDirectory])
 
   useEffect(() => {
     setPreviewMode('preview')
@@ -336,6 +362,83 @@ export function FileBrowser({
     [previewDialog, projectPath, projectId, setBrowserSubPath, t]
   )
 
+  const startRename = useCallback((entry: FileEntry) => {
+    setRenameTargetPath(entry.path)
+    setRenameDraft(entry.name)
+  }, [])
+
+  const cancelRename = useCallback(() => {
+    setRenameTargetPath(null)
+    setRenameDraft('')
+  }, [])
+
+  const confirmRename = useCallback(async () => {
+    if (!renameTargetPath) return
+    const targetPath = renameTargetPath
+    const didRename = await renameProjectPath({
+      targetPath,
+      nextName: renameDraft,
+      onRenamed: ({ oldPath }) => {
+        if (previewDialog.data?.entryPath === oldPath) {
+          previewDialog.close()
+        }
+      },
+    })
+    if (!didRename) return
+    if (previewDialog.data?.entryPath === targetPath) {
+      previewDialog.close()
+    }
+    setRenameTargetPath(null)
+    setRenameDraft('')
+  }, [previewDialog, renameDraft, renameProjectPath, renameTargetPath])
+
+  const confirmDelete = useCallback(async () => {
+    if (!deleteTarget) return
+    const targetPath = deleteTarget.path
+    const didDelete = await deleteProjectPath({
+      targetPath,
+      onDeleted: ({ path }) => {
+        if (previewDialog.data?.entryPath && (
+          previewDialog.data.entryPath === path ||
+          previewDialog.data.entryPath.startsWith(`${path}/`)
+        )) {
+          previewDialog.close()
+        }
+      },
+    })
+    if (!didDelete) return
+    setDeleteTarget(null)
+  }, [deleteProjectPath, deleteTarget, previewDialog])
+
+  const openCreateDialog = useCallback((kind: 'file' | 'folder', path: string, isDirectory: boolean) => {
+    const parentPath = resolveCreateParentPath({ path, isDirectory })
+    setCreateDialog({ kind, parentPath })
+    setCreateName('')
+  }, [])
+
+  const confirmCreate = useCallback(async () => {
+    if (!createDialog) return
+    const didCreate = await createProjectPath({
+      kind: createDialog.kind,
+      parentPath: createDialog.parentPath,
+      name: createName,
+    })
+    if (!didCreate) return
+    setCreateDialog(null)
+    setCreateName('')
+  }, [createDialog, createName, createProjectPath])
+
+  useEffect(() => {
+    if (!createDialog) return
+    const timer = window.setTimeout(() => {
+      const input = createInputRef.current
+      if (!input) return
+      input.focus()
+      input.select()
+    }, 0)
+    return () => window.clearTimeout(timer)
+  }, [createDialog])
+
   useEffect(() => {
     if (!externalOpenPath) return
     const entry = entries.find((e) => e.path === externalOpenPath)
@@ -448,6 +551,20 @@ export function FileBrowser({
           ref={listContainerRef}
           className="h-full overflow-y-auto"
           onKeyDown={handleKeyDown}
+          onContextMenu={(event) => {
+            const target = event.target as HTMLElement | null
+            if (target?.closest('[data-nav-key]')) return
+            event.preventDefault()
+            setFocusedKey(null)
+            setContextMenu({
+              x: event.clientX,
+              y: event.clientY,
+              path: currentSubPath,
+              name: currentSubPath ? currentSubPath.split('/').at(-1) ?? projectName : projectName,
+              isDirectory: true,
+              scope: 'directory',
+            })
+          }}
         >
           {loading ? (
             <div className="flex items-center justify-center h-full text-[hsl(var(--muted-foreground))] text-sm">
@@ -502,6 +619,17 @@ export function FileBrowser({
                       setFocusedKey(entry.path)
                       handleEntryClick(entry)
                     }}
+                    onContextMenu={(event) => {
+                      event.preventDefault()
+                      setFocusedKey(entry.path)
+                      setContextMenu({
+                        x: event.clientX,
+                        y: event.clientY,
+                        path: entry.path,
+                        name: entry.name,
+                        isDirectory: entry.isDirectory,
+                      })
+                    }}
                     role="gridcell"
                     aria-label={
                       entry.isDirectory
@@ -527,7 +655,38 @@ export function FileBrowser({
                       )}
                     </div>
                     <p className={cn('line-clamp-2 text-center text-[11px] leading-4 break-all', entry.isDirectory && 'font-medium')}>
-                      {entry.name}
+                      {renameTargetPath === entry.path ? (
+                        <input
+                          autoFocus
+                          value={renameDraft}
+                          onClick={(event) => event.stopPropagation()}
+                          onChange={(event) => setRenameDraft(event.target.value)}
+                          onKeyDown={(event) => {
+                            if (event.key === 'Enter') {
+                              event.preventDefault()
+                              void confirmRename()
+                              return
+                            }
+                            if (event.key === 'Escape') {
+                              event.preventDefault()
+                              skipSubmitOnBlurRef.current = true
+                              cancelRename()
+                            }
+                          }}
+                          onBlur={() => {
+                            if (skipSubmitOnBlurRef.current) {
+                              skipSubmitOnBlurRef.current = false
+                              return
+                            }
+                            if (renameTargetPath !== entry.path) return
+                            void confirmRename()
+                          }}
+                          className="w-full rounded border border-[hsl(var(--ring)/0.5)] bg-[hsl(var(--background))] px-1 py-0.5 text-[11px] text-left outline-none focus-visible:ring-1 focus-visible:ring-[hsl(var(--ring))]"
+                          aria-label={entry.isDirectory ? t('actions.renameFolder') : t('actions.renameFile')}
+                        />
+                      ) : (
+                        entry.name
+                      )}
                     </p>
                     <p className="mt-1 line-clamp-2 text-center text-[10px] leading-3.5 text-[hsl(var(--muted-foreground))]">
                       {meta}
@@ -674,6 +833,106 @@ export function FileBrowser({
           alt={lightboxImage.alt}
           onClose={() => setLightboxImage(null)}
         />
+      )}
+      {contextMenu && (
+        <FilesItemContextMenu
+          state={contextMenu}
+          onClose={() => setContextMenu(null)}
+          onCreateFile={(path, isDirectory) => {
+            openCreateDialog('file', path, isDirectory)
+          }}
+          onCreateFolder={(path, isDirectory) => {
+            openCreateDialog('folder', path, isDirectory)
+          }}
+          onRename={(path) => {
+            const entry = entries.find((item) => item.path === path)
+            if (!entry) return
+            startRename(entry)
+          }}
+          onDelete={(path, isDirectory, name) => {
+            setDeleteTarget({ path, isDirectory, name })
+          }}
+        />
+      )}
+      {deleteTarget && (
+        <ConfirmDialog
+          open={deleteTarget !== null}
+          title={
+            deleteTarget.isDirectory
+              ? t('actions.deleteFolderConfirmTitle', { name: deleteTarget.name })
+              : t('actions.deleteFileConfirmTitle', { name: deleteTarget.name })
+          }
+          message={
+            deleteTarget.isDirectory
+              ? t('actions.deleteFolderConfirmMessage')
+              : t('actions.deleteFileConfirmMessage')
+          }
+          confirmLabel={t('actions.deleteConfirm')}
+          cancelLabel={t('common:cancel')}
+          variant="destructive"
+          onConfirm={() => {
+            void confirmDelete()
+          }}
+          onCancel={() => setDeleteTarget(null)}
+        />
+      )}
+      {createDialog && (
+        <Dialog
+          open={createDialog !== null}
+          onClose={() => {
+            setCreateDialog(null)
+            setCreateName('')
+          }}
+          title={createDialog.kind === 'file' ? t('actions.newFile') : t('actions.newFolder')}
+          size="sm"
+        >
+          <div className="p-4 space-y-3">
+            <p className="text-xs text-[hsl(var(--muted-foreground))]">
+              {createDialog.parentPath
+                ? `${t('actions.createIn')}: ${createDialog.parentPath}`
+                : `${t('actions.createIn')}: /`}
+            </p>
+            <input
+              ref={createInputRef}
+              autoFocus
+              value={createName}
+              onChange={(event) => setCreateName(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') {
+                  event.preventDefault()
+                  void confirmCreate()
+                }
+                if (event.key === 'Escape') {
+                  event.preventDefault()
+                  setCreateDialog(null)
+                  setCreateName('')
+                }
+              }}
+              className="w-full rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--ring))]"
+              placeholder={createDialog.kind === 'file' ? t('actions.newFilePlaceholder') : t('actions.newFolderPlaceholder')}
+              aria-label={createDialog.kind === 'file' ? t('actions.newFile') : t('actions.newFolder')}
+            />
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setCreateDialog(null)
+                  setCreateName('')
+                }}
+                className="px-3 py-1.5 text-sm rounded-lg border border-[hsl(var(--border))] hover:bg-[hsl(var(--foreground)/0.04)] transition-colors"
+              >
+                {t('common:cancel')}
+              </button>
+              <button
+                type="button"
+                onClick={() => { void confirmCreate() }}
+                className="px-3 py-1.5 text-sm rounded-lg bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))] hover:opacity-90 transition-opacity"
+              >
+                {t('actions.createConfirm')}
+              </button>
+            </div>
+          </div>
+        </Dialog>
       )}
     </div>
   )

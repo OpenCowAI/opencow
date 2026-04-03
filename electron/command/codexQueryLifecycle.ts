@@ -25,6 +25,7 @@ import {
   type RuntimeTurnRef,
 } from '../conversation/runtime/events'
 import { CodexRuntimeEventAdapter } from '../conversation/runtime/codexRuntimeAdapter'
+import { NativeCapabilityTools } from '../../src/shared/nativeCapabilityToolNames'
 
 /** Safety timeout (ms) for stop() — mirrors QueryLifecycle semantics. */
 const STOP_SAFETY_TIMEOUT_MS = 30_000
@@ -212,9 +213,68 @@ function imageExtensionFromMediaType(mediaType: string): string {
   return IMAGE_FILE_EXTENSION_BY_MEDIA_TYPE[mediaType.toLowerCase()] ?? '.img'
 }
 
+function collectUserTextArgs(content: Exclude<UserMessageContent, string>): string {
+  const userTextParts: string[] = []
+  for (const block of content) {
+    if (block.type === 'text') {
+      userTextParts.push(block.text)
+    }
+  }
+  return userTextParts.join('').trim()
+}
+
+function buildCommandXml(name: string, userArgs: string): string {
+  return [
+    `<command-message>${name}</command-message>`,
+    `<command-name>/${name}</command-name>`,
+    `<command-args>${userArgs}</command-args>`,
+  ].join(' ')
+}
+
+function resolveEvoseGatewayToolName(
+  gatewayTool: 'evose_run_agent' | 'evose_run_workflow',
+): string {
+  return gatewayTool === 'evose_run_agent'
+    ? NativeCapabilityTools.EVOSE_RUN_AGENT
+    : NativeCapabilityTools.EVOSE_RUN_WORKFLOW
+}
+
+function buildEvoseExecutionHint(
+  providerExecution: {
+    provider: 'evose'
+    appId: string
+    appType: 'agent' | 'workflow'
+    gatewayTool: 'evose_run_agent' | 'evose_run_workflow'
+  },
+): string {
+  const gatewayTool = resolveEvoseGatewayToolName(providerExecution.gatewayTool)
+  return [
+    '<command-execution provider="evose" explicit="true">',
+    `<gateway-tool>${gatewayTool}</gateway-tool>`,
+    `<app-id>${providerExecution.appId}</app-id>`,
+    `<app-type>${providerExecution.appType}</app-type>`,
+    '</command-execution>',
+    `MANDATORY: User explicitly selected this Evose app. Call \`${gatewayTool}\` with app_id="${providerExecution.appId}" before unrelated tools.`,
+  ].join('\n')
+}
+
+function renderSlashCommandForCodex(
+  block: Extract<Exclude<UserMessageContent, string>[number], { type: 'slash_command' }>,
+  userArgs: string,
+): string[] {
+  const out: string[] = [buildCommandXml(block.name, userArgs)]
+  const providerExecution = block.execution?.providerExecution
+  if (providerExecution?.provider === 'evose') {
+    out.push(buildEvoseExecutionHint(providerExecution))
+  }
+  out.push(block.expandedText)
+  return out
+}
+
 function toCodexTextPrompt(content: UserMessageContent): string {
   if (typeof content === 'string') return content
 
+  const userArgs = collectUserTextArgs(content)
   const parts: string[] = []
   for (const block of content) {
     switch (block.type) {
@@ -222,7 +282,7 @@ function toCodexTextPrompt(content: UserMessageContent): string {
         parts.push(block.text)
         break
       case 'slash_command':
-        parts.push(`/${block.name}\n${block.expandedText}`)
+        parts.push(...renderSlashCommandForCodex(block, userArgs))
         break
       case 'image':
         parts.push(`[Image omitted: ${block.mediaType}]`)
@@ -253,6 +313,7 @@ async function prepareCodexInput(content: UserMessageContent): Promise<PreparedC
   }
 
   const entries: Exclude<CodexInput, string> = []
+  const userArgs = collectUserTextArgs(content)
   let tempDir: string | null = null
   let imageCounter = 0
   let hasLocalImage = false
@@ -274,7 +335,9 @@ async function prepareCodexInput(content: UserMessageContent): Promise<PreparedC
         entries.push({ type: 'text', text: block.text })
         break
       case 'slash_command':
-        entries.push({ type: 'text', text: `/${block.name}\n${block.expandedText}` })
+        for (const text of renderSlashCommandForCodex(block, userArgs)) {
+          entries.push({ type: 'text', text })
+        }
         break
       case 'image': {
         try {

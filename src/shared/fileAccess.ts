@@ -2,12 +2,14 @@
 
 export const FILE_ACCESS_ERROR_CODES = [
   'invalid_input',
+  'invalid_name',
   'access_denied',
   'session_service_unavailable',
   'session_not_found',
   'session_context_unavailable',
   'capability_path_denied',
   'not_found',
+  'already_exists',
   'binary_file_not_supported',
   'directory_not_supported',
   'file_too_large',

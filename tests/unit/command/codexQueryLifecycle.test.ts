@@ -10,6 +10,7 @@ import {
 } from '../../../electron/command/codexQueryLifecycle'
 import type { EngineRuntimeEventEnvelope } from '../../../electron/conversation/runtime/events'
 import type { UserMessageContent } from '../../../src/shared/types'
+import { NativeCapabilityTools } from '../../../src/shared/nativeCapabilityToolNames'
 
 type MockCodexEvent =
   | { type: 'thread.started'; thread_id: string }
@@ -253,6 +254,119 @@ describe('CodexQueryLifecycle', () => {
     for (const imagePath of imagePaths) {
       expect(existsSync(imagePath)).toBe(false)
     }
+  })
+
+  it('injects explicit evose execution hint for slash_command providerExecution', async () => {
+    codexMocks.state.turnPlans.push({
+      events: [
+        { type: 'thread.started', thread_id: 'thread-evose-explicit' },
+        { type: 'turn.started' },
+        { type: 'turn.completed', usage: { input_tokens: 2, cached_input_tokens: 0, output_tokens: 1 } },
+      ],
+    })
+
+    const message: UserMessageContent = [
+      { type: 'text', text: 'Analyze AI Agent trends from the past week' },
+      {
+        type: 'slash_command',
+        name: 'evose:x_analyst_ja4t9n',
+        category: 'skill',
+        label: 'X Analyst',
+        execution: {
+          nativeRequirements: [{ capability: 'evose' }],
+          providerExecution: {
+            provider: 'evose',
+            appId: '92226822732779520',
+            appType: 'agent',
+            gatewayTool: 'evose_run_agent',
+          },
+        },
+        expandedText: 'Use this capability to run Evose Agent "X Analyst".',
+      },
+    ]
+
+    const lifecycle = new CodexQueryLifecycle()
+    const stream = lifecycle.start(message, {})
+    const iter = stream[Symbol.asyncIterator]()
+    const emitted = await collectUntilResult(iter)
+
+    const result = emitted.find((item) => item.event.kind === 'turn.result')
+    expect(result).toBeTruthy()
+    if (result?.event.kind === 'turn.result') {
+      expect(result.event.payload.outcome).toBe('success')
+    }
+
+    expect(codexMocks.state.runInputs).toHaveLength(1)
+    const runInput = codexMocks.state.runInputs[0]
+    expect(typeof runInput).toBe('string')
+    if (typeof runInput === 'string') {
+      expect(runInput).toContain('<command-message>evose:x_analyst_ja4t9n</command-message>')
+      expect(runInput).toContain(`<gateway-tool>${NativeCapabilityTools.EVOSE_RUN_AGENT}</gateway-tool>`)
+      expect(runInput).toContain('<app-id>92226822732779520</app-id>')
+      expect(runInput).toContain('MANDATORY: User explicitly selected this Evose app.')
+    }
+
+    await lifecycle.stop()
+  })
+
+  it('keeps explicit evose execution hint when prompt is sent as mixed content entries', async () => {
+    codexMocks.state.turnPlans.push({
+      events: [
+        { type: 'thread.started', thread_id: 'thread-evose-mixed-input' },
+        { type: 'turn.started' },
+        { type: 'turn.completed', usage: { input_tokens: 3, cached_input_tokens: 0, output_tokens: 1 } },
+      ],
+    })
+
+    const message: UserMessageContent = [
+      { type: 'text', text: 'Please call the Evose app I selected' },
+      {
+        type: 'slash_command',
+        name: 'evose:agent_github_iab8p2',
+        category: 'skill',
+        label: 'Agent - Github',
+        execution: {
+          nativeRequirements: [{ capability: 'evose' }],
+          providerExecution: {
+            provider: 'evose',
+            appId: '93219761231499264',
+            appType: 'agent',
+            gatewayTool: 'evose_run_agent',
+          },
+        },
+        expandedText: 'Use this capability to run Evose Agent "Agent - Github".',
+      },
+      { type: 'image', mediaType: 'image/png', data: 'aGVsbG8=', sizeBytes: 5 },
+    ]
+
+    const lifecycle = new CodexQueryLifecycle()
+    const stream = lifecycle.start(message, {})
+    const iter = stream[Symbol.asyncIterator]()
+    const emitted = await collectUntilResult(iter)
+
+    const result = emitted.find((item) => item.event.kind === 'turn.result')
+    expect(result).toBeTruthy()
+    if (result?.event.kind === 'turn.result') {
+      expect(result.event.payload.outcome).toBe('success')
+    }
+
+    expect(codexMocks.state.runInputs).toHaveLength(1)
+    const runInput = codexMocks.state.runInputs[0]
+    expect(Array.isArray(runInput)).toBe(true)
+    if (Array.isArray(runInput)) {
+      const textEntries = runInput.filter(
+        (entry): entry is { type: 'text'; text: string } =>
+          !!entry && typeof entry === 'object' && entry.type === 'text' && typeof entry.text === 'string',
+      )
+      const mergedText = textEntries.map((entry) => entry.text).join('\n')
+      expect(mergedText).toContain('<command-message>evose:agent_github_iab8p2</command-message>')
+      expect(mergedText).toContain(`<gateway-tool>${NativeCapabilityTools.EVOSE_RUN_AGENT}</gateway-tool>`)
+      expect(mergedText).toContain('<app-id>93219761231499264</app-id>')
+      expect(mergedText).toContain('MANDATORY: User explicitly selected this Evose app.')
+      expect(runInput.some((entry) => !!entry && typeof entry === 'object' && entry.type === 'local_image')).toBe(true)
+    }
+
+    await lifecycle.stop()
   })
 
   it('maps turn failure to execution_error result', async () => {

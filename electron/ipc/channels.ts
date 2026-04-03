@@ -54,6 +54,7 @@ import type { RepoSourceRegistry } from '../services/marketplace/repoSourceRegis
 import { listClaudeCapabilities } from '../services/capabilities'
 import { projectStartSessionInput } from '../command/sessionStartInputProjector'
 import { FileContentAccessService } from '../services/fileAccess'
+import { ProjectFileOperationService } from '../services/fileAccess'
 import { isPathWithinBase } from '../security/pathBounds'
 
 const QUIET_CHANNELS = new Set<string>(['log:write'])
@@ -212,6 +213,11 @@ async function getFileIndex(projectPath: string): Promise<FileEntry[]> {
 export function registerIPCHandlers(deps: IPCDeps): void {
   const { bus, onboarding, inbox, issueService, orchestrator, settingsService, projectService, gitService } = deps
   const fileContentAccess = new FileContentAccessService()
+  const projectFileOps = new ProjectFileOperationService()
+
+  function invalidateProjectFileIndex(projectPath: string): void {
+    fileIndexCache.delete(projectPath)
+  }
 
   function toProject(stored: StoredProject, runtime?: Project | null): Project {
     return {
@@ -458,7 +464,39 @@ export function registerIPCHandlers(deps: IPCDeps): void {
   })
 
   registerHandler('save-file-content', async (projectPath, filePath, content) => {
-    return fileContentAccess.saveProjectFile(projectPath, filePath, content)
+    const result = await fileContentAccess.saveProjectFile(projectPath, filePath, content)
+    if (result.ok) invalidateProjectFileIndex(projectPath)
+    return result
+  })
+
+  registerHandler('project-file:rename', async (projectPath, oldPath, newPath) => {
+    const result = await projectFileOps.renameProjectPath(projectPath, oldPath, newPath)
+    if (result.ok) invalidateProjectFileIndex(projectPath)
+    return result
+  })
+
+  registerHandler('project-file:delete', async (projectPath, targetPath) => {
+    const result = await projectFileOps.deleteProjectPath(projectPath, targetPath)
+    if (result.ok) invalidateProjectFileIndex(projectPath)
+    return result
+  })
+
+  registerHandler('project-file:restore-delete', async (projectPath, undoToken) => {
+    const result = await projectFileOps.restoreDeletedProjectPath(projectPath, undoToken)
+    if (result.ok) invalidateProjectFileIndex(projectPath)
+    return result
+  })
+
+  registerHandler('project-file:create', async (projectPath, filePath) => {
+    const result = await projectFileOps.createProjectFile(projectPath, filePath)
+    if (result.ok) invalidateProjectFileIndex(projectPath)
+    return result
+  })
+
+  registerHandler('project-file:create-directory', async (projectPath, directoryPath) => {
+    const result = await projectFileOps.createProjectDirectory(projectPath, directoryPath)
+    if (result.ok) invalidateProjectFileIndex(projectPath)
+    return result
   })
 
   registerHandler('download-file', async (defaultFileName, content) => {

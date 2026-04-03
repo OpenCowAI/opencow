@@ -67,6 +67,12 @@ export interface PendingTreeReveal {
   path: string
 }
 
+export interface PendingDeleteUndo {
+  undoToken: string
+  path: string
+  createdAt: number
+}
+
 // ─── Store Interface ──────────────────────────────────────────────────
 
 export interface FileStore {
@@ -78,6 +84,8 @@ export interface FileStore {
   expandedTreeDirsByProject: Record<string, Set<string>>
   /** Per-project current directory for FileBrowser mode (relative path, '' = root). */
   browserSubPathByProject: Record<string, string>
+  /** Incremented on file-structure mutations (create/rename/delete/restore) for view refresh. */
+  fileStructureVersionByProject: Record<string, number>
   /** Last file-search query per project (for quick-open restore). */
   fileSearchQueryByProject: Record<string, string>
   /** Recent file-search selections (newest first). */
@@ -92,18 +100,28 @@ export interface FileStore {
    * Consumers ack by id after successful application to avoid drop-on-mismatch races.
    */
   pendingTreeRevealIntentsByProject: Record<string, PendingIntent<PendingTreeReveal>[]>
+  /** Per-project LIFO stack for delete undo tokens (Cmd/Ctrl+Z). */
+  pendingDeleteUndosByProject: Record<string, PendingDeleteUndo[]>
 
   getOpenFiles: (projectId: string) => OpenFile[]
   getActiveFilePath: (projectId: string) => string | null
   openFile: (projectId: string, params: OpenFileParams) => void
   closeFile: (projectId: string, path: string) => void
+  closeOtherFiles: (projectId: string, keepPath: string) => void
+  closeAllFiles: (projectId: string) => void
+  closeFilesToRight: (projectId: string, path: string) => void
   setActiveFile: (projectId: string, path: string) => void
   updateFileContent: (projectId: string, path: string, content: string) => void
   markFileSaved: (projectId: string, path: string) => void
+  remapPath: (projectId: string, oldPath: string, newPath: string) => void
+  remapPathPrefix: (projectId: string, oldPrefix: string, newPrefix: string) => void
+  removePath: (projectId: string, targetPath: string) => void
+  removePathPrefix: (projectId: string, targetPrefix: string) => void
   toggleTreeDir: (projectId: string, path: string) => void
   expandTreeDirs: (projectId: string, paths: string[]) => void
   setBrowserSubPath: (projectId: string, subPath: string) => void
   clearBrowserSubPath: (projectId: string) => void
+  bumpFileStructureVersion: (projectId: string) => void
   setFileSearchQuery: (projectId: string, query: string) => void
   recordFileSearchSelection: (projectId: string, selection: { path: string; name: string; kind: FileSearchRecentKind }) => void
   enqueueEditorJumpIntent: (projectId: string, jump: PendingEditorJump) => string
@@ -112,6 +130,10 @@ export interface FileStore {
   enqueueTreeRevealIntent: (projectId: string, reveal: PendingTreeReveal) => string
   peekTreeRevealIntent: (projectId: string) => PendingIntent<PendingTreeReveal> | null
   ackTreeRevealIntent: (projectId: string, intentId: string) => void
+  pushDeleteUndo: (projectId: string, entry: { undoToken: string; path: string }) => void
+  peekLatestDeleteUndo: (projectId: string) => PendingDeleteUndo | null
+  popLatestDeleteUndo: (projectId: string) => PendingDeleteUndo | null
+  removeDeleteUndo: (projectId: string, undoToken: string) => void
 
   /** Refresh an open file's content from disk. Skips isDirty files and no-ops on same content. */
   refreshFile: (projectId: string, params: RefreshFileParams) => void
@@ -141,21 +163,55 @@ const initialState = {
   activeFilePathByProject: {} as Record<string, string | null>,
   expandedTreeDirsByProject: {} as Record<string, Set<string>>,
   browserSubPathByProject: {} as Record<string, string>,
+  fileStructureVersionByProject: {} as Record<string, number>,
   fileSearchQueryByProject: {} as Record<string, string>,
   recentFileSearchSelectionsByProject: {} as Record<string, FileSearchRecentSelection[]>,
   pendingEditorJumpIntentsByProject: {} as Record<string, PendingIntent<PendingEditorJump>[]>,
   pendingTreeRevealIntentsByProject: {} as Record<string, PendingIntent<PendingTreeReveal>[]>,
+  pendingDeleteUndosByProject: {} as Record<string, PendingDeleteUndo[]>,
   pendingFileWritesByToolId: {} as Record<string, { path: string; projectId: string | null }>,
   pendingFileRefreshPathsByProject: {} as Record<string, string[]>,
 }
 
 const MAX_RECENT_FILE_SEARCH_PATHS = 20
+const MAX_PENDING_DELETE_UNDOS = 200
 
 function createIntentId(): string {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
     return crypto.randomUUID()
   }
   return `${Date.now()}-${Math.random().toString(16).slice(2)}`
+}
+
+function isSameOrChildPath(path: string, parentPath: string): boolean {
+  return path === parentPath || path.startsWith(`${parentPath}/`)
+}
+
+function remapPathIfNeeded(path: string, oldPath: string, newPath: string): string {
+  if (path === oldPath) return newPath
+  if (path.startsWith(`${oldPath}/`)) return `${newPath}${path.slice(oldPath.length)}`
+  return path
+}
+
+function remapIntentQueue<TPayload extends { path: string }>(
+  queue: PendingIntent<TPayload>[],
+  oldPath: string,
+  newPath: string,
+): PendingIntent<TPayload>[] {
+  let changed = false
+  const next = queue.map((intent) => {
+    const mapped = remapPathIfNeeded(intent.payload.path, oldPath, newPath)
+    if (mapped === intent.payload.path) return intent
+    changed = true
+    return {
+      ...intent,
+      payload: {
+        ...intent.payload,
+        path: mapped,
+      },
+    }
+  })
+  return changed ? next : queue
 }
 
 // ─── Store Instance ───────────────────────────────────────────────────
@@ -267,6 +323,62 @@ export const useFileStore = create<FileStore>((set, get) => ({
       }
     }),
 
+  closeOtherFiles: (projectId, keepPath) =>
+    set((s) => {
+      const openFiles = s.openFilesByProject[projectId] ?? []
+      if (openFiles.length <= 1) return {}
+      const keep = openFiles.find((f) => f.path === keepPath)
+      if (!keep) return {}
+      return {
+        openFilesByProject: {
+          ...s.openFilesByProject,
+          [projectId]: [keep],
+        },
+        activeFilePathByProject: {
+          ...s.activeFilePathByProject,
+          [projectId]: keep.path,
+        },
+      }
+    }),
+
+  closeAllFiles: (projectId) =>
+    set((s) => {
+      const openFiles = s.openFilesByProject[projectId] ?? []
+      if (openFiles.length === 0) return {}
+      return {
+        openFilesByProject: {
+          ...s.openFilesByProject,
+          [projectId]: [],
+        },
+        activeFilePathByProject: {
+          ...s.activeFilePathByProject,
+          [projectId]: null,
+        },
+      }
+    }),
+
+  closeFilesToRight: (projectId, path) =>
+    set((s) => {
+      const openFiles = s.openFilesByProject[projectId] ?? []
+      const idx = openFiles.findIndex((f) => f.path === path)
+      if (idx < 0 || idx === openFiles.length - 1) return {}
+      const keepFiles = openFiles.slice(0, idx + 1)
+      const currentActive = s.activeFilePathByProject[projectId] ?? null
+      const nextActive = keepFiles.some((f) => f.path === currentActive)
+        ? currentActive
+        : keepFiles[keepFiles.length - 1]?.path ?? null
+      return {
+        openFilesByProject: {
+          ...s.openFilesByProject,
+          [projectId]: keepFiles,
+        },
+        activeFilePathByProject: {
+          ...s.activeFilePathByProject,
+          [projectId]: nextActive,
+        },
+      }
+    }),
+
   setActiveFile: (projectId, path) =>
     set((s) => ({
       activeFilePathByProject: {
@@ -304,6 +416,221 @@ export const useFileStore = create<FileStore>((set, get) => ({
         },
       }
     }),
+
+  remapPath: (projectId, oldPath, newPath) =>
+    set((s) => {
+      if (!oldPath || !newPath || oldPath === newPath) return {}
+
+      const openFiles = s.openFilesByProject[projectId] ?? []
+      let openFilesChanged = false
+      const nextOpenFiles = openFiles.map((file) => {
+        const mappedPath = remapPathIfNeeded(file.path, oldPath, newPath)
+        if (mappedPath === file.path) return file
+        openFilesChanged = true
+        return {
+          ...file,
+          path: mappedPath,
+          name: mappedPath.split('/').at(-1) ?? file.name,
+        }
+      })
+
+      const activeFilePath = s.activeFilePathByProject[projectId] ?? null
+      const nextActiveFilePath = activeFilePath ? remapPathIfNeeded(activeFilePath, oldPath, newPath) : null
+      const activeChanged = nextActiveFilePath !== activeFilePath
+
+      const expandedDirs = s.expandedTreeDirsByProject[projectId] ?? new Set<string>()
+      let expandedChanged = false
+      const nextExpandedDirs = new Set<string>()
+      for (const dir of expandedDirs) {
+        const mapped = remapPathIfNeeded(dir, oldPath, newPath)
+        if (mapped !== dir) expandedChanged = true
+        nextExpandedDirs.add(mapped)
+      }
+
+      const browserSubPath = s.browserSubPathByProject[projectId]
+      const nextBrowserSubPath = browserSubPath != null ? remapPathIfNeeded(browserSubPath, oldPath, newPath) : browserSubPath
+      const browserChanged = nextBrowserSubPath !== browserSubPath
+
+      const recentSelections = s.recentFileSearchSelectionsByProject[projectId] ?? []
+      let recentChanged = false
+      const nextRecentSelections = recentSelections.map((selection) => {
+        const mapped = remapPathIfNeeded(selection.path, oldPath, newPath)
+        if (mapped === selection.path) return selection
+        recentChanged = true
+        return {
+          ...selection,
+          path: mapped,
+          name: mapped.split('/').at(-1) ?? selection.name,
+        }
+      })
+
+      const pendingEditor = s.pendingEditorJumpIntentsByProject[projectId] ?? []
+      const nextPendingEditor = remapIntentQueue(pendingEditor, oldPath, newPath)
+      const pendingEditorChanged = nextPendingEditor !== pendingEditor
+
+      const pendingTree = s.pendingTreeRevealIntentsByProject[projectId] ?? []
+      const nextPendingTree = remapIntentQueue(pendingTree, oldPath, newPath)
+      const pendingTreeChanged = nextPendingTree !== pendingTree
+
+      const pendingRefresh = s.pendingFileRefreshPathsByProject[projectId] ?? []
+      let pendingRefreshChanged = false
+      const nextPendingRefresh = pendingRefresh.map((p) => {
+        const mapped = remapPathIfNeeded(p, oldPath, newPath)
+        if (mapped !== p) pendingRefreshChanged = true
+        return mapped
+      })
+
+      if (
+        !openFilesChanged &&
+        !activeChanged &&
+        !expandedChanged &&
+        !browserChanged &&
+        !recentChanged &&
+        !pendingEditorChanged &&
+        !pendingTreeChanged &&
+        !pendingRefreshChanged
+      ) {
+        return {}
+      }
+
+      return {
+        openFilesByProject: {
+          ...s.openFilesByProject,
+          [projectId]: nextOpenFiles,
+        },
+        activeFilePathByProject: {
+          ...s.activeFilePathByProject,
+          [projectId]: nextActiveFilePath,
+        },
+        expandedTreeDirsByProject: {
+          ...s.expandedTreeDirsByProject,
+          [projectId]: nextExpandedDirs,
+        },
+        browserSubPathByProject: {
+          ...s.browserSubPathByProject,
+          [projectId]: nextBrowserSubPath ?? '',
+        },
+        recentFileSearchSelectionsByProject: {
+          ...s.recentFileSearchSelectionsByProject,
+          [projectId]: nextRecentSelections,
+        },
+        pendingEditorJumpIntentsByProject: {
+          ...s.pendingEditorJumpIntentsByProject,
+          [projectId]: nextPendingEditor,
+        },
+        pendingTreeRevealIntentsByProject: {
+          ...s.pendingTreeRevealIntentsByProject,
+          [projectId]: nextPendingTree,
+        },
+        pendingFileRefreshPathsByProject: {
+          ...s.pendingFileRefreshPathsByProject,
+          [projectId]: nextPendingRefresh,
+        },
+      }
+    }),
+
+  remapPathPrefix: (projectId, oldPrefix, newPrefix) =>
+    get().remapPath(projectId, oldPrefix, newPrefix),
+
+  removePath: (projectId, targetPath) =>
+    set((s) => {
+      if (!targetPath) return {}
+      const openFiles = s.openFilesByProject[projectId] ?? []
+      const nextOpenFiles = openFiles.filter((file) => !isSameOrChildPath(file.path, targetPath))
+      const openFilesChanged = nextOpenFiles.length !== openFiles.length
+
+      const activeFilePath = s.activeFilePathByProject[projectId] ?? null
+      const activeRemoved = activeFilePath ? isSameOrChildPath(activeFilePath, targetPath) : false
+      const nextActiveFilePath = activeRemoved
+        ? (nextOpenFiles[nextOpenFiles.length - 1]?.path ?? null)
+        : activeFilePath
+      const activeChanged = nextActiveFilePath !== activeFilePath
+
+      const expandedDirs = s.expandedTreeDirsByProject[projectId] ?? new Set<string>()
+      const nextExpandedDirs = new Set<string>()
+      let expandedChanged = false
+      for (const dir of expandedDirs) {
+        if (isSameOrChildPath(dir, targetPath)) {
+          expandedChanged = true
+          continue
+        }
+        nextExpandedDirs.add(dir)
+      }
+
+      const browserSubPath = s.browserSubPathByProject[projectId] ?? ''
+      let nextBrowserSubPath = browserSubPath
+      if (browserSubPath && isSameOrChildPath(browserSubPath, targetPath)) {
+        nextBrowserSubPath = ''
+      }
+      const browserChanged = nextBrowserSubPath !== browserSubPath
+
+      const recentSelections = s.recentFileSearchSelectionsByProject[projectId] ?? []
+      const nextRecentSelections = recentSelections.filter((selection) => !isSameOrChildPath(selection.path, targetPath))
+      const recentChanged = nextRecentSelections.length !== recentSelections.length
+
+      const pendingEditor = s.pendingEditorJumpIntentsByProject[projectId] ?? []
+      const nextPendingEditor = pendingEditor.filter((intent) => !isSameOrChildPath(intent.payload.path, targetPath))
+      const pendingEditorChanged = nextPendingEditor.length !== pendingEditor.length
+
+      const pendingTree = s.pendingTreeRevealIntentsByProject[projectId] ?? []
+      const nextPendingTree = pendingTree.filter((intent) => !isSameOrChildPath(intent.payload.path, targetPath))
+      const pendingTreeChanged = nextPendingTree.length !== pendingTree.length
+
+      const pendingRefresh = s.pendingFileRefreshPathsByProject[projectId] ?? []
+      const nextPendingRefresh = pendingRefresh.filter((p) => !isSameOrChildPath(p, targetPath))
+      const pendingRefreshChanged = nextPendingRefresh.length !== pendingRefresh.length
+
+      if (
+        !openFilesChanged &&
+        !activeChanged &&
+        !expandedChanged &&
+        !browserChanged &&
+        !recentChanged &&
+        !pendingEditorChanged &&
+        !pendingTreeChanged &&
+        !pendingRefreshChanged
+      ) {
+        return {}
+      }
+
+      return {
+        openFilesByProject: {
+          ...s.openFilesByProject,
+          [projectId]: nextOpenFiles,
+        },
+        activeFilePathByProject: {
+          ...s.activeFilePathByProject,
+          [projectId]: nextActiveFilePath,
+        },
+        expandedTreeDirsByProject: {
+          ...s.expandedTreeDirsByProject,
+          [projectId]: nextExpandedDirs,
+        },
+        browserSubPathByProject: {
+          ...s.browserSubPathByProject,
+          [projectId]: nextBrowserSubPath,
+        },
+        recentFileSearchSelectionsByProject: {
+          ...s.recentFileSearchSelectionsByProject,
+          [projectId]: nextRecentSelections,
+        },
+        pendingEditorJumpIntentsByProject: {
+          ...s.pendingEditorJumpIntentsByProject,
+          [projectId]: nextPendingEditor,
+        },
+        pendingTreeRevealIntentsByProject: {
+          ...s.pendingTreeRevealIntentsByProject,
+          [projectId]: nextPendingTree,
+        },
+        pendingFileRefreshPathsByProject: {
+          ...s.pendingFileRefreshPathsByProject,
+          [projectId]: nextPendingRefresh,
+        },
+      }
+    }),
+
+  removePathPrefix: (projectId, targetPrefix) =>
+    get().removePath(projectId, targetPrefix),
 
   toggleTreeDir: (projectId, path) =>
     set((s) => {
@@ -359,6 +686,17 @@ export const useFileStore = create<FileStore>((set, get) => ({
       if (!(projectId in s.browserSubPathByProject)) return {}
       const { [projectId]: _dropped, ...rest } = s.browserSubPathByProject
       return { browserSubPathByProject: rest }
+    }),
+
+  bumpFileStructureVersion: (projectId) =>
+    set((s) => {
+      const current = s.fileStructureVersionByProject[projectId] ?? 0
+      return {
+        fileStructureVersionByProject: {
+          ...s.fileStructureVersionByProject,
+          [projectId]: current + 1,
+        },
+      }
     }),
 
   setFileSearchQuery: (projectId, query) =>
@@ -471,6 +809,65 @@ export const useFileStore = create<FileStore>((set, get) => ({
       return {
         pendingTreeRevealIntentsByProject: {
           ...s.pendingTreeRevealIntentsByProject,
+          [projectId]: next,
+        },
+      }
+    }),
+
+  pushDeleteUndo: (projectId, entry) =>
+    set((s) => {
+      if (!entry.undoToken.trim() || !entry.path.trim()) return {}
+      const prev = s.pendingDeleteUndosByProject[projectId] ?? []
+      const deduped = prev.filter((item) => item.undoToken !== entry.undoToken)
+      const nextWithNew: PendingDeleteUndo[] = [
+        ...deduped,
+        {
+          undoToken: entry.undoToken,
+          path: entry.path,
+          createdAt: Date.now(),
+        },
+      ]
+      const next = nextWithNew.length > MAX_PENDING_DELETE_UNDOS
+        ? nextWithNew.slice(nextWithNew.length - MAX_PENDING_DELETE_UNDOS)
+        : nextWithNew
+      return {
+        pendingDeleteUndosByProject: {
+          ...s.pendingDeleteUndosByProject,
+          [projectId]: next,
+        },
+      }
+    }),
+
+  peekLatestDeleteUndo: (projectId) => {
+    const stack = get().pendingDeleteUndosByProject[projectId] ?? []
+    return stack[stack.length - 1] ?? null
+  },
+
+  popLatestDeleteUndo: (projectId) => {
+    let popped: PendingDeleteUndo | null = null
+    set((s) => {
+      const prev = s.pendingDeleteUndosByProject[projectId] ?? []
+      if (prev.length === 0) return {}
+      popped = prev[prev.length - 1]
+      return {
+        pendingDeleteUndosByProject: {
+          ...s.pendingDeleteUndosByProject,
+          [projectId]: prev.slice(0, -1),
+        },
+      }
+    })
+    return popped
+  },
+
+  removeDeleteUndo: (projectId, undoToken) =>
+    set((s) => {
+      const prev = s.pendingDeleteUndosByProject[projectId] ?? []
+      if (prev.length === 0) return {}
+      const next = prev.filter((item) => item.undoToken !== undoToken)
+      if (next.length === prev.length) return {}
+      return {
+        pendingDeleteUndosByProject: {
+          ...s.pendingDeleteUndosByProject,
           [projectId]: next,
         },
       }

@@ -7,46 +7,27 @@
  * to eliminate cross-file duplication.
  */
 
-import type { ManagedSessionMessage, ContentBlock } from '@shared/types'
+import type { ManagedSessionMessage, ContentBlock, TodoWriteItem } from '@shared/types'
+import { getLatestTodoSnapshotInCurrentTurn, hasOpenTodos } from './todoSnapshot'
 
 // ─── TodoItem ────────────────────────────────────────────────────────────────
 
-/**
- * TodoItem shape as produced by the `TodoWrite` tool_use block.
- * Re-exported here so consumers don't need to reach into TodoWidgets.
- */
-export interface TodoItem {
-  content: string
-  status: 'pending' | 'in_progress' | 'completed'
-  activeForm?: string
-}
+// Canonical todo item alias for backward-compatible renderer imports.
+export type TodoItem = TodoWriteItem
 
 // ─── getLatestTodos ──────────────────────────────────────────────────────────
 
 /**
- * Extract the latest TodoWrite todos from session messages (reverse scan).
- * Returns `null` if no TodoWrite block is found or if all tasks are completed.
+ * Extract the latest TodoWrite todos from the CURRENT turn.
+ * Returns `null` when no snapshot exists or all items are completed.
  *
  * Accepts `ManagedSessionMessage[]` directly — no `as any` casting needed.
  */
 export function getLatestTodos(messages: ManagedSessionMessage[]): TodoItem[] | null {
-  for (let i = messages.length - 1; i >= 0; i--) {
-    const msg = messages[i]
-    if (msg.role !== 'assistant') continue
-    for (let j = msg.content.length - 1; j >= 0; j--) {
-      const block = msg.content[j]
-      if (block.type === 'tool_use' && block.name === 'TodoWrite') {
-        const input = block.input as Record<string, unknown> | undefined
-        const todos = input?.todos
-        if (!Array.isArray(todos) || todos.length === 0) return null
-        const items = todos as TodoItem[]
-        // Hide when all tasks are completed
-        if (items.every((t) => t.status === 'completed')) return null
-        return items
-      }
-    }
-  }
-  return null
+  const snapshot = getLatestTodoSnapshotInCurrentTurn(messages)
+  if (!snapshot) return null
+  if (!hasOpenTodos(snapshot.items)) return null
+  return snapshot.items
 }
 
 // ─── Active duration ─────────────────────────────────────────────────────────

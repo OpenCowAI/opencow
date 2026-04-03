@@ -275,6 +275,26 @@ export interface IPCChannels {
     args: [projectPath: string, filePath: string, content: string]
     return: FileContentWriteResult
   }
+  'project-file:rename': {
+    args: [projectPath: string, oldPath: string, newPath: string]
+    return: ProjectFileRenameResult
+  }
+  'project-file:delete': {
+    args: [projectPath: string, targetPath: string]
+    return: ProjectFileDeleteResult
+  }
+  'project-file:restore-delete': {
+    args: [projectPath: string, undoToken: string]
+    return: ProjectFileRestoreDeleteResult
+  }
+  'project-file:create': {
+    args: [projectPath: string, filePath: string]
+    return: ProjectFileCreateResult
+  }
+  'project-file:create-directory': {
+    args: [projectPath: string, directoryPath: string]
+    return: ProjectFileCreateDirectoryResult
+  }
   /** Download a file to user-chosen location via native Save dialog */
   'download-file': {
     args: [defaultFileName: string, content: string]
@@ -810,6 +830,11 @@ export interface FileContentResult {
 
 export type FileContentReadResult = FileAccessResult<FileContentResult>
 export type FileContentWriteResult = FileAccessResult<{ saved: true }>
+export type ProjectFileRenameResult = FileAccessResult<{ oldPath: string; newPath: string }>
+export type ProjectFileDeleteResult = FileAccessResult<{ deletedPath: string; undoToken: string }>
+export type ProjectFileRestoreDeleteResult = FileAccessResult<{ restoredPath: string }>
+export type ProjectFileCreateResult = FileAccessResult<{ path: string }>
+export type ProjectFileCreateDirectoryResult = FileAccessResult<{ path: string }>
 
 export interface ImagePreviewResult {
   dataUrl: string
@@ -1683,6 +1708,16 @@ export interface TaskFull {
   status: 'pending' | 'in_progress' | 'completed'
   blocks: string[]
   blockedBy: string[]
+}
+
+/**
+ * Canonical TodoWrite item shape used by renderer todo widgets and
+ * session-level todo snapshot parsing.
+ */
+export interface TodoWriteItem {
+  content: string
+  status: 'pending' | 'in_progress' | 'completed'
+  activeForm?: string
 }
 
 export interface TaskGroup {

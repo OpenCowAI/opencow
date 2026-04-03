@@ -15,11 +15,10 @@
  * Only `sessionId`, `isProcessing`, and `isSessionPaused` come from the parent.
  * These are stable during streaming and don't trigger parent re-renders.
  */
-import React, { useMemo } from 'react'
+import React from 'react'
 import { StreamingFooter } from './StreamingFooter'
 import { TodoStatusPill } from './TodoWidgets'
-import { useCommandStore, selectSessionMessages, useStreamingSessionMetrics } from '@/stores/commandStore'
-import { getLatestTodos } from '@/lib/sessionHelpers'
+import { useCommandStore, selectLatestOpenTodos, useStreamingSessionMetrics } from '@/stores/commandStore'
 
 interface StreamingOverlayContentProps {
   sessionId: string
@@ -32,8 +31,7 @@ export const StreamingOverlayContent = React.memo(function StreamingOverlayConte
   isProcessing,
   isSessionPaused,
 }: StreamingOverlayContentProps): React.JSX.Element | null {
-  const messages = useCommandStore((s) => selectSessionMessages(s, sessionId))
-  const latestTodos = useMemo(() => getLatestTodos(messages), [messages])
+  const latestTodos = useCommandStore((s) => selectLatestOpenTodos(s, sessionId))
   const metrics = useStreamingSessionMetrics(sessionId)
 
   if (isProcessing && metrics) {

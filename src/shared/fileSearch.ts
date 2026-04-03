@@ -67,6 +67,7 @@ export const SKIP_DIRECTORIES = new Set([
   '__pycache__', '.venv', 'venv',
   '.cache', 'coverage', '.turbo', '.vercel',
   '.idea', '.vscode', '.DS_Store',
+  '.opencow-trash',
 ])
 
 /**

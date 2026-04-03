@@ -5,14 +5,10 @@ import { useTranslation } from 'react-i18next'
 import { CheckSquare, ListChecks, ChevronRight, ChevronDown } from 'lucide-react'
 import { cn } from '../../../lib/utils'
 import { PillDropdown } from '../../ui/PillDropdown'
+import type { TodoWriteItem } from '@shared/types'
 
 // ─── Shared types ─────────────────────────────────────────────────────────────
-
-export interface TodoItem {
-  content: string
-  status: 'pending' | 'in_progress' | 'completed'
-  activeForm?: string
-}
+export type TodoItem = TodoWriteItem
 
 const TODO_STATUS_ICON: Record<string, string> = {
   completed: '✓',
