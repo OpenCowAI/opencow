@@ -386,3 +386,11 @@ export function FilesViewForProject({
 }): React.JSX.Element {
   return <FilesViewCore project={project} layout={layout} />
 }
+
+/**
+ * Backward-compatible export used by existing tests and call sites.
+ * Internally delegates to the selected-project entrypoint.
+ */
+export function FilesView(): React.JSX.Element {
+  return <FilesViewForSelectedProject />
+}
