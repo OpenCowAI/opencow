@@ -7,7 +7,7 @@ import { AgentChatView } from './AgentChatView'
 import { AgentSidebar } from './AgentSidebar'
 import { ChatPanel } from './ChatPanel'
 import { ViewModeToggle } from './ViewModeToggle'
-import { FilesView } from '@/components/FilesView/FilesView'
+import { FilesViewForSelectedProject } from '@/components/FilesView/FilesView'
 
 // ════════════════════════════════════════════════════════════════════
 // ChatView — Agent page with view mode switching.
@@ -120,7 +120,7 @@ function FilesChatLayout({
         defaultSize="60%"
         minSize="35%"
       >
-        <FilesView />
+        <FilesViewForSelectedProject layout={{ searchFabBottomOffsetPx: 36 }} />
       </Panel>
     </Group>
   )

@@ -26,6 +26,9 @@ import { BrowserPiPTrigger } from '@/components/BrowserPiP/BrowserPiPTrigger'
 import { TerminalPanel } from '@/components/TerminalSheet/TerminalSheet'
 import { SplashScreen } from '@/components/SplashScreen/SplashScreen'
 import { MemoryToast } from '@/components/memory/MemoryToast'
+import { IssueFileSheet } from '@/components/IssueFileSheet/IssueFileSheet'
+import { useBrowserOverlayStore } from '@/stores/browserOverlayStore'
+import { useIssueFileOverlayStore } from '@/stores/issueFileOverlayStore'
 
 // ── Constants ────────────────────────────────────────────────────────
 
@@ -371,6 +374,33 @@ export function App(): React.JSX.Element {
   useAppBootstrap()
 
   const appReady = useAppStore((s) => s.appReady)
+  const browserOverlay = useBrowserOverlayStore((s) => s.browserOverlay)
+  const closeBrowserOverlay = useBrowserOverlayStore((s) => s.closeBrowserOverlay)
+  const issueFileOverlay = useIssueFileOverlayStore((s) => s.issueFileOverlay)
+  const closeIssueFileOverlay = useIssueFileOverlayStore((s) => s.closeIssueFileOverlay)
+  const prevBrowserOpenRef = useRef(false)
+  const prevIssueFileOpenRef = useRef(false)
+
+  // Overlay orchestration (mutual exclusion):
+  // BrowserSheet and IssueFileSheet are both fullscreen layers.
+  // Whichever opens later wins; we close the previously open layer.
+  useEffect(() => {
+    const browserOpen = browserOverlay !== null
+    const issueFileOpen = issueFileOverlay !== null
+
+    const browserJustOpened = browserOpen && !prevBrowserOpenRef.current
+    const issueFileJustOpened = issueFileOpen && !prevIssueFileOpenRef.current
+
+    if (browserJustOpened && issueFileOpen) {
+      closeIssueFileOverlay()
+    }
+    if (issueFileJustOpened && browserOpen) {
+      closeBrowserOverlay()
+    }
+
+    prevBrowserOpenRef.current = browserOpen
+    prevIssueFileOpenRef.current = issueFileOpen
+  }, [browserOverlay, issueFileOverlay, closeBrowserOverlay, closeIssueFileOverlay])
 
   // ── Concurrent mount: prevent splash animation jank ──────────────
   // When appReady flips to true, React must mount the entire AppLayout
@@ -398,6 +428,7 @@ export function App(): React.JSX.Element {
           <AppLayout />
           <BrowserPiPTrigger />   {/* z: 30 */}
           <BrowserSheet />        {/* z: 40 */}
+          <IssueFileSheet />      {/* z: 40 */}
           <SettingsModal />       {/* z: 50 */}
           <AboutDialog />         {/* z: 50 */}
           <CommandPalette />      {/* z: 50 */}

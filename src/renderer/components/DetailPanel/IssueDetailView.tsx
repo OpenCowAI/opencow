@@ -2,39 +2,32 @@
 
 import { useState, useCallback, useMemo, useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
-import { X, Pencil, Trash2, Check, ArrowUpRight, Link, FileText, ExternalLink } from 'lucide-react'
+import { X, Pencil, Trash2, Check, ArrowUpRight, Link, FileText, ExternalLink, FolderCode } from 'lucide-react'
 import { useBlockBrowserView } from '@/hooks/useBlockBrowserView'
 import type { Artifact } from '@shared/types'
 import { useAppStore } from '../../stores/appStore'
 import { useIssueStore } from '../../stores/issueStore'
+import { useIssueFileOverlayStore } from '@/stores/issueFileOverlayStore'
 import { selectIssue, deleteIssue } from '../../actions/issueActions'
-import { useCommandStore } from '@/stores/commandStore'
-import { startSession } from '@/actions/commandActions'
 import { cn } from '../../lib/utils'
 import { IssueStatusIcon, IssuePriorityIcon } from '../IssuesView/IssueIcons'
 import { IssueFormModal } from '../IssueForm/IssueFormModal'
 import { PillDropdown, PILL_TRIGGER } from '../ui/PillDropdown'
-import { SessionPanel, type SessionHistoryContext, type SessionPanelCapabilities } from './SessionPanel/SessionPanel'
+import { Tooltip } from '../ui/Tooltip'
+import { SessionPanel } from './SessionPanel/SessionPanel'
 import { ComposeView } from './SessionPanel/ComposeView'
 import { SessionContextBar } from './SessionContextBar'
 import { ImageThumbnail } from './ImageThumbnail'
 import { ImageLightbox } from './ImageLightbox'
 import { ContextFileDropZone } from './ContextFileDropZone'
 import { getSessionInputFocus } from '../../lib/sessionInputRegistry'
-import { useSessionHistoryForIssue, selectSessionForIssue } from '../../hooks/useSessionForIssue'
-import { useSessionArchive } from '../../hooks/useSessionArchive'
 import { ProjectScopeProvider } from '../../contexts/ProjectScopeContext'
 import { ContextFilesProvider, useContextFiles } from '../../contexts/ContextFilesContext'
-import { issueImagesToAttachments, type ImageAttachment } from '../../lib/attachmentUtils'
 import { isIssueUnread } from '@shared/types'
-import type { IssueStatus, IssuePriority, UserMessageContent } from '@shared/types'
-import { buildIssuePromptText } from '@shared/issuePromptBuilder'
-import { buildIssueSessionPrompt, resolveProjectPath } from '../../lib/issueSessionUtils'
+import type { IssueStatus, IssuePriority } from '@shared/types'
+import { resolveProjectPath } from '../../lib/issueSessionUtils'
 import { getAppAPI } from '@/windowAPI'
-import { toast } from '@/lib/toast'
-import { createLogger } from '@/lib/logger'
-
-const log = createLogger('IssueDetailView')
+import { useIssueSessionRuntime } from '@/hooks/useIssueSessionRuntime'
 
 // Stable empty array constants — used as selector defaults to avoid
 // creating new array references on every store notification.
@@ -153,6 +146,7 @@ interface IssueDetailViewProps {
 
 export function IssueDetailView({ issueId, onClose, onNavigateToIssue }: IssueDetailViewProps): React.JSX.Element {
   const { t } = useTranslation('issues')
+  const openIssueFileOverlay = useIssueFileOverlayStore((s) => s.openIssueFileOverlay)
   // Block browser view when delete confirmation modal is open
   const [confirmDelete, setConfirmDelete] = useState(false)
   useBlockBrowserView('delete-confirm-modal', confirmDelete)
@@ -182,9 +176,6 @@ export function IssueDetailView({ issueId, onClose, onNavigateToIssue }: IssueDe
   // Store action functions — stable references, safe to subscribe
   const updateIssue = useIssueStore((s) => s.updateIssue)
   const loadIssueDetail = useIssueStore((s) => s.loadIssueDetail)
-  const stopSession = useCommandStore((s) => s.stopSession)
-  const sendMessage = useCommandStore((s) => s.sendMessage)
-  const resumeSession = useCommandStore((s) => s.resumeSession)
   const loadChildIssues = useIssueStore((s) => s.loadChildIssues)
   const markIssueRead = useIssueStore((s) => s.markIssueRead)
 
@@ -198,8 +189,6 @@ export function IssueDetailView({ issueId, onClose, onNavigateToIssue }: IssueDe
   const [idCopied, setIdCopied] = useState(false)
   const [statusOpen, setStatusOpen] = useState(false)
   const [priorityOpen, setPriorityOpen] = useState(false)
-  const [isStarting, setIsStarting] = useState(false)
-  const [composeMode, setComposeMode] = useState(false)
   const contentRef = useRef<HTMLDivElement>(null)
   const prevIssueIdRef = useRef(issueId)
   const focusedIssueIdRef = useRef<string | null>(null)
@@ -214,16 +203,17 @@ export function IssueDetailView({ issueId, onClose, onNavigateToIssue }: IssueDe
   // NOTE: session subscription has been moved INTO SessionPanel (via useSessionByBinding)
   // so that IssueDetailView does NOT re-render on every streaming message tick.
   // IssueDetailView no longer imports or calls useSessionForIssue().
-  //
-  // Session history uses `useStoreWithEqualityFn` from `zustand/traditional`
-  // instead of the bound `useAppStore` hook — see useSessionForIssue.ts for details.
-  const archivedSessions = useSessionHistoryForIssue(issueId)
-  const { archiveCurrentSession, restoreSession } = useSessionArchive()
-
-  // --- Archived session viewing (read-only) ---
-  const [viewingArchivedSessionId, setViewingArchivedSessionId] = useState<string | null>(null)
-  // Derived from local state — no store subscription needed.
-  const isViewingArchived = viewingArchivedSessionId !== null
+  const {
+    isStarting,
+    composeMode,
+    setComposeMode,
+    viewingArchivedSessionId,
+    initialPrompt,
+    handleComposeStart,
+    sessionBinding,
+    capabilities,
+    sessionHistoryCtx,
+  } = useIssueSessionRuntime(issueId)
 
   // Standalone mode: when custom onClose is provided, this component is used
   // inside a floating overlay (e.g. IssuePreviewOverlay from Starred Artifacts).
@@ -291,13 +281,6 @@ export function IssueDetailView({ issueId, onClose, onNavigateToIssue }: IssueDe
     })
     return () => { cancelled = true }
   }, [issue, loadFailed, issueId]) // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Reset transient UI state when switching between issues
-  useEffect(() => {
-    setComposeMode(false)
-    setIsStarting(false)
-    setViewingArchivedSessionId(null)
-  }, [issueId])
 
   // Auto-focus Session Console input when switching issues.
   // Waits until `issue` is loaded (so SessionPanel / SessionInputBar are mounted
@@ -390,207 +373,6 @@ export function IssueDetailView({ issueId, onClose, onNavigateToIssue }: IssueDe
     () => PRIORITY_VALUES.map((v) => ({ value: v, label: t(PRIORITY_LABEL_KEYS[v]) })),
     [t],
   )
-
-  const actionText = t('pleaseWorkOnIssue')
-
-  // ── Session action handlers ─────────────────────────────────────────
-  //
-  // ALL callbacks that need `issue` or `session` read them from the store
-  // at CALL-TIME (via useAppStore.getState()) instead of capturing them
-  // via closure.
-  //
-  // Why: `session` changes reference on every streaming tick (new messages,
-  // token counts); `issue` changes on every detail-cache update.  Closing
-  // over them causes useCallback to recreate → capabilities/sessionHistoryCtx
-  // useMemo invalidation → SessionPanel re-render → Virtuoso re-render →
-  // infinite loop (Maximum update depth exceeded).
-  //
-  // By reading at call-time, all callbacks depend only on stable values
-  // (issueId string, store action refs), keeping the entire `capabilities` and
-  // `sessionHistoryCtx` objects referentially stable during streaming.
-  // ─────────────────────────────────────────────────────────────────────
-
-  const handleCreateSession = useCallback(async () => {
-    const currentIssue = useIssueStore.getState().issueDetailCache.get(issueId)
-    if (!currentIssue) return
-    setIsStarting(true)
-    try {
-      const { prompt, workspace } = await buildIssueSessionPrompt(currentIssue, { projects: useAppStore.getState().projects, actionText })
-      await startSession({
-        prompt,
-        origin: { source: 'issue', issueId: currentIssue.id },
-        workspace,
-      })
-    } catch (err) {
-      log.error('Failed to create session', err)
-      toast(t('sessionPanel.startSessionFailed', { defaultValue: 'Failed to start session' }))
-    } finally {
-      setIsStarting(false)
-    }
-  }, [issueId, actionText, t])
-
-  // Pre-build the initial prompt for ComposeView (Issue title + description + images)
-  const initialPrompt = useMemo(() => {
-    if (!issue) return { text: '', attachments: [] as ImageAttachment[] }
-    const text = buildIssuePromptText(issue, actionText)
-    const attachments = issueImagesToAttachments(issue.images ?? [])
-    return { text, attachments }
-  }, [issue, actionText])
-
-  // Compose mode: start session with user-edited content.
-  // Returns `false` on failure so useMessageComposer preserves editor content.
-  const handleComposeStart = useCallback(async (content: UserMessageContent): Promise<boolean | void> => {
-    const currentIssue = useIssueStore.getState().issueDetailCache.get(issueId)
-    if (!currentIssue) return false
-    const workspace = currentIssue.projectId
-      ? { scope: 'project', projectId: currentIssue.projectId } as const
-      : { scope: 'global' as const }
-    setIsStarting(true)
-    try {
-      await startSession({
-        prompt: content,
-        origin: { source: 'issue', issueId: currentIssue.id },
-        workspace,
-      })
-      setComposeMode(false)
-    } catch (err) {
-      log.error('Failed to start composed session', err)
-      toast(t('sessionPanel.startSessionFailed', { defaultValue: 'Failed to start session' }))
-      return false
-    } finally {
-      setIsStarting(false)
-    }
-  }, [issueId, t])
-
-  const handleStopSession = useCallback(async () => {
-    const currentSession = selectSessionForIssue(issueId)
-    if (!currentSession) return
-    await stopSession(currentSession.id)
-  }, [issueId, stopSession])
-
-  const handleSendMessage = useCallback(async (message: UserMessageContent): Promise<boolean> => {
-    const currentSession = selectSessionForIssue(issueId)
-    if (!currentSession) return false
-    return sendMessage(currentSession.id, message)
-  }, [issueId, sendMessage])
-
-  const handleResumeMessage = useCallback(async (message: UserMessageContent): Promise<boolean> => {
-    const currentSession = selectSessionForIssue(issueId)
-    if (!currentSession) return false
-    return resumeSession(currentSession.id, message)
-  }, [issueId, resumeSession])
-
-  /**
-   * Retry: resume the existing session instead of creating a new one.
-   *
-   * This preserves the full conversation history. We send a short nudge
-   * message so the agent continues from where it left off.
-   *
-   * Falls back to creating a new session only when no session exists yet
-   * (edge case — e.g. the very first session creation itself failed before
-   * the session object was materialised).
-   */
-  const handleRetrySession = useCallback(async () => {
-    const currentSession = selectSessionForIssue(issueId)
-    if (!currentSession) {
-      // No session to resume — fall back to initial creation
-      await handleCreateSession()
-      return
-    }
-    await resumeSession(currentSession.id, t('sessions:sessionStatusBar.resumeMessage'))
-  }, [issueId, resumeSession, handleCreateSession, t])
-
-  /** Stop current session (if active), archive its ID into sessionHistory, then start fresh. */
-  const handleNewSession = useCallback(async () => {
-    const currentIssue = useIssueStore.getState().issueDetailCache.get(issueId)
-    if (!currentIssue) return
-    const currentSession = selectSessionForIssue(issueId)
-    setIsStarting(true)
-    try {
-      await archiveCurrentSession(currentIssue, currentSession)
-      await handleCreateSession()
-    } finally {
-      setIsStarting(false)
-    }
-  }, [issueId, archiveCurrentSession, handleCreateSession])
-
-  /** Stop current session (if active), archive its ID, then clear sessionId so the panel shows the empty "Start Session" state. */
-  const handleNewBlankSession = useCallback(async () => {
-    const currentIssue = useIssueStore.getState().issueDetailCache.get(issueId)
-    if (!currentIssue) return
-    const currentSession = selectSessionForIssue(issueId)
-    setIsStarting(true)
-    try {
-      await archiveCurrentSession(currentIssue, currentSession, { clearSessionId: true })
-    } finally {
-      setIsStarting(false)
-    }
-  }, [issueId, archiveCurrentSession])
-
-  /** Restore an archived session as the current one. */
-  const handleRestoreSession = useCallback(async (targetSessionId: string) => {
-    const currentIssue = useIssueStore.getState().issueDetailCache.get(issueId)
-    if (!currentIssue) return
-    const currentSession = selectSessionForIssue(issueId)
-    setIsStarting(true)
-    try {
-      setViewingArchivedSessionId(null)
-      await restoreSession(currentIssue, currentSession, targetSessionId)
-    } finally {
-      setIsStarting(false)
-    }
-  }, [issueId, restoreSession])
-
-  /** View an archived session in read-only mode. */
-  const handleViewArchivedSession = useCallback((sessionId: string) => {
-    setViewingArchivedSessionId(sessionId)
-  }, [])
-
-  /** Exit archived session view, returning to the current session. */
-  const handleExitArchivedView = useCallback(() => {
-    setViewingArchivedSessionId(null)
-  }, [])
-
-  // ── Stable structured props for SessionPanel ────────────────────────
-  //
-  // Both `capabilities` and `sessionHistoryCtx` are wrapped in useMemo so that
-  // SessionPanel (and its Virtuoso subtree) receive stable references
-  // throughout streaming.  All individual handler deps are stable (see
-  // call-time pattern above), so these useMemos only invalidate on real
-  // semantic changes (e.g. issueId switch, archived sessions list change).
-
-  const capabilities = useMemo<SessionPanelCapabilities>(() => ({
-    create: handleCreateSession,
-    retry: handleRetrySession,
-    stop: handleStopSession,
-    newSession: handleNewSession,
-    newBlankSession: handleNewBlankSession,
-    compose: () => setComposeMode(true),
-    send: handleSendMessage,
-    resume: handleResumeMessage,
-  }), [handleCreateSession, handleRetrySession, handleStopSession, handleNewSession, handleNewBlankSession, handleSendMessage, handleResumeMessage])
-
-  const sessionHistoryCtx = useMemo<SessionHistoryContext | undefined>(
-    () =>
-      archivedSessions.length > 0 || isViewingArchived
-        ? {
-            archivedSessions,
-            onRestore: handleRestoreSession,
-            onView: handleViewArchivedSession,
-            isViewingArchived,
-            onExitView: handleExitArchivedView,
-          }
-        : undefined,
-    [archivedSessions, handleRestoreSession, handleViewArchivedSession, isViewingArchived, handleExitArchivedView],
-  )
-
-  // Stable binding for SessionPanel — prevents React.memo from being
-  // defeated by a new object reference on every IssueDetailView render.
-  const sessionBinding = useMemo(() => ({
-    kind: 'issue' as const,
-    issueId,
-    archivedSessionId: viewingArchivedSessionId,
-  }), [issueId, viewingArchivedSessionId])
 
   // ── Render gate ──────────────────────────────────────────────────
   //
@@ -697,35 +479,51 @@ export function IssueDetailView({ issueId, onClose, onNavigateToIssue }: IssueDe
         <div className="no-drag flex items-center gap-1">
           {issue ? (
             <>
-              <button
-                onClick={() => setShowEditModal(true)}
-                className="p-1.5 rounded-md text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] hover:bg-[hsl(var(--foreground)/0.04)] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--ring))]"
-                aria-label="Edit issue"
-              >
-                <Pencil className="w-3.5 h-3.5" aria-hidden="true" />
-              </button>
-              <button
-                onClick={() => setConfirmDelete(true)}
-                className="p-1.5 rounded-md text-[hsl(var(--muted-foreground))] hover:text-red-500 hover:bg-[hsl(var(--foreground)/0.04)] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--ring))]"
-                aria-label="Delete issue"
-              >
-                <Trash2 className="w-3.5 h-3.5" aria-hidden="true" />
-              </button>
+              <Tooltip content={t('detail.openIssueFileSheet')} position="bottom">
+                <button
+                  onClick={() => openIssueFileOverlay(issue.id)}
+                  className="p-1.5 rounded-md text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] hover:bg-[hsl(var(--foreground)/0.04)] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--ring))]"
+                  aria-label={t('detail.openIssueFileSheetAria')}
+                >
+                  <FolderCode className="w-3.5 h-3.5" aria-hidden="true" />
+                </button>
+              </Tooltip>
+              <Tooltip content={t('detail.editIssue')} position="bottom">
+                <button
+                  onClick={() => setShowEditModal(true)}
+                  className="p-1.5 rounded-md text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] hover:bg-[hsl(var(--foreground)/0.04)] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--ring))]"
+                  aria-label={t('detail.editIssue')}
+                >
+                  <Pencil className="w-3.5 h-3.5" aria-hidden="true" />
+                </button>
+              </Tooltip>
+              <Tooltip content={t('detail.deleteIssue')} position="bottom">
+                <button
+                  onClick={() => setConfirmDelete(true)}
+                  className="p-1.5 rounded-md text-[hsl(var(--muted-foreground))] hover:text-red-500 hover:bg-[hsl(var(--foreground)/0.04)] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--ring))]"
+                  aria-label={t('detail.deleteIssue')}
+                >
+                  <Trash2 className="w-3.5 h-3.5" aria-hidden="true" />
+                </button>
+              </Tooltip>
             </>
           ) : (
             <>
               {/* Invisible placeholders to keep header width constant while loading */}
+              <span className="invisible p-1.5" aria-hidden="true"><FolderCode className="w-3.5 h-3.5" /></span>
               <span className="invisible p-1.5" aria-hidden="true"><Pencil className="w-3.5 h-3.5" /></span>
               <span className="invisible p-1.5" aria-hidden="true"><Trash2 className="w-3.5 h-3.5" /></span>
             </>
           )}
-          <button
-            onClick={() => onClose ? onClose() : selectIssue(null)}
-            className="p-1.5 rounded-md text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] hover:bg-[hsl(var(--foreground)/0.04)] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--ring))]"
-            aria-label="Close detail panel"
-          >
-            <X className="w-3.5 h-3.5" aria-hidden="true" />
-          </button>
+          <Tooltip content={t('detail.closeDetailPanel')} position="bottom" align="end">
+            <button
+              onClick={() => onClose ? onClose() : selectIssue(null)}
+              className="p-1.5 rounded-md text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] hover:bg-[hsl(var(--foreground)/0.04)] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--ring))]"
+              aria-label={t('detail.closeDetailPanel')}
+            >
+              <X className="w-3.5 h-3.5" aria-hidden="true" />
+            </button>
+          </Tooltip>
         </div>
       </div>
 
