@@ -22,7 +22,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ### Added
 - Project-level preferences for default entry tab, chat layout, and Files display mode, with full settings UI support
-- Quick file search workflow in Files mode (`Cmd/Ctrl+G`) with open/reveal/editor actions and `:line` navigation support
+- Quick file search workflow in Files mode (`Cmd/Ctrl+F`) with open/reveal/editor actions and `:line` navigation support
 
 ### Changed
 - Files state management is now isolated by project (open tabs, active file, expanded directories, refresh queues, and search recents)

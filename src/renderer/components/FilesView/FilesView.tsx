@@ -284,7 +284,7 @@ function FilesViewCore({
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent): void => {
-      if (e.key.toLowerCase() !== 'g') return
+      if (e.key.toLowerCase() !== 'f') return
       if (!(e.metaKey || e.ctrlKey)) return
       if ((e as KeyboardEvent & { isComposing?: boolean }).isComposing) return
       e.preventDefault()
