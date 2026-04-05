@@ -637,7 +637,11 @@ export const useFileStore = create<FileStore>((set, get) => ({
       const current = s.expandedTreeDirsByProject[projectId] ?? new Set<string>()
       const next = new Set(current)
       if (next.has(path)) {
-        next.delete(path)
+        for (const expandedPath of next) {
+          if (isSameOrChildPath(expandedPath, path)) {
+            next.delete(expandedPath)
+          }
+        }
       } else {
         next.add(path)
       }

@@ -24,6 +24,10 @@ interface ContextMentionPopoverProps {
   onSelectFile?: (entry: FileEntry) => void
 }
 
+function isSameOrChildPath(path: string, parentPath: string): boolean {
+  return path === parentPath || path.startsWith(`${parentPath}/`)
+}
+
 export function ContextMentionPopover({ onClose, onSelectFile }: ContextMentionPopoverProps): React.JSX.Element | null {
   const { t } = useTranslation('sessions')
   const { projectPath } = useProjectScope()
@@ -110,7 +114,11 @@ export function ContextMentionPopover({ onClose, onSelectFile }: ContextMentionP
       setExpandedDirs((prev) => {
         const next = new Set(prev)
         if (next.has(path)) {
-          next.delete(path)
+          for (const expandedPath of next) {
+            if (isSameOrChildPath(expandedPath, path)) {
+              next.delete(expandedPath)
+            }
+          }
         } else {
           next.add(path)
           // Load children if not cached
