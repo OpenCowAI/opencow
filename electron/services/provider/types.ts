@@ -158,9 +158,10 @@ export interface ProviderAdapter {
 
 export const OAUTH_CONFIG = {
   clientId: '9d1c250a-e61b-44d9-88ed-5944d1962f5e',
-  authorizeUrl: 'https://claude.ai/oauth/authorize',
-  tokenUrl: 'https://console.anthropic.com/v1/oauth/token',
-  scopes: ['user:inference', 'user:profile', 'user:mcp_servers', 'user:sessions:claude_code'],
+  // Align with current Claude production OAuth routing (same as free-code baseline).
+  authorizeUrl: 'https://claude.com/cai/oauth/authorize',
+  tokenUrl: 'https://platform.claude.com/v1/oauth/token',
+  scopes: ['user:inference', 'user:profile', 'user:mcp_servers', 'user:sessions:claude_code', 'user:file_upload'],
   /** Buffer before actual expiry to trigger proactive refresh (5 minutes). */
   refreshBufferMs: 5 * 60 * 1000,
   /** Timeout for the entire OAuth browser flow (3 minutes). */
