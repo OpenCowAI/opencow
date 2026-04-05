@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.3.20] - 2026-04-06
+
+### Added
+- Project/browser state policy controls and profile-resilient BrowserSheet behavior for stable browser continuity across contexts
+
+### Changed
+-
+
+### Fixed
+-
+
 ## [0.3.19] - 2026-04-03
 
 ### Added
