@@ -570,6 +570,10 @@ export async function createAppServices(deps: ServiceFactoryDeps): Promise<AppSe
     new BrowserNativeCapability({
       browserService,
       bus,
+      resolveProjectBrowserStatePolicy: async (projectId) => {
+        const project = await projectStore.getById(projectId)
+        return project?.preferences.defaultBrowserStatePolicy ?? null
+      },
     })
   )
 

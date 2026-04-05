@@ -1296,6 +1296,7 @@ export function registerIPCHandlers(deps: IPCDeps): void {
   registerHandler('browser:show', (context) => {
     const linkedSessionId = context?.linkedSessionId ?? null
     const sourceIssueId   = context?.sourceIssueId   ?? null
+    const preferredProfileId = context?.preferredProfileId ?? context?.profileId ?? null
 
     let source: import('@shared/types').BrowserSource
 
@@ -1311,7 +1312,22 @@ export function registerIPCHandlers(deps: IPCDeps): void {
 
     const options: import('@shared/types').BrowserOpenOptions = {}
     if (context?.initialUrl) options.initialUrl = context.initialUrl
-    if (context?.profileId) options.profileId = context.profileId
+    if (preferredProfileId) {
+      options.profileId = preferredProfileId
+      options.preferredProfileId = preferredProfileId
+    }
+    if (context?.policy) options.policy = context.policy
+    if (context?.projectId) options.projectId = context.projectId
+
+    log.info('browser:show', {
+      sourceType: source.type,
+      linkedSessionId,
+      sourceIssueId,
+      preferredProfileId,
+      policy: context?.policy ?? null,
+      projectId: context?.projectId ?? null,
+      initialUrl: context?.initialUrl ?? null,
+    })
 
     // Broadcast to renderer — useDataBus handles browser:open-overlay -> openBrowserOverlay()
     bus.dispatch({
@@ -1382,6 +1398,18 @@ export function registerIPCHandlers(deps: IPCDeps): void {
 
     registerHandler('browser:ensure-source-view', async (params) => {
       const { source } = params
+      const binding = await browserSvc.resolveStateBinding(params)
+      log.info('browser:ensure-source-view', {
+        sourceType: source.type,
+        issueId: binding.issueId,
+        sessionId: binding.sessionId,
+        requestedPolicy: params.policy ?? null,
+        resolvedPolicy: binding.policy,
+        preferredProfileId: params.preferredProfileId ?? params.profileId ?? null,
+        resolvedProfileId: binding.profileId,
+        reason: binding.reason,
+        projectId: binding.projectId,
+      })
 
       // Get the main window for attaching WebContentsView
       const { BrowserWindow: BW } = await import('electron')
@@ -1394,43 +1422,120 @@ export function registerIPCHandlers(deps: IPCDeps): void {
         case 'issue-session':
         case 'chat-session': {
           browserSvc.setFocusedSession(source.sessionId)
-          const viewId = await browserSvc.getOrCreateSessionView(source.sessionId, getWindow)
+          const viewId = await browserSvc.getOrCreateSessionView(
+            source.sessionId,
+            getWindow,
+            binding.profileId,
+            binding,
+          )
           // Ensure the view is attached (idempotent — addChildView on an
           // already-attached view just adjusts z-order). This handles the
           // reopen-from-PiP case where the view was previously detached.
           browserSvc.reattachView(viewId, mainWindow)
           browserSvc.displaySessionView(source.sessionId)
-          return viewId
+          return {
+            viewId,
+            profileId: binding.profileId,
+            statePolicy: binding.policy,
+            profileBindingReason: binding.reason,
+          }
         }
         case 'issue-standalone': {
           browserSvc.setFocusedIssue(source.issueId)
-          const viewId = await browserSvc.getOrCreateIssueView(source.issueId, getWindow)
+          const viewId = await browserSvc.getOrCreateIssueView(
+            source.issueId,
+            getWindow,
+            binding.profileId,
+            binding,
+          )
           browserSvc.reattachView(viewId, mainWindow)
           browserSvc.displayIssueView(source.issueId)
-          return viewId
+          return {
+            viewId,
+            profileId: binding.profileId,
+            statePolicy: binding.policy,
+            profileBindingReason: binding.reason,
+          }
         }
         case 'standalone': {
           browserSvc.setFocusedSession(null)
-          return browserSvc.ensureActiveView(getWindow)
+          const viewId = await browserSvc.ensureActiveView(getWindow, binding.profileId, binding)
+          return {
+            viewId,
+            profileId: binding.profileId,
+            statePolicy: binding.policy,
+            profileBindingReason: binding.reason,
+          }
         }
       }
     })
 
-    registerHandler('browser:display-source', (params) => {
+    registerHandler('browser:display-source', async (params) => {
       const { source } = params
+      const binding = await browserSvc.resolveStateBinding(params)
+      log.info('browser:display-source', {
+        sourceType: source.type,
+        issueId: binding.issueId,
+        sessionId: binding.sessionId,
+        requestedPolicy: params.policy ?? null,
+        resolvedPolicy: binding.policy,
+        preferredProfileId: params.preferredProfileId ?? params.profileId ?? null,
+        resolvedProfileId: binding.profileId,
+        reason: binding.reason,
+        projectId: binding.projectId,
+      })
+
+      const { BrowserWindow: BW } = await import('electron')
+      const mainWindow = BW.getAllWindows().find(w => !w.isDestroyed())
+      if (!mainWindow) throw new Error('No main window available')
+      const getWindow = async () => mainWindow
+
       switch (source.type) {
         case 'issue-session':
-        case 'chat-session':
+        case 'chat-session': {
           browserSvc.setFocusedSession(source.sessionId)
+          const viewId = await browserSvc.getOrCreateSessionView(
+            source.sessionId,
+            getWindow,
+            binding.profileId,
+            binding,
+          )
+          browserSvc.reattachView(viewId, mainWindow)
           browserSvc.displaySessionView(source.sessionId)
-          break
-        case 'issue-standalone':
+          return {
+            viewId,
+            profileId: binding.profileId,
+            statePolicy: binding.policy,
+            profileBindingReason: binding.reason,
+          }
+        }
+        case 'issue-standalone': {
           browserSvc.setFocusedIssue(source.issueId)
+          const viewId = await browserSvc.getOrCreateIssueView(
+            source.issueId,
+            getWindow,
+            binding.profileId,
+            binding,
+          )
+          browserSvc.reattachView(viewId, mainWindow)
           browserSvc.displayIssueView(source.issueId)
-          break
-        case 'standalone':
+          return {
+            viewId,
+            profileId: binding.profileId,
+            statePolicy: binding.policy,
+            profileBindingReason: binding.reason,
+          }
+        }
+        case 'standalone': {
           browserSvc.setFocusedSession(null)
-          break
+          const viewId = await browserSvc.ensureActiveView(getWindow, binding.profileId, binding)
+          return {
+            viewId,
+            profileId: binding.profileId,
+            statePolicy: binding.policy,
+            profileBindingReason: binding.reason,
+          }
+        }
       }
     })
 

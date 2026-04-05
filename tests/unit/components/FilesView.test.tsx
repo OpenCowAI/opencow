@@ -65,6 +65,7 @@ function makeProject(overrides: Partial<Project> = {}): Project {
       defaultTab: 'issues',
       defaultChatViewMode: 'default',
       defaultFilesDisplayMode: 'ide',
+      defaultBrowserStatePolicy: 'shared-global',
     },
     ...overrides,
   }
@@ -129,10 +130,10 @@ describe('FilesView search integration', () => {
     }
   })
 
-  it('Cmd/Ctrl+G + :line selection from browser mode opens editor and queues jump', async () => {
+  it('Cmd/Ctrl+F + :line selection from browser mode opens editor and queues jump', async () => {
     render(<FilesView />)
 
-    fireEvent.keyDown(window, { key: 'g', ctrlKey: true })
+    fireEvent.keyDown(window, { key: 'f', ctrlKey: true })
 
     const input = await screen.findByRole('textbox', { name: /search files/i })
     fireEvent.change(input, { target: { value: 'src/main.ts:23' } })

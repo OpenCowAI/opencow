@@ -35,6 +35,7 @@ import type { BrowserCommand, BrowserCommandResult } from '../../browser/types'
 import type { SnapshotResult } from '../../browser/snapshot'
 import { createLogger } from '../../platform/logger'
 import { getMainWindow } from '../../window/windowManager'
+import type { BrowserStatePolicy, ProjectBrowserStatePolicy } from '@shared/types'
 
 const log = createLogger('BrowserNativeCapability')
 
@@ -94,6 +95,7 @@ const CHROME_DEVTOOLS_OVERLAPPING_TOOLS = new Set([
 export interface BrowserNativeCapabilityDeps {
   browserService: BrowserService
   bus: DataBus
+  resolveProjectBrowserStatePolicy?: (projectId: string) => Promise<ProjectBrowserStatePolicy | null>
 }
 
 // ─── Browser-specific Tool Config ────────────────────────────────────────
@@ -140,11 +142,13 @@ export class BrowserNativeCapability extends BaseNativeCapability {
 
   private readonly browserService: BrowserService
   private readonly bus: DataBus
+  private readonly resolveProjectBrowserStatePolicy: (projectId: string) => Promise<ProjectBrowserStatePolicy | null>
 
   constructor(deps: BrowserNativeCapabilityDeps) {
     super()
     this.browserService = deps.browserService
     this.bus = deps.bus
+    this.resolveProjectBrowserStatePolicy = deps.resolveProjectBrowserStatePolicy ?? (async () => null)
   }
 
   /**
@@ -169,7 +173,7 @@ export class BrowserNativeCapability extends BaseNativeCapability {
       )
     }
 
-    return configs.map((config) => this.createBrowserToolDescriptor(config, context.session.sessionId))
+    return configs.map((config) => this.createBrowserToolDescriptor(config, context.session))
   }
 
   // ── Lifecycle ──────────────────────────────────────────────────────
@@ -196,7 +200,10 @@ export class BrowserNativeCapability extends BaseNativeCapability {
    * time) ensures each session's tools always operate on their own dedicated
    * WebContentsView — preventing cross-session navigation interference.
    */
-  private createBrowserToolDescriptor(config: BrowserToolConfig, sessionId: string): NativeToolDescriptor {
+  private createBrowserToolDescriptor(
+    config: BrowserToolConfig,
+    session: import('../types').NativeCapabilitySessionContext,
+  ): NativeToolDescriptor {
     // Reuse BaseNativeCapability descriptor wrapper with execute injected with viewId + timeout.
     return this.createToolDescriptor({
       name: config.name,
@@ -204,7 +211,7 @@ export class BrowserNativeCapability extends BaseNativeCapability {
       schema: config.schema,
       execute: async (args, input) => {
         return this.withToolTimeout(config.name, input, async () => {
-          const viewId = await this.ensureSessionView(sessionId, config.showWindow ?? true)
+          const viewId = await this.ensureSessionView(session, config.showWindow ?? true)
           return config.execute(args, viewId, input)
         })
       },
@@ -536,19 +543,58 @@ export class BrowserNativeCapability extends BaseNativeCapability {
    *   left in its current visibility state (used for silent data-capture tools
    *   like `browser_screenshot` that work via CDP regardless of visibility).
    */
-  private async ensureSessionView(sessionId: string, showWindow: boolean): Promise<string> {
+  private async resolveDefaultPolicy(
+    session: import('../types').NativeCapabilitySessionContext,
+  ): Promise<BrowserStatePolicy> {
+    if (!session.projectId) return 'shared-global'
+
+    const configured = await this.resolveProjectBrowserStatePolicy(session.projectId)
+    const preferred = configured ?? 'shared-global'
+
+    // Issue isolation requires an issue-scoped session context.
+    if (preferred === 'isolated-issue' && !session.issueId) {
+      return 'isolated-session'
+    }
+
+    return preferred
+  }
+
+  private async ensureSessionView(
+    session: import('../types').NativeCapabilitySessionContext,
+    showWindow: boolean,
+  ): Promise<string> {
+    const sessionId = session.sessionId
+    const policy = await this.resolveDefaultPolicy(session)
+    const source: import('@shared/types').BrowserSource = session.issueId
+      ? { type: 'issue-session', issueId: session.issueId, sessionId }
+      : { type: 'chat-session', sessionId }
+    const binding = await this.browserService.resolveStateBinding({
+      source,
+      policy,
+      sessionId,
+      issueId: session.issueId ?? undefined,
+      projectId: session.projectId ?? undefined,
+    })
+
     if (showWindow) {
       // Dispatch browser:open-overlay to signal the renderer to show BrowserSheet
       this.bus.dispatch({
         type: 'browser:open-overlay',
-        payload: { source: { type: 'chat-session', sessionId } },
+        payload: {
+          source,
+          options: {
+            policy,
+            projectId: session.projectId ?? undefined,
+            preferredProfileId: binding.profileId,
+          },
+        },
       })
     }
     return this.browserService.getOrCreateSessionView(sessionId, async () => {
       const win = getMainWindow()
       if (!win) throw new Error('No main window found for browser view attachment')
       return win
-    })
+    }, binding.profileId, binding)
   }
 
   // ── Tool Timeout Wrapper ─────────────────────────────────────────

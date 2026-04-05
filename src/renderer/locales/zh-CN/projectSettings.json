@@ -4,6 +4,7 @@
   "tabs": {
     "ariaLabel": "项目设置标签页",
     "general": "通用",
+    "browser": "浏览器",
     "issueIntegration": "Issue 集成"
   },
   "general": {
@@ -50,6 +51,39 @@
       "options": {
         "ide": "编辑器",
         "browser": "浏览器"
+      }
+    }
+  },
+  "browser": {
+    "title": "浏览器",
+    "description": "管理该项目的浏览器 Profile 默认行为。",
+    "save": "保存",
+    "saving": "保存中...",
+    "saved": "设置已保存",
+    "saveFailed": "保存失败",
+    "projectNotFound": "未找到项目。",
+    "defaultStatePolicy": {
+      "title": "默认浏览器状态策略",
+      "description": "设置该项目中浏览器 Profile 状态的默认共享策略。",
+      "hints": {
+        "sharedGlobal": "跨项目、跨会话复用同一个全局浏览器 Profile。",
+        "sharedProject": "在当前项目内复用同一个浏览器 Profile。",
+        "isolatedIssue": "按 Issue 隔离浏览器状态，适合多账号并行运营。",
+        "isolatedSession": "按 Session 隔离浏览器状态，适合严格任务隔离。"
+      },
+      "options": {
+        "sharedGlobal": "共享：全局",
+        "sharedProject": "共享：项目",
+        "isolatedIssue": "隔离：Issue",
+        "isolatedSession": "隔离：Session"
+      }
+    },
+    "preview": {
+      "scope": {
+        "global": "全局",
+        "project": "项目",
+        "issue": "Issue",
+        "session": "Session"
       }
     }
   },

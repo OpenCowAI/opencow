@@ -41,6 +41,7 @@ describe('appStore - NavigationSlice', () => {
           defaultTab: 'issues',
           defaultChatViewMode: 'default',
           defaultFilesDisplayMode: null,
+          defaultBrowserStatePolicy: 'shared-project',
         },
       },
       {
@@ -56,6 +57,7 @@ describe('appStore - NavigationSlice', () => {
           defaultTab: 'issues',
           defaultChatViewMode: 'default',
           defaultFilesDisplayMode: null,
+          defaultBrowserStatePolicy: 'shared-project',
         },
       },
       {
@@ -71,6 +73,7 @@ describe('appStore - NavigationSlice', () => {
           defaultTab: 'chat',
           defaultChatViewMode: 'files',
           defaultFilesDisplayMode: 'browser',
+          defaultBrowserStatePolicy: 'shared-project',
         },
       },
     ]

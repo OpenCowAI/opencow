@@ -53,9 +53,9 @@
   "search": {
     "openButton": "搜索",
     "openButtonAria": "搜索文件",
-    "shortcutHint": "搜索文件（⌘/Ctrl+G）",
+    "shortcutHint": "搜索文件（⌘/Ctrl+F）",
     "fabAria": "打开文件搜索",
-    "shortcutChip": "⌘/Ctrl+G"
+    "shortcutChip": "⌘/Ctrl+F"
   },
   "searchOverlay": {
     "dialogAria": "文件搜索",

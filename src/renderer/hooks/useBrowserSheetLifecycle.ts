@@ -20,7 +20,7 @@
  * setDisplayedView is not short-circuited on reopen.
  */
 
-import { useEffect } from 'react'
+import { useEffect, useMemo } from 'react'
 import { useBrowserOverlayStore } from '@/stores/browserOverlayStore'
 import { getAppAPI } from '@/windowAPI'
 import { createLogger } from '@/lib/logger'
@@ -31,9 +31,31 @@ const log = createLogger('BrowserSheet')
 export function useBrowserSheetLifecycle(overlay: BrowserOverlayState): void {
   const setBrowserOverlayViewId = useBrowserOverlayStore((s) => s.setBrowserOverlayViewId)
   const setBrowserOverlayActiveProfileId = useBrowserOverlayStore((s) => s.setBrowserOverlayActiveProfileId)
+  const setBrowserOverlayStatePolicy = useBrowserOverlayStore((s) => s.setBrowserOverlayStatePolicy)
+  const setBrowserOverlayProfileBindingReason = useBrowserOverlayStore((s) => s.setBrowserOverlayProfileBindingReason)
   const setBrowserOverlayProfiles = useBrowserOverlayStore((s) => s.setBrowserOverlayProfiles)
 
   const { source } = overlay
+  const bindingRequest = useMemo<import('@shared/types').BrowserSourceResolutionRequest>(() => {
+    const request: import('@shared/types').BrowserSourceResolutionRequest = {
+      source,
+      policy: overlay.statePolicy,
+      projectId: overlay.projectId ?? undefined,
+    }
+    if (overlay.statePolicy === 'custom-profile' && overlay.activeProfileId) {
+      request.preferredProfileId = overlay.activeProfileId
+    }
+    return request
+  }, [
+    source.type,
+    // @ts-expect-error -- discriminated union: sessionId only exists on session-type sources
+    source.sessionId,
+    // @ts-expect-error -- discriminated union: issueId only exists on issue-type sources
+    source.issueId,
+    overlay.statePolicy,
+    overlay.projectId,
+    overlay.activeProfileId,
+  ])
 
   // Load profile list on mount
   useEffect(() => {
@@ -57,13 +79,13 @@ export function useBrowserSheetLifecycle(overlay: BrowserOverlayState): void {
 
     const ensureView = async () => {
       try {
-        const viewId = await getAppAPI()['browser:ensure-source-view']({
-          source,
-          profileId: overlay.activeProfileId ?? undefined,
-        })
+        const viewId = await getAppAPI()['browser:ensure-source-view'](bindingRequest)
 
         if (cancelled) return
-        setBrowserOverlayViewId(viewId)
+        setBrowserOverlayViewId(viewId.viewId)
+        setBrowserOverlayActiveProfileId(viewId.profileId)
+        setBrowserOverlayStatePolicy(viewId.statePolicy)
+        setBrowserOverlayProfileBindingReason(viewId.profileBindingReason)
       } catch (err) {
         // View creation failed — overlay will show loading state
         log.error('ensure-source-view failed:', err)
@@ -78,12 +100,11 @@ export function useBrowserSheetLifecycle(overlay: BrowserOverlayState): void {
   // Re-run only when the source identity changes (type + ids)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
-    source.type,
-    // @ts-expect-error -- discriminated union: sessionId only exists on session-type sources
-    source.sessionId,
-    // @ts-expect-error -- discriminated union: issueId only exists on issue-type sources
-    source.issueId,
+    bindingRequest,
     setBrowserOverlayViewId,
+    setBrowserOverlayActiveProfileId,
+    setBrowserOverlayStatePolicy,
+    setBrowserOverlayProfileBindingReason,
   ])
 
   // Sync profile info when viewId arrives

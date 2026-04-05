@@ -459,15 +459,26 @@ export function adaptClaudeSdkMessage(message: SDKMessage): EngineRuntimeEvent[]
 
   if (type === 'system' && subtype === 'api_retry') {
     const attempt = typeof raw.attempt === 'number' ? raw.attempt : 0
-    const delay = typeof raw.delay === 'number' ? raw.delay : 0
+    const maxRetries = typeof raw.max_retries === 'number' ? raw.max_retries : undefined
+    // SDK v0.2.83+ emits retry_delay_ms; keep legacy `delay` fallback for
+    // forward/backward compatibility with older bridge payload variants.
+    const delay = typeof raw.retry_delay_ms === 'number'
+      ? raw.retry_delay_ms
+      : (typeof raw.delay === 'number' ? raw.delay : 0)
     const errorStatus = typeof raw.error_status === 'number' ? raw.error_status : undefined
-    log.info(`API retry: attempt ${attempt}, delay ${delay}ms`, { errorStatus })
+    const errorType = typeof raw.error === 'string' ? raw.error : undefined
+    const attemptLabel = maxRetries ? `${attempt}/${maxRetries}` : `${attempt}`
+    log.info(`API retry: attempt ${attemptLabel}, delay ${delay}ms`, { errorStatus, errorType })
     return [{
       kind: 'engine.diagnostic',
       payload: {
         code: 'claude.api_retry',
         severity: 'warning' as const,
-        message: `API retry attempt ${attempt}${errorStatus ? ` (HTTP ${errorStatus})` : ''}, retrying in ${delay}ms`,
+        message:
+          `API retry attempt ${attemptLabel}` +
+          `${errorStatus ? ` (HTTP ${errorStatus})` : ''}` +
+          `${errorType ? ` [${errorType}]` : ''}` +
+          `, retrying in ${delay}ms`,
         terminal: false,
         source: 'claude-sdk',
       },
@@ -475,14 +486,26 @@ export function adaptClaudeSdkMessage(message: SDKMessage): EngineRuntimeEvent[]
   }
 
   if (type === 'rate_limit_event') {
-    const status = typeof raw.status === 'string' ? raw.status : 'unknown'
-    log.info(`Rate limit event: ${status}`, { raw })
+    const rateLimitInfo = raw.rate_limit_info as {
+      status?: unknown
+      rateLimitType?: unknown
+      resetsAt?: unknown
+    } | undefined
+    const status = typeof rateLimitInfo?.status === 'string'
+      ? rateLimitInfo.status
+      : (typeof raw.status === 'string' ? raw.status : 'unknown')
+    const rateLimitType = typeof rateLimitInfo?.rateLimitType === 'string' ? rateLimitInfo.rateLimitType : undefined
+    const resetsAt = typeof rateLimitInfo?.resetsAt === 'number' ? rateLimitInfo.resetsAt : undefined
+    log.info(`Rate limit event: ${status}`, { rateLimitType, resetsAt })
+    const detailParts = [rateLimitType, resetsAt ? `resetsAt=${new Date(resetsAt).toISOString()}` : undefined]
+      .filter((part): part is string => typeof part === 'string')
+    const detail = detailParts.length > 0 ? ` (${detailParts.join(', ')})` : ''
     return [{
       kind: 'engine.diagnostic',
       payload: {
         code: 'claude.rate_limit',
         severity: 'warning' as const,
-        message: `Rate limit: ${status}`,
+        message: `Rate limit: ${status}${detail}`,
         terminal: false,
         source: 'claude-sdk',
       },

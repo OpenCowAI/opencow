@@ -30,6 +30,7 @@ function createContextHarness(): ContextHarness {
       session: {
         sessionId: 'session-evose-1',
         projectId: null,
+        issueId: null,
         originSource: 'agent',
       },
       relay: relay as unknown as NativeCapabilityToolContext['relay'],

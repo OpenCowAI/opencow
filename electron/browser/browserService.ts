@@ -2,7 +2,13 @@
 
 import { WebContentsView, session } from 'electron'
 import type { BrowserWindow } from 'electron'
-import type { DataBusEvent, BrowserShowContext } from '@shared/types'
+import type {
+  DataBusEvent,
+  BrowserShowContext,
+  BrowserSource,
+  BrowserStatePolicy,
+  BrowserSourceResolutionRequest,
+} from '@shared/types'
 import type {
   BrowserProfile,
   BrowserCommand,
@@ -18,6 +24,10 @@ import { BrowserActionExecutor } from './browserActionExecutor'
 import { BrowserActionDecorator } from './browserActionDecorator'
 import { CookiePersistenceInterceptor, type CookiePersistenceConfig } from './cookiePersistenceInterceptor'
 import { createLogger } from '../platform/logger'
+import {
+  defaultBrowserStatePolicyForSource,
+  normalizeBrowserStatePolicy,
+} from '../../src/shared/browserStatePolicy'
 
 const log = createLogger('BrowserService')
 
@@ -38,6 +48,18 @@ interface ManagedView {
   interceptor: CookiePersistenceInterceptor
   /** Saved bounds before the view was hidden by the overlay guard. */
   savedBounds?: Electron.Rectangle
+  /** Last resolved source binding that displayed this view. */
+  sourceBinding?: BrowserStateBinding
+}
+
+interface BrowserStateBinding {
+  policy: BrowserStatePolicy
+  profileId: string
+  reason: string
+  sourceType: BrowserSource['type']
+  projectId: string | null
+  issueId: string | null
+  sessionId: string | null
 }
 
 // ─── Dependencies ───────────────────────────────────────────────────────
@@ -70,6 +92,8 @@ const THUMBNAIL_MAX_WIDTH = 240
 const THUMBNAIL_JPEG_QUALITY = 70
 /** Debounce delay (ms) before capturing a thumbnail after navigation/load. */
 const THUMBNAIL_DEBOUNCE_MS = 500
+/** Timeout for profile-rebind URL priming before transaction abort. */
+const REBIND_NAVIGATION_TIMEOUT_MS = 8_000
 
 export class BrowserService {
   private readonly managedViews = new Map<string, ManagedView>()
@@ -144,6 +168,61 @@ export class BrowserService {
   constructor(deps: BrowserServiceDeps) {
     this.store = deps.store
     this.dispatch = deps.dispatch
+  }
+
+  /**
+   * Resolve a stable profile binding for the incoming browser source request.
+   *
+   * Policy precedence:
+   * 1) custom-profile when preferredProfileId/profileId is provided
+   * 2) explicit request.policy
+   * 3) source-based default (issue-session/issue-standalone/chat-session -> shared-project; standalone -> shared-global)
+   */
+  async resolveStateBinding(request: BrowserSourceResolutionRequest): Promise<BrowserStateBinding> {
+    const preferredProfileId = request.preferredProfileId ?? request.profileId
+    const sourceIdentity = this.resolveSourceIdentity(request)
+    if (preferredProfileId) {
+      const profileId = await this.resolveProfileId(preferredProfileId)
+      return {
+        policy: 'custom-profile',
+        profileId,
+        reason: `custom-profile:preferred:${preferredProfileId}`,
+        sourceType: request.source.type,
+        projectId: sourceIdentity.projectId,
+        issueId: sourceIdentity.issueId,
+        sessionId: sourceIdentity.sessionId,
+      }
+    }
+
+    const policy = this.resolvePolicyForRequest(request, sourceIdentity)
+    if (policy === 'custom-profile') {
+      const fallbackPolicy = this.defaultPolicyForSource(request.source)
+      const fallbackScopeKey = this.buildScopeKey(fallbackPolicy, request, sourceIdentity)
+      const fallbackName = `State:${fallbackScopeKey}`
+      const fallbackProfileId = await this.findOrCreateProfileByName(fallbackName)
+      return {
+        policy: fallbackPolicy,
+        profileId: fallbackProfileId,
+        reason: `policy:custom-profile-missing-preferred:fallback:${fallbackPolicy}:${fallbackScopeKey}`,
+        sourceType: request.source.type,
+        projectId: sourceIdentity.projectId,
+        issueId: sourceIdentity.issueId,
+        sessionId: sourceIdentity.sessionId,
+      }
+    }
+    const scopeKey = this.buildScopeKey(policy, request, sourceIdentity)
+    const profileName = `State:${scopeKey}`
+    const profileId = await this.findOrCreateProfileByName(profileName)
+
+    return {
+      policy,
+      profileId,
+      reason: `policy:${policy}:${scopeKey}`,
+      sourceType: request.source.type,
+      projectId: sourceIdentity.projectId,
+      issueId: sourceIdentity.issueId,
+      sessionId: sourceIdentity.sessionId,
+    }
   }
 
   // ── Displayed View (browser window viewport) ─────────────────────
@@ -233,6 +312,18 @@ export class BrowserService {
       log.debug(`displaySessionView(${sessionId}): no view yet — will auto-display when created`)
       return
     }
+    const managed = this.managedViews.get(viewId)
+    if (managed && !managed.sourceBinding) {
+      managed.sourceBinding = {
+        policy: 'isolated-session',
+        profileId: managed.profileId,
+        reason: 'legacy:display-session',
+        sourceType: 'chat-session',
+        projectId: null,
+        issueId: null,
+        sessionId,
+      }
+    }
     this.setDisplayedView(viewId)
   }
 
@@ -273,9 +364,27 @@ export class BrowserService {
   async getOrCreateIssueView(
     issueId: string,
     getWindow: () => Promise<BrowserWindow>,
+    preferredProfileId?: string,
+    binding?: BrowserStateBinding,
   ): Promise<string> {
     const existing = this.getIssueView(issueId)
-    if (existing) return existing
+    if (existing) {
+      const managed = this.managedViews.get(existing)
+      if (!preferredProfileId || !managed || managed.profileId === preferredProfileId) {
+        if (managed && binding) {
+          managed.sourceBinding = binding
+        }
+        return existing
+      }
+
+      log.info('browser:view-profile-rebind', {
+        scope: 'issue',
+        sourceId: issueId,
+        previousViewId: existing,
+        previousProfileId: managed.profileId,
+        preferredProfileId,
+      })
+    }
 
     const mutexKey = `issue:${issueId}`
     if (this.ensureViewMutexes.has(mutexKey)) {
@@ -284,7 +393,7 @@ export class BrowserService {
     }
 
     log.debug(`getOrCreateIssueView(${issueId}): acquiring mutex`)
-    const promise = this.doCreateIssueView(issueId, getWindow)
+    const promise = this.doCreateIssueView(issueId, getWindow, preferredProfileId, binding)
     this.ensureViewMutexes.set(mutexKey, promise)
     try {
       return await promise
@@ -306,6 +415,18 @@ export class BrowserService {
     if (!viewId) {
       log.warn(`displayIssueView(${issueId}): no view found — was getOrCreateIssueView called?`)
       return
+    }
+    const managed = this.managedViews.get(viewId)
+    if (managed && !managed.sourceBinding) {
+      managed.sourceBinding = {
+        policy: 'shared-project',
+        profileId: managed.profileId,
+        reason: 'legacy:display-issue',
+        sourceType: 'issue-standalone',
+        projectId: null,
+        issueId,
+        sessionId: null,
+      }
     }
     this.setDisplayedView(viewId)
   }
@@ -329,17 +450,78 @@ export class BrowserService {
   private async doCreateIssueView(
     issueId: string,
     getWindow: () => Promise<BrowserWindow>,
+    preferredProfileId?: string,
+    binding?: BrowserStateBinding,
   ): Promise<string> {
-    const profileId = await this.resolveDefaultProfileId()
+    const existing = this.getIssueView(issueId)
+    const existingManaged = existing ? this.managedViews.get(existing) : null
+    const needsRebind =
+      !!existing &&
+      !!existingManaged &&
+      !!preferredProfileId &&
+      existingManaged.profileId !== preferredProfileId
+    const rebindNavigationUrl = needsRebind
+      ? this.resolveRebindNavigationUrl(existingManaged)
+      : null
+
+    if (existing && !needsRebind) {
+      return existing
+    }
+
+    const profileId = await this.resolveProfileId(preferredProfileId)
     const win = await getWindow()
     const viewId = await this.openView(profileId, win)
 
+    const resolvedBinding: BrowserStateBinding = binding ?? {
+      policy: preferredProfileId ? 'custom-profile' : 'shared-project',
+      profileId,
+      reason: preferredProfileId
+        ? `legacy:issue:custom-profile:${preferredProfileId}`
+        : 'legacy:issue:shared-project',
+      sourceType: 'issue-standalone',
+      projectId: null,
+      issueId,
+      sessionId: null,
+    }
+    const managed = this.managedViews.get(viewId)
+    if (managed) {
+      managed.sourceBinding = resolvedBinding
+    }
+    if (needsRebind) {
+      try {
+        await this.primeReboundViewNavigation(viewId, rebindNavigationUrl)
+      } catch (error) {
+        log.warn('browser:view-rebind-transaction-aborted', {
+          scope: 'issue',
+          sourceId: issueId,
+          previousViewId: existing,
+          newViewId: viewId,
+          rebindNavigationUrl,
+          error: error instanceof Error ? error.message : String(error),
+        })
+        await this.closeView(viewId)
+        throw error
+      }
+    }
+
     this.issueViews.set(issueId, viewId)
-    log.info(`getOrCreateIssueView(${issueId}): created view "${viewId}" (profile: ${profileId})`)
+    log.info('browser:view-created', {
+      scope: 'issue',
+      sourceId: issueId,
+      viewId,
+      profileId,
+      preferredProfileId: preferredProfileId ?? null,
+    })
 
     // Issue views are ALWAYS immediately displayed.
     // The user explicitly opened the browser for this Issue; they expect to see it.
-    this.setDisplayedView(viewId)
+    this.setDisplayedView(viewId, resolvedBinding)
+
+    // Profile switched: old issue view is now stale and should be retired.
+    // Close AFTER the new view is displayed to avoid overlay teardown races.
+    if (existing && existing !== viewId) {
+      await this.closeView(existing)
+    }
 
     return viewId
   }
@@ -354,13 +536,50 @@ export class BrowserService {
    * the display" race condition that existed when `openView` dispatched this
    * event unconditionally on every view creation.
    */
-  private setDisplayedView(viewId: string): void {
+  private buildViewOpenedPayload(
+    viewId: string,
+    managed: ManagedView,
+  ): Extract<DataBusEvent, { type: 'browser:view:opened' }>['payload'] {
+    const resolvedBinding = managed.sourceBinding
+    const fallbackSource = this.deriveSourceFromMaps(viewId)
+    const eventSource: BrowserSource = resolvedBinding
+      ? this.bindingToSource(resolvedBinding, fallbackSource)
+      : fallbackSource
+    const eventPolicy: BrowserStatePolicy = resolvedBinding?.policy ?? this.defaultPolicyForSource(eventSource)
+    const eventProjectId = resolvedBinding?.projectId ?? null
+    const eventBindingReason = resolvedBinding?.reason ?? 'legacy:map-derived'
+
+    return {
+      viewId,
+      profileId: managed.profileId,
+      profileName: managed.profileName,
+      source: eventSource,
+      statePolicy: eventPolicy,
+      projectId: eventProjectId,
+      profileBindingReason: eventBindingReason,
+    }
+  }
+
+  private setDisplayedView(viewId: string, binding?: BrowserStateBinding): void {
     const managed = this.managedViews.get(viewId)
     if (!managed) {
       log.warn(`setDisplayedView("${viewId}"): view not found in managedViews`)
       return
     }
-    if (this._displayedViewId === viewId) return  // already displayed — no-op
+
+    if (binding) {
+      managed.sourceBinding = binding
+    }
+
+    if (this._displayedViewId === viewId) {
+      // Binding/source metadata may still change (e.g. policy/profile switch
+      // resolving to the same view). Re-dispatch to keep renderer caches fresh.
+      this.dispatch({
+        type: 'browser:view:opened',
+        payload: this.buildViewOpenedPayload(viewId, managed),
+      })
+      return
+    }
 
     // Hide the previously displayed view BEFORE switching.
     //
@@ -375,10 +594,15 @@ export class BrowserService {
       this.setViewVisible(this._displayedViewId, false)
     }
 
+    // When reopening from PiP/minimize, the target view may still be hidden
+    // via savedBounds (setViewVisible(false)). Explicitly restore visibility
+    // before notifying the renderer.
+    this.setViewVisible(viewId, true)
+
     this._displayedViewId = viewId
     this.dispatch({
       type: 'browser:view:opened',
-      payload: { viewId, profileId: managed.profileId, profileName: managed.profileName },
+      payload: this.buildViewOpenedPayload(viewId, managed),
     })
     log.info(`setDisplayedView: "${this._displayedViewId ?? 'none'}" → "${viewId}" (profile: ${managed.profileName})`)
   }
@@ -477,10 +701,28 @@ export class BrowserService {
   async getOrCreateSessionView(
     sessionId: string,
     getWindow: () => Promise<BrowserWindow>,
+    preferredProfileId?: string,
+    binding?: BrowserStateBinding,
   ): Promise<string> {
     // Fast path: session already has a healthy view
     const existing = this.getSessionView(sessionId)
-    if (existing) return existing
+    if (existing) {
+      const managed = this.managedViews.get(existing)
+      if (!preferredProfileId || !managed || managed.profileId === preferredProfileId) {
+        if (managed && binding) {
+          managed.sourceBinding = binding
+        }
+        return existing
+      }
+
+      log.info('browser:view-profile-rebind', {
+        scope: 'session',
+        sourceId: sessionId,
+        previousViewId: existing,
+        previousProfileId: managed.profileId,
+        preferredProfileId,
+      })
+    }
 
     // Per-session mutex key
     const mutexKey = `session:${sessionId}`
@@ -491,7 +733,7 @@ export class BrowserService {
     }
 
     log.debug(`getOrCreateSessionView(${sessionId}): acquiring mutex`)
-    const promise = this.doCreateSessionView(sessionId, getWindow)
+    const promise = this.doCreateSessionView(sessionId, getWindow, preferredProfileId, binding)
     this.ensureViewMutexes.set(mutexKey, promise)
     try {
       return await promise
@@ -501,18 +743,117 @@ export class BrowserService {
     }
   }
 
+  private resolveRebindNavigationUrl(managed: ManagedView | null | undefined): string | null {
+    if (!managed || managed.view.webContents.isDestroyed()) return null
+    try {
+      const currentUrl = managed.view.webContents.getURL()
+      if (!currentUrl || currentUrl === 'about:blank') return null
+      const parsed = new URL(currentUrl)
+      if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return null
+      return currentUrl
+    } catch {
+      return null
+    }
+  }
+
+  private async primeReboundViewNavigation(viewId: string, url: string | null): Promise<void> {
+    if (!url) return
+    const managed = this.managedViews.get(viewId)
+    if (!managed || managed.view.webContents.isDestroyed()) return
+
+    let timeoutHandle: ReturnType<typeof setTimeout> | null = null
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      timeoutHandle = setTimeout(() => {
+        reject(new Error(`Timed out after ${REBIND_NAVIGATION_TIMEOUT_MS}ms`))
+      }, REBIND_NAVIGATION_TIMEOUT_MS)
+    })
+
+    try {
+      await Promise.race([
+        managed.view.webContents.loadURL(url),
+        timeoutPromise,
+      ])
+    } catch (err) {
+      log.warn('browser:view-rebind-load-url-failed', {
+        viewId,
+        url,
+        error: err instanceof Error ? err.message : String(err),
+      })
+      throw err instanceof Error ? err : new Error(String(err))
+    } finally {
+      if (timeoutHandle) {
+        clearTimeout(timeoutHandle)
+      }
+    }
+  }
+
   /** Internal: create and register a new view for a session. */
   private async doCreateSessionView(
     sessionId: string,
     getWindow: () => Promise<BrowserWindow>,
+    preferredProfileId?: string,
+    binding?: BrowserStateBinding,
   ): Promise<string> {
-    const profileId = await this.resolveDefaultProfileId()
+    const existing = this.getSessionView(sessionId)
+    const existingManaged = existing ? this.managedViews.get(existing) : null
+    const needsRebind =
+      !!existing &&
+      !!existingManaged &&
+      !!preferredProfileId &&
+      existingManaged.profileId !== preferredProfileId
+    const rebindNavigationUrl = needsRebind
+      ? this.resolveRebindNavigationUrl(existingManaged)
+      : null
+
+    if (existing && !needsRebind) {
+      return existing
+    }
+
+    const profileId = await this.resolveProfileId(preferredProfileId)
     const win = await getWindow()
     const viewId = await this.openView(profileId, win)
 
+    const resolvedBinding: BrowserStateBinding = binding ?? {
+      policy: preferredProfileId ? 'custom-profile' : 'isolated-session',
+      profileId,
+      reason: preferredProfileId
+        ? `legacy:session:custom-profile:${preferredProfileId}`
+        : 'legacy:session:isolated-session',
+      sourceType: 'chat-session',
+      projectId: null,
+      issueId: null,
+      sessionId,
+    }
+    const managed = this.managedViews.get(viewId)
+    if (managed) {
+      managed.sourceBinding = resolvedBinding
+    }
+    if (needsRebind) {
+      try {
+        await this.primeReboundViewNavigation(viewId, rebindNavigationUrl)
+      } catch (error) {
+        log.warn('browser:view-rebind-transaction-aborted', {
+          scope: 'session',
+          sourceId: sessionId,
+          previousViewId: existing,
+          newViewId: viewId,
+          rebindNavigationUrl,
+          error: error instanceof Error ? error.message : String(error),
+        })
+        await this.closeView(viewId)
+        throw error
+      }
+    }
+
     // Register in session map
     this.sessionViews.set(sessionId, viewId)
-    log.info(`getOrCreateSessionView(${sessionId}): created view "${viewId}" (profile: ${profileId})`)
+    log.info('browser:view-created', {
+      scope: 'session',
+      sourceId: sessionId,
+      viewId,
+      profileId,
+      preferredProfileId: preferredProfileId ?? null,
+    })
 
     // Auto-display decision matrix:
     //
@@ -542,7 +883,12 @@ export class BrowserService {
           payload: { linkedSessionId: sessionId },
         })
       }
-      this.setDisplayedView(viewId)
+      this.setDisplayedView(viewId, resolvedBinding)
+    }
+
+    // Profile switched for this session: close stale view after replacement.
+    if (existing && existing !== viewId) {
+      await this.closeView(existing)
     }
 
     return viewId
@@ -602,10 +948,59 @@ export class BrowserService {
    *
    * @param getWindow - Callback to obtain the BrowserWindow.
    */
-  async ensureActiveView(getWindow: () => Promise<BrowserWindow>): Promise<string> {
+  async ensureActiveView(
+    getWindow: () => Promise<BrowserWindow>,
+    preferredProfileId?: string,
+    binding?: BrowserStateBinding,
+  ): Promise<string> {
     // Fast path: already have a healthy displayed view
     const existing = this.activeViewId
-    if (existing) return existing
+    if (existing) {
+      const managed = this.managedViews.get(existing)
+      if (!preferredProfileId || !managed || managed.profileId === preferredProfileId) {
+        if (managed && binding) {
+          managed.sourceBinding = binding
+        }
+        if (binding) {
+          this.setDisplayedView(existing, binding)
+        }
+        return existing
+      }
+
+      log.info('browser:view-profile-rebind', {
+        scope: 'standalone',
+        sourceId: 'standalone',
+        previousViewId: existing,
+        previousProfileId: managed.profileId,
+        preferredProfileId,
+      })
+    }
+
+    // Reopen-from-PiP path for standalone source:
+    // if a detached standalone view with matching profile already exists,
+    // reattach + display it instead of creating a new blank view.
+    const reusable = this.findReusableStandaloneView(preferredProfileId)
+    if (reusable) {
+      const win = await getWindow()
+      this.reattachView(reusable, win)
+      const managed = this.managedViews.get(reusable)
+      const resolvedBinding: BrowserStateBinding = binding ?? {
+        policy: preferredProfileId ? 'custom-profile' : 'shared-global',
+        profileId: managed?.profileId ?? (preferredProfileId ?? 'unknown'),
+        reason: preferredProfileId
+          ? `legacy:standalone:reopen-custom-profile:${preferredProfileId}`
+          : 'legacy:standalone:reopen-shared-global',
+        sourceType: 'standalone',
+        projectId: null,
+        issueId: null,
+        sessionId: null,
+      }
+      if (managed) {
+        managed.sourceBinding = resolvedBinding
+      }
+      this.setDisplayedView(reusable, resolvedBinding)
+      return reusable
+    }
 
     const mutexKey = 'standalone'
     if (this.ensureViewMutexes.has(mutexKey)) {
@@ -614,7 +1009,7 @@ export class BrowserService {
     }
 
     log.debug('ensureActiveView(): acquiring mutex')
-    const promise = this.doEnsureActiveView(getWindow)
+    const promise = this.doEnsureActiveView(getWindow, preferredProfileId, binding)
     this.ensureViewMutexes.set(mutexKey, promise)
     try {
       return await promise
@@ -628,17 +1023,216 @@ export class BrowserService {
    * Internal: create a view with auto-created default profile if needed,
    * and set it as the displayed view.
    */
-  private async doEnsureActiveView(getWindow: () => Promise<BrowserWindow>): Promise<string> {
-    const profileId = await this.resolveDefaultProfileId()
+  private async doEnsureActiveView(
+    getWindow: () => Promise<BrowserWindow>,
+    preferredProfileId?: string,
+    binding?: BrowserStateBinding,
+  ): Promise<string> {
+    const previousDisplayedViewId = this.activeViewId
+    const previousDisplayedManaged = previousDisplayedViewId
+      ? this.managedViews.get(previousDisplayedViewId)
+      : null
+    const profileId = await this.resolveProfileId(preferredProfileId)
+    const rebindNavigationUrl =
+      previousDisplayedViewId &&
+      previousDisplayedManaged &&
+      !this.isViewMappedToSessionOrIssue(previousDisplayedViewId) &&
+      previousDisplayedManaged.profileId !== profileId
+        ? this.resolveRebindNavigationUrl(previousDisplayedManaged)
+        : null
 
     log.debug('doEnsureActiveView(): awaiting getWindow()...')
     const win = await getWindow()
     log.debug('doEnsureActiveView(): calling openView()...')
     const viewId = await this.openView(profileId, win)
-    // Route through the canonical setter so the renderer always gets the event
-    this.setDisplayedView(viewId)
-    log.info(`ensureActiveView(): auto-created view "${viewId}" (profile: ${profileId})`)
+    const resolvedBinding: BrowserStateBinding = binding ?? {
+      policy: preferredProfileId ? 'custom-profile' : 'shared-global',
+      profileId,
+      reason: preferredProfileId
+        ? `legacy:standalone:custom-profile:${preferredProfileId}`
+        : 'legacy:standalone:shared-global',
+      sourceType: 'standalone',
+      projectId: null,
+      issueId: null,
+      sessionId: null,
+    }
+    const managed = this.managedViews.get(viewId)
+    if (managed) {
+      managed.sourceBinding = resolvedBinding
+    }
+    const shouldRebindStandalone =
+      !!rebindNavigationUrl &&
+      !!previousDisplayedViewId &&
+      !!previousDisplayedManaged &&
+      !this.isViewMappedToSessionOrIssue(previousDisplayedViewId) &&
+      previousDisplayedManaged.profileId !== profileId
+    if (shouldRebindStandalone) {
+      try {
+        await this.primeReboundViewNavigation(viewId, rebindNavigationUrl)
+      } catch (error) {
+        log.warn('browser:view-rebind-transaction-aborted', {
+          scope: 'standalone',
+          sourceId: 'standalone',
+          previousViewId: previousDisplayedViewId,
+          newViewId: viewId,
+          rebindNavigationUrl,
+          error: error instanceof Error ? error.message : String(error),
+        })
+        await this.closeView(viewId)
+        throw error
+      }
+    }
+    this.setDisplayedView(viewId, resolvedBinding)
+    log.info('browser:view-created', {
+      scope: 'standalone',
+      sourceId: 'standalone',
+      viewId,
+      profileId,
+      preferredProfileId: preferredProfileId ?? null,
+    })
+
+    // Standalone rebind path: retire previous standalone view to prevent
+    // unbounded unmanaged view growth on repeated policy/profile switches.
+    if (
+      previousDisplayedViewId &&
+      previousDisplayedViewId !== viewId &&
+      !this.isViewMappedToSessionOrIssue(previousDisplayedViewId)
+    ) {
+      await this.closeView(previousDisplayedViewId)
+    }
+
     return viewId
+  }
+
+  private isViewMappedToSessionOrIssue(viewId: string): boolean {
+    for (const mappedViewId of this.sessionViews.values()) {
+      if (mappedViewId === viewId) return true
+    }
+    for (const mappedViewId of this.issueViews.values()) {
+      if (mappedViewId === viewId) return true
+    }
+    return false
+  }
+
+  private findReusableStandaloneView(preferredProfileId?: string): string | null {
+    let fallback: string | null = null
+
+    for (const [viewId, managed] of this.managedViews.entries()) {
+      if (managed.view.webContents.isDestroyed()) continue
+      if (this.isViewMappedToSessionOrIssue(viewId)) continue
+      if (preferredProfileId && managed.profileId !== preferredProfileId) continue
+      if (managed.sourceBinding && managed.sourceBinding.sourceType !== 'standalone') continue
+
+      // Prefer the minimized/hidden standalone view that still has saved bounds.
+      if (managed.savedBounds) return viewId
+      if (!fallback) fallback = viewId
+    }
+
+    return fallback
+  }
+
+  /**
+   * Resolve the profile to use for a new browser view.
+   *
+   * Selection order:
+   * 1) Explicit preferred profile ID (if valid)
+   * 2) Default profile fallback (first existing profile, or auto-create "Default")
+   */
+  private async resolveProfileId(preferredProfileId?: string): Promise<string> {
+    if (preferredProfileId) {
+      const preferred = await this.store.getById(preferredProfileId)
+      if (preferred) {
+        log.debug('browser:resolve-profile', {
+          strategy: 'preferred',
+          requestedProfileId: preferredProfileId,
+          resolvedProfileId: preferred.id,
+          resolvedProfileName: preferred.name,
+        })
+        return preferred.id
+      }
+
+      log.warn('browser:resolve-profile-fallback', {
+        strategy: 'preferred',
+        requestedProfileId: preferredProfileId,
+        reason: 'profile_not_found',
+        fallback: 'default',
+      })
+    }
+
+    return this.resolveDefaultProfileId()
+  }
+
+  private defaultPolicyForSource(source: BrowserSource): BrowserStatePolicy {
+    return defaultBrowserStatePolicyForSource(source)
+  }
+
+  private resolveSourceIdentity(request: BrowserSourceResolutionRequest): {
+    issueId: string | null
+    sessionId: string | null
+    projectId: string | null
+  } {
+    const issueId =
+      request.issueId ??
+      (request.source.type === 'issue-session' || request.source.type === 'issue-standalone'
+        ? request.source.issueId
+        : null)
+    const sessionId =
+      request.sessionId ??
+      (request.source.type === 'issue-session' || request.source.type === 'chat-session'
+        ? request.source.sessionId
+        : null)
+    return {
+      issueId,
+      sessionId,
+      projectId: request.projectId ?? null,
+    }
+  }
+
+  private resolvePolicyForRequest(
+    request: BrowserSourceResolutionRequest,
+    sourceIdentity: { issueId: string | null; sessionId: string | null; projectId: string | null },
+  ): BrowserStatePolicy {
+    const requested = request.policy ?? this.defaultPolicyForSource(request.source)
+    return normalizeBrowserStatePolicy({
+      source: request.source,
+      requestedPolicy: requested,
+      projectId: sourceIdentity.projectId,
+      issueId: sourceIdentity.issueId,
+      sessionId: sourceIdentity.sessionId,
+    })
+  }
+
+  private buildScopeKey(
+    policy: BrowserStatePolicy,
+    request: BrowserSourceResolutionRequest,
+    sourceIdentity: { issueId: string | null; sessionId: string | null; projectId: string | null },
+  ): string {
+    const { issueId, sessionId, projectId } = sourceIdentity
+
+    switch (policy) {
+      case 'shared-global':
+        return 'global'
+      case 'shared-project':
+        return `project:${projectId}`
+      case 'isolated-issue':
+        return `issue:${issueId}`
+      case 'isolated-session':
+        return `session:${sessionId}`
+      case 'custom-profile':
+        return `custom:${request.preferredProfileId ?? request.profileId ?? 'none'}`
+    }
+  }
+
+  private async findOrCreateProfileByName(name: string): Promise<string> {
+    const profiles = await this.listProfiles()
+    const existing = profiles.find((profile) => profile.name === name)
+    if (existing) return existing.id
+
+    const created = await this.createProfile({
+      name,
+      cookiePersistence: true,
+    })
+    return created.id
   }
 
   /** Resolve the default profile ID, creating one if none exist. */
@@ -653,6 +1247,54 @@ export class BrowserService {
     const created = await this.createProfile({ name: 'Default', cookiePersistence: true })
     log.debug(`resolveDefaultProfileId(): created Default profile "${created.id}"`)
     return created.id
+  }
+
+  private deriveSourceFromMaps(viewId: string): BrowserSource {
+    for (const [sessionId, mappedViewId] of this.sessionViews.entries()) {
+      if (mappedViewId === viewId) {
+        return { type: 'chat-session', sessionId }
+      }
+    }
+
+    for (const [issueId, mappedViewId] of this.issueViews.entries()) {
+      if (mappedViewId === viewId) {
+        return { type: 'issue-standalone', issueId }
+      }
+    }
+
+    return { type: 'standalone' }
+  }
+
+  private bindingToSource(binding: BrowserStateBinding, fallback: BrowserSource): BrowserSource {
+    switch (binding.sourceType) {
+      case 'issue-session':
+        if (binding.issueId && binding.sessionId) {
+          return {
+            type: 'issue-session',
+            issueId: binding.issueId,
+            sessionId: binding.sessionId,
+          }
+        }
+        return fallback
+      case 'chat-session':
+        if (binding.sessionId) {
+          return {
+            type: 'chat-session',
+            sessionId: binding.sessionId,
+          }
+        }
+        return fallback
+      case 'issue-standalone':
+        if (binding.issueId) {
+          return {
+            type: 'issue-standalone',
+            issueId: binding.issueId,
+          }
+        }
+        return fallback
+      case 'standalone':
+        return { type: 'standalone' }
+    }
   }
 
   // ── Profile CRUD ──────────────────────────────────────────────────

@@ -121,6 +121,8 @@ export interface NativeCapabilitySessionContext {
   readonly sessionId: string
   /** Resolved Project ID, or null if session is not scoped to a project. */
   readonly projectId: string | null
+  /** Issue ID when the session is issue-scoped; otherwise null. */
+  readonly issueId: string | null
   /**
    * The `source` field from the session's `SessionOrigin`.
    *

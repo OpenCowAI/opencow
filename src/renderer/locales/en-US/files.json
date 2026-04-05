@@ -53,9 +53,9 @@
   "search": {
     "openButton": "Search",
     "openButtonAria": "Search files",
-    "shortcutHint": "Search files (⌘/Ctrl+G)",
+    "shortcutHint": "Search files (⌘/Ctrl+F)",
     "fabAria": "Open file search",
-    "shortcutChip": "⌘/Ctrl+G"
+    "shortcutChip": "⌘/Ctrl+F"
   },
   "searchOverlay": {
     "dialogAria": "File search",

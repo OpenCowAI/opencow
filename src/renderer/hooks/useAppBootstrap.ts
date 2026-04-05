@@ -21,7 +21,11 @@ import { useAppStore } from '@/stores/appStore'
 import { useIssueStore } from '@/stores/issueStore'
 import { useCommandStore } from '@/stores/commandStore'
 import { useSettingsStore } from '@/stores/settingsStore'
-import { useBrowserOverlayStore, deriveSourceKey } from '@/stores/browserOverlayStore'
+import {
+  useBrowserOverlayStore,
+  deriveSourceKey,
+  defaultBrowserPolicyForSource,
+} from '@/stores/browserOverlayStore'
 import { useTerminalOverlayStore } from '@/stores/terminalOverlayStore'
 import { useScheduleStore } from '@/stores/scheduleStore'
 import { useFileStore } from '@/stores/fileStore'
@@ -491,7 +495,24 @@ export function useAppBootstrap(): void {
             (as) => deriveSourceKey(as.source) === incomingKey
           )
           if (sourceAlreadyActive) break
+
+          // Prefer current project scope for source-bound overlays when caller omitted it.
+          const store = useAppStore.getState()
+          const projectId =
+            options?.projectId ??
+            (store.appView.mode === 'projects' ? store.appView.projectId : null) ??
+            null
           bs.openBrowserOverlay(source, options)
+          if (projectId && !options?.projectId) {
+            useBrowserOverlayStore.setState((s) => ({
+              browserOverlay: s.browserOverlay
+                ? {
+                    ...s.browserOverlay,
+                    projectId,
+                  }
+                : null,
+            }))
+          }
           break
         }
 
@@ -502,14 +523,29 @@ export function useAppBootstrap(): void {
         }
 
         case 'browser:view:opened': {
-          const p = event.payload as { viewId: string; profileId: string; profileName: string }
+          const p = event.payload as {
+            viewId: string
+            profileId: string
+            profileName: string
+            source: import('@shared/types').BrowserSource
+            statePolicy: import('@shared/types').BrowserStatePolicy
+            projectId: string | null
+            profileBindingReason: string
+          }
           const bs = useBrowserOverlayStore.getState()
           bs.setBrowserOverlayViewId(p.viewId)
           bs.setBrowserOverlayActiveProfileId(p.profileId)
+          bs.setBrowserOverlayStatePolicy(p.statePolicy)
+          bs.setBrowserOverlayProfileBindingReason(p.profileBindingReason)
           bs.addActiveBrowserSource({
-            source: bs.browserOverlay?.source ?? { type: 'standalone' },
+            source: p.source,
             viewId: p.viewId,
             displayName: p.profileName,
+            openOptions: {
+              preferredProfileId: p.profileId,
+              policy: p.statePolicy ?? defaultBrowserPolicyForSource(p.source),
+              projectId: p.projectId ?? undefined,
+            },
           })
           break
         }

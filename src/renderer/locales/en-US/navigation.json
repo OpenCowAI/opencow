@@ -160,6 +160,21 @@
     "sourceIssue": "Issue",
     "sourceChat": "Chat",
     "sourceBrowser": "Browser",
+    "stateMode": {
+      "label": "State mode",
+      "profile": "Profile",
+      "sharedGlobal": "Shared: Global",
+      "sharedProject": "Shared: Project",
+      "isolatedIssue": "Isolated: Issue",
+      "isolatedSession": "Isolated: Session",
+      "customProfile": "Custom Profile",
+      "disabled": {
+        "noProject": "Requires project context",
+        "noIssue": "Requires issue context",
+        "noSession": "Requires session context",
+        "noProfile": "Create a profile first"
+      }
+    },
     "pip": {
       "activeBrowsers": "Active Browsers",
       "typeIssue": "Issue",

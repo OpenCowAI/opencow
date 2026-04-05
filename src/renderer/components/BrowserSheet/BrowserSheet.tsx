@@ -29,6 +29,8 @@ import { useBrowserSheetLifecycle } from '@/hooks/useBrowserSheetLifecycle'
 import { useBrowserViewOverlayGuard } from '@/hooks/useBrowserViewOverlayGuard'
 import type { BrowserOverlayState } from '@shared/types'
 
+const SHEET_ENTER_FALLBACK_MS = 360
+
 export function BrowserSheet(): React.JSX.Element | null {
   const overlay = useBrowserOverlayStore((s) => s.browserOverlay)
   if (!overlay) return null
@@ -52,6 +54,18 @@ function BrowserSheetContent({ overlay }: {
   // By gating NativeViewport on `animationSettled`, we guarantee its first
   // syncBounds call sends final, stable coordinates — no magic numbers needed.
   const [animationSettled, setAnimationSettled] = useState(false)
+
+  // Safety net: if animationend is missed (e.g. browser compositor edge-cases),
+  // still mount NativeViewport so bounds sync can recover the native view.
+  useEffect(() => {
+    if (isExiting || animationSettled) return
+    const timer = window.setTimeout(() => {
+      setAnimationSettled(true)
+    }, SHEET_ENTER_FALLBACK_MS)
+    return () => {
+      window.clearTimeout(timer)
+    }
+  }, [isExiting, animationSettled])
 
   // WebContentsView lifecycle: ensure-source-view on mount
   useBrowserSheetLifecycle(overlay)
@@ -111,6 +125,7 @@ function BrowserSheetContent({ overlay }: {
       {/* Top toolbar */}
       <BrowserSheetToolbar
         source={overlay.source}
+        statePolicy={overlay.statePolicy}
         onClose={closeBrowserOverlay}
       />
 

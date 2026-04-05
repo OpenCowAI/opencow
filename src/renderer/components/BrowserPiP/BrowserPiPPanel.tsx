@@ -55,8 +55,8 @@ export function BrowserPiPPanel({ sources, onClose, triggerRef }: BrowserPiPPane
 
   // Click a card → reopen BrowserSheet for that source
   const handleCardClick = useCallback(
-    (source: BrowserSource) => {
-      openBrowserOverlay(source)
+    (source: ActiveBrowserSource) => {
+      openBrowserOverlay(source.source, source.openOptions)
       onClose() // immediate — BrowserSheet slide-in covers PiP
     },
     [openBrowserOverlay, onClose],
@@ -114,7 +114,7 @@ export function BrowserPiPPanel({ sources, onClose, triggerRef }: BrowserPiPPane
               key={source.viewId}
               source={source}
               pageInfo={viewPageInfoMap[source.viewId] ?? null}
-              onClick={() => handleCardClick(source.source)}
+              onClick={() => handleCardClick(source)}
               onRequestClose={() => handleRequestClose(source.viewId)}
             />
           ))}

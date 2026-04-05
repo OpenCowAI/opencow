@@ -6,7 +6,7 @@
  * Implements the same OAuth flow as `claude auth login`:
  *   1. Generate PKCE verifier + S256 challenge
  *   2. Start a local HTTP callback server on a random port
- *   3. Open the system browser to claude.ai/oauth/authorize
+ *   3. Open the system browser to claude.com/cai/oauth/authorize
  *   4. Receive the authorization code via localhost redirect
  *   5. Exchange the code for access + refresh tokens
  *   6. Store tokens in CredentialStore
@@ -203,7 +203,12 @@ export class SubscriptionProvider implements ProviderAdapter {
 
       // Step 5: Exchange code for tokens
       log.info('CSRF state verified, exchanging code for tokens...')
-      return await this.exchangeCodeForTokens({ code: callback.code, verifier, port })
+      return await this.exchangeCodeForTokens({
+        code: callback.code,
+        verifier,
+        port,
+        state: callback.state,
+      })
     } finally {
       server.close()
       log.info('Callback server closed')
@@ -317,14 +322,14 @@ export class SubscriptionProvider implements ProviderAdapter {
     code: string
     verifier: string
     port: number
+    state: string
   }): Promise<OAuthCredential> {
-    const { code, verifier, port } = params
+    const { code, verifier, port, state } = params
 
     // Use Electron's net.fetch (Chromium network stack) to avoid Cloudflare
     // bot detection that blocks Node.js fetch due to TLS fingerprint differences.
-    // NOTE: Only standard OAuth 2.0 token request fields are included.
-    // The `state` parameter is NOT sent — it's a CSRF token for the authorize
-    // endpoint only and has no role in the token exchange (RFC 6749 §4.1.3).
+    // NOTE: We send `state` as a compatibility field because current upstream
+    // OAuth implementations may enforce stricter request validation.
     const redirectUri = this.buildRedirectUri(port)
     const response = await net.fetch(OAUTH_CONFIG.tokenUrl, {
       method: 'POST',
@@ -335,6 +340,7 @@ export class SubscriptionProvider implements ProviderAdapter {
         client_id: OAUTH_CONFIG.clientId,
         redirect_uri: redirectUri,
         code_verifier: verifier,
+        state,
       }),
     })
 

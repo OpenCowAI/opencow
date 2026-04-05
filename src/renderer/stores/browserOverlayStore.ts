@@ -30,8 +30,13 @@ import type {
   BrowserPageInfoPayload,
   BrowserProfileInfo,
   ManagedSessionState,
+  BrowserStatePolicy,
 } from '@shared/types'
 import { getAppAPI } from '@/windowAPI'
+import {
+  defaultBrowserStatePolicyForSource,
+  normalizeBrowserStatePolicy,
+} from '@shared/browserStatePolicy'
 
 // ─── Source Key Derivation ────────────────────────────────────────────────
 // Deterministic key from BrowserSource discriminated union — used to persist
@@ -48,6 +53,54 @@ export function deriveSourceKey(source: BrowserSource): string {
     case 'issue-session':
       return `issue-session:${source.sessionId}`
   }
+}
+
+export function defaultBrowserPolicyForSource(source: BrowserSource): BrowserStatePolicy {
+  return defaultBrowserStatePolicyForSource(source)
+}
+
+function sourceHasIssueScope(source: BrowserSource): boolean {
+  return source.type === 'issue-session' || source.type === 'issue-standalone'
+}
+
+function sourceHasSessionScope(source: BrowserSource): boolean {
+  return source.type === 'issue-session' || source.type === 'chat-session'
+}
+
+function sourceIssueId(source: BrowserSource): string | null {
+  switch (source.type) {
+    case 'issue-session':
+    case 'issue-standalone':
+      return source.issueId
+    case 'chat-session':
+    case 'standalone':
+      return null
+  }
+}
+
+function sourceSessionId(source: BrowserSource): string | null {
+  switch (source.type) {
+    case 'issue-session':
+    case 'chat-session':
+      return source.sessionId
+    case 'issue-standalone':
+    case 'standalone':
+      return null
+  }
+}
+
+export function normalizeBrowserPolicyForOverlayRequest(
+  source: BrowserSource,
+  requested: BrowserStatePolicy,
+  projectId: string | null,
+): BrowserStatePolicy {
+  return normalizeBrowserStatePolicy({
+    source,
+    requestedPolicy: requested,
+    projectId,
+    issueId: sourceHasIssueScope(source) ? sourceIssueId(source) : null,
+    sessionId: sourceHasSessionScope(source) ? sourceSessionId(source) : null,
+  })
 }
 
 // ─── Store Interface ────────────────────────────────────────────────────
@@ -80,6 +133,8 @@ export interface BrowserOverlayStore {
 
   /** Internal: exit animation flag (BrowserSheet detects this to trigger slide-out animation) */
   _browserSheetExiting: boolean
+  _overlayEpoch: number
+  _switchRequestVersion: number
 
   // ── Actions ──
   openBrowserOverlay: (source: BrowserSource, options?: BrowserOpenOptions) => void
@@ -95,6 +150,10 @@ export interface BrowserOverlayStore {
   setBrowserOverlayUrlBarValue: (value: string) => void
   setBrowserOverlayUrlBarFocused: (focused: boolean) => void
   setBrowserOverlayActiveProfileId: (id: string | null) => void
+  setBrowserOverlayStatePolicy: (policy: BrowserStatePolicy) => void
+  setBrowserOverlayProfileBindingReason: (reason: string | null) => void
+  switchBrowserStatePolicy: (policy: BrowserStatePolicy) => Promise<void>
+  switchBrowserPreferredProfile: (profileId: string) => Promise<void>
   setBrowserOverlayProfiles: (profiles: BrowserProfileInfo[]) => void
   setBrowserOverlayAgentSessionId: (id: string | null) => void
   /** Set optimistic agent state — only used during session creation before commandStore has the session. */
@@ -160,6 +219,8 @@ const initialState = {
   viewPageInfoMap: {} as Record<string, BrowserPageInfoPayload>,
   _sourceSessionMap: {} as Record<string, string>,
   _browserSheetExiting: false,
+  _overlayEpoch: 0,
+  _switchRequestVersion: 0,
   overlayBlockers: new Set<string>(),
 }
 
@@ -178,22 +239,53 @@ export const useBrowserOverlayStore = create<BrowserOverlayStore>((set, get) => 
     })
   }
 
+  function snapshotOverlayRuntime(overlay: BrowserOverlayState): Pick<
+    BrowserOverlayState,
+    | 'viewId'
+    | 'pageInfo'
+    | 'urlBarValue'
+    | 'isLoading'
+    | 'agentSessionId'
+    | 'agentState'
+    | 'statePolicy'
+    | 'profileBindingReason'
+    | 'activeProfileId'
+  > {
+    return {
+      viewId: overlay.viewId,
+      pageInfo: overlay.pageInfo,
+      urlBarValue: overlay.urlBarValue,
+      isLoading: overlay.isLoading,
+      agentSessionId: overlay.agentSessionId,
+      agentState: overlay.agentState,
+      statePolicy: overlay.statePolicy,
+      profileBindingReason: overlay.profileBindingReason,
+      activeProfileId: overlay.activeProfileId,
+    }
+  }
+
   return {
     ...initialState,
 
     openBrowserOverlay: (source, options) => {
       // Restore persisted session from a previous PiP close/reopen cycle
       const restoredSessionId = get()._restoreSourceSession(source)
+      const nextEpoch = get()._overlayEpoch + 1
 
       set({
+        _overlayEpoch: nextEpoch,
+        _switchRequestVersion: 0,
         browserOverlay: {
           source,
+          statePolicy: options?.policy ?? defaultBrowserPolicyForSource(source),
+          projectId: options?.projectId ?? null,
+          profileBindingReason: null,
           viewId: null,
           executorState: 'idle',
           pageInfo: null,
           isLoading: false,
           profiles: [],
-          activeProfileId: options?.profileId ?? null,
+          activeProfileId: options?.preferredProfileId ?? options?.profileId ?? null,
           urlBarValue: options?.initialUrl ?? '',
           urlBarFocused: false,
           agentSessionId: restoredSessionId,
@@ -221,7 +313,10 @@ export const useBrowserOverlayStore = create<BrowserOverlayStore>((set, get) => 
       }
 
       // Phase 2: Trigger exit animation
-      set({ _browserSheetExiting: true })
+      set((s) => ({
+        _browserSheetExiting: true,
+        _overlayEpoch: s._overlayEpoch + 1,
+      }))
     },
 
     finishBrowserSheetExit: () => {
@@ -242,18 +337,63 @@ export const useBrowserOverlayStore = create<BrowserOverlayStore>((set, get) => 
       set({
         browserOverlay: null,
         _browserSheetExiting: false,
+        _switchRequestVersion: 0,
       })
     },
 
     switchBrowserSource: (source) => {
       const current = get().browserOverlay
       if (!current) return
+      const previous = snapshotOverlayRuntime(current)
+      const requestEpoch = get()._overlayEpoch
+      const requestVersion = get()._switchRequestVersion + 1
+
+      const request: import('@shared/types').BrowserSourceResolutionRequest = {
+        source,
+        policy: current.statePolicy,
+        projectId: current.projectId ?? undefined,
+      }
+      if (current.statePolicy === 'custom-profile' && current.activeProfileId) {
+        request.preferredProfileId = current.activeProfileId
+      }
 
       // Notify main process to switch the displayed view
-      getAppAPI()['browser:display-source']({ source })
+      void getAppAPI()['browser:display-source'](request).then((result) => {
+        const state = get()
+        if (state._overlayEpoch !== requestEpoch) return
+        if (get()._switchRequestVersion !== requestVersion) return
+        const overlay = get().browserOverlay
+        if (!overlay) return
+        if (deriveSourceKey(overlay.source) !== deriveSourceKey(source)) return
+        set({
+          browserOverlay: {
+            ...overlay,
+            viewId: result.viewId,
+            activeProfileId: result.profileId,
+            statePolicy: result.statePolicy,
+            profileBindingReason: result.profileBindingReason,
+            isLoading: false,
+          },
+        })
+      }).catch(() => {
+        const state = get()
+        if (state._overlayEpoch !== requestEpoch) return
+        if (get()._switchRequestVersion !== requestVersion) return
+        const latest = get().browserOverlay
+        if (!latest) return
+        if (deriveSourceKey(latest.source) !== deriveSourceKey(source)) return
+        set({
+          browserOverlay: {
+            ...latest,
+            source: current.source,
+            ...previous,
+          },
+        })
+      })
 
       // Update the source in overlay state — reset session identity
       set({
+        _switchRequestVersion: requestVersion,
         browserOverlay: {
           ...current,
           source,
@@ -275,9 +415,143 @@ export const useBrowserOverlayStore = create<BrowserOverlayStore>((set, get) => 
     setBrowserOverlayUrlBarValue: (value) => updateOverlay(() => ({ urlBarValue: value })),
     setBrowserOverlayUrlBarFocused: (focused) => updateOverlay(() => ({ urlBarFocused: focused })),
     setBrowserOverlayActiveProfileId: (id) => updateOverlay(() => ({ activeProfileId: id })),
+    setBrowserOverlayStatePolicy: (policy) => updateOverlay(() => ({ statePolicy: policy })),
+    setBrowserOverlayProfileBindingReason: (reason) => updateOverlay(() => ({ profileBindingReason: reason })),
     setBrowserOverlayProfiles: (profiles) => updateOverlay(() => ({ profiles })),
     setBrowserOverlayAgentSessionId: (id) => updateOverlay(() => ({ agentSessionId: id })),
     setBrowserOverlayAgentState: (state) => updateOverlay(() => ({ agentState: state })),
+
+    switchBrowserStatePolicy: async (policy) => {
+      const current = get().browserOverlay
+      if (!current) return
+      const normalizedPolicy = normalizeBrowserPolicyForOverlayRequest(
+        current.source,
+        policy,
+        current.projectId,
+      )
+      if (current.statePolicy === normalizedPolicy) return
+      const previous = snapshotOverlayRuntime(current)
+      const requestEpoch = get()._overlayEpoch
+      const requestVersion = get()._switchRequestVersion + 1
+
+      const request: import('@shared/types').BrowserSourceResolutionRequest = {
+        source: current.source,
+        policy: normalizedPolicy,
+        projectId: current.projectId ?? undefined,
+      }
+
+      const preferredForCustom = current.activeProfileId ?? current.profiles[0]?.id ?? null
+      // Only pass preferred profile in custom-profile mode.
+      if (normalizedPolicy === 'custom-profile' && preferredForCustom) {
+        request.preferredProfileId = preferredForCustom
+      }
+
+      // Optimistic UI update while main process resolves/reattaches the target view.
+      set({
+        _switchRequestVersion: requestVersion,
+        browserOverlay: {
+          ...current,
+          statePolicy: normalizedPolicy,
+          profileBindingReason: null,
+          activeProfileId:
+            normalizedPolicy === 'custom-profile' ? preferredForCustom : current.activeProfileId,
+          isLoading: true,
+        },
+      })
+
+      try {
+        const result = await getAppAPI()['browser:display-source'](request)
+        const state = get()
+        if (state._overlayEpoch !== requestEpoch) return
+        if (get()._switchRequestVersion !== requestVersion) return
+        const latest = get().browserOverlay
+        if (!latest) return
+        if (deriveSourceKey(latest.source) !== deriveSourceKey(current.source)) return
+
+        set({
+          browserOverlay: {
+            ...latest,
+            viewId: result.viewId,
+            activeProfileId: result.profileId,
+            statePolicy: result.statePolicy,
+            profileBindingReason: result.profileBindingReason,
+            isLoading: false,
+          },
+        })
+      } catch {
+        const state = get()
+        if (state._overlayEpoch !== requestEpoch) return
+        if (get()._switchRequestVersion !== requestVersion) return
+        const latest = get().browserOverlay
+        if (!latest) return
+        if (deriveSourceKey(latest.source) !== deriveSourceKey(current.source)) return
+        set({
+          browserOverlay: {
+            ...latest,
+            ...previous,
+          },
+        })
+      }
+    },
+
+    switchBrowserPreferredProfile: async (profileId) => {
+      const current = get().browserOverlay
+      if (!current) return
+      if (current.statePolicy === 'custom-profile' && current.activeProfileId === profileId) return
+      const previous = snapshotOverlayRuntime(current)
+      const requestEpoch = get()._overlayEpoch
+      const requestVersion = get()._switchRequestVersion + 1
+
+      set({
+        _switchRequestVersion: requestVersion,
+        browserOverlay: {
+          ...current,
+          activeProfileId: profileId,
+          statePolicy: 'custom-profile',
+          profileBindingReason: null,
+          isLoading: true,
+        },
+      })
+
+      try {
+        const result = await getAppAPI()['browser:display-source']({
+          source: current.source,
+          policy: 'custom-profile',
+          projectId: current.projectId ?? undefined,
+          preferredProfileId: profileId,
+        })
+        const state = get()
+        if (state._overlayEpoch !== requestEpoch) return
+        if (get()._switchRequestVersion !== requestVersion) return
+        const latest = get().browserOverlay
+        if (!latest) return
+        if (deriveSourceKey(latest.source) !== deriveSourceKey(current.source)) return
+
+        set({
+          browserOverlay: {
+            ...latest,
+            viewId: result.viewId,
+            activeProfileId: result.profileId,
+            statePolicy: result.statePolicy,
+            profileBindingReason: result.profileBindingReason,
+            isLoading: false,
+          },
+        })
+      } catch {
+        const state = get()
+        if (state._overlayEpoch !== requestEpoch) return
+        if (get()._switchRequestVersion !== requestVersion) return
+        const latest = get().browserOverlay
+        if (!latest) return
+        if (deriveSourceKey(latest.source) !== deriveSourceKey(current.source)) return
+        set({
+          browserOverlay: {
+            ...latest,
+            ...previous,
+          },
+        })
+      }
+    },
 
     resetBrowserOverlayAgentSession: () =>
       updateOverlay(() => ({

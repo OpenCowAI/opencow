@@ -453,10 +453,10 @@ export function FileTree({ projectPath, projectName, projectId, onOpenSearch }: 
             className="ml-auto inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-normal normal-case tracking-normal text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] hover:bg-[hsl(var(--foreground)/0.05)] transition-colors"
             onClick={onOpenSearch}
             aria-label={t('search.openButtonAria', { defaultValue: 'Search files' })}
-            title={t('search.shortcutHint', { defaultValue: 'Search files (⌘/Ctrl+G)' })}
+            title={t('search.shortcutHint', { defaultValue: 'Search files (⌘/Ctrl+F)' })}
           >
             <span>{t('search.openButton', { defaultValue: 'Search' })}</span>
-            <kbd className="font-mono text-[9px]">⌘G</kbd>
+            <kbd className="font-mono text-[9px]">⌘F</kbd>
           </button>
         )}
       </div>

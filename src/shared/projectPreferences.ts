@@ -6,6 +6,7 @@ export const DEFAULT_PROJECT_PREFERENCES: ProjectPreferences = Object.freeze({
   defaultTab: 'issues',
   defaultChatViewMode: 'default',
   defaultFilesDisplayMode: null,
+  defaultBrowserStatePolicy: 'shared-global',
 })
 
 /**
@@ -18,6 +19,7 @@ export function normalizeProjectPreferences(
   const defaultTab = input?.defaultTab
   const defaultChatViewMode = input?.defaultChatViewMode
   const defaultFilesDisplayMode = input?.defaultFilesDisplayMode
+  const defaultBrowserStatePolicy = input?.defaultBrowserStatePolicy
   const normalizedDefaultTab =
     defaultTab === 'issues' || defaultTab === 'chat' || defaultTab === 'schedule'
       ? defaultTab
@@ -30,12 +32,20 @@ export function normalizeProjectPreferences(
     defaultFilesDisplayMode === 'ide' || defaultFilesDisplayMode === 'browser'
       ? defaultFilesDisplayMode
       : null
+  const normalizedBrowserStatePolicy =
+    defaultBrowserStatePolicy === 'shared-global' ||
+    defaultBrowserStatePolicy === 'shared-project' ||
+    defaultBrowserStatePolicy === 'isolated-issue' ||
+    defaultBrowserStatePolicy === 'isolated-session'
+      ? defaultBrowserStatePolicy
+      : DEFAULT_PROJECT_PREFERENCES.defaultBrowserStatePolicy
 
   if (normalizedDefaultChatViewMode === 'files') {
     return {
       defaultTab: normalizedDefaultTab,
       defaultChatViewMode: 'files',
       defaultFilesDisplayMode: normalizedFilesMode ?? 'ide',
+      defaultBrowserStatePolicy: normalizedBrowserStatePolicy,
     }
   }
 
@@ -43,5 +53,6 @@ export function normalizeProjectPreferences(
     defaultTab: normalizedDefaultTab,
     defaultChatViewMode: 'default',
     defaultFilesDisplayMode: normalizedFilesMode,
+    defaultBrowserStatePolicy: normalizedBrowserStatePolicy,
   }
 }

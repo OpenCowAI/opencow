@@ -6,7 +6,7 @@ import type { NativeCapabilityToolContext } from '../../../electron/nativeCapabi
 
 function makeContext(): NativeCapabilityToolContext {
   return {
-    session: { sessionId: 'session-html-capability-1', projectId: null, originSource: 'agent' },
+    session: { sessionId: 'session-html-capability-1', projectId: null, issueId: null, originSource: 'agent' },
     relay: {
       register: vi.fn(),
       unregister: vi.fn(),
@@ -54,4 +54,3 @@ describe('HtmlNativeCapability', () => {
     expect(result.content[0]?.text).toContain('HTML page "AI Agent" generated')
   })
 })
-

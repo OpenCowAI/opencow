@@ -124,6 +124,25 @@ describe('fileStore', () => {
     expect(useFileStore.getState().expandedTreeDirsByProject[PROJECT_A]?.has('src')).toBe(false)
   })
 
+  it('collapsing parent directory clears expanded state of descendants', () => {
+    const store = useFileStore.getState()
+    store.toggleTreeDir(PROJECT_A, 'src')
+    store.toggleTreeDir(PROJECT_A, 'src/components')
+    store.toggleTreeDir(PROJECT_A, 'src/components/ui')
+
+    expect(useFileStore.getState().expandedTreeDirsByProject[PROJECT_A]).toEqual(
+      new Set(['src', 'src/components', 'src/components/ui'])
+    )
+
+    store.toggleTreeDir(PROJECT_A, 'src')
+    expect(useFileStore.getState().expandedTreeDirsByProject[PROJECT_A]).toEqual(new Set())
+
+    store.toggleTreeDir(PROJECT_A, 'src')
+    expect(useFileStore.getState().expandedTreeDirsByProject[PROJECT_A]).toEqual(new Set(['src']))
+    expect(useFileStore.getState().expandedTreeDirsByProject[PROJECT_A]?.has('src/components')).toBe(false)
+    expect(useFileStore.getState().expandedTreeDirsByProject[PROJECT_A]?.has('src/components/ui')).toBe(false)
+  })
+
   it('stores browser sub-path per project and supports clearing', () => {
     const store = useFileStore.getState()
     store.setBrowserSubPath(PROJECT_A, 'src/components')
