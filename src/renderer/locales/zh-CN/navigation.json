@@ -160,6 +160,21 @@
     "sourceIssue": "Issue",
     "sourceChat": "对话",
     "sourceBrowser": "浏览器",
+    "stateMode": {
+      "label": "状态模式",
+      "profile": "配置",
+      "sharedGlobal": "共享：全局",
+      "sharedProject": "共享：项目",
+      "isolatedIssue": "隔离：Issue",
+      "isolatedSession": "隔离：Session",
+      "customProfile": "自定义配置",
+      "disabled": {
+        "noProject": "需要项目上下文",
+        "noIssue": "需要 Issue 上下文",
+        "noSession": "需要 Session 上下文",
+        "noProfile": "请先创建配置"
+      }
+    },
     "pip": {
       "activeBrowsers": "活跃浏览器",
       "typeIssue": "Issue",

@@ -84,6 +84,7 @@ describe('ProjectStore', () => {
       defaultTab: 'issues',
       defaultChatViewMode: 'default',
       defaultFilesDisplayMode: null,
+      defaultBrowserStatePolicy: 'shared-global',
     })
   })
 
@@ -95,6 +96,7 @@ describe('ProjectStore', () => {
         defaultTab: 'schedule',
         defaultChatViewMode: 'files',
         defaultFilesDisplayMode: 'browser',
+        defaultBrowserStatePolicy: 'isolated-session',
       },
     })
 
@@ -106,6 +108,7 @@ describe('ProjectStore', () => {
       defaultTab: 'chat',
       defaultChatViewMode: 'files',
       defaultFilesDisplayMode: 'browser',
+      defaultBrowserStatePolicy: 'isolated-session',
     })
   })
 
@@ -124,6 +127,25 @@ describe('ProjectStore', () => {
       defaultTab: 'issues',
       defaultChatViewMode: 'files',
       defaultFilesDisplayMode: 'ide',
+      defaultBrowserStatePolicy: 'shared-global',
+    })
+  })
+
+  it('updates browser default state policy via partial preference patch', async () => {
+    const created = await store.create({
+      name: 'PrefBrowserPolicy',
+      canonicalPath: '/pref-browser-policy',
+    })
+
+    const updated = await store.update(created.id, {
+      preferences: { defaultBrowserStatePolicy: 'isolated-issue' },
+    })
+
+    expect(updated?.preferences).toEqual({
+      defaultTab: 'issues',
+      defaultChatViewMode: 'default',
+      defaultFilesDisplayMode: null,
+      defaultBrowserStatePolicy: 'isolated-issue',
     })
   })
 

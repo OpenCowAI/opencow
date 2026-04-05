@@ -786,7 +786,12 @@ export class SessionOrchestrator {
       // Built-in native capability tools (after injection plan + allowlist merge).
       if (this.deps.nativeCapabilityRegistry) {
         const toolContext: NativeCapabilityToolContext = {
-          session: { sessionId, projectId: config.projectId ?? null, originSource: config.origin.source },
+          session: {
+            sessionId,
+            projectId: config.projectId ?? null,
+            issueId: getOriginIssueId(config.origin),
+            originSource: config.origin.source,
+          },
           relay,
           activeMcpServerNames,
         }
@@ -812,7 +817,12 @@ export class SessionOrchestrator {
       let finalCodexConfig = mergedWithCustom.config
       if (this.deps.codexNativeBridgeManager) {
         const bridgeServer = await this.deps.codexNativeBridgeManager.registerSession({
-          session: { sessionId, projectId: config.projectId ?? null, originSource: config.origin.source },
+          session: {
+            sessionId,
+            projectId: config.projectId ?? null,
+            issueId: getOriginIssueId(config.origin),
+            originSource: config.origin.source,
+          },
           relay,
           nativeToolAllowlist: sessionPolicy.tools.native.mode === 'allowlist'
             ? sessionPolicy.tools.native.allow

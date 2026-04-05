@@ -8,6 +8,7 @@ import { resolveModalExitDurationMs } from '@/hooks/useModalAnimation'
 import { useIssueProviderStore } from '@/stores/issueProviderStore'
 import { cn } from '@/lib/utils'
 import { ProjectGeneralSettingsPanel } from './ProjectGeneralSettingsPanel'
+import { ProjectBrowserSettingsPanel } from './ProjectBrowserSettingsPanel'
 import { IssueIntegrationPanel } from './IssueIntegrationPanel'
 
 interface ProjectSettingsModalProps {
@@ -18,7 +19,7 @@ interface ProjectSettingsModalProps {
 export function ProjectSettingsModal({ projectId, onClose }: ProjectSettingsModalProps): React.JSX.Element {
   const { t } = useTranslation('projectSettings')
   const loadProviders = useIssueProviderStore((s) => s.loadProviders)
-  const [activeTab, setActiveTab] = useState<'general' | 'issueIntegration'>('general')
+  const [activeTab, setActiveTab] = useState<'general' | 'browser' | 'issueIntegration'>('general')
 
   // Two-phase close: play exit animation before unmounting
   const [open, setOpen] = useState(true)
@@ -48,7 +49,7 @@ export function ProjectSettingsModal({ projectId, onClose }: ProjectSettingsModa
 
       <div className="flex flex-1 min-h-0">
         <nav className="w-52 shrink-0 border-r border-[hsl(var(--border))] p-3 space-y-1" aria-label={t('tabs.ariaLabel')} role="tablist">
-          {(['general', 'issueIntegration'] as const).map((tab) => (
+          {(['general', 'browser', 'issueIntegration'] as const).map((tab) => (
             <button
               key={tab}
               id={`project-settings-tab-${tab}`}
@@ -76,6 +77,8 @@ export function ProjectSettingsModal({ projectId, onClose }: ProjectSettingsModa
         >
           {activeTab === 'general' ? (
             <ProjectGeneralSettingsPanel projectId={projectId} />
+          ) : activeTab === 'browser' ? (
+            <ProjectBrowserSettingsPanel projectId={projectId} />
           ) : (
             <IssueIntegrationPanel projectId={projectId} />
           )}

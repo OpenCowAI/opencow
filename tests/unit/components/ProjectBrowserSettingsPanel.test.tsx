@@ -8,7 +8,7 @@ import userEvent from '@testing-library/user-event'
 import '@testing-library/jest-dom/vitest'
 import { useAppStore } from '../../../src/renderer/stores/appStore'
 import type { Project } from '../../../src/shared/types'
-import { ProjectGeneralSettingsPanel } from '../../../src/renderer/components/ProjectSettings/ProjectGeneralSettingsPanel'
+import { ProjectBrowserSettingsPanel } from '../../../src/renderer/components/ProjectSettings/ProjectBrowserSettingsPanel'
 
 const updateProjectMock = vi.fn()
 
@@ -32,15 +32,15 @@ function makeProject(overrides: Partial<Project> = {}): Project {
   }
 }
 
-describe('ProjectGeneralSettingsPanel', () => {
+describe('ProjectBrowserSettingsPanel', () => {
   beforeEach(() => {
     updateProjectMock.mockReset()
     updateProjectMock.mockResolvedValue(
       makeProject({
         preferences: {
-          defaultTab: 'chat',
-          defaultChatViewMode: 'files',
-          defaultFilesDisplayMode: 'browser',
+          defaultTab: 'issues',
+          defaultChatViewMode: 'default',
+          defaultFilesDisplayMode: null,
           defaultBrowserStatePolicy: 'isolated-session',
         },
       }),
@@ -60,34 +60,18 @@ describe('ProjectGeneralSettingsPanel', () => {
     })
   })
 
-  it('shows files layout section only when chat mode is files', async () => {
-    render(<ProjectGeneralSettingsPanel projectId="proj-1" />)
+  it('saves browser default state policy selection', async () => {
+    render(<ProjectBrowserSettingsPanel projectId="proj-1" />)
 
-    expect(screen.queryByText('Files Default Layout')).not.toBeInTheDocument()
-
-    await userEvent.click(screen.getByRole('radio', { name: 'Files' }))
-
-    expect(await screen.findByText('Files Default Layout')).toBeInTheDocument()
-  })
-
-  it('saves updated preferences with selected card options', async () => {
-    render(<ProjectGeneralSettingsPanel projectId="proj-1" />)
-
-    await userEvent.click(screen.getByRole('radio', { name: 'Chat' }))
-    await userEvent.click(screen.getByRole('radio', { name: 'Files' }))
-    await userEvent.click(screen.getByRole('radio', { name: 'Browser' }))
-
+    await userEvent.click(screen.getByRole('radio', { name: 'Isolated: Session' }))
     await userEvent.click(screen.getByRole('button', { name: 'Save' }))
 
     await waitFor(() => {
       expect(updateProjectMock).toHaveBeenCalledWith('proj-1', {
         preferences: {
-          defaultTab: 'chat',
-          defaultChatViewMode: 'files',
-          defaultFilesDisplayMode: 'browser',
+          defaultBrowserStatePolicy: 'isolated-session',
         },
       })
     })
   })
-
 })

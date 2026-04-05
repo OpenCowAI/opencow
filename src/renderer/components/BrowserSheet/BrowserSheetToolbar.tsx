@@ -18,23 +18,33 @@ import {
   Globe,
   Loader2,
   PictureInPicture2,
+  ChevronDown,
+  Check,
 } from 'lucide-react'
 import { useBrowserOverlayStore } from '@/stores/browserOverlayStore'
+import { useBlockBrowserView } from '@/hooks/useBlockBrowserView'
 import { cn } from '@/lib/utils'
 import { getAppAPI } from '@/windowAPI'
-import type { BrowserSource } from '@shared/types'
+import type { BrowserSource, BrowserStatePolicy } from '@shared/types'
 
 interface BrowserSheetToolbarProps {
   source: BrowserSource
+  statePolicy: import('@shared/types').BrowserStatePolicy
   onClose: () => void
 }
 
-export function BrowserSheetToolbar({ source, onClose }: BrowserSheetToolbarProps): React.JSX.Element {
+export function BrowserSheetToolbar({ source, statePolicy, onClose }: BrowserSheetToolbarProps): React.JSX.Element {
   const { t } = useTranslation('navigation')
   const viewId = useBrowserOverlayStore((s) => s.browserOverlay?.viewId ?? null)
+  const projectId = useBrowserOverlayStore((s) => s.browserOverlay?.projectId ?? null)
   const urlBarValue = useBrowserOverlayStore((s) => s.browserOverlay?.urlBarValue ?? '')
   const isLoading = useBrowserOverlayStore((s) => s.browserOverlay?.isLoading ?? false)
   const pageInfo = useBrowserOverlayStore((s) => s.browserOverlay?.pageInfo ?? null)
+  const profiles = useBrowserOverlayStore((s) => s.browserOverlay?.profiles ?? [])
+  const activeProfileId = useBrowserOverlayStore((s) => s.browserOverlay?.activeProfileId ?? null)
+  const profileBindingReason = useBrowserOverlayStore((s) => s.browserOverlay?.profileBindingReason ?? null)
+  const switchBrowserStatePolicy = useBrowserOverlayStore((s) => s.switchBrowserStatePolicy)
+  const switchBrowserPreferredProfile = useBrowserOverlayStore((s) => s.switchBrowserPreferredProfile)
   const setUrlBarValue = useBrowserOverlayStore((s) => s.setBrowserOverlayUrlBarValue)
   const setUrlBarFocused = useBrowserOverlayStore((s) => s.setBrowserOverlayUrlBarFocused)
 
@@ -106,6 +116,20 @@ export function BrowserSheetToolbar({ source, onClose }: BrowserSheetToolbarProp
     <div className="flex items-center gap-1.5 px-3 py-2 border-b border-[hsl(var(--border))] bg-[hsl(var(--card))] shrink-0 pl-[76px]">
       {/* Source badge */}
       <SourceBadge source={source} />
+      <StateModeDropdown
+        source={source}
+        projectId={projectId}
+        policy={statePolicy}
+        profileBindingReason={profileBindingReason}
+        profiles={profiles}
+        activeProfileId={activeProfileId}
+        onSelectPolicy={(policy) => {
+          void switchBrowserStatePolicy(policy)
+        }}
+        onSelectProfile={(profileId) => {
+          void switchBrowserPreferredProfile(profileId)
+        }}
+      />
 
       {/* Navigation buttons */}
       <div className="flex items-center gap-0.5 ml-1">
@@ -342,6 +366,201 @@ function SourceBadge({ source }: { source: BrowserSource }): React.JSX.Element {
     )}>
       <Globe className="h-3 w-3" />
       <span>{label}</span>
+    </div>
+  )
+}
+
+function StateModeDropdown({
+  source,
+  projectId,
+  policy,
+  profileBindingReason,
+  profiles,
+  activeProfileId,
+  onSelectPolicy,
+  onSelectProfile,
+}: {
+  source: BrowserSource
+  projectId: string | null
+  policy: BrowserStatePolicy
+  profileBindingReason: string | null
+  profiles: import('@shared/types').BrowserProfileInfo[]
+  activeProfileId: string | null
+  onSelectPolicy: (policy: BrowserStatePolicy) => void
+  onSelectProfile: (profileId: string) => void
+}): React.JSX.Element {
+  const { t } = useTranslation('navigation')
+  const [open, setOpen] = useState(false)
+  const dropdownRef = useRef<HTMLDivElement>(null)
+  useBlockBrowserView('browser-state-mode-dropdown', open)
+
+  useEffect(() => {
+    if (!open) return
+    const onMouseDown = (event: MouseEvent): void => {
+      if (!dropdownRef.current) return
+      if (!dropdownRef.current.contains(event.target as Node)) {
+        setOpen(false)
+      }
+    }
+    const onEscape = (event: globalThis.KeyboardEvent): void => {
+      if (event.key === 'Escape') {
+        setOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', onMouseDown)
+    document.addEventListener('keydown', onEscape, true)
+    return () => {
+      document.removeEventListener('mousedown', onMouseDown)
+      document.removeEventListener('keydown', onEscape, true)
+    }
+  }, [open])
+
+  const policyOptions: BrowserStatePolicy[] = [
+    'shared-global',
+    'shared-project',
+    'isolated-issue',
+    'isolated-session',
+    'custom-profile',
+  ]
+
+  const getPolicyLabel = useCallback((value: BrowserStatePolicy): string => {
+    switch (value) {
+      case 'shared-global':
+        return t('browser.stateMode.sharedGlobal')
+      case 'shared-project':
+        return t('browser.stateMode.sharedProject')
+      case 'isolated-issue':
+        return t('browser.stateMode.isolatedIssue')
+      case 'isolated-session':
+        return t('browser.stateMode.isolatedSession')
+      case 'custom-profile':
+        return t('browser.stateMode.customProfile')
+    }
+  }, [t])
+
+  const getPolicyAvailability = useCallback((value: BrowserStatePolicy): { enabled: boolean; reason: string | null } => {
+    const hasIssueScope = source.type === 'issue-session' || source.type === 'issue-standalone'
+    const hasSessionScope = source.type === 'issue-session' || source.type === 'chat-session'
+
+    switch (value) {
+      case 'shared-project':
+        return projectId
+          ? { enabled: true, reason: null }
+          : { enabled: false, reason: t('browser.stateMode.disabled.noProject') }
+      case 'isolated-issue':
+        return hasIssueScope
+          ? { enabled: true, reason: null }
+          : { enabled: false, reason: t('browser.stateMode.disabled.noIssue') }
+      case 'isolated-session':
+        return hasSessionScope
+          ? { enabled: true, reason: null }
+          : { enabled: false, reason: t('browser.stateMode.disabled.noSession') }
+      case 'custom-profile':
+        return profiles.length > 0
+          ? { enabled: true, reason: null }
+          : { enabled: false, reason: t('browser.stateMode.disabled.noProfile') }
+      case 'shared-global':
+      default:
+        return { enabled: true, reason: null }
+    }
+  }, [profiles.length, projectId, source.type, t])
+
+  const activeProfile = profiles.find((profile) => profile.id === activeProfileId) ?? null
+  const triggerLabel = policy === 'custom-profile' && activeProfile
+    ? `${getPolicyLabel(policy)} · ${activeProfile.name}`
+    : getPolicyLabel(policy)
+
+  return (
+    <div ref={dropdownRef} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className={cn(
+          'flex items-center gap-1.5 px-2 py-1 rounded-md text-[11px] font-medium',
+          'bg-[hsl(var(--accent)/0.35)] text-[hsl(var(--muted-foreground))]',
+          'border border-[hsl(var(--border)/0.45)]',
+          'hover:bg-[hsl(var(--accent)/0.6)] hover:text-[hsl(var(--foreground))] transition-colors',
+          'shrink-0',
+        )}
+        title={profileBindingReason ?? undefined}
+        aria-label={t('browser.stateMode.label')}
+      >
+        <span>{triggerLabel}</span>
+        <ChevronDown className="h-3 w-3" />
+      </button>
+
+      {open && (
+        <div
+          className={cn(
+            'absolute top-full left-0 mt-1.5 z-50 min-w-[240px]',
+            'rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--popover))]',
+            'text-[hsl(var(--popover-foreground))] shadow-lg p-1',
+          )}
+        >
+          {policyOptions.map((option) => {
+            const selected = option === policy
+            const availability = getPolicyAvailability(option)
+            return (
+              <button
+                key={option}
+                type="button"
+                disabled={!availability.enabled}
+                onClick={() => {
+                  if (!availability.enabled) return
+                  setOpen(false)
+                  onSelectPolicy(option)
+                }}
+                title={availability.reason ?? undefined}
+                className={cn(
+                  'w-full flex items-center justify-between gap-2 rounded-lg px-2.5 py-1.5 text-left text-xs',
+                  'hover:bg-[hsl(var(--foreground)/0.04)] transition-colors',
+                  !availability.enabled && 'cursor-not-allowed opacity-55 hover:bg-transparent',
+                  selected && 'text-[hsl(var(--foreground))] bg-[hsl(var(--accent)/0.45)]',
+                )}
+              >
+                <div className="flex min-w-0 flex-col">
+                  <span className="truncate">{getPolicyLabel(option)}</span>
+                  {!availability.enabled && availability.reason ? (
+                    <span className="text-[10px] text-[hsl(var(--muted-foreground))] leading-tight mt-0.5">
+                      {availability.reason}
+                    </span>
+                  ) : null}
+                </div>
+                {selected ? <Check className="h-3.5 w-3.5" /> : null}
+              </button>
+            )
+          })}
+
+          {policy === 'custom-profile' && (
+            <div className="mt-1 pt-1 border-t border-[hsl(var(--border)/0.7)]">
+              <div className="px-2.5 py-1 text-[10px] uppercase tracking-wide text-[hsl(var(--muted-foreground))]">
+                {t('browser.stateMode.profile')}
+              </div>
+              {profiles.map((profile) => {
+                const selected = profile.id === activeProfileId
+                return (
+                  <button
+                    key={profile.id}
+                    type="button"
+                    onClick={() => {
+                      setOpen(false)
+                      onSelectProfile(profile.id)
+                    }}
+                    className={cn(
+                      'w-full flex items-center justify-between gap-2 rounded-lg px-2.5 py-1.5 text-left text-xs',
+                      'hover:bg-[hsl(var(--foreground)/0.04)] transition-colors',
+                      selected && 'text-[hsl(var(--foreground))] bg-[hsl(var(--accent)/0.45)]',
+                    )}
+                  >
+                    <span className="truncate">{profile.name}</span>
+                    {selected ? <Check className="h-3.5 w-3.5" /> : null}
+                  </button>
+                )
+              })}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   )
 }

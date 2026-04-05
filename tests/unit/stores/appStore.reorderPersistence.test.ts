@@ -28,6 +28,7 @@ function makeProject(id: string, displayOrder: number): Project {
       defaultTab: 'issues',
       defaultChatViewMode: 'default',
       defaultFilesDisplayMode: null,
+      defaultBrowserStatePolicy: 'shared-global',
     },
   }
 }

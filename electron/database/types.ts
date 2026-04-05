@@ -132,6 +132,7 @@ export interface ProjectTable {
   default_tab: string
   default_chat_view_mode: string
   default_files_display_mode: string | null
+  default_browser_state_policy: string
   pin_order: number | null
   archived_at: number | null
   display_order: number

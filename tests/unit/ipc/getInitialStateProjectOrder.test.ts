@@ -96,6 +96,7 @@ describe('IPC project listing order consistency', () => {
           defaultTab: 'issues',
           defaultChatViewMode: 'default',
           defaultFilesDisplayMode: 'ide',
+          defaultBrowserStatePolicy: 'shared-global',
         },
       },
       {
@@ -111,6 +112,7 @@ describe('IPC project listing order consistency', () => {
           defaultTab: 'issues',
           defaultChatViewMode: 'default',
           defaultFilesDisplayMode: 'ide',
+          defaultBrowserStatePolicy: 'shared-global',
         },
       },
       {
@@ -126,6 +128,7 @@ describe('IPC project listing order consistency', () => {
           defaultTab: 'issues',
           defaultChatViewMode: 'default',
           defaultFilesDisplayMode: 'ide',
+          defaultBrowserStatePolicy: 'shared-global',
         },
       },
       {
@@ -141,6 +144,7 @@ describe('IPC project listing order consistency', () => {
           defaultTab: 'issues',
           defaultChatViewMode: 'default',
           defaultFilesDisplayMode: 'ide',
+          defaultBrowserStatePolicy: 'shared-global',
         },
       },
     ])

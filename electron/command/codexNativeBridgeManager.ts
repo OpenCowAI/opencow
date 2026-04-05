@@ -57,6 +57,7 @@ export interface RegisterCodexBridgeSessionInput {
   session: {
     sessionId: string
     projectId: string | null
+    issueId: string | null
     originSource: string
   }
   relay: ToolProgressRelay

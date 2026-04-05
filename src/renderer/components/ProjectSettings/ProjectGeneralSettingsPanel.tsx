@@ -26,7 +26,21 @@ interface ProjectGeneralSettingsPanelProps {
   projectId: string
 }
 
-function samePreferences(a: ProjectPreferences, b: ProjectPreferences): boolean {
+interface GeneralPreferencesDraft {
+  defaultTab: ProjectDefaultTab
+  defaultChatViewMode: 'default' | 'files'
+  defaultFilesDisplayMode: FilesDisplayMode | null
+}
+
+function toGeneralDraft(preferences: ProjectPreferences): GeneralPreferencesDraft {
+  return {
+    defaultTab: preferences.defaultTab,
+    defaultChatViewMode: preferences.defaultChatViewMode,
+    defaultFilesDisplayMode: preferences.defaultFilesDisplayMode,
+  }
+}
+
+function sameGeneralPreferences(a: GeneralPreferencesDraft, b: GeneralPreferencesDraft): boolean {
   return (
     a.defaultTab === b.defaultTab &&
     a.defaultChatViewMode === b.defaultChatViewMode &&
@@ -40,20 +54,33 @@ export function ProjectGeneralSettingsPanel({ projectId }: ProjectGeneralSetting
   const updateProjectById = useAppStore((s) => s.updateProjectById)
   const [saving, setSaving] = useState(false)
   const project = useMemo(() => projects.find((p) => p.id === projectId) ?? null, [projectId, projects])
-  const canonical = normalizeProjectPreferences(project?.preferences)
-  const [draft, setDraft] = useState<ProjectPreferences>(canonical)
+  const canonical = useMemo(
+    () => toGeneralDraft(normalizeProjectPreferences(project?.preferences)),
+    [project?.preferences],
+  )
+  const [draft, setDraft] = useState<GeneralPreferencesDraft>(canonical)
 
   useEffect(() => {
     setDraft(canonical)
-  }, [canonical.defaultChatViewMode, canonical.defaultFilesDisplayMode, canonical.defaultTab])
+  }, [
+    canonical.defaultChatViewMode,
+    canonical.defaultFilesDisplayMode,
+    canonical.defaultTab,
+  ])
 
-  const dirty = !samePreferences(draft, canonical)
+  const dirty = !sameGeneralPreferences(draft, canonical)
 
   const onSave = useCallback(async () => {
     if (!project || !dirty) return
     setSaving(true)
     try {
-      const updated = await getAppAPI()['update-project'](project.id, { preferences: draft })
+      const updated = await getAppAPI()['update-project'](project.id, {
+        preferences: {
+          defaultTab: draft.defaultTab,
+          defaultChatViewMode: draft.defaultChatViewMode,
+          defaultFilesDisplayMode: draft.defaultFilesDisplayMode,
+        },
+      })
       if (!updated) throw new Error(t('general.saveFailed'))
       updateProjectById(project.id, () => updated)
       toast(t('general.saved'))

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { cn } from '@/lib/utils'
+import { useTranslation } from 'react-i18next'
 
 type MiniTone = 'faint' | 'soft' | 'base' | 'strong'
 
@@ -180,6 +181,50 @@ export function FilesLayoutPreview({ mode }: { mode: 'ide' | 'browser' }): React
         <MiniBlock tone="faint" className="h-1.5 w-full rounded-full" />
         <MiniBlock tone="soft" className="h-1.5 w-[78%] rounded-full" />
       </div>
+    </div>
+  )
+}
+
+export function BrowserBehaviorPreview({
+  policy,
+}: {
+  policy: 'shared-global' | 'shared-project' | 'isolated-issue' | 'isolated-session'
+}): React.JSX.Element {
+  const { t } = useTranslation('projectSettings')
+  const shared = policy === 'shared-global' || policy === 'shared-project'
+  const scopeLabel =
+    policy === 'shared-global'
+      ? t('browser.preview.scope.global')
+      : policy === 'shared-project'
+        ? t('browser.preview.scope.project')
+        : policy === 'isolated-issue'
+          ? t('browser.preview.scope.issue')
+          : t('browser.preview.scope.session')
+
+  return (
+    <div className="space-y-1.5" aria-hidden="true">
+      <div className="flex items-center gap-1">
+        <MiniBlock tone="soft" className="h-1.5 w-12 rounded-full" />
+        <MiniBlock tone={shared ? 'base' : 'strong'} className="h-1.5 w-10 rounded-full" />
+        <MiniBlock tone="faint" className="ml-auto h-1.5 w-14 rounded-full" />
+      </div>
+      <div className="grid grid-cols-2 gap-1">
+        <div className="space-y-1 rounded-md border border-[hsl(var(--foreground)/0.07)] p-1">
+          <MiniBlock tone={shared ? 'base' : 'soft'} className="h-4.5 w-full rounded-sm" />
+          <MiniBlock tone="soft" className="h-1.5 w-[90%] rounded-full" />
+        </div>
+        <div className="space-y-1 rounded-md border border-[hsl(var(--foreground)/0.07)] p-1">
+          <MiniBlock tone={shared ? 'base' : 'faint'} className="h-4.5 w-full rounded-sm" />
+          <MiniBlock tone="faint" className="h-1.5 w-[76%] rounded-full" />
+        </div>
+      </div>
+      <div className="flex items-center gap-1.5">
+        <MiniDot tone={shared ? 'soft' : 'strong'} />
+        <MiniBlock tone={shared ? 'soft' : 'base'} className="h-1.5 w-[48%] rounded-full" />
+        <MiniBlock tone="faint" className="h-1.5 w-[28%] rounded-full" />
+        <MiniBlock tone="soft" className="ml-auto h-1.5 w-12 rounded-full" />
+      </div>
+      <div className="text-[9px] tracking-wide text-[hsl(var(--muted-foreground))]">{scopeLabel}</div>
     </div>
   )
 }

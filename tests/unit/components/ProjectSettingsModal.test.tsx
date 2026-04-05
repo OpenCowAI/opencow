@@ -25,6 +25,7 @@ function makeProject(overrides: Partial<Project> = {}): Project {
       defaultTab: 'issues',
       defaultChatViewMode: 'default',
       defaultFilesDisplayMode: null,
+      defaultBrowserStatePolicy: 'shared-global',
     },
     ...overrides,
   }
@@ -55,6 +56,9 @@ describe('ProjectSettingsModal', () => {
 
     expect(screen.getByRole('heading', { name: 'Project Settings', level: 2 })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'General', level: 3 })).toBeInTheDocument()
+
+    await userEvent.click(screen.getByRole('tab', { name: 'Browser' }))
+    expect(screen.getByRole('heading', { name: 'Browser', level: 3 })).toBeInTheDocument()
 
     await userEvent.click(screen.getByRole('tab', { name: 'Issue Integration' }))
 

@@ -67,6 +67,7 @@ export class ProjectStore {
       default_tab: preferences.defaultTab,
       default_chat_view_mode: preferences.defaultChatViewMode,
       default_files_display_mode: preferences.defaultFilesDisplayMode,
+      default_browser_state_policy: preferences.defaultBrowserStatePolicy,
       pin_order: null,
       archived_at: null,
       display_order: nextOrder,
@@ -126,6 +127,7 @@ export class ProjectStore {
       setClauses.default_tab = merged.defaultTab
       setClauses.default_chat_view_mode = merged.defaultChatViewMode
       setClauses.default_files_display_mode = merged.defaultFilesDisplayMode
+      setClauses.default_browser_state_policy = merged.defaultBrowserStatePolicy
     }
     if (input.pinOrder !== undefined) setClauses.pin_order = input.pinOrder
     if (input.archivedAt !== undefined) setClauses.archived_at = input.archivedAt
@@ -308,6 +310,7 @@ function rowToProject(row: ProjectTable): StoredProject {
       defaultTab: row.default_tab as ProjectPreferences['defaultTab'],
       defaultChatViewMode: row.default_chat_view_mode as ProjectPreferences['defaultChatViewMode'],
       defaultFilesDisplayMode: row.default_files_display_mode as ProjectPreferences['defaultFilesDisplayMode'],
+      defaultBrowserStatePolicy: row.default_browser_state_policy as ProjectPreferences['defaultBrowserStatePolicy'],
     }),
     pinOrder: row.pin_order,
     archivedAt: row.archived_at,

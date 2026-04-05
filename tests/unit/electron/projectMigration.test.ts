@@ -29,6 +29,7 @@ describe('projects migrations', () => {
     expect(names).toContain('default_tab')
     expect(names).toContain('default_chat_view_mode')
     expect(names).toContain('default_files_display_mode')
+    expect(names).toContain('default_browser_state_policy')
     expect(names).toContain('created_at')
     expect(names).toContain('updated_at')
   })

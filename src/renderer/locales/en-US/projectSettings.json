@@ -4,6 +4,7 @@
   "tabs": {
     "ariaLabel": "Project settings tabs",
     "general": "General",
+    "browser": "Browser",
     "issueIntegration": "Issue Integration"
   },
   "general": {
@@ -50,6 +51,39 @@
       "options": {
         "ide": "Editor",
         "browser": "Browser"
+      }
+    }
+  },
+  "browser": {
+    "title": "Browser",
+    "description": "Manage default browser profile behavior for this project.",
+    "save": "Save",
+    "saving": "Saving...",
+    "saved": "Settings saved",
+    "saveFailed": "Save failed",
+    "projectNotFound": "Project not found.",
+    "defaultStatePolicy": {
+      "title": "Default Browser State Policy",
+      "description": "Choose how browser profile state is shared by default for this project.",
+      "hints": {
+        "sharedGlobal": "Use one global browser profile across projects and sessions.",
+        "sharedProject": "Reuse one browser profile inside this project.",
+        "isolatedIssue": "Isolate browser state per Issue for multi-account operations.",
+        "isolatedSession": "Isolate browser state per Session for strict task separation."
+      },
+      "options": {
+        "sharedGlobal": "Shared: Global",
+        "sharedProject": "Shared: Project",
+        "isolatedIssue": "Isolated: Issue",
+        "isolatedSession": "Isolated: Session"
+      }
+    },
+    "preview": {
+      "scope": {
+        "global": "GLOBAL",
+        "project": "PROJECT",
+        "issue": "ISSUE",
+        "session": "SESSION"
       }
     }
   },

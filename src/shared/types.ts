@@ -26,10 +26,21 @@ export interface Project {
 }
 
 export type ProjectDefaultTab = 'issues' | 'chat' | 'schedule'
+export type ProjectBrowserStatePolicy =
+  | 'shared-global'
+  | 'shared-project'
+  | 'isolated-issue'
+  | 'isolated-session'
 
 interface ProjectPreferencesBase {
   /** Default top tab when first opening a project (before state restore exists). */
   defaultTab: ProjectDefaultTab
+  /**
+   * Default browser profile state policy for this project.
+   *
+   * Used by browser native capability when a session is project-scoped.
+   */
+  defaultBrowserStatePolicy: ProjectBrowserStatePolicy
 }
 
 export type ProjectPreferences =
@@ -50,6 +61,7 @@ export interface ProjectPreferencesPatch {
   defaultTab?: ProjectDefaultTab
   defaultChatViewMode?: ChatViewMode
   defaultFilesDisplayMode?: FilesDisplayMode | null
+  defaultBrowserStatePolicy?: ProjectBrowserStatePolicy
 }
 
 export type SessionStatus = 'active' | 'waiting' | 'completed' | 'error'
@@ -660,13 +672,13 @@ export interface IPCChannels {
   'browser:get-focused-context': { args: []; return: BrowserShowContext | null }
   /** Create or reuse a view based on BrowserSource, attach it to the main window, and display it */
   'browser:ensure-source-view': {
-    args: [params: { source: BrowserSource; profileId?: string }]
-    return: string
+    args: [params: BrowserSourceResolutionRequest]
+    return: BrowserSourceResolutionResult
   }
   /** Switch the currently displayed view (triggered by Source Switcher) */
   'browser:display-source': {
-    args: [params: { source: BrowserSource }]
-    return: void
+    args: [params: BrowserSourceResolutionRequest]
+    return: BrowserSourceResolutionResult
   }
   /** Detach view without destroying it (keep alive when closing the overlay) */
   'browser:detach-view': {
@@ -1956,7 +1968,15 @@ export type DataBusEvent =
   // Browser
   | {
       type: 'browser:view:opened'
-      payload: { viewId: string; profileId: string; profileName: string }
+      payload: {
+        viewId: string
+        profileId: string
+        profileName: string
+        source: BrowserSource
+        statePolicy: BrowserStatePolicy
+        projectId: string | null
+        profileBindingReason: string
+      }
     }
   | { type: 'browser:view:closed'; payload: { viewId: string } }
   | { type: 'browser:navigated'; payload: { viewId: string; url: string; title: string } }
@@ -3861,7 +3881,17 @@ export interface BrowserShowContext {
   sourceIssueId?: string
 
   initialUrl?: string
+  /**
+   * Legacy alias for preferred profile ID.
+   *
+   * Kept for backward compatibility with older renderer/main payloads.
+   * New code should use `preferredProfileId`.
+   */
   profileId?: string
+  preferredProfileId?: string
+  policy?: BrowserStatePolicy
+  /** Optional project scope hint used by shared-project policy resolution. */
+  projectId?: string
 }
 
 // ─── Browser Source (Discriminated Union) ────────────────────────────────
@@ -3881,10 +3911,43 @@ export type BrowserSource =
   | { type: 'chat-session'; sessionId: string }
   | { type: 'standalone' }
 
+export type BrowserStatePolicy = ProjectBrowserStatePolicy | 'custom-profile'
+
 /** Optional parameters for openBrowserOverlay (separated from source to avoid mixing domain identity with UI options) */
 export interface BrowserOpenOptions {
   initialUrl?: string
+  /**
+   * Legacy alias for preferred profile ID.
+   * New code should use `preferredProfileId`.
+   */
   profileId?: string
+  preferredProfileId?: string
+  policy?: BrowserStatePolicy
+  projectId?: string
+}
+
+/**
+ * Shared request envelope for browser source state resolution.
+ *
+ * - `profileId` is a backward-compatible alias for `preferredProfileId`
+ * - `issueId` / `sessionId` allow explicit override and normally can be omitted
+ *   because they are derivable from `source`
+ */
+export interface BrowserSourceResolutionRequest {
+  source: BrowserSource
+  profileId?: string
+  preferredProfileId?: string
+  policy?: BrowserStatePolicy
+  projectId?: string
+  issueId?: string
+  sessionId?: string
+}
+
+export interface BrowserSourceResolutionResult {
+  viewId: string
+  profileId: string
+  statePolicy: BrowserStatePolicy
+  profileBindingReason: string
 }
 
 // ─── Browser Overlay State ───────────────────────────────────────────────
@@ -3898,6 +3961,9 @@ export interface BrowserOpenOptions {
 export interface BrowserOverlayState {
   // ── Source ──
   source: BrowserSource
+  statePolicy: BrowserStatePolicy
+  projectId: string | null
+  profileBindingReason: string | null
 
   // ── View ──
   viewId: string | null
@@ -3950,6 +4016,8 @@ export interface ActiveBrowserSource {
   viewId: string
   /** Display name (Issue title / Chat name / "Browser") */
   displayName: string
+  /** Reopen options snapshot used by PiP restore. */
+  openOptions?: BrowserOpenOptions
 }
 
 export interface BrowserSyncBoundsParams {

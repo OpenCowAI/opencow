@@ -93,7 +93,7 @@ export class RepoAnalyzer {
 
     // 2. Build tool context for tool descriptor extraction
     const toolContext: NativeCapabilityToolContext = {
-      session: { sessionId: `analysis-${Date.now()}`, projectId: null, originSource: 'market-analyzer' },
+      session: { sessionId: `analysis-${Date.now()}`, projectId: null, issueId: null, originSource: 'market-analyzer' },
       relay: new ToolProgressRelay(),
     }
 

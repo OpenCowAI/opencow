@@ -116,7 +116,7 @@ describe('CodexNativeBridgeManager', () => {
 
     const sessionId = 'session-bridge-1'
     const serverConfigMap = await manager.registerSession({
-      session: { sessionId, projectId: null, originSource: 'agent' },
+      session: { sessionId, projectId: null, issueId: null, originSource: 'agent' },
       relay: new ToolProgressRelay(),
       nativeToolAllowlist: PROJECT_ALLOWLIST,
     })
@@ -149,7 +149,7 @@ describe('CodexNativeBridgeManager', () => {
 
     const sessionId = 'session-bridge-node-command'
     const serverConfigMap = await manager.registerSession({
-      session: { sessionId, projectId: null, originSource: 'agent' },
+      session: { sessionId, projectId: null, issueId: null, originSource: 'agent' },
       relay: new ToolProgressRelay(),
       nativeToolAllowlist: PROJECT_ALLOWLIST,
     })
@@ -170,7 +170,7 @@ describe('CodexNativeBridgeManager', () => {
 
     const sessionId = 'session-bridge-env'
     const serverConfigMap = await manager.registerSession({
-      session: { sessionId, projectId: null, originSource: 'agent' },
+      session: { sessionId, projectId: null, issueId: null, originSource: 'agent' },
       relay: new ToolProgressRelay(),
       nativeToolAllowlist: PROJECT_ALLOWLIST,
     })
@@ -192,12 +192,12 @@ describe('CodexNativeBridgeManager', () => {
       '/tmp/opencow-codex-native-bridge.mjs'
 
     const serverConfigMap1 = await manager.registerSession({
-      session: { sessionId: 'session-bridge-token-1', projectId: null, originSource: 'agent' },
+      session: { sessionId: 'session-bridge-token-1', projectId: null, issueId: null, originSource: 'agent' },
       relay: new ToolProgressRelay(),
       nativeToolAllowlist: PROJECT_ALLOWLIST,
     })
     const serverConfigMap2 = await manager.registerSession({
-      session: { sessionId: 'session-bridge-token-2', projectId: null, originSource: 'agent' },
+      session: { sessionId: 'session-bridge-token-2', projectId: null, issueId: null, originSource: 'agent' },
       relay: new ToolProgressRelay(),
       nativeToolAllowlist: PROJECT_ALLOWLIST,
     })
@@ -215,7 +215,7 @@ describe('CodexNativeBridgeManager', () => {
     managers.push(manager)
 
     const serverConfigMap = await manager.registerSession({
-      session: { sessionId: 'session-bridge-empty', projectId: null, originSource: 'agent' },
+      session: { sessionId: 'session-bridge-empty', projectId: null, issueId: null, originSource: 'agent' },
       relay: new ToolProgressRelay(),
       nativeToolAllowlist: [{ capability: 'browser' }],
     })
@@ -234,7 +234,7 @@ describe('CodexNativeBridgeManager', () => {
 
     const sessionId = 'session-bridge-html'
     const serverConfigMap = await manager.registerSession({
-      session: { sessionId, projectId: null, originSource: 'agent' },
+      session: { sessionId, projectId: null, issueId: null, originSource: 'agent' },
       relay: new ToolProgressRelay(),
       nativeToolAllowlist: HTML_ALLOWLIST,
     })
@@ -283,7 +283,7 @@ describe('CodexNativeBridgeManager', () => {
 
     const sessionId = 'session-bridge-schema-constraints'
     const serverConfigMap = await manager.registerSession({
-      session: { sessionId, projectId: null, originSource: 'agent' },
+      session: { sessionId, projectId: null, issueId: null, originSource: 'agent' },
       relay: new ToolProgressRelay(),
       nativeToolAllowlist: CUSTOM_ALLOWLIST,
     })
@@ -312,7 +312,7 @@ describe('CodexNativeBridgeManager', () => {
     managers.push(manager)
 
     const serverConfigMap = await manager.registerSession({
-      session: { sessionId: 'session-bridge-collide', projectId: null, originSource: 'agent' },
+      session: { sessionId: 'session-bridge-collide', projectId: null, issueId: null, originSource: 'agent' },
       relay: new ToolProgressRelay(),
       nativeToolAllowlist: PROJECT_ALLOWLIST,
       activeMcpServerNames: new Set([MCP_SERVER_BASE_NAME]),
@@ -340,7 +340,7 @@ describe('CodexNativeBridgeManager', () => {
       '/tmp/opencow-codex-native-bridge.mjs'
 
     const serverConfigMap = await manager.registerSession({
-      session: { sessionId: 'session-bridge-dup-tools', projectId: null, originSource: 'agent' },
+      session: { sessionId: 'session-bridge-dup-tools', projectId: null, issueId: null, originSource: 'agent' },
       relay: new ToolProgressRelay(),
       nativeToolAllowlist: CUSTOM_ALLOWLIST,
     })
@@ -356,7 +356,7 @@ describe('CodexNativeBridgeManager', () => {
     }
 
     const serverConfigMap = await manager.registerSession({
-      session: { sessionId: 'session-bridge-fail-open', projectId: null, originSource: 'agent' },
+      session: { sessionId: 'session-bridge-fail-open', projectId: null, issueId: null, originSource: 'agent' },
       relay: new ToolProgressRelay(),
       nativeToolAllowlist: PROJECT_ALLOWLIST,
     })
@@ -375,7 +375,7 @@ describe('CodexNativeBridgeManager', () => {
 
     const sessionId = 'session-bridge-auth-1'
     const serverConfigMap = await manager.registerSession({
-      session: { sessionId, projectId: null, originSource: 'agent' },
+      session: { sessionId, projectId: null, issueId: null, originSource: 'agent' },
       relay: new ToolProgressRelay(),
       nativeToolAllowlist: PROJECT_ALLOWLIST,
     })
@@ -404,12 +404,12 @@ describe('CodexNativeBridgeManager', () => {
       '/tmp/opencow-codex-native-bridge.mjs'
 
     const configA = await manager.registerSession({
-      session: { sessionId: 'session-bridge-auth-a', projectId: null, originSource: 'agent' },
+      session: { sessionId: 'session-bridge-auth-a', projectId: null, issueId: null, originSource: 'agent' },
       relay: new ToolProgressRelay(),
       nativeToolAllowlist: PROJECT_ALLOWLIST,
     })
     const configB = await manager.registerSession({
-      session: { sessionId: 'session-bridge-auth-b', projectId: null, originSource: 'agent' },
+      session: { sessionId: 'session-bridge-auth-b', projectId: null, issueId: null, originSource: 'agent' },
       relay: new ToolProgressRelay(),
       nativeToolAllowlist: PROJECT_ALLOWLIST,
     })
@@ -442,7 +442,7 @@ describe('CodexNativeBridgeManager', () => {
 
     const sessionId = 'session-bridge-auth-post'
     const serverConfigMap = await manager.registerSession({
-      session: { sessionId, projectId: null, originSource: 'agent' },
+      session: { sessionId, projectId: null, issueId: null, originSource: 'agent' },
       relay: new ToolProgressRelay(),
       nativeToolAllowlist: PROJECT_ALLOWLIST,
     })
@@ -478,7 +478,7 @@ describe('CodexNativeBridgeManager', () => {
 
     const sessionId = 'session-bridge-invalid-json'
     const serverConfigMap = await manager.registerSession({
-      session: { sessionId, projectId: null, originSource: 'agent' },
+      session: { sessionId, projectId: null, issueId: null, originSource: 'agent' },
       relay: new ToolProgressRelay(),
       nativeToolAllowlist: PROJECT_ALLOWLIST,
     })
@@ -512,7 +512,7 @@ describe('CodexNativeBridgeManager', () => {
 
     const sessionId = 'session-bridge-large-body'
     const serverConfigMap = await manager.registerSession({
-      session: { sessionId, projectId: null, originSource: 'agent' },
+      session: { sessionId, projectId: null, issueId: null, originSource: 'agent' },
       relay: new ToolProgressRelay(),
       nativeToolAllowlist: PROJECT_ALLOWLIST,
     })
@@ -560,7 +560,7 @@ describe('CodexNativeBridgeManager', () => {
 
     const sessionId = 'session-bridge-invalid-args'
     const serverConfigMap = await manager.registerSession({
-      session: { sessionId, projectId: null, originSource: 'agent' },
+      session: { sessionId, projectId: null, issueId: null, originSource: 'agent' },
       relay: new ToolProgressRelay(),
       nativeToolAllowlist: CUSTOM_ALLOWLIST,
     })
@@ -618,7 +618,7 @@ describe('CodexNativeBridgeManager', () => {
 
     const sessionId = 'session-bridge-strip-args'
     const serverConfigMap = await manager.registerSession({
-      session: { sessionId, projectId: null, originSource: 'agent' },
+      session: { sessionId, projectId: null, issueId: null, originSource: 'agent' },
       relay: new ToolProgressRelay(),
       nativeToolAllowlist: CUSTOM_ALLOWLIST,
     })
@@ -672,7 +672,7 @@ describe('CodexNativeBridgeManager', () => {
 
     const sessionId = 'session-bridge-metadata'
     const serverConfigMap = await manager.registerSession({
-      session: { sessionId, projectId: null, originSource: 'agent' },
+      session: { sessionId, projectId: null, issueId: null, originSource: 'agent' },
       relay: new ToolProgressRelay(),
       nativeToolAllowlist: CUSTOM_ALLOWLIST,
     })
@@ -733,7 +733,7 @@ describe('CodexNativeBridgeManager', () => {
 
     const sessionId = 'session-bridge-metadata-fallback'
     const serverConfigMap = await manager.registerSession({
-      session: { sessionId, projectId: null, originSource: 'agent' },
+      session: { sessionId, projectId: null, issueId: null, originSource: 'agent' },
       relay: new ToolProgressRelay(),
       nativeToolAllowlist: CUSTOM_ALLOWLIST,
     })
@@ -799,7 +799,7 @@ describe('CodexNativeBridgeManager', () => {
 
       const sessionId = 'session-bridge-timeout'
       const serverConfigMap = await manager.registerSession({
-        session: { sessionId, projectId: null, originSource: 'agent' },
+        session: { sessionId, projectId: null, issueId: null, originSource: 'agent' },
         relay: new ToolProgressRelay(),
         nativeToolAllowlist: CUSTOM_ALLOWLIST,
       })

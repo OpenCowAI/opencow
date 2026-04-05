@@ -131,7 +131,7 @@ export function BrowserPiPTrigger(): React.JSX.Element | null {
 
     // Single browser → open directly; multiple → toggle panel
     if (activeSources.length === 1) {
-      openBrowserOverlay(activeSources[0].source)
+      openBrowserOverlay(activeSources[0].source, activeSources[0].openOptions)
     } else {
       setPanelOpen((v) => !v)
     }

@@ -8,6 +8,7 @@
  */
 
 import type { SnapshotOptions } from './snapshot'
+import type { BrowserSource, BrowserStatePolicy } from '@shared/types'
 
 // ─── Browser Profile ────────────────────────────────────────────────────
 
@@ -174,7 +175,18 @@ export interface BrowserContext {
 // ─── DataBus Events ─────────────────────────────────────────────────────
 
 export type BrowserDataBusEvent =
-  | { type: 'browser:view:opened'; payload: { viewId: string; profileId: string; profileName: string } }
+  | {
+      type: 'browser:view:opened'
+      payload: {
+        viewId: string
+        profileId: string
+        profileName: string
+        source: BrowserSource
+        statePolicy: BrowserStatePolicy
+        projectId: string | null
+        profileBindingReason: string
+      }
+    }
   | { type: 'browser:view:closed'; payload: { viewId: string } }
   | { type: 'browser:navigated'; payload: { viewId: string; url: string; title: string } }
   | { type: 'browser:loading'; payload: { viewId: string; isLoading: boolean } }
