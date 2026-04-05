@@ -10,6 +10,16 @@ body:
 
         > **Note:** Please write in English if possible, so that all community members can participate.
 
+  - type: checkboxes
+    attributes:
+      label: Self Checks
+      description: To help us process reports quickly, please confirm the following.
+      options:
+        - label: I confirm that I am using English to submit this bug report.
+          required: true
+        - label: 【中文用户 & Non English User】请使用英语提交，否则会被关闭 ：）
+          required: true
+
   - type: textarea
     id: description
     attributes:
