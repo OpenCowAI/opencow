@@ -395,7 +395,7 @@ export function IssueDetailView({ issueId, onClose, onNavigateToIssue }: IssueDe
     // Still loading — show skeleton placeholder
     return (
       <div className="h-full flex flex-col overflow-hidden animate-pulse">
-        <div className="flex items-center justify-between px-4 py-3 border-b border-[hsl(var(--border))]">
+        <div className="flex items-center justify-between px-4 shrink-0 h-12 border-b border-[hsl(var(--border)/0.5)]">
           <div className="h-4 w-24 rounded bg-[hsl(var(--muted)/0.3)]" />
           <div className="flex gap-1">
             <div className="h-6 w-6 rounded bg-[hsl(var(--muted)/0.2)]" />
@@ -472,7 +472,7 @@ export function IssueDetailView({ issueId, onClose, onNavigateToIssue }: IssueDe
       {/* Ref for CSS animation replay on issue switch — must be a real DOM element */}
       <div ref={contentRef} className="h-full flex flex-col overflow-hidden">
       {/* Header — always rendered; action buttons disabled while loading */}
-      <div className="drag-region flex items-center justify-between px-4 py-3 border-b border-[hsl(var(--border))]">
+      <div className="drag-region flex items-center justify-between px-4 shrink-0 h-12 border-b border-[hsl(var(--border)/0.5)]">
         <h2 className="text-sm font-semibold text-[hsl(var(--foreground))] truncate min-w-0 flex-1" title={displayTitle}>
           {displayTitle}
         </h2>
