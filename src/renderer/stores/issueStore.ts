@@ -141,7 +141,10 @@ export interface IssueStore {
    * Called on hover to anticipate user clicks — data is ready before they act.
    */
   prefetchIssueDetail: (id: string) => void
-  createIssue: (input: CreateIssueInput) => Promise<Issue>
+  createIssue: (
+    input: CreateIssueInput,
+    options?: { onCreated?: (issue: Issue) => void },
+  ) => Promise<Issue>
   updateIssue: (id: string, patch: UpdateIssueInput) => Promise<void>
   /**
    * Lightweight in-memory patch for a single issue field.
@@ -346,8 +349,12 @@ export const useIssueStore = create<IssueStore>((set, get) => ({
     })
   },
 
-  createIssue: async (input) => {
+  createIssue: async (input, options) => {
     const issue = await getAppAPI()['create-issue'](input)
+    // Run caller hook before list reload so UI can update selection first.
+    // This avoids a transient frame where the list is refreshed but still
+    // highlights the previously selected item.
+    options?.onCreated?.(issue)
     await get().loadIssues()
     // Refresh child issues cache if this is a sub-issue
     if (input.parentIssueId) {
