@@ -9,7 +9,7 @@ import {
   Info,
   AlertTriangle,
   ExternalLink,
-  RefreshCw,
+  RefreshCw
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { getAppAPI } from '@/windowAPI'
@@ -50,7 +50,7 @@ function PrerequisiteRow({ item }: { item: PrerequisiteItem }): React.JSX.Elemen
             </code>
           )}
           {!item.required && (
-            <span className="rounded-full bg-[hsl(var(--accent))] px-2 py-0.5 text-[10px] font-medium text-[hsl(var(--muted-foreground))]">
+            <span className="rounded bg-[hsl(var(--accent))] px-2 py-0.5 text-[10px] font-medium text-[hsl(var(--muted-foreground))]">
               {t('prerequisites.optional')}
             </span>
           )}
@@ -59,9 +59,7 @@ function PrerequisiteRow({ item }: { item: PrerequisiteItem }): React.JSX.Elemen
           <p
             className={cn(
               'text-xs mt-1',
-              item.required
-                ? 'text-red-500/80'
-                : 'text-[hsl(var(--muted-foreground))]'
+              item.required ? 'text-red-500/80' : 'text-[hsl(var(--muted-foreground))]'
             )}
           >
             {item.hint}
@@ -76,7 +74,7 @@ export function PrerequisitesStep({
   stepConfig,
   onResult,
   onBack,
-  onContinue,
+  onContinue
 }: PrerequisitesStepProps): React.JSX.Element {
   const { t } = useTranslation('onboarding')
   const [phase, setPhase] = useState<PrereqPhase>('checking')
@@ -84,15 +82,14 @@ export function PrerequisitesStep({
 
   // Defensive UI filter: Node.js check is intentionally hidden in onboarding.
   // This protects the UI even if backend payloads still include a legacy item.
-  const visibleItems = result
-    ? result.items.filter((item) => item.name !== 'Node.js')
-    : []
+  const visibleItems = result ? result.items.filter((item) => item.name !== 'Node.js') : []
 
   // Auto-run on mount. onResult is stable (useCallback with [] deps in parent).
   useEffect(() => {
     let cancelled = false
 
-    getAppAPI()['check-prerequisites']()
+    getAppAPI()
+      ['check-prerequisites']()
       .then((checkResult) => {
         if (cancelled) return
         setResult(checkResult)
@@ -103,7 +100,9 @@ export function PrerequisitesStep({
         if (!cancelled) setPhase('error')
       })
 
-    return () => { cancelled = true }
+    return () => {
+      cancelled = true
+    }
   }, [onResult])
 
   const handleRecheck = useCallback(async () => {
@@ -119,7 +118,8 @@ export function PrerequisitesStep({
     }
   }, [onResult])
 
-  const claudeCodeAvailable = result?.items.find((i) => i.name === 'Claude Code')?.satisfied ?? false
+  const claudeCodeAvailable =
+    result?.items.find((i) => i.name === 'Claude Code')?.satisfied ?? false
 
   const statusText =
     phase === 'checking'
@@ -129,117 +129,125 @@ export function PrerequisitesStep({
         : t('prerequisites.statusDone')
 
   return (
-    <div className="onboarding-step-enter">
-      <StepIndicator {...stepConfig} />
+    <div className="onboarding-step-enter flex max-h-[calc(100vh-7rem)] flex-col">
+      <div className="shrink-0">
+        <StepIndicator {...stepConfig} />
 
-      <div className="text-center mb-6">
-        <h2 className="text-xl font-bold mb-1.5">{t('prerequisites.title')}</h2>
-        <p className="text-sm text-[hsl(var(--muted-foreground))]">{statusText}</p>
+        <div className="text-center mb-6">
+          <h2 className="text-xl font-bold mb-1.5">{t('prerequisites.title')}</h2>
+          <p className="text-sm text-[hsl(var(--muted-foreground))]">{statusText}</p>
+        </div>
       </div>
 
-      <div className="rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] px-5 py-3 mb-6">
-        {phase === 'checking' ? (
-          <div className="flex items-center justify-center py-8 gap-2.5">
-            <Loader2 className="h-5 w-5 animate-spin text-[hsl(var(--primary))]" />
-            <span className="text-sm text-[hsl(var(--muted-foreground))]">
-              {t('prerequisites.detecting')}
-            </span>
+      <div data-testid="onboarding-scroll-content" className="min-h-0 flex-1 overflow-y-auto pr-1">
+        <div className="space-y-4 pb-1">
+          <div className="rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] px-5 py-3">
+            {phase === 'checking' ? (
+              <div className="flex items-center justify-center py-8 gap-2.5">
+                <Loader2 className="h-5 w-5 animate-spin text-[hsl(var(--primary))]" />
+                <span className="text-sm text-[hsl(var(--muted-foreground))]">
+                  {t('prerequisites.detecting')}
+                </span>
+              </div>
+            ) : phase === 'error' ? (
+              <div className="flex flex-col items-center justify-center py-8 gap-3">
+                <XCircle className="h-8 w-8 text-red-500/60" />
+                <p className="text-sm text-[hsl(var(--muted-foreground))]">
+                  {t('prerequisites.errorDetail')}
+                </p>
+                <button
+                  onClick={() => void handleRecheck()}
+                  className="flex items-center gap-1.5 text-sm text-[hsl(var(--primary))] hover:opacity-80 transition-opacity"
+                >
+                  <RefreshCw className="h-3.5 w-3.5" />
+                  {t('prerequisites.tryAgain')}
+                </button>
+              </div>
+            ) : result ? (
+              <div className="divide-y divide-[hsl(var(--border))]">
+                {visibleItems.map((item) => (
+                  <PrerequisiteRow key={item.name} item={item} />
+                ))}
+              </div>
+            ) : null}
           </div>
-        ) : phase === 'error' ? (
-          <div className="flex flex-col items-center justify-center py-8 gap-3">
-            <XCircle className="h-8 w-8 text-red-500/60" />
-            <p className="text-sm text-[hsl(var(--muted-foreground))]">
-              {t('prerequisites.errorDetail')}
-            </p>
-            <button
-              onClick={() => void handleRecheck()}
-              className="flex items-center gap-1.5 text-sm text-[hsl(var(--primary))] hover:opacity-80 transition-opacity"
-            >
-              <RefreshCw className="h-3.5 w-3.5" />
-              {t('prerequisites.tryAgain')}
-            </button>
-          </div>
-        ) : result ? (
-          <div className="divide-y divide-[hsl(var(--border))]">
-            {visibleItems.map((item) => (
-              <PrerequisiteRow key={item.name} item={item} />
-            ))}
-          </div>
-        ) : null}
+
+          {/* Contextual hint when Claude Code is missing */}
+          {phase === 'done' && result && !claudeCodeAvailable && result.canProceed && (
+            <div className="flex items-start gap-2.5 rounded-lg bg-[hsl(var(--accent))] px-4 py-3">
+              <Info className="h-4 w-4 mt-0.5 shrink-0 text-[hsl(var(--primary))]" />
+              <div className="text-xs text-[hsl(var(--muted-foreground))] text-left space-y-1">
+                <p>
+                  <strong className="text-[hsl(var(--foreground))]">
+                    {t('prerequisites.claudeOptionalTitle')}
+                  </strong>{' '}
+                  {t('prerequisites.claudeOptionalDesc')}{' '}
+                  <span className="font-medium text-[hsl(var(--foreground))]">
+                    {t('prerequisites.claudeOptionalLink')}
+                  </span>{' '}
+                  {t('prerequisites.claudeOptionalSuffix')}
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* Required dependency missing hint */}
+          {phase === 'done' && result && !result.canProceed && (
+            <div className="flex items-start gap-2.5 rounded-lg bg-red-500/5 border border-red-500/10 px-4 py-3">
+              <XCircle className="h-4 w-4 mt-0.5 shrink-0 text-red-500" />
+              <div className="text-xs text-[hsl(var(--muted-foreground))] text-left space-y-2">
+                <p>
+                  <strong className="text-[hsl(var(--foreground))]">
+                    {t('prerequisites.requiredMissingTitle')}
+                  </strong>{' '}
+                  {t('prerequisites.requiredMissingDesc')}
+                </p>
+                <a
+                  href="https://nodejs.org"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 text-[hsl(var(--primary))] hover:opacity-80 transition-opacity font-medium"
+                >
+                  {t('prerequisites.downloadNodejs')}
+                  <ExternalLink className="h-3 w-3" />
+                </a>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
-
-      {/* Contextual hint when Claude Code is missing */}
-      {phase === 'done' && result && !claudeCodeAvailable && result.canProceed && (
-        <div className="flex items-start gap-2.5 rounded-lg bg-[hsl(var(--accent))] px-4 py-3 mb-6">
-          <Info className="h-4 w-4 mt-0.5 shrink-0 text-[hsl(var(--primary))]" />
-          <div className="text-xs text-[hsl(var(--muted-foreground))] text-left space-y-1">
-            <p>
-              <strong className="text-[hsl(var(--foreground))]">
-                {t('prerequisites.claudeOptionalTitle')}
-              </strong>{' '}
-              {t('prerequisites.claudeOptionalDesc')}{' '}
-              <span className="font-medium text-[hsl(var(--foreground))]">
-                {t('prerequisites.claudeOptionalLink')}
-              </span>{' '}
-              {t('prerequisites.claudeOptionalSuffix')}
-            </p>
-          </div>
-        </div>
-      )}
-
-      {/* Required dependency missing hint */}
-      {phase === 'done' && result && !result.canProceed && (
-        <div className="flex items-start gap-2.5 rounded-lg bg-red-500/5 border border-red-500/10 px-4 py-3 mb-6">
-          <XCircle className="h-4 w-4 mt-0.5 shrink-0 text-red-500" />
-          <div className="text-xs text-[hsl(var(--muted-foreground))] text-left space-y-2">
-            <p>
-              <strong className="text-[hsl(var(--foreground))]">
-                {t('prerequisites.requiredMissingTitle')}
-              </strong>{' '}
-              {t('prerequisites.requiredMissingDesc')}
-            </p>
-            <a
-              href="https://nodejs.org"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-1 text-[hsl(var(--primary))] hover:opacity-80 transition-opacity font-medium"
-            >
-              {t('prerequisites.downloadNodejs')}
-              <ExternalLink className="h-3 w-3" />
-            </a>
-          </div>
-        </div>
-      )}
 
       {/* Action buttons */}
       {phase === 'done' && result && (
-        <div className="flex items-center justify-between">
-          <button
-            onClick={onBack}
-            className="text-sm text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] transition-colors"
-            aria-label={t('common.back')}
-          >
-            {t('common.back')}
-          </button>
-          <div className="flex items-center gap-3">
-            {!result.canProceed && (
-              <button
-                onClick={() => void handleRecheck()}
-                className="flex items-center gap-1.5 px-4 py-2.5 rounded-lg border border-[hsl(var(--border))] text-sm font-medium hover:bg-[hsl(var(--accent))] transition-colors"
-                aria-label={t('prerequisites.recheck')}
-              >
-                <RefreshCw className="h-3.5 w-3.5" />
-                {t('prerequisites.recheck')}
-              </button>
-            )}
+        <div className="shrink-0 pt-6">
+          <div className="flex items-center justify-between">
             <button
-              onClick={onContinue}
-              disabled={!result.canProceed}
-              className="px-5 py-2.5 rounded-lg bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))] font-medium text-sm hover:opacity-90 transition-opacity disabled:opacity-40 disabled:cursor-not-allowed"
-              aria-label={t('common.continue')}
+              onClick={onBack}
+              className="text-sm text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] transition-colors"
+              aria-label={t('common.back')}
             >
-              {t('common.continue')}
+              {t('common.back')}
             </button>
+            <div className="flex items-center gap-3">
+              {!result.canProceed && (
+                <button
+                  onClick={() => void handleRecheck()}
+                  className="flex items-center gap-1.5 px-4 py-2.5 rounded-lg border border-[hsl(var(--border))] text-sm font-medium hover:bg-[hsl(var(--accent))] transition-colors"
+                  aria-label={t('prerequisites.recheck')}
+                >
+                  <RefreshCw className="h-3.5 w-3.5" />
+                  {t('prerequisites.recheck')}
+                </button>
+              )}
+              <button
+                onClick={onContinue}
+                disabled={!result.canProceed}
+                className="px-5 py-2.5 rounded-lg bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))] font-medium text-sm hover:opacity-90 transition-opacity disabled:opacity-40 disabled:cursor-not-allowed"
+                aria-label={t('common.continue')}
+              >
+                {t('common.continue')}
+              </button>
+            </div>
           </div>
         </div>
       )}

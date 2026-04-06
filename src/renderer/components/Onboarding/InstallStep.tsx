@@ -19,14 +19,9 @@ type InstallPhase =
   | 'failed'
 
 /** Phase keys in execution order (used for progress tracking). */
-const PHASE_KEYS = [
-  'creating-dir',
-  'writing-script',
-  'registering-hooks',
-  'verifying',
-] as const
+const PHASE_KEYS = ['creating-dir', 'writing-script', 'registering-hooks', 'verifying'] as const
 
-type PhaseKey = typeof PHASE_KEYS[number]
+type PhaseKey = (typeof PHASE_KEYS)[number]
 
 /** Number of hook events that will be registered. */
 const HOOK_EVENT_COUNT = 9
@@ -41,7 +36,7 @@ interface InstallStepProps {
 /** Install sub-step row with spinner → check animation */
 function InstallPhaseRow({
   label,
-  status,
+  status
 }: {
   label: string
   status: 'pending' | 'active' | 'done' | 'failed'
@@ -57,7 +52,9 @@ function InstallPhaseRow({
         {status === 'pending' && (
           <div className="h-2 w-2 rounded-full bg-[hsl(var(--muted-foreground)/0.3)]" />
         )}
-        {status === 'active' && <Loader2 className="h-4 w-4 animate-spin text-[hsl(var(--primary))]" />}
+        {status === 'active' && (
+          <Loader2 className="h-4 w-4 animate-spin text-[hsl(var(--primary))]" />
+        )}
         {status === 'done' && <CheckCircle2 className="h-4 w-4 text-green-500" />}
         {status === 'failed' && <XCircle className="h-4 w-4 text-red-500" />}
       </div>
@@ -78,7 +75,7 @@ export function InstallStep({
   stepConfig,
   onBack,
   onSkip,
-  onInstalled,
+  onInstalled
 }: InstallStepProps): React.JSX.Element {
   const { t } = useTranslation('onboarding')
   const [installPhase, setInstallPhase] = useState<InstallPhase>('idle')
@@ -147,110 +144,112 @@ export function InstallStep({
           : t('install.statusInProgress')
 
   return (
-    <div className="onboarding-step-enter">
-      <StepIndicator {...stepConfig} />
+    <div className="onboarding-step-enter flex max-h-[calc(100vh-7rem)] flex-col">
+      <div className="shrink-0">
+        <StepIndicator {...stepConfig} />
 
-      <div className="text-center mb-6">
-        <h2 className="text-xl font-bold mb-1.5">{t('install.title')}</h2>
-        <p className="text-sm text-[hsl(var(--muted-foreground))]">{statusText}</p>
+        <div className="text-center mb-6">
+          <h2 className="text-xl font-bold mb-1.5">{t('install.title')}</h2>
+          <p className="text-sm text-[hsl(var(--muted-foreground))]">{statusText}</p>
+        </div>
       </div>
 
-      {/* Install progress steps */}
-      <div className="rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] px-5 py-4 mb-6">
-        {installPhase === 'idle' ? (
-          /* Pre-install summary */
-          <div className="space-y-3 text-left">
-            <p className="text-sm text-[hsl(var(--muted-foreground))]">
-              {t('install.preSummary')}
-            </p>
-            <ul className="space-y-2 text-sm text-[hsl(var(--foreground))]">
-              <li className="flex items-center gap-2">
-                <div className="h-1.5 w-1.5 rounded-full bg-[hsl(var(--primary))]" />
-                {t('install.preStepCreateDir', { path: '~/.opencow/' })}
-              </li>
-              <li className="flex items-center gap-2">
-                <div className="h-1.5 w-1.5 rounded-full bg-[hsl(var(--primary))]" />
-                {t('install.preStepWriteScript')}
-              </li>
-              <li className="flex items-center gap-2">
-                <div className="h-1.5 w-1.5 rounded-full bg-[hsl(var(--primary))]" />
-                {t('install.preStepRegisterHooks', {
-                  count: HOOK_EVENT_COUNT,
-                  path: '~/.claude/settings.json',
-                })}
-              </li>
-            </ul>
+      <div data-testid="onboarding-scroll-content" className="min-h-0 flex-1 overflow-y-auto pr-1">
+        <div className="space-y-3 pb-1">
+          {/* Install progress steps */}
+          <div className="rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] px-5 py-4">
+            {installPhase === 'idle' ? (
+              /* Pre-install summary */
+              <div className="space-y-3 text-left">
+                <p className="text-sm text-[hsl(var(--muted-foreground))]">
+                  {t('install.preSummary')}
+                </p>
+                <ul className="space-y-2 text-sm text-[hsl(var(--foreground))]">
+                  <li className="flex items-center gap-2">
+                    <div className="h-1.5 w-1.5 rounded-full bg-[hsl(var(--primary))]" />
+                    {t('install.preStepCreateDir', { path: '~/.opencow/' })}
+                  </li>
+                  <li className="flex items-center gap-2">
+                    <div className="h-1.5 w-1.5 rounded-full bg-[hsl(var(--primary))]" />
+                    {t('install.preStepWriteScript')}
+                  </li>
+                  <li className="flex items-center gap-2">
+                    <div className="h-1.5 w-1.5 rounded-full bg-[hsl(var(--primary))]" />
+                    {t('install.preStepRegisterHooks', {
+                      count: HOOK_EVENT_COUNT,
+                      path: '~/.claude/settings.json'
+                    })}
+                  </li>
+                </ul>
+              </div>
+            ) : (
+              /* Animated progress */
+              <div className="space-y-0.5">
+                {PHASE_KEYS.map((key) => (
+                  <InstallPhaseRow
+                    key={key}
+                    label={t(`install.phases.${key}`)}
+                    status={getPhaseStatus(key)}
+                  />
+                ))}
+              </div>
+            )}
           </div>
-        ) : (
-          /* Animated progress */
-          <div className="space-y-0.5">
-            {PHASE_KEYS.map((key) => (
-              <InstallPhaseRow
-                key={key}
-                label={t(`install.phases.${key}`)}
-                status={getPhaseStatus(key)}
-              />
-            ))}
+        </div>
+      </div>
+
+      <div className="shrink-0 pt-6">
+        {/* Action buttons */}
+        {installPhase === 'idle' && (
+          <div className="flex items-center justify-between">
+            <button
+              onClick={onBack}
+              className="text-sm text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] transition-colors"
+              aria-label={t('common.back')}
+            >
+              {t('common.back')}
+            </button>
+            <button
+              onClick={() => void handleInstall()}
+              className="px-5 py-2.5 rounded-lg bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))] font-medium text-sm hover:opacity-90 transition-opacity"
+              aria-label={t('install.installNow')}
+            >
+              {t('install.installNow')}
+            </button>
           </div>
         )}
-      </div>
 
-      {/* Action buttons */}
-      {installPhase === 'idle' && (
-        <div className="flex items-center justify-between">
-          <button
-            onClick={onBack}
-            className="text-sm text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] transition-colors"
-            aria-label={t('common.back')}
-          >
-            {t('common.back')}
-          </button>
-          <button
-            onClick={() => void handleInstall()}
-            className="px-5 py-2.5 rounded-lg bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))] font-medium text-sm hover:opacity-90 transition-opacity"
-            aria-label={t('install.installNow')}
-          >
-            {t('install.installNow')}
-          </button>
-        </div>
-      )}
+        {installPhase === 'failed' && (
+          <div className="flex items-center justify-between">
+            <button
+              onClick={onSkip}
+              className="text-sm text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] transition-colors"
+              aria-label={t('common.skipForNow')}
+            >
+              {t('common.skipForNow')}
+            </button>
+            <button
+              onClick={handleRetry}
+              className="px-5 py-2.5 rounded-lg bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))] font-medium text-sm hover:opacity-90 transition-opacity"
+              aria-label={t('common.retry')}
+            >
+              {t('common.retry')}
+            </button>
+          </div>
+        )}
 
-      {installPhase === 'failed' && (
-        <div className="flex items-center justify-between">
-          <button
-            onClick={onSkip}
-            className="text-sm text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] transition-colors"
-            aria-label={t('common.skipForNow')}
-          >
-            {t('common.skipForNow')}
-          </button>
-          <button
-            onClick={handleRetry}
-            className="px-5 py-2.5 rounded-lg bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))] font-medium text-sm hover:opacity-90 transition-opacity"
-            aria-label={t('common.retry')}
-          >
-            {t('common.retry')}
-          </button>
-        </div>
-      )}
-
-      {installPhase === 'success' && (
-        <div className="text-center">
-          <p className="text-xs text-[hsl(var(--muted-foreground))]">
-            {t('install.proceeding')}
-          </p>
-        </div>
-      )}
-
-      {installPhase !== 'idle' &&
-        installPhase !== 'failed' &&
-        installPhase !== 'success' && (
+        {installPhase === 'success' && (
           <div className="text-center">
-            <p className="text-xs text-[hsl(var(--muted-foreground))]">
-              {t('install.pleaseWait')}
-            </p>
+            <p className="text-xs text-[hsl(var(--muted-foreground))]">{t('install.proceeding')}</p>
           </div>
         )}
+
+        {installPhase !== 'idle' && installPhase !== 'failed' && installPhase !== 'success' && (
+          <div className="text-center">
+            <p className="text-xs text-[hsl(var(--muted-foreground))]">{t('install.pleaseWait')}</p>
+          </div>
+        )}
+      </div>
     </div>
   )
 }
