@@ -39,7 +39,7 @@ export function IssueGroup({
       <button
         onClick={() => setCollapsed((prev) => !prev)}
         className={cn(
-          'w-full flex items-center gap-2 px-4 py-2 text-xs transition-colors',
+          'w-full flex items-center gap-2 px-4 py-2 text-xs rounded-lg transition-colors',
           'hover:bg-[hsl(var(--muted)/0.3)]',
           'focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[hsl(var(--ring))]'
         )}

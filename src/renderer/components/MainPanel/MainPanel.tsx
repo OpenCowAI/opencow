@@ -114,7 +114,7 @@ function MainPanelTabs(): React.JSX.Element {
 
   return (
     <div
-      className="drag-region border-b border-[hsl(var(--border)/0.5)] px-2 flex gap-1 items-center py-2"
+      className="drag-region shrink-0 h-12 border-b border-[hsl(var(--border)/0.5)] px-2 flex gap-1 items-center"
       role="tablist"
       aria-label={t('mainPanelViews')}
     >

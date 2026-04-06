@@ -564,8 +564,12 @@ function IssueFormContent({
           images,
           contextRefs,
         }
-        const newIssue = await createIssue(input)
-        selectIssue(newIssue.id)
+        const newIssue = await createIssue(input, {
+          onCreated: (created) => {
+            // Select before list reload to avoid transient row highlight flicker.
+            selectIssue(created.id)
+          },
+        })
         onCreated?.(newIssue)
 
         // Start session if requested (independent of continue mode)

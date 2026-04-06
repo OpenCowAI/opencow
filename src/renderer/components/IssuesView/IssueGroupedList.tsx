@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { forwardRef, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso'
 import { useAppStore, selectProjectId } from '../../stores/appStore'
@@ -52,6 +52,26 @@ function computeChildStatusCounts(children: IssueSummary[]): ChildStatusCounts {
   }
   return counts
 }
+
+type IssueVirtuosoListProps = React.ComponentPropsWithoutRef<'div'>
+
+// Keep horizontal padding on Virtuoso List (not Scroller):
+// Scroller padding + Virtuoso viewport width:100% can trigger horizontal overflow.
+const IssueVirtuosoList = forwardRef<HTMLDivElement, IssueVirtuosoListProps>(
+  function IssueVirtuosoList({ style, ...props }, ref) {
+    return (
+      <div
+        ref={ref}
+        style={{ ...style, paddingLeft: '0.25rem', paddingRight: '0.25rem' }}
+        {...props}
+      />
+    )
+  },
+)
+
+const ISSUE_VIRTUOSO_COMPONENTS = {
+  List: IssueVirtuosoList,
+} as const
 
 /**
  * Build flat display entries from a list of issues.
@@ -572,7 +592,7 @@ export function IssueGroupedList(): React.JSX.Element {
   // --- Flat mode: virtualized with react-virtuoso ---
   if (!groupBy) {
     return (
-      <div className="relative flex-1 min-h-0">
+      <div className="relative flex-1 min-h-0 py-1">
         <Virtuoso
           ref={virtuosoRef}
           data={flatEntries}
@@ -580,8 +600,9 @@ export function IssueGroupedList(): React.JSX.Element {
           itemContent={flatItemContent}
           scrollerRef={handleVirtuosoScrollerRef}
           increaseViewportBy={{ top: 400, bottom: 200 }}
-          className="h-full px-1 py-1"
+          className="h-full"
           style={{ height: '100%' }}
+          components={ISSUE_VIRTUOSO_COMPONENTS}
         />
         {contextMenuOverlay}
         <ScrollToTopButton containerRef={virtuosoScrollerRef as React.RefObject<HTMLElement>} />
