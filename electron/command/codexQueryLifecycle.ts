@@ -17,7 +17,8 @@ import type { UserMessageContent } from '../../src/shared/types'
 import { createLogger } from '../platform/logger'
 import type { SessionLifecycle } from './sessionLifecycle'
 import type { SessionLifecycleStartInput } from './sessionLifecycle'
-import type { SessionExecutionContextSignalSource } from './sessionLifecycle'
+import type { CodexSessionLaunchOptions } from './sessionLaunchOptions'
+import { toSdkOptions } from './sessionLaunchOptions'
 import type { CodexConfigObject, CodexConfigValue } from './codexMcpConfigBuilder'
 import {
   createRuntimeEventEnvelope,
@@ -28,6 +29,7 @@ import {
 } from '../conversation/runtime/events'
 import { CodexRuntimeEventAdapter } from '../conversation/runtime/codexRuntimeAdapter'
 import { NativeCapabilityTools } from '../../src/shared/nativeCapabilityToolNames'
+import type { EngineSystemPromptTransportSemantic } from './systemPromptTransport'
 
 /** Safety timeout (ms) for stop() — mirrors QueryLifecycle semantics. */
 const STOP_SAFETY_TIMEOUT_MS = 30_000
@@ -90,6 +92,7 @@ interface ParsedCodexLifecycleOptions {
   cwd?: string
   resume?: string
   systemPrompt?: string
+  systemPromptTransport?: EngineSystemPromptTransportSemantic
   sandboxMode?: SandboxMode
   approvalPolicy?: ApprovalMode
   skipGitRepoCheck?: boolean
@@ -193,7 +196,34 @@ function parseModelReasoningEffort(value: unknown): ModelReasoningEffort | undef
     : undefined
 }
 
+function parseSystemPromptTransportSemantic(value: unknown): EngineSystemPromptTransportSemantic | undefined {
+  return value === 'provider_native' || value === 'synthetic_first_turn_prefix'
+    ? value
+    : undefined
+}
+
 function parseOptions(raw: Record<string, unknown>): ParsedCodexLifecycleOptions {
+  const codexSystemPrompt = asObject(raw.codexSystemPrompt)
+  const codexPromptText = typeof codexSystemPrompt?.text === 'string' ? codexSystemPrompt.text : undefined
+  const codexPromptTransport = codexSystemPrompt?.transport === 'synthetic_first_turn_prefix'
+    ? codexSystemPrompt.transport
+    : undefined
+  const optionTransport = parseSystemPromptTransportSemantic(raw.systemPromptTransport)
+  const effectiveTransport = codexPromptTransport ?? optionTransport
+
+  if (optionTransport === 'provider_native' || codexSystemPrompt?.transport === 'provider_native') {
+    throw new Error('Invalid Codex launch options: provider_native system prompt transport is unsupported for codex')
+  }
+  if (effectiveTransport && effectiveTransport !== 'synthetic_first_turn_prefix') {
+    throw new Error(`Invalid Codex launch options: unsupported system prompt transport "${effectiveTransport}"`)
+  }
+  if (effectiveTransport === 'synthetic_first_turn_prefix' && !codexPromptText) {
+    throw new Error('Invalid Codex launch options: synthetic_first_turn_prefix requires codexSystemPrompt.text')
+  }
+  if (codexPromptText && effectiveTransport !== 'synthetic_first_turn_prefix') {
+    throw new Error('Invalid Codex launch options: codexSystemPrompt.text requires synthetic_first_turn_prefix transport')
+  }
+
   return {
     env: isStringRecord(raw.env) ? raw.env : undefined,
     apiKey: typeof raw.codexApiKey === 'string' ? raw.codexApiKey : undefined,
@@ -203,7 +233,8 @@ function parseOptions(raw: Record<string, unknown>): ParsedCodexLifecycleOptions
     model: typeof raw.model === 'string' ? raw.model : undefined,
     cwd: typeof raw.cwd === 'string' ? raw.cwd : undefined,
     resume: typeof raw.resume === 'string' ? raw.resume : undefined,
-    systemPrompt: typeof raw.codexSystemPrompt === 'string' ? raw.codexSystemPrompt : undefined,
+    systemPrompt: codexPromptText,
+    systemPromptTransport: effectiveTransport,
     sandboxMode: parseSandboxMode(raw.codexSandboxMode),
     approvalPolicy: parseApprovalMode(raw.codexApprovalPolicy),
     skipGitRepoCheck: typeof raw.codexSkipGitRepoCheck === 'boolean' ? raw.codexSkipGitRepoCheck : undefined,
@@ -421,8 +452,84 @@ type CodexTokenCountParseResult =
 
 type CodexCwdSignalParseResult =
   | { kind: 'none' }
-  | { kind: 'ok'; cwd: string; source: SessionExecutionContextSignalSource }
+  | { kind: 'ok'; cwd: string; occurredAtMs?: number }
   | { kind: 'malformed'; reason: string; source: 'turn_context' | 'session_meta' }
+
+const CODEx_CWD_FIELD_CANDIDATES = [
+  'cwd',
+  'working_directory',
+  'workingDirectory',
+  'current_working_directory',
+  'currentWorkingDirectory',
+] as const
+
+const CODEx_NESTED_RECORD_CANDIDATES = [
+  'payload',
+  'info',
+  'context',
+  'session',
+  'meta',
+  'data',
+  'turn_context',
+  'session_meta',
+] as const
+
+function toEpochMs(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value) && value > 0) {
+    // Heuristic: values below 1e12 are likely Unix seconds.
+    return value < 1e12 ? Math.trunc(value * 1000) : Math.trunc(value)
+  }
+  if (typeof value === 'string') {
+    const parsed = Date.parse(value)
+    if (Number.isFinite(parsed) && parsed > 0) return parsed
+  }
+  return null
+}
+
+function extractOccurredAtMs(record: Record<string, unknown>): number | undefined {
+  const directCandidates = [
+    record.timestamp,
+    record.occurredAtMs,
+    record.occurred_at_ms,
+    record.createdAt,
+    record.created_at,
+    record.time,
+    record.ts,
+  ]
+  for (const candidate of directCandidates) {
+    const parsed = toEpochMs(candidate)
+    if (parsed != null) return parsed
+  }
+
+  for (const key of CODEx_NESTED_RECORD_CANDIDATES) {
+    const nested = asObject(record[key])
+    if (!nested) continue
+    const nestedParsed = extractOccurredAtMs(nested)
+    if (nestedParsed != null) return nestedParsed
+  }
+
+  return undefined
+}
+
+function extractCwdFromRecord(record: Record<string, unknown>, depth = 0): string | null {
+  for (const key of CODEx_CWD_FIELD_CANDIDATES) {
+    const candidate = record[key]
+    if (typeof candidate === 'string' && candidate.trim().length > 0) {
+      return candidate.trim()
+    }
+  }
+
+  if (depth >= 2) return null
+
+  for (const key of CODEx_NESTED_RECORD_CANDIDATES) {
+    const nested = asObject(record[key])
+    if (!nested) continue
+    const found = extractCwdFromRecord(nested, depth + 1)
+    if (found) return found
+  }
+
+  return null
+}
 
 function parseCodexTokenCountSnapshot(value: unknown): CodexTokenCountParseResult {
   const envelope = asObject(value)
@@ -471,21 +578,48 @@ function parseCodexTokenCountSnapshot(value: unknown): CodexTokenCountParseResul
 function parseCodexCwdSignal(value: unknown): CodexCwdSignalParseResult {
   const envelope = asObject(value)
   if (!envelope) return { kind: 'none' }
-  const type = envelope.type
-  if (type !== 'turn_context' && type !== 'session_meta') return { kind: 'none' }
+  const envelopeType = envelope.type
 
+  if (envelopeType === 'turn_context' || envelopeType === 'session_meta') {
+    const payload = asObject(envelope.payload)
+    if (!payload) {
+      return { kind: 'malformed', source: envelopeType, reason: `${envelopeType}.payload is missing or not an object` }
+    }
+    const cwd = extractCwdFromRecord(payload)
+    if (!cwd) {
+      return {
+        kind: 'malformed',
+        source: envelopeType,
+        reason: `${envelopeType}.payload has no recognizable cwd field`,
+      }
+    }
+    return {
+      kind: 'ok',
+      cwd,
+      occurredAtMs: extractOccurredAtMs(envelope) ?? extractOccurredAtMs(payload),
+    }
+  }
+
+  if (envelopeType !== 'event_msg') return { kind: 'none' }
   const payload = asObject(envelope.payload)
-  if (!payload) {
-    return { kind: 'malformed', source: type, reason: `${type}.payload is missing or not an object` }
+  if (!payload) return { kind: 'none' }
+  const payloadType = payload.type
+  const cwd = extractCwdFromRecord(payload)
+  if (!cwd) {
+    if (payloadType === 'turn_context' || payloadType === 'session_meta') {
+      return {
+        kind: 'malformed',
+        source: payloadType,
+        reason: `event_msg payload(type=${payloadType}) has no recognizable cwd field`,
+      }
+    }
+    return { kind: 'none' }
   }
-  const cwdRaw = payload.cwd
-  if (typeof cwdRaw !== 'string' || cwdRaw.trim().length === 0) {
-    return { kind: 'malformed', source: type, reason: `${type}.payload.cwd is missing or not a non-empty string` }
-  }
+
   return {
     kind: 'ok',
-    cwd: cwdRaw.trim(),
-    source: type === 'turn_context' ? 'codex.turn_context' : 'codex.session_meta',
+    cwd,
+    occurredAtMs: extractOccurredAtMs(envelope) ?? extractOccurredAtMs(payload),
   }
 }
 
@@ -547,13 +681,30 @@ export class CodexQueryLifecycle implements SessionLifecycle {
     if (this.worker) throw new Error('CodexQueryLifecycle already started')
     if (this._stopped) throw new Error('CodexQueryLifecycle already stopped')
     const initialPrompt: UserMessageContent = input.initialPrompt
-    const rawOptions = input.launchOptions
+    if (input.launchOptions.engineKind !== 'codex') {
+      throw new Error(`CodexQueryLifecycle requires codex launch options, got ${input.launchOptions.engineKind}`)
+    }
+    const rawOptions: Record<string, unknown> = toSdkOptions(input.launchOptions)
 
     this.startupOptions = parseOptions(rawOptions)
     this.callbacks = input.callbacks
     this.model = this.startupOptions.model
     this.firstTurnSystemPrompt = this.startupOptions.systemPrompt ?? null
     this.lastDetectedCwd = this.startupOptions.cwd?.trim() || null
+
+    const promptTransport = this.startupOptions.systemPromptTransport
+    if (promptTransport) {
+      this.emitRuntimeEvent({
+        kind: 'engine.diagnostic',
+        payload: {
+          code: 'codex.system_prompt_transport',
+          severity: 'info',
+          message: `Codex system prompt transport semantic: ${promptTransport}`,
+          terminal: false,
+          source: 'codex.transport',
+        },
+      })
+    }
 
     if (this.startupOptions.resume) {
       this.emitRuntimeEvent({
@@ -648,26 +799,18 @@ export class CodexQueryLifecycle implements SessionLifecycle {
 
   private notifyDetectedCwd(params: {
     cwd: string
-    source: SessionExecutionContextSignalSource
     occurredAtMs?: number
   }): void {
-    const { cwd, source, occurredAtMs } = params
+    const { cwd, occurredAtMs } = params
     if (!cwd || cwd === this.lastDetectedCwd) return
     this.lastDetectedCwd = cwd
     const onExecutionContextSignal = this.callbacks?.onExecutionContextSignal
     if (onExecutionContextSignal) {
       try {
-        onExecutionContextSignal({ cwd, source, occurredAtMs })
+        onExecutionContextSignal({ cwd, source: 'runtime', occurredAtMs })
       } catch (err) {
         log.warn(`Codex onExecutionContextSignal callback failed for cwd="${cwd}"`, err)
       }
-    }
-    const onCwdDetected = this.callbacks?.onCwdDetected
-    if (!onCwdDetected) return
-    try {
-      onCwdDetected(cwd)
-    } catch (err) {
-      log.warn(`Codex onCwdDetected callback failed for cwd="${cwd}"`, err)
     }
   }
 
@@ -851,7 +994,7 @@ export class CodexQueryLifecycle implements SessionLifecycle {
         if (cwdSignalResult.kind === 'ok') {
           this.notifyDetectedCwd({
             cwd: cwdSignalResult.cwd,
-            source: cwdSignalResult.source,
+            occurredAtMs: cwdSignalResult.occurredAtMs,
           })
         } else if (cwdSignalResult.kind === 'malformed' && !cwdSignalParseDiagnosticEmitted) {
           cwdSignalParseDiagnosticEmitted = true

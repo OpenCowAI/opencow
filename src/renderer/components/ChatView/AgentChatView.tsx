@@ -75,9 +75,7 @@ export function AgentChatView({ agent }: AgentChatViewProps): React.JSX.Element 
           controlsMaxW={CONTENT_MAX_W}
           pausedPlaceholder={t('agentChat.continueConversation')}
           sessionDraftFooterConfig={{
-            projectId: agent.session.projectId,
-            issueCreationMode: 'standalone',
-            source: 'lifecycle-operation',
+            strategy: 'lifecycle-tool-result-only',
           }}
           registerAsChatTabInput
         />

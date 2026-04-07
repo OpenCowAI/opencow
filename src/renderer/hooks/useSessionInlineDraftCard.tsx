@@ -12,11 +12,6 @@
 import { useMemo } from 'react'
 import { SessionDraftFooter } from '@/components/DetailPanel/SessionPanel/SessionDraftFooter'
 import type { SessionDraftFooterConfig } from '@/components/DetailPanel/SessionPanel/sessionDraftFooterTypes'
-import { useSessionLifecycleOperations } from '@/hooks/useSessionLifecycleOperations'
-import {
-  mapIssueOperationToParsedDraft,
-  mapScheduleOperationToParsedDraft,
-} from '@/lib/lifecycleOperationDraftMapper'
 import { resolveLatestSessionDraft } from '@shared/sessionDraftOutputParser'
 import type { ManagedSessionMessage } from '@shared/types'
 
@@ -25,98 +20,69 @@ export interface InlineDraftCardResult {
   node: React.ReactNode
 }
 
-function resolveLifecycleAnchorMessageId(messages: ManagedSessionMessage[]): string | null {
-  for (let i = messages.length - 1; i >= 0; i--) {
-    const msg = messages[i]
-    if (msg.role === 'assistant') {
-      const hasRenderableText = msg.content.some((block) => block.type === 'text' && block.text.trim().length > 0)
-      if (hasRenderableText) return msg.id
-    }
-  }
-  return null
-}
-
 export function useSessionInlineDraftCard(
   messages: ManagedSessionMessage[],
   sessionId: string,
   config?: SessionDraftFooterConfig
 ): InlineDraftCardResult | null {
-  const source = config?.source ?? 'fenced-output'
-  const lifecycle = useSessionLifecycleOperations(
-    config && source === 'lifecycle-operation' ? sessionId : null
-  )
+  const strategy = config?.strategy
   const resolvedSessionDraft = useMemo(
-    () => (config ? resolveLatestSessionDraft(messages) : null),
-    [messages, config]
+    () => (config && strategy === 'inline-fenced-draft' ? resolveLatestSessionDraft(messages) : null),
+    [messages, config, strategy]
   )
 
   return useMemo(() => {
     if (!config) return null
+    if (config.strategy === 'lifecycle-tool-result-only') {
+      // Lifecycle-operation confirmations are rendered by tool_result cards.
+      // Avoid rendering legacy SessionDraftFooter simultaneously.
+      return null
+    }
+    const footerConfig = config
 
-    const issueDraft = source === 'lifecycle-operation'
-      ? (lifecycle.latestPendingIssueOperation
-          ? mapIssueOperationToParsedDraft(lifecycle.latestPendingIssueOperation)
-          : null)
-      : (resolvedSessionDraft?.type === 'issue' ? resolvedSessionDraft.draft : null)
-    const scheduleDraft = source === 'lifecycle-operation'
-      ? (lifecycle.latestPendingScheduleOperation
-          ? mapScheduleOperationToParsedDraft(lifecycle.latestPendingScheduleOperation)
-          : null)
-      : (resolvedSessionDraft?.type === 'schedule' ? resolvedSessionDraft.draft : null)
-
-    const activeIssueOperationId =
-      source === 'lifecycle-operation' ? lifecycle.latestPendingIssueOperation?.operationId ?? null : null
-    const activeScheduleOperationId =
-      source === 'lifecycle-operation'
-        ? lifecycle.latestPendingScheduleOperation?.operationId ?? null
-        : null
+    const issueDraft = resolvedSessionDraft?.type === 'issue' ? resolvedSessionDraft.draft : null
+    const scheduleDraft = resolvedSessionDraft?.type === 'schedule' ? resolvedSessionDraft.draft : null
 
     const node = issueDraft
       ? (
           <SessionDraftFooter
             sessionId={sessionId}
-            activeDraftKey={source === 'lifecycle-operation'
-              ? activeIssueOperationId
-              : resolvedSessionDraft?.key ?? null}
+            activeDraftKey={resolvedSessionDraft?.key ?? null}
             activeDraftType="issue"
             latestIssueDraft={issueDraft}
             latestScheduleDraft={null}
-            projectId={config.projectId}
-            issueCreationMode={config.issueCreationMode}
-            defaultParentIssueId={config.defaultParentIssueId}
-            lifecycleOperationId={activeIssueOperationId}
-            lifecycleSource={source}
+            projectId={footerConfig.projectId}
+            issueCreationMode={footerConfig.issueCreationMode}
+            defaultParentIssueId={footerConfig.defaultParentIssueId}
+            lifecycleOperationId={null}
+            lifecycleSource="fenced-output"
           />
         )
       : scheduleDraft
         ? (
             <SessionDraftFooter
               sessionId={sessionId}
-              activeDraftKey={source === 'lifecycle-operation'
-                ? activeScheduleOperationId
-              : resolvedSessionDraft?.key ?? null}
+              activeDraftKey={resolvedSessionDraft?.key ?? null}
               activeDraftType="schedule"
               latestIssueDraft={null}
               latestScheduleDraft={scheduleDraft}
-              projectId={config.projectId}
-              issueCreationMode={config.issueCreationMode}
-              defaultParentIssueId={config.defaultParentIssueId}
-              lifecycleOperationId={activeScheduleOperationId}
-              lifecycleSource={source}
+              projectId={footerConfig.projectId}
+              issueCreationMode={footerConfig.issueCreationMode}
+              defaultParentIssueId={footerConfig.defaultParentIssueId}
+              lifecycleOperationId={null}
+              lifecycleSource="fenced-output"
             />
           )
         : null
 
     if (!node) return null
 
-    const messageId = source === 'lifecycle-operation'
-      ? (resolveLifecycleAnchorMessageId(messages) ?? resolvedSessionDraft?.messageId ?? null)
-      : (resolvedSessionDraft?.messageId ?? null)
+    const messageId = resolvedSessionDraft?.messageId ?? null
     if (!messageId) return null
 
     return {
       messageId,
       node,
     }
-  }, [config, resolvedSessionDraft, sessionId, source, lifecycle.latestPendingIssueOperation, lifecycle.latestPendingScheduleOperation, messages])
+  }, [config, resolvedSessionDraft, sessionId])
 }

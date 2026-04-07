@@ -74,6 +74,17 @@ export interface RuntimeContextSnapshotPayload {
   readonly updatedAtMs?: number
 }
 
+export interface RuntimeExecutionContextSignalPayload {
+  /** Candidate working directory detected from runtime events/tool execution. */
+  readonly cwd: string
+  /** Machine-readable source for observability/debugging. */
+  readonly source: 'runtime.tool'
+  /** Optional tool identifier that produced the signal. */
+  readonly toolUseId?: string
+  /** Optional human-readable tool name. */
+  readonly toolName?: string
+}
+
 export type EngineRuntimeEvent =
   | {
       readonly kind: 'turn.started'
@@ -105,6 +116,10 @@ export type EngineRuntimeEvent =
   | {
       readonly kind: 'context.snapshot'
       readonly payload: RuntimeContextSnapshotPayload
+    }
+  | {
+      readonly kind: 'execution_context.signal'
+      readonly payload: RuntimeExecutionContextSignalPayload
     }
   | {
       readonly kind: 'tool.progress'

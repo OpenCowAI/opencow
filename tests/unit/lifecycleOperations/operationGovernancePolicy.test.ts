@@ -59,4 +59,22 @@ describe('OperationGovernancePolicy', () => {
 
     expect(mode).toBe('required')
   })
+
+  it('maps legacy draft confirmationMode to required', () => {
+    const mode = policy.resolveConfirmationMode({
+      proposal: {
+        entity: 'schedule',
+        action: 'create',
+        normalizedPayload: {},
+        confirmationMode: 'draft' as unknown as 'required',
+      },
+      noConfirmDetection: {
+        explicitNoConfirm: true,
+        confidence: 'high',
+        evidence: '无需确认',
+      },
+    })
+
+    expect(mode).toBe('required')
+  })
 })

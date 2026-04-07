@@ -56,14 +56,19 @@ function derivePromptPolicy(prompt: UserMessageContent | undefined): PromptPolic
  * and get an interactive browser preview card via
  * gen_html, rather than a raw file written by the Write tool.
  *
+ * Interaction ask-user-question is default-on for desktop sessions to keep
+ * prompt contract and runtime tool policy consistent.
+ *
+ * Issue/Schedule lifecycle propose tools are also default-on for all
+ * general-purpose sessions so governance does not depend on language-specific
+ * intent parsing rules.
+ *
  * Builtin tools remain enabled (not overridden here).
  */
 const GENERAL_PURPOSE_NATIVE_TOOLS: StartSessionNativeToolAllowItem[] = [
   { capability: 'browser' },
   { capability: 'html' },
-]
-
-const ISSUE_SCHEDULE_PROPOSE_NATIVE_TOOLS: StartSessionNativeToolAllowItem[] = [
+  { capability: 'interaction', tool: 'ask_user_question' },
   { capability: 'issues', tool: 'propose_issue_operation' },
   { capability: 'schedules', tool: 'propose_schedule_operation' },
 ]
@@ -130,10 +135,7 @@ function resolveDefaultPolicyByOrigin(origin: SessionOrigin): StartSessionPolicy
         tools: {
           native: {
             mode: 'allowlist',
-            allow: [
-              ...GENERAL_PURPOSE_NATIVE_TOOLS,
-              ...ISSUE_SCHEDULE_PROPOSE_NATIVE_TOOLS,
-            ],
+            allow: [...GENERAL_PURPOSE_NATIVE_TOOLS],
           },
         },
       }

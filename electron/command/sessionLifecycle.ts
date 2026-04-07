@@ -2,24 +2,19 @@
 
 import type { UserMessageContent, AIEngineKind } from '../../src/shared/types'
 import type { EngineRuntimeEventEnvelope } from '../conversation/runtime/events'
+import type { ClaudeSessionLaunchOptions, CodexSessionLaunchOptions } from './sessionLaunchOptions'
 import { QueryLifecycle } from './queryLifecycle'
 import { CodexQueryLifecycle } from './codexQueryLifecycle'
 
 export interface SessionLifecycleCallbacks {
   onExecutionContextSignal?: (signal: SessionExecutionContextSignal) => void
-  /**
-   * Runtime-reported working directory changes (e.g. Codex turn_context.cwd).
-   * Optional because some engines do not expose cwd runtime signals.
-   */
-  onCwdDetected?: (cwd: string) => void
 }
 
 export type SessionExecutionContextSignalSource =
   | 'startup'
-  | 'codex.turn_context'
-  | 'codex.session_meta'
-  | 'claude.hook'
-  | 'unknown'
+  | 'runtime'
+  | 'hook'
+  | 'external'
 
 export interface SessionExecutionContextSignal {
   cwd: string
@@ -29,7 +24,7 @@ export interface SessionExecutionContextSignal {
 
 export interface SessionLifecycleStartInput {
   initialPrompt: UserMessageContent
-  launchOptions: Record<string, unknown>
+  launchOptions: ClaudeSessionLaunchOptions | CodexSessionLaunchOptions
   callbacks?: SessionLifecycleCallbacks
 }
 

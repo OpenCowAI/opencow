@@ -2,6 +2,7 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { QueryLifecycle } from '../../../electron/command/queryLifecycle'
+import { createProviderNativeSystemPrompt } from '../../../electron/command/systemPromptTransport'
 
 // Mock SDK query — returns an async generator that we can control
 const mockClose = vi.fn()
@@ -79,6 +80,18 @@ function endStream() {
   yieldQueue = []
 }
 
+function makeClaudeLaunchOptions() {
+  return {
+    engineKind: 'claude' as const,
+    maxTurns: 10,
+    includePartialMessages: true,
+    permissionMode: 'default',
+    allowDangerouslySkipPermissions: true,
+    env: {},
+    systemPromptPayload: createProviderNativeSystemPrompt('TEST_SYSTEM_PROMPT'),
+  }
+}
+
 describe('QueryLifecycle', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -86,7 +99,7 @@ describe('QueryLifecycle', () => {
 
   it('starts and yields messages from the SDK stream', async () => {
     const lifecycle = new QueryLifecycle()
-    const stream = lifecycle.start({ initialPrompt: 'hello', launchOptions: {} })
+    const stream = lifecycle.start({ initialPrompt: 'hello', launchOptions: makeClaudeLaunchOptions() })
     const iter = stream[Symbol.asyncIterator]()
 
     // Call next() first (starts generator, blocks on mock), then emit to resolve
@@ -123,7 +136,7 @@ describe('QueryLifecycle', () => {
 
   it('stop() during streaming calls query.close()', async () => {
     const lifecycle = new QueryLifecycle()
-    const stream = lifecycle.start({ initialPrompt: 'hello', launchOptions: {} })
+    const stream = lifecycle.start({ initialPrompt: 'hello', launchOptions: makeClaudeLaunchOptions() })
 
     const consuming = (async () => {
       for await (const _msg of stream) {
@@ -140,7 +153,7 @@ describe('QueryLifecycle', () => {
 
   it('natural completion calls close() to clean up child process', async () => {
     const lifecycle = new QueryLifecycle()
-    const stream = lifecycle.start({ initialPrompt: 'hello', launchOptions: {} })
+    const stream = lifecycle.start({ initialPrompt: 'hello', launchOptions: makeClaudeLaunchOptions() })
 
     const consuming = (async () => {
       for await (const _msg of stream) {
@@ -168,7 +181,7 @@ describe('QueryLifecycle', () => {
 
   it('double stop() is safe', async () => {
     const lifecycle = new QueryLifecycle()
-    const stream = lifecycle.start({ initialPrompt: 'hello', launchOptions: {} })
+    const stream = lifecycle.start({ initialPrompt: 'hello', launchOptions: makeClaudeLaunchOptions() })
 
     const consuming = (async () => {
       for await (const _msg of stream) {
@@ -185,13 +198,34 @@ describe('QueryLifecycle', () => {
 
   it('start() throws if already started', () => {
     const lifecycle = new QueryLifecycle()
-    lifecycle.start({ initialPrompt: 'hello', launchOptions: {} })
-    expect(() => lifecycle.start({ initialPrompt: 'again', launchOptions: {} })).toThrow('already started')
+    lifecycle.start({ initialPrompt: 'hello', launchOptions: makeClaudeLaunchOptions() })
+    expect(() => lifecycle.start({ initialPrompt: 'again', launchOptions: makeClaudeLaunchOptions() })).toThrow('already started')
   })
 
   it('start() throws if already stopped', async () => {
     const lifecycle = new QueryLifecycle()
     await lifecycle.stop()
-    expect(() => lifecycle.start({ initialPrompt: 'hello', launchOptions: {} })).toThrow('already stopped')
+    expect(() => lifecycle.start({ initialPrompt: 'hello', launchOptions: makeClaudeLaunchOptions() })).toThrow('already stopped')
+  })
+
+  it('fails fast when non-claude launch options are provided', () => {
+    const lifecycle = new QueryLifecycle()
+    expect(() =>
+      lifecycle.start({
+        initialPrompt: 'hello',
+        launchOptions: {
+          engineKind: 'codex',
+          maxTurns: 10,
+          includePartialMessages: true,
+          permissionMode: 'default',
+          allowDangerouslySkipPermissions: true,
+          env: {},
+          systemPromptPayload: {
+            transport: 'synthetic_first_turn_prefix',
+            text: 'TEST',
+          },
+        },
+      }),
+    ).toThrowError(/requires claude launch options/)
   })
 })

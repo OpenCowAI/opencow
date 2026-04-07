@@ -4,7 +4,7 @@ import { existsSync } from 'node:fs'
 import path from 'node:path'
 import type { AIEngineKind, CodexReasoningEffort } from '../../src/shared/types'
 import type { ManagedSessionRuntimeConfig } from './managedSession'
-import type { SessionLaunchOptions } from './sessionLaunchOptions'
+import type { ClaudeSessionLaunchOptions, CodexSessionLaunchOptions } from './sessionLaunchOptions'
 import { createLogger } from '../platform/logger'
 import { createAsarAwareSpawnFn } from '../platform/electronSpawn'
 
@@ -44,7 +44,7 @@ export interface BuildEngineBootstrapOptionsInput {
   config: ManagedSessionRuntimeConfig
   resume?: string
   sessionEnv: Record<string, string>
-  options: SessionLaunchOptions
+  options: ClaudeSessionLaunchOptions | CodexSessionLaunchOptions
   deps: EngineBootstrapDeps
   logger?: BootstrapLogger
 }
@@ -232,6 +232,9 @@ class ClaudeEngineBootstrapper implements EngineBootstrapper {
   }
 
   async apply(ctx: EngineBootstrapContext): Promise<void> {
+    if (ctx.options.engineKind !== 'claude') {
+      throw new Error(`ClaudeEngineBootstrapper received mismatched options engineKind=${ctx.options.engineKind}`)
+    }
     const cliPath = this.resolveCliPath()
     if (cliPath) ctx.options.pathToClaudeCodeExecutable = cliPath
 
@@ -254,6 +257,9 @@ class CodexEngineBootstrapper implements EngineBootstrapper {
   }
 
   async apply(ctx: EngineBootstrapContext): Promise<void> {
+    if (ctx.options.engineKind !== 'codex') {
+      throw new Error(`CodexEngineBootstrapper received mismatched options engineKind=${ctx.options.engineKind}`)
+    }
     const defaultCodexModel = ctx.deps.getProviderDefaultModel('codex')
     if (defaultCodexModel) ctx.options.model = defaultCodexModel
 

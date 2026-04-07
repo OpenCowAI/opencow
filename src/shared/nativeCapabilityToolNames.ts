@@ -27,8 +27,6 @@ export const NativeCapabilityTools = {
   ISSUE_LIST:         `${MCP_SERVER_QUALIFIED_NAME}__list_issues`,
   ISSUE_GET:          `${MCP_SERVER_QUALIFIED_NAME}__get_issue`,
   ISSUE_PROPOSE_OPERATION: `${MCP_SERVER_QUALIFIED_NAME}__propose_issue_operation`,
-  ISSUE_CONFIRM_OPERATION: `${MCP_SERVER_QUALIFIED_NAME}__confirm_issue_operation`,
-  ISSUE_REJECT_OPERATION: `${MCP_SERVER_QUALIFIED_NAME}__reject_issue_operation`,
   ISSUE_CREATE:       `${MCP_SERVER_QUALIFIED_NAME}__create_issue`,
   ISSUE_UPDATE:       `${MCP_SERVER_QUALIFIED_NAME}__update_issue`,
 
@@ -45,8 +43,6 @@ export const NativeCapabilityTools = {
   SCHEDULE_LIST:      `${MCP_SERVER_QUALIFIED_NAME}__list_schedules`,
   SCHEDULE_GET:       `${MCP_SERVER_QUALIFIED_NAME}__get_schedule`,
   SCHEDULE_PROPOSE_OPERATION: `${MCP_SERVER_QUALIFIED_NAME}__propose_schedule_operation`,
-  SCHEDULE_CONFIRM_OPERATION: `${MCP_SERVER_QUALIFIED_NAME}__confirm_schedule_operation`,
-  SCHEDULE_REJECT_OPERATION: `${MCP_SERVER_QUALIFIED_NAME}__reject_schedule_operation`,
   SCHEDULE_CREATE:    `${MCP_SERVER_QUALIFIED_NAME}__create_schedule`,
   SCHEDULE_UPDATE:    `${MCP_SERVER_QUALIFIED_NAME}__update_schedule`,
   SCHEDULE_PAUSE:     `${MCP_SERVER_QUALIFIED_NAME}__pause_schedule`,

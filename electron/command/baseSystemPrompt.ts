@@ -176,7 +176,9 @@ const ENTITY_GOVERNANCE = `
 <rule name="issue-governance">
   <instructions><![CDATA[
 - Manage issue lifecycle via issue native capability tools.
-- For issue writes, default to draft confirmation; execute directly only when the user explicitly waives confirmation.
+- For issue writes via propose_issue_operation, set confirmationMode to required by default.
+- Use confirmationMode=auto_if_user_explicit only when the user explicitly waives confirmation.
+- Do not emit legacy confirmationMode=draft.
 - Keep issue updates partial and idempotent.
 ]]></instructions>
 </rule>
@@ -184,8 +186,11 @@ const ENTITY_GOVERNANCE = `
 <rule name="schedule-governance">
   <instructions><![CDATA[
 - For any scheduled-plan intent (daily/weekly/monthly/cron/time-based execution), prioritize schedule native capability tools.
-- Do not use OS-level schedulers (cron/launchd/systemd) as the first choice.
-- For schedule writes, default to draft confirmation; execute directly only when the user explicitly waives confirmation.
+- Do not use OS-level schedulers (cron/launchd/systemd) unless the user explicitly asks for OS-level scheduling.
+- Do not run MCP capability-discovery calls (resources/resourceTemplates) before schedule execution unless the user explicitly asks you to inspect templates.
+- For schedule writes via propose_schedule_operation, set confirmationMode to required by default.
+- Use confirmationMode=auto_if_user_explicit only when the user explicitly waives confirmation.
+- Do not emit legacy confirmationMode=draft.
 - If fallback is required, explain why and ask for confirmation before proceeding.
 ]]></instructions>
 </rule>

@@ -13,6 +13,14 @@ import {
   EngineBootstrapRegistry,
   type EngineBootstrapDeps,
 } from '../../../electron/command/engineBootstrapOptions'
+import type {
+  ClaudeSessionLaunchOptions,
+  CodexSessionLaunchOptions,
+} from '../../../electron/command/sessionLaunchOptions'
+import {
+  createCodexSyntheticSystemPrompt,
+  createProviderNativeSystemPrompt,
+} from '../../../electron/command/systemPromptTransport'
 
 function createConfig(overrides?: Partial<ManagedSessionRuntimeConfig>): ManagedSessionRuntimeConfig {
   return {
@@ -32,12 +40,38 @@ function createDeps(overrides?: Partial<EngineBootstrapDeps>): EngineBootstrapDe
   }
 }
 
+function createClaudeOptions(overrides?: Partial<ClaudeSessionLaunchOptions>): ClaudeSessionLaunchOptions {
+  return {
+    engineKind: 'claude',
+    maxTurns: 10,
+    includePartialMessages: true,
+    permissionMode: 'default',
+    allowDangerouslySkipPermissions: true,
+    env: {},
+    systemPromptPayload: createProviderNativeSystemPrompt('TEST_SYSTEM_PROMPT'),
+    ...overrides,
+  }
+}
+
+function createCodexOptions(overrides?: Partial<CodexSessionLaunchOptions>): CodexSessionLaunchOptions {
+  return {
+    engineKind: 'codex',
+    maxTurns: 10,
+    includePartialMessages: true,
+    permissionMode: 'default',
+    allowDangerouslySkipPermissions: true,
+    env: {},
+    systemPromptPayload: createCodexSyntheticSystemPrompt('TEST_SYSTEM_PROMPT'),
+    ...overrides,
+  }
+}
+
 describe('EngineBootstrapRegistry', () => {
   it('applies shared overrides and Claude cli path', async () => {
     const registry = new EngineBootstrapRegistry({
       claudeCliPathResolver: () => '/tmp/claude-cli.js',
     })
-    const options: Record<string, unknown> = {}
+    const options = createClaudeOptions()
 
     await registry.apply({
       engineKind: 'claude',
@@ -61,7 +95,7 @@ describe('EngineBootstrapRegistry', () => {
     const registry = new EngineBootstrapRegistry({
       claudeCliPathResolver: () => '/tmp/claude-cli.js',
     })
-    const options: Record<string, unknown> = {}
+    const options = createClaudeOptions()
 
     await registry.apply({
       engineKind: 'claude',
@@ -81,9 +115,9 @@ describe('EngineBootstrapRegistry', () => {
     const registry = new EngineBootstrapRegistry({
       codexCliPathResolver: () => '/tmp/codex-bin',
     })
-    const options: Record<string, unknown> = {
+    const options = createCodexOptions({
       permissionMode: 'bypassPermissions',
-    }
+    })
 
     await registry.apply({
       engineKind: 'codex',
@@ -134,12 +168,12 @@ describe('EngineBootstrapRegistry', () => {
       codexCliPathResolver: () => '/tmp/codex-bin',
     })
     // Simulate codexConfig that was set by an earlier pipeline stage (e.g. MCP servers)
-    const options: Record<string, unknown> = {
+    const options = createCodexOptions({
       codexConfig: {
         mcp_servers: { 'my-tool': { command: '/usr/bin/node', args: ['tool.js'] } },
         some_other_setting: 42,
       },
-    }
+    })
 
     await registry.apply({
       engineKind: 'codex',
@@ -174,7 +208,7 @@ describe('EngineBootstrapRegistry', () => {
     const registry = new EngineBootstrapRegistry({
       codexCliPathResolver: () => '/tmp/codex-bin',
     })
-    const options: Record<string, unknown> = {}
+    const options = createCodexOptions()
 
     await registry.apply({
       engineKind: 'codex',
@@ -202,9 +236,9 @@ describe('EngineBootstrapRegistry', () => {
     const registry = new EngineBootstrapRegistry({
       codexCliPathResolver: () => '/tmp/codex-bin',
     })
-    const options: Record<string, unknown> = {
+    const options = createCodexOptions({
       permissionMode: 'default',
-    }
+    })
 
     await registry.apply({
       engineKind: 'codex',
@@ -228,10 +262,10 @@ describe('EngineBootstrapRegistry', () => {
     const registry = new EngineBootstrapRegistry({
       codexCliPathResolver: () => '/tmp/codex-bin',
     })
-    const options: Record<string, unknown> = {
+    const options = createCodexOptions({
       permissionMode: 'default',
       codexApprovalPolicy: 'on-failure',
-    }
+    })
 
     await registry.apply({
       engineKind: 'codex',
@@ -254,10 +288,10 @@ describe('EngineBootstrapRegistry', () => {
     const registry = new EngineBootstrapRegistry({
       codexCliPathResolver: () => '/tmp/codex-bin',
     })
-    const options: Record<string, unknown> = {
+    const options = createCodexOptions({
       permissionMode: 'bypassPermissions',
       codexSandboxMode: 'workspace-write',
-    }
+    })
 
     await registry.apply({
       engineKind: 'codex',
@@ -286,7 +320,7 @@ describe('EngineBootstrapRegistry', () => {
         engineKind: 'codex',
         config: createConfig(),
         sessionEnv: {},
-        options: {},
+        options: createCodexOptions(),
         deps: createDeps({
           getCodexAuthConfig: async () => null,
         }),
@@ -302,7 +336,7 @@ describe('EngineBootstrapRegistry', () => {
     const registry = new EngineBootstrapRegistry({
       codexCliPathResolver: () => undefined,
     })
-    const options: Record<string, unknown> = {}
+    const options = createCodexOptions()
 
     await expect(
       registry.apply({
@@ -329,7 +363,7 @@ describe('EngineBootstrapRegistry', () => {
     const registry = new EngineBootstrapRegistry({
       codexCliPathResolver: () => '/tmp/codex-bin',
     })
-    const options: Record<string, unknown> = {}
+    const options = createCodexOptions()
 
     await registry.apply({
       engineKind: 'codex',

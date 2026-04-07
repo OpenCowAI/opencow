@@ -15,7 +15,13 @@ describe('buildSessionPolicyInput', () => {
       tools: {
         native: {
           mode: 'allowlist',
-          allow: [{ capability: 'browser' }, { capability: 'html' }],
+          allow: [
+            { capability: 'browser' },
+            { capability: 'html' },
+            { capability: 'interaction', tool: 'ask_user_question' },
+            { capability: 'issues', tool: 'propose_issue_operation' },
+            { capability: 'schedules', tool: 'propose_schedule_operation' },
+          ],
         },
       },
     })
@@ -33,6 +39,7 @@ describe('buildSessionPolicyInput', () => {
           allow: [
             { capability: 'browser' },
             { capability: 'html' },
+            { capability: 'interaction', tool: 'ask_user_question' },
             { capability: 'issues', tool: 'propose_issue_operation' },
             { capability: 'schedules', tool: 'propose_schedule_operation' },
           ],
@@ -153,6 +160,7 @@ describe('buildSessionPolicyInput', () => {
           allow: [
             { capability: 'browser' },
             { capability: 'html' },
+            { capability: 'interaction', tool: 'ask_user_question' },
             { capability: 'issues', tool: 'propose_issue_operation' },
             { capability: 'schedules', tool: 'propose_schedule_operation' },
           ],
@@ -173,6 +181,9 @@ describe('buildSessionPolicyInput', () => {
           allow: [
             { capability: 'browser' },
             { capability: 'html' },
+            { capability: 'interaction', tool: 'ask_user_question' },
+            { capability: 'issues', tool: 'propose_issue_operation' },
+            { capability: 'schedules', tool: 'propose_schedule_operation' },
           ],
         },
       },
@@ -221,6 +232,7 @@ describe('buildSessionPolicyInput', () => {
           allow: [
             { capability: 'browser' },
             { capability: 'html' },
+            { capability: 'interaction', tool: 'ask_user_question' },
             { capability: 'issues', tool: 'propose_issue_operation' },
             { capability: 'schedules', tool: 'propose_schedule_operation' },
             { capability: 'evose' },

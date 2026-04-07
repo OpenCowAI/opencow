@@ -2,6 +2,10 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { getAppAPI } from '@/windowAPI'
+import {
+  confirmSessionLifecycleOperation,
+  rejectSessionLifecycleOperation,
+} from '@/lib/sessionLifecycleOperationClient'
 import type {
   DataBusEvent,
   SessionLifecycleOperationConfirmResult,
@@ -85,18 +89,30 @@ export function useSessionLifecycleOperations(sessionId: string | null): UseSess
     if (!sessionId) {
       return { ok: false, code: 'invalid_state', operation: null }
     }
-    const result = await getAppAPI()['command:confirm-session-lifecycle-operation'](sessionId, operationId)
-    await fetchOperations(false)
-    return result
+    try {
+      return await confirmSessionLifecycleOperation({
+        sessionId,
+        operationId,
+        timeoutMessage: 'Confirmation timed out. Please retry.',
+      })
+    } finally {
+      await fetchOperations(false)
+    }
   }, [sessionId, fetchOperations])
 
   const reject = useCallback(async (operationId: string): Promise<SessionLifecycleOperationRejectResult> => {
     if (!sessionId) {
       return { ok: false, code: 'invalid_state', operation: null }
     }
-    const result = await getAppAPI()['command:reject-session-lifecycle-operation'](sessionId, operationId)
-    await fetchOperations(false)
-    return result
+    try {
+      return await rejectSessionLifecycleOperation({
+        sessionId,
+        operationId,
+        timeoutMessage: 'Cancellation timed out. Please retry.',
+      })
+    } finally {
+      await fetchOperations(false)
+    }
   }, [sessionId, fetchOperations])
 
   const latestPendingIssueOperation = useMemo(

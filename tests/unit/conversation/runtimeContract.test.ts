@@ -11,6 +11,7 @@ type ExpectedRuntimeEventKind =
   | 'assistant.final'
   | 'turn.usage'
   | 'context.snapshot'
+  | 'execution_context.signal'
   | 'tool.progress'
   | 'engine.diagnostic'
   | 'turn.result'

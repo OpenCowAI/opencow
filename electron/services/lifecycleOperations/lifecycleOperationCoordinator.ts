@@ -26,6 +26,10 @@ import type {
 import { SessionLifecycleOperationStore } from '../sessionLifecycleOperationStore'
 import { OperationGovernancePolicy } from './operationGovernancePolicy'
 import { ExplicitNoConfirmDetector } from './explicitNoConfirmDetector'
+import {
+  normalizeScheduleLifecycleProposalPayload,
+  type ScheduleLifecycleCanonicalPayload,
+} from '../../../src/shared/scheduleLifecycleCanonical'
 import type { ScheduleService } from '../schedule/scheduleService'
 
 export interface ProposeLifecycleOperationsInput {
@@ -36,6 +40,7 @@ export interface ProposeLifecycleOperationsInput {
 
 export interface LifecycleOperationCoordinatorDeps {
   store: SessionLifecycleOperationStore
+  executionDb?: Kysely<Database>
   scheduleService?: ScheduleService
   governancePolicy?: OperationGovernancePolicy
   noConfirmDetector?: ExplicitNoConfirmDetector
@@ -52,6 +57,18 @@ interface ExecuteLifecycleOperationResult {
   resultSnapshot: Record<string, unknown> | null
   errorCode: string | null
   errorMessage: string | null
+}
+
+interface ApplyLifecycleOperationResult {
+  ok: boolean
+  code: ConfirmLifecycleOperationResultCode
+  operation: SessionLifecycleOperationEnvelope | null
+}
+
+interface ApplyLifecycleOperationInput {
+  operationId: string
+  sessionId: string
+  emitLifecycleEvents?: boolean
 }
 
 export type ConfirmLifecycleOperationResultCode =
@@ -125,6 +142,7 @@ function toEnvelopeOrThrow(operation: SessionLifecycleOperation): SessionLifecyc
 
 export class LifecycleOperationCoordinator {
   private readonly store: SessionLifecycleOperationStore
+  private readonly executionDb: Kysely<Database>
   private scheduleService: ScheduleService | null
   private readonly governancePolicy: OperationGovernancePolicy
   private readonly noConfirmDetector: ExplicitNoConfirmDetector
@@ -132,6 +150,7 @@ export class LifecycleOperationCoordinator {
 
   constructor(deps: LifecycleOperationCoordinatorDeps) {
     this.store = deps.store
+    this.executionDb = deps.executionDb ?? deps.store.getDb()
     this.scheduleService = deps.scheduleService ?? null
     this.governancePolicy = deps.governancePolicy ?? new OperationGovernancePolicy()
     this.noConfirmDetector = deps.noConfirmDetector ?? new ExplicitNoConfirmDetector()
@@ -166,14 +185,18 @@ export class LifecycleOperationCoordinator {
   async proposeOperations(input: ProposeLifecycleOperationsInput): Promise<SessionLifecycleOperationEnvelope[]> {
     if (input.proposals.length === 0) return []
 
-    return this.store.withTransaction(async (txStore) => {
+    const proposed = await this.store.withTransaction(async (txStore) => {
       const envelopes: SessionLifecycleOperationEnvelope[] = []
+      const autoApplyOperationIds: string[] = []
 
       for (let i = 0; i < input.proposals.length; i++) {
         const proposal = input.proposals[i]
 
         if (proposal.idempotencyKey) {
-          const byIdempotency = await txStore.findByIdempotencyKey(proposal.idempotencyKey)
+          const byIdempotency = await txStore.findByIdempotencyKey({
+            sessionId: input.sessionId,
+            idempotencyKey: proposal.idempotencyKey,
+          })
           if (byIdempotency) {
             envelopes.push(toEnvelopeOrThrow(byIdempotency))
             continue
@@ -197,11 +220,9 @@ export class LifecycleOperationCoordinator {
           noConfirmDetection,
         })
 
-        const state = 'pending_confirmation'
-
-      const operation: SessionLifecycleOperation = {
-        id: generateId(),
-        sessionId: input.sessionId,
+        const operation: SessionLifecycleOperation = {
+          id: generateId(),
+          sessionId: input.sessionId,
           toolUseId: input.toolUseId,
           operationIndex: i,
           entity: proposal.entity,
@@ -210,7 +231,7 @@ export class LifecycleOperationCoordinator {
           summary: proposal.summary ?? {},
           warnings: proposal.warnings ?? [],
           confirmationMode,
-          state,
+          state: 'pending_confirmation',
           idempotencyKey: proposal.idempotencyKey ?? null,
           resultSnapshot: null,
           errorCode: null,
@@ -234,14 +255,44 @@ export class LifecycleOperationCoordinator {
           }
         }
 
-        await txStore.upsert(operation)
-        const envelope = toEnvelopeOrThrow(operation)
+        const persisted = await txStore.upsert(operation)
+        if (persisted.created) {
+          this.emitLifecycleOperationUpdated(persisted.operation)
+        }
+
+        const envelope = toEnvelopeOrThrow(persisted.operation)
         envelopes.push(envelope)
-        this.emitLifecycleOperationUpdated(envelope)
+        if (persisted.created && confirmationMode === 'auto_if_user_explicit') {
+          autoApplyOperationIds.push(persisted.operation.id)
+        }
       }
 
-      return envelopes
+      return {
+        envelopes,
+        autoApplyOperationIds,
+      }
     })
+
+    if (proposed.autoApplyOperationIds.length === 0) {
+      return proposed.envelopes
+    }
+
+    const envelopeMap = new Map<string, SessionLifecycleOperationEnvelope>(
+      proposed.envelopes.map((item) => [item.operationId, item])
+    )
+
+    for (const operationId of proposed.autoApplyOperationIds) {
+      const applied = await this.applyOperation({
+        operationId,
+        sessionId: input.sessionId,
+        emitLifecycleEvents: true,
+      })
+      if (applied.operation) {
+        envelopeMap.set(operationId, applied.operation)
+      }
+    }
+
+    return proposed.envelopes.map((item) => envelopeMap.get(item.operationId) ?? item)
   }
 
   async listSessionOperations(input: ListSessionOperationsInput): Promise<SessionLifecycleOperationEnvelope[]> {
@@ -250,29 +301,63 @@ export class LifecycleOperationCoordinator {
   }
 
   async confirmOperation(input: ConfirmLifecycleOperationInput): Promise<ConfirmLifecycleOperationResult> {
-    return this.store.withTransaction(async (txStore, db) => {
-      const operation = await txStore.getById(input.operationId)
-      if (!operation || operation.sessionId !== input.sessionId) {
+    return this.applyOperation({
+      operationId: input.operationId,
+      sessionId: input.sessionId,
+      emitLifecycleEvents: true,
+    })
+  }
+
+  private async applyOperation(params: ApplyLifecycleOperationInput): Promise<ApplyLifecycleOperationResult> {
+    const { operationId, sessionId, emitLifecycleEvents = true } = params
+
+    const begin = await this.store.withTransaction(async (txStore) => {
+      const operation = await txStore.getById(operationId)
+      if (!operation || operation.sessionId !== sessionId) {
         return {
-          ok: false,
-          code: 'not_found',
-          operation: null,
+          shouldExecute: false,
+          result: {
+            ok: false as const,
+            code: 'not_found' as const,
+            operation: null,
+          },
+          applyingOperation: null as SessionLifecycleOperation | null,
         }
       }
 
       if (operation.state === 'applied') {
         return {
-          ok: true,
-          code: 'already_applied',
-          operation: toEnvelope(operation),
+          shouldExecute: false,
+          result: {
+            ok: true as const,
+            code: 'already_applied' as const,
+            operation: toEnvelope(operation),
+          },
+          applyingOperation: null as SessionLifecycleOperation | null,
         }
       }
 
-      if (operation.state === 'failed' || operation.state === 'cancelled') {
+      if (operation.state === 'failed' || operation.state === 'cancelled' || operation.state === 'applying') {
         return {
-          ok: false,
-          code: 'invalid_state',
-          operation: toEnvelope(operation),
+          shouldExecute: false,
+          result: {
+            ok: false as const,
+            code: 'invalid_state' as const,
+            operation: toEnvelope(operation),
+          },
+          applyingOperation: null as SessionLifecycleOperation | null,
+        }
+      }
+
+      if (operation.state !== 'pending_confirmation') {
+        return {
+          shouldExecute: false,
+          result: {
+            ok: false as const,
+            code: 'invalid_state' as const,
+            operation: toEnvelope(operation),
+          },
+          applyingOperation: null as SessionLifecycleOperation | null,
         }
       }
 
@@ -287,85 +372,105 @@ export class LifecycleOperationCoordinator {
         const latest = await txStore.getById(operation.id)
         if (latest?.state === 'applied') {
           return {
-            ok: true,
-            code: 'already_applied',
-            operation: toEnvelope(latest),
+            shouldExecute: false,
+            result: {
+              ok: true as const,
+              code: 'already_applied' as const,
+              operation: toEnvelope(latest),
+            },
+            applyingOperation: null as SessionLifecycleOperation | null,
           }
         }
         return {
-          ok: false,
-          code: 'rejected_concurrent',
-          operation: toEnvelope(latest),
-        }
-      }
-      this.emitLifecycleOperationUpdated({
-        ...operation,
-        state: 'applying',
-      })
-
-      const execution = await this.executeOperation({
-        operation,
-        db,
-      })
-
-      if (execution.state === 'applied') {
-        const casApplied = await txStore.transitionStateCompareAndSet({
-          id: operation.id,
-          fromState: 'applying',
-          toState: 'applied',
-          updatedAt: Date.now(),
-          appliedAt: execution.appliedAt,
-          resultSnapshot: execution.resultSnapshot,
-          errorCode: null,
-          errorMessage: null,
-        })
-
-        if (!casApplied) {
-          const latest = await txStore.getById(operation.id)
-          return {
-            ok: false,
-            code: 'rejected_concurrent',
+          shouldExecute: false,
+          result: {
+            ok: false as const,
+            code: 'rejected_concurrent' as const,
             operation: toEnvelope(latest),
-          }
-        }
-
-        const latest = await txStore.getById(operation.id)
-        this.emitLifecycleOperationUpdated(latest)
-        return {
-          ok: true,
-          code: 'confirmed_applied',
-          operation: toEnvelope(latest),
+          },
+          applyingOperation: null as SessionLifecycleOperation | null,
         }
       }
 
-      const casFailed = await txStore.transitionStateCompareAndSet({
-        id: operation.id,
-        fromState: 'applying',
-        toState: 'failed',
-        updatedAt: Date.now(),
-        appliedAt: null,
-        resultSnapshot: execution.resultSnapshot,
-        errorCode: execution.errorCode,
-        errorMessage: execution.errorMessage,
-      })
-
-      if (!casFailed) {
-        const latest = await txStore.getById(operation.id)
+      const applying = await txStore.getById(operation.id)
+      if (!applying) {
         return {
-          ok: false,
-          code: 'rejected_concurrent',
-          operation: toEnvelope(latest),
+          shouldExecute: false,
+          result: {
+            ok: false as const,
+            code: 'not_found' as const,
+            operation: null,
+          },
+          applyingOperation: null as SessionLifecycleOperation | null,
         }
       }
 
-      const latest = await txStore.getById(operation.id)
-      this.emitLifecycleOperationUpdated(latest)
       return {
+        shouldExecute: true,
+        result: null as ApplyLifecycleOperationResult | null,
+        applyingOperation: applying,
+      }
+    })
+
+    if (!begin.shouldExecute || !begin.applyingOperation) {
+      return begin.result ?? {
         ok: false,
         code: 'invalid_state',
+        operation: null,
+      }
+    }
+
+    if (emitLifecycleEvents) {
+      this.emitLifecycleOperationUpdated(begin.applyingOperation)
+    }
+
+    const execution = await this.executeOperation({
+      operation: begin.applyingOperation,
+      db: this.resolveExecutionDb(),
+    })
+
+    const terminalState: SessionLifecycleOperationState = execution.state === 'applied' ? 'applied' : 'failed'
+    const terminalCode: ConfirmLifecycleOperationResultCode =
+      execution.state === 'applied' ? 'confirmed_applied' : 'invalid_state'
+
+    const completed = await this.store.withTransaction(async (txStore) => {
+      const transitioned = await txStore.transitionStateCompareAndSet({
+        id: operationId,
+        fromState: 'applying',
+        toState: terminalState,
+        updatedAt: Date.now(),
+        appliedAt: execution.state === 'applied' ? execution.appliedAt : null,
+        resultSnapshot: execution.resultSnapshot,
+        errorCode: execution.state === 'applied' ? null : execution.errorCode,
+        errorMessage: execution.state === 'applied' ? null : execution.errorMessage,
+      })
+
+      if (!transitioned) {
+        const latest = await txStore.getById(operationId)
+        return {
+          ok: false as const,
+          code: 'rejected_concurrent' as const,
+          operation: toEnvelope(latest),
+        }
+      }
+
+      const latest = await txStore.getById(operationId)
+      return {
+        ok: execution.state === 'applied',
+        code: terminalCode,
         operation: toEnvelope(latest),
       }
     })
+
+    if (emitLifecycleEvents) {
+      this.emitLifecycleOperationUpdated(completed.operation)
+    }
+
+    return completed
+  }
+
+  private resolveExecutionDb(): Kysely<Database> {
+    return this.executionDb
   }
 
   async rejectOperation(input: RejectLifecycleOperationInput): Promise<RejectLifecycleOperationResult> {
@@ -556,7 +661,7 @@ export class LifecycleOperationCoordinator {
       }
     }
 
-    const payload = operation.normalizedPayload
+    const payload = this.normalizeSchedulePayloadForExecution(operation)
     const name = typeof payload.name === 'string' ? payload.name.trim() : ''
     if (!name) {
       return {
@@ -568,7 +673,7 @@ export class LifecycleOperationCoordinator {
       }
     }
 
-    const trigger = this.parseScheduleTrigger(payload)
+    const trigger = this.parseScheduleTrigger(payload.trigger)
     if (!trigger) {
       return {
         state: 'failed',
@@ -579,7 +684,7 @@ export class LifecycleOperationCoordinator {
       }
     }
 
-    const action = this.parseScheduleAction(payload)
+    const action = this.parseScheduleAction(payload.action)
     if (!action) {
       return {
         state: 'failed',
@@ -624,7 +729,7 @@ export class LifecycleOperationCoordinator {
       }
     }
 
-    const payload = operation.normalizedPayload
+    const payload = this.normalizeSchedulePayloadForExecution(operation)
     const scheduleId = this.parseRequiredId(payload.id)
     if (!scheduleId) {
       return {
@@ -642,10 +747,10 @@ export class LifecycleOperationCoordinator {
     if (payload.priority !== undefined) patch.priority = this.parseSchedulePriority(payload.priority)
     if (payload.projectId !== undefined) patch.projectId = this.parseNullableString(payload.projectId)
 
-    const trigger = this.parseScheduleTrigger(payload)
+    const trigger = this.parseScheduleTrigger(payload.trigger)
     if (trigger) patch.trigger = trigger
 
-    const action = this.parseScheduleAction(payload)
+    const action = this.parseScheduleAction(payload.action)
     if (action) {
       if (action.projectId === undefined) {
         const existing = await this.scheduleService.get(scheduleId)
@@ -708,7 +813,7 @@ export class LifecycleOperationCoordinator {
       }
     }
 
-    const payload = operation.normalizedPayload
+    const payload = this.normalizeSchedulePayloadForExecution(operation)
     const scheduleId = this.parseRequiredId(payload.id)
     if (!scheduleId) {
       return {
@@ -755,7 +860,7 @@ export class LifecycleOperationCoordinator {
       }
     }
 
-    const payload = operation.normalizedPayload
+    const payload = this.normalizeSchedulePayloadForExecution(operation)
     const scheduleId = this.parseRequiredId(payload.id)
     if (!scheduleId) {
       return {
@@ -802,7 +907,7 @@ export class LifecycleOperationCoordinator {
       }
     }
 
-    const payload = operation.normalizedPayload
+    const payload = this.normalizeSchedulePayloadForExecution(operation)
     const scheduleId = this.parseRequiredId(payload.id)
     if (!scheduleId) {
       return {
@@ -962,6 +1067,25 @@ export class LifecycleOperationCoordinator {
     }
   }
 
+  private normalizeSchedulePayloadForExecution(
+    operation: SessionLifecycleOperation
+  ): ScheduleLifecycleCanonicalPayload {
+    const currentProjectId = this.parseNullableString(operation.normalizedPayload.projectId)
+    const normalized = normalizeScheduleLifecycleProposalPayload(
+      operation.normalizedPayload,
+      {
+        sessionId: operation.sessionId,
+        projectId: currentProjectId === undefined ? null : currentProjectId,
+      }
+    )
+
+    if (!normalized.sessionId) {
+      normalized.sessionId = operation.sessionId
+    }
+
+    return normalized
+  }
+
   private parseNullableString(value: unknown): string | null | undefined {
     if (value === undefined) return undefined
     if (value === null) return null
@@ -1055,90 +1179,122 @@ export class LifecycleOperationCoordinator {
     return undefined
   }
 
-  private parseScheduleTrigger(payload: Record<string, unknown>): ScheduleTrigger | undefined {
-    const nested = payload.trigger
-    if (nested && typeof nested === 'object') {
-      return nested as ScheduleTrigger
-    }
+  private asObjectRecord(value: unknown): Record<string, unknown> | null {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return null
+    return value as Record<string, unknown>
+  }
 
-    const frequency = this.parseFrequencyType(payload.frequency)
-    const eventMatcherType = this.parseNullableString(payload.eventMatcherType)
+  private parseScheduleTrigger(value: unknown): ScheduleTrigger | undefined {
+    const source = this.asObjectRecord(value)
+    if (!source) return undefined
 
-    if (!frequency && !eventMatcherType) return undefined
+    const timeNode = this.asObjectRecord(source.time)
+    const eventNode = this.asObjectRecord(source.event)
+
+    const timeSource = timeNode ?? source
+    const frequency = this.parseFrequencyType(timeSource.type ?? timeSource.frequency)
 
     const trigger: ScheduleTrigger = {}
+
     if (frequency) {
       trigger.time = {
         type: frequency,
         workMode:
-          payload.workMode === 'all_days' ||
-          payload.workMode === 'weekdays' ||
-          payload.workMode === 'big_small_week'
-            ? payload.workMode
+          timeSource.workMode === 'all_days' ||
+          timeSource.workMode === 'weekdays' ||
+          timeSource.workMode === 'big_small_week'
+            ? timeSource.workMode
             : 'all_days',
         timezone:
-          typeof payload.timezone === 'string' && payload.timezone.length > 0
-            ? payload.timezone
+          typeof timeSource.timezone === 'string' && timeSource.timezone.length > 0
+            ? timeSource.timezone
             : Intl.DateTimeFormat().resolvedOptions().timeZone,
-        timeOfDay: typeof payload.timeOfDay === 'string' ? payload.timeOfDay : undefined,
-        daysOfWeek: this.parseNumberArray(payload.daysOfWeek),
-        dayOfMonth: this.parseNumber(payload.dayOfMonth),
-        intervalMinutes: this.parseNumber(payload.intervalMinutes),
-        cronExpression: typeof payload.cronExpression === 'string' ? payload.cronExpression : undefined,
-        executeAt: this.parseTimestamp(payload.executeAt),
-      }
-    }
-    if (eventMatcherType) {
-      trigger.event = {
-        matcherType: eventMatcherType,
-        filter: typeof payload.eventFilter === 'object' && payload.eventFilter !== null
-          ? payload.eventFilter as Record<string, unknown>
-          : {},
+        timeOfDay: typeof timeSource.timeOfDay === 'string' ? timeSource.timeOfDay : undefined,
+        daysOfWeek: this.parseNumberArray(timeSource.daysOfWeek),
+        dayOfMonth: this.parseNumber(timeSource.dayOfMonth),
+        intervalMinutes: this.parseNumber(timeSource.intervalMinutes),
+        cronExpression:
+          typeof timeSource.cronExpression === 'string'
+            ? timeSource.cronExpression
+            : (typeof timeSource.cron === 'string' ? timeSource.cron : undefined),
+        executeAt: this.parseTimestamp(timeSource.executeAt),
       }
     }
 
+    const eventSource = eventNode ?? source
+    const matcherType = this.parseNullableString(eventSource.matcherType ?? eventSource.eventMatcherType)
+    if (matcherType) {
+      const filter = this.asObjectRecord(eventSource.filter ?? eventSource.eventFilter) ?? {}
+      trigger.event = {
+        matcherType,
+        filter,
+      }
+    }
+
+    if (!trigger.time && !trigger.event) return undefined
+    if (source.throttleMs !== undefined) {
+      trigger.throttleMs = this.parseNumber(source.throttleMs)
+    }
     return trigger
   }
 
-  private parseScheduleAction(payload: Record<string, unknown>): ScheduleAction | undefined {
-    const nested = payload.action
-    if (nested && typeof nested === 'object') {
-      const action = {
-        ...(nested as ScheduleAction),
-      }
-      const payloadProjectId = this.parseNullableString(payload.projectId)
-      if (action.projectId === undefined && payloadProjectId !== undefined) {
-        action.projectId = payloadProjectId ?? undefined
-      }
-      if (action.issueId === undefined && typeof payload.issueId === 'string') {
-        action.issueId = payload.issueId
-      }
-      return action
-    }
+  private parseScheduleAction(value: unknown): ScheduleAction | undefined {
+    const source = this.asObjectRecord(value)
+    if (!source) return undefined
 
-    const actionType = this.parseActionType(payload.actionType ?? payload.type)
-    const promptTemplate = typeof payload.prompt === 'string' ? payload.prompt : undefined
-
-    if (!actionType && !promptTemplate) return undefined
+    const actionType = this.parseActionType(source.actionType ?? source.type)
+    if (!actionType) return undefined
 
     const action: ScheduleAction = {
-      type: actionType ?? 'start_session',
+      type: actionType,
     }
+
+    const sessionNode = this.asObjectRecord(source.session)
+    const promptTemplate =
+      (sessionNode && typeof sessionNode.promptTemplate === 'string' ? sessionNode.promptTemplate : undefined) ??
+      (typeof source.promptTemplate === 'string' ? source.promptTemplate : undefined) ??
+      (typeof source.prompt === 'string' ? source.prompt : undefined)
 
     if (promptTemplate) {
       action.session = {
         promptTemplate,
-        model: typeof payload.model === 'string' ? payload.model : undefined,
-        maxTurns: this.parseNumber(payload.maxTurns),
+        model:
+          (sessionNode && typeof sessionNode.model === 'string' ? sessionNode.model : undefined) ??
+          (typeof source.model === 'string' ? source.model : undefined),
+        maxTurns:
+          (sessionNode ? this.parseNumber(sessionNode.maxTurns) : undefined) ??
+          this.parseNumber(source.maxTurns),
       }
     }
-    const projectId = this.parseNullableString(payload.projectId)
+
+    const projectId = this.parseNullableString(source.projectId)
     if (projectId !== undefined) {
       action.projectId = projectId ?? undefined
     }
-    if (typeof payload.issueId === 'string') {
-      action.issueId = payload.issueId
+    if (typeof source.issueId === 'string') {
+      action.issueId = source.issueId
     }
+    if (source.resumeMode === 'resume_last' || source.resumeMode === 'resume_specific') {
+      action.resumeMode = source.resumeMode
+    }
+    if (typeof source.resumeSessionId === 'string' && source.resumeSessionId.length > 0) {
+      action.resumeSessionId = source.resumeSessionId
+    }
+    if (Array.isArray(source.contextInjections)) {
+      const contextInjections = source.contextInjections.filter((item): item is NonNullable<ScheduleAction['contextInjections']>[number] =>
+        item === 'git_diff_24h' ||
+        item === 'git_log_week' ||
+        item === 'last_execution_result' ||
+        item === 'open_issues' ||
+        item === 'today_stats' ||
+        item === 'recent_errors' ||
+        item === 'changed_files'
+      )
+      if (contextInjections.length > 0) {
+        action.contextInjections = contextInjections
+      }
+    }
+
     return action
   }
 

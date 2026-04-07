@@ -20,6 +20,7 @@ import { ScheduleConfirmationCard } from '@/components/ScheduleAICreator/Schedul
 import { IssueFormModal } from '@/components/IssueForm/IssueFormModal'
 import { ScheduleFormModal } from '@/components/ScheduleView/ScheduleFormModal'
 import { mapScheduleDraftToFormDefaults } from '@/lib/scheduleDraftMapper'
+import { LifecycleOperationActionTimeoutError } from '@/lib/sessionLifecycleOperationClient'
 import { toast } from '@/lib/toast'
 import { useTranslation } from 'react-i18next'
 import type { SessionDraftType } from '@shared/sessionDraftOutputParser'
@@ -54,6 +55,7 @@ export function SessionDraftFooter({
 }: SessionDraftFooterProps): React.JSX.Element | null {
   const { t: ti } = useTranslation('issues')
   const { t: ts } = useTranslation('schedule')
+  const { t: tSession } = useTranslation('sessions')
   const openDetail = useAppStore((s) => s.openDetail)
   const { applyIssueDraft, applyScheduleDraft } = useDraftApplyActions()
   const lifecycle = useSessionLifecycleOperations(
@@ -92,7 +94,17 @@ export function SessionDraftFooter({
   const handleConfirmIssue = useCallback(
     async (parsed: ParsedIssueOutput): Promise<Issue> => {
       if (lifecycleSource === 'lifecycle-operation' && lifecycleOperationId) {
-        const result = await lifecycle.confirm(lifecycleOperationId)
+        let result
+        try {
+          result = await lifecycle.confirm(lifecycleOperationId)
+        } catch (err) {
+          if (err instanceof LifecycleOperationActionTimeoutError) {
+            throw new Error(tSession('lifecycleOperation.error.confirmTimeout', {
+              defaultValue: 'Confirmation timed out. Please retry.',
+            }))
+          }
+          throw err
+        }
         const issue = result.operation?.resultSnapshot?.issue as Issue | undefined
         if (!issue?.id) {
           throw new Error(result.operation?.errorMessage ?? ti('aiCreator.card.createFailed'))
@@ -118,13 +130,24 @@ export function SessionDraftFooter({
       lifecycleOperationId,
       lifecycle,
       ti,
+      tSession,
     ]
   )
 
   const handleConfirmSchedule = useCallback(
     async (parsed: ParsedScheduleOutput): Promise<Schedule> => {
       if (lifecycleSource === 'lifecycle-operation' && lifecycleOperationId) {
-        const result = await lifecycle.confirm(lifecycleOperationId)
+        let result
+        try {
+          result = await lifecycle.confirm(lifecycleOperationId)
+        } catch (err) {
+          if (err instanceof LifecycleOperationActionTimeoutError) {
+            throw new Error(tSession('lifecycleOperation.error.confirmTimeout', {
+              defaultValue: 'Confirmation timed out. Please retry.',
+            }))
+          }
+          throw err
+        }
         const schedule = result.operation?.resultSnapshot?.schedule as Schedule | undefined
         if (!schedule?.id) {
           throw new Error(result.operation?.errorMessage ?? ts('aiCreator.card.createFailed'))
@@ -148,6 +171,7 @@ export function SessionDraftFooter({
       lifecycleOperationId,
       lifecycle,
       ts,
+      tSession,
     ]
   )
 

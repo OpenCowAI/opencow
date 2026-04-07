@@ -28,6 +28,7 @@ function shouldRecoverStreamingFromAwaitingInput(kind: ConversationDomainEventEn
     kind !== 'engine.diagnostic' &&
     kind !== 'turn.usage' &&
     kind !== 'context.snapshot' &&
+    kind !== 'execution_context.signal' &&
     kind !== 'system.task_notification'
   )
 }
@@ -197,6 +198,17 @@ export function reduceConversationDomainEvent(params: {
       effects.push({
         type: 'apply_context_snapshot',
         payload: event.payload,
+      })
+      return { state: nextState, effects }
+    }
+
+    case 'execution_context.signal': {
+      effects.push({
+        type: 'apply_execution_context_signal',
+        payload: {
+          ...event.payload,
+          occurredAtMs: eventEnvelope.occurredAtMs,
+        },
       })
       return { state: nextState, effects }
     }

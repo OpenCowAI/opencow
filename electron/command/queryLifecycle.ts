@@ -5,6 +5,8 @@ import type { Query, SDKMessage } from '@anthropic-ai/claude-agent-sdk'
 import { MessageQueue } from './messageQueue'
 import type { UserMessageContent } from '../../src/shared/types'
 import type { SessionLifecycle, SessionLifecycleStartInput } from './sessionLifecycle'
+import type { ClaudeSessionLaunchOptions } from './sessionLaunchOptions'
+import { toSdkOptions } from './sessionLaunchOptions'
 import { adaptClaudeSdkMessage } from '../conversation/runtime/claudeRuntimeAdapter'
 import {
   createRuntimeEventEnvelope,
@@ -59,23 +61,27 @@ export class QueryLifecycle implements SessionLifecycle {
     if (this._query) throw new Error('QueryLifecycle already started')
     if (this._stopped) throw new Error('QueryLifecycle already stopped')
     const initialPrompt: UserMessageContent = input.initialPrompt
-    const options = input.launchOptions
+    if (input.launchOptions.engineKind !== 'claude') {
+      throw new Error(`QueryLifecycle requires claude launch options, got ${input.launchOptions.engineKind}`)
+    }
+    const options: ClaudeSessionLaunchOptions = input.launchOptions
 
     // Log initial prompt preview (Codex-style: first 200 + last 100 chars)
     const promptPreview = summarizePrompt(initialPrompt)
     const optionKeys = Object.keys(options).sort()
+    const systemPromptText = options.systemPromptPayload.text
     log.info('start', {
       promptPreview,
       optionKeys: optionKeys.join(', '),
-      hasSystemPrompt: !!options.systemPrompt,
-      systemPromptLength: typeof options.systemPrompt === 'string' ? options.systemPrompt.length : 0,
+      hasSystemPrompt: systemPromptText.length > 0,
+      systemPromptLength: systemPromptText.length,
       model: options.model ?? 'default',
     })
 
     this.queue.push(initialPrompt)
     this.pendingTurnSeqs.push(this.nextTurnSeq++)
 
-    const q = sdkQuery({ prompt: this.queue, options })
+    const q = sdkQuery({ prompt: this.queue, options: toSdkOptions(options) })
     this._query = q
 
     const cleanup = () => {

@@ -265,6 +265,7 @@ describe('SessionMessageList', () => {
         sessionId="test-session"
         messages={[makeAssistantMsg(textBlocks(issueOutputText('Issue with config')), { id: 'draft-issue-2' })]}
         sessionDraftFooterConfig={{
+          strategy: 'inline-fenced-draft',
           projectId: 'project-1',
           issueCreationMode: 'standalone',
         }}
@@ -282,6 +283,7 @@ describe('SessionMessageList', () => {
         sessionId="test-session"
         messages={[makeAssistantMsg(textBlocks(scheduleOutputText('Weekly report schedule')), { id: 'draft-schedule-1' })]}
         sessionDraftFooterConfig={{
+          strategy: 'inline-fenced-draft',
           projectId: 'project-1',
           issueCreationMode: 'standalone',
         }}
@@ -299,6 +301,7 @@ describe('SessionMessageList', () => {
         sessionId="test-session"
         messages={[makeAssistantMsg(textBlocks(mixedDraftText('Issue wins by order', 'Schedule first')), { id: 'draft-mixed-1' })]}
         sessionDraftFooterConfig={{
+          strategy: 'inline-fenced-draft',
           projectId: 'project-1',
           issueCreationMode: 'standalone',
         }}
@@ -315,6 +318,7 @@ describe('SessionMessageList', () => {
         sessionId="test-session"
         messages={[makeAssistantMsg(textBlocks(issueOutputText('Inline placement issue')), { id: 'draft-inline-1' })]}
         sessionDraftFooterConfig={{
+          strategy: 'inline-fenced-draft',
           projectId: 'project-1',
           issueCreationMode: 'standalone',
         }}
@@ -332,7 +336,7 @@ describe('SessionMessageList', () => {
     ).toBeTruthy()
   })
 
-  it('renders lifecycle issue draft inline even when no fenced issue-output exists', async () => {
+  it('does not render legacy inline issue draft card when lifecycle source is enabled', async () => {
     lifecycleHookMock.latestPendingIssueOperation = {
       operationId: 'lop-issue-1',
       operationIndex: 0,
@@ -362,21 +366,15 @@ describe('SessionMessageList', () => {
         sessionId="test-session"
         messages={[makeAssistantMsg(textBlocks('assistant response without fenced draft'), { id: 'lifecycle-inline-1' })]}
         sessionDraftFooterConfig={{
-          projectId: 'project-1',
-          issueCreationMode: 'standalone',
-          source: 'lifecycle-operation',
+          strategy: 'lifecycle-tool-result-only',
         }}
       />
     )
 
-    const draftCard = await screen.findByLabelText('Issue confirmation card')
-    const list = screen.getByRole('list', { name: 'Session messages' })
-    const assistantMessageNode = list.querySelector<HTMLElement>('[data-msg-id="lifecycle-inline-1"]')
-    expect(assistantMessageNode).not.toBeNull()
-    expect(draftCard.parentElement).toBe(assistantMessageNode?.parentElement)
+    expect(screen.queryByLabelText('Issue confirmation card')).toBeNull()
   })
 
-  it('renders lifecycle schedule draft inline when lifecycle source is enabled', async () => {
+  it('does not render legacy inline schedule draft card when lifecycle source is enabled', async () => {
     lifecycleHookMock.latestPendingScheduleOperation = {
       operationId: 'lop-schedule-1',
       operationIndex: 0,
@@ -407,19 +405,12 @@ describe('SessionMessageList', () => {
         sessionId="test-session"
         messages={[makeAssistantMsg(textBlocks('assistant response without fenced schedule draft'), { id: 'lifecycle-schedule-inline-1' })]}
         sessionDraftFooterConfig={{
-          projectId: 'project-1',
-          issueCreationMode: 'standalone',
-          source: 'lifecycle-operation',
+          strategy: 'lifecycle-tool-result-only',
         }}
       />
     )
 
-    expect(await screen.findByLabelText('Schedule confirmation card')).toBeInTheDocument()
-    const list = screen.getByRole('list', { name: 'Session messages' })
-    const assistantMessageNode = list.querySelector<HTMLElement>('[data-msg-id="lifecycle-schedule-inline-1"]')
-    const draftCard = await screen.findByLabelText('Schedule confirmation card')
-    expect(assistantMessageNode).not.toBeNull()
-    expect(draftCard.parentElement).toBe(assistantMessageNode?.parentElement)
+    expect(screen.queryByLabelText('Schedule confirmation card')).toBeNull()
   })
 
   it('has aria-label on message list', () => {

@@ -670,9 +670,7 @@ export const SessionPanel = React.memo(function SessionPanel({
                     onContextualQuestionChange={handleContextualQuestionChange}
                     issueId={issueId}
                     sessionDraftFooterConfig={{
-                      projectId: session.projectId,
-                      issueCreationMode: 'standalone',
-                      source: 'lifecycle-operation',
+                      strategy: 'lifecycle-tool-result-only',
                     }}
                     footerNode={
                       <SessionFooterStack

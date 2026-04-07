@@ -5,10 +5,10 @@ import { createLogger } from '../platform/logger'
 import type { CapabilityCenter, CapabilityPlanRequest } from '../services/capabilityCenter'
 import type { SDKHookMap } from '../services/capabilityCenter/claudeCodeAdapter'
 import type { SystemPromptLayers } from './systemPromptComposer'
-import type { SessionLaunchOptions } from './sessionLaunchOptions'
+import type { ClaudeSessionLaunchOptions, CodexSessionLaunchOptions, SessionLaunchOptionPatch } from './sessionLaunchOptions'
 import { ClaudeInjectionAdapter } from './injection/claudeInjectionAdapter'
 import { CodexInjectionAdapter } from './injection/codexInjectionAdapter'
-import type { EngineInjectionAdapter } from './injection/types'
+import type { ClaudeEngineInjectionAdapter, CodexEngineInjectionAdapter } from './injection/types'
 
 const log = createLogger('EngineCapabilityRuntime')
 const CODEX_PROMPT_SIZE_WARN_CHARS = 30_000
@@ -22,13 +22,13 @@ export interface EngineCapabilityRuntimeInput {
   engineKind: AIEngineKind
   planInput: CapabilityPlanInput
   promptLayers: SystemPromptLayers
-  options: SessionLaunchOptions
+  options: ClaudeSessionLaunchOptions | CodexSessionLaunchOptions
   builtInHooks?: SDKHookMap
 }
 
 export interface EngineCapabilityRuntimeOutput {
   promptLayers: SystemPromptLayers
-  optionPatch: Partial<SessionLaunchOptions>
+  optionPatch: SessionLaunchOptionPatch
   hooks?: SDKHookMap
   hookCleanup?: () => void
   activeMcpServerNames?: ReadonlySet<string>
@@ -38,20 +38,30 @@ export interface EngineCapabilityRuntimeOutput {
 
 interface EngineCapabilityRuntimeDeps {
   capabilityCenter?: CapabilityCenter
-  adapters?: EngineInjectionAdapter[]
+  adapters?: [ClaudeEngineInjectionAdapter, CodexEngineInjectionAdapter] | (ClaudeEngineInjectionAdapter | CodexEngineInjectionAdapter)[]
 }
 
 export class EngineCapabilityRuntime {
   private readonly capabilityCenter?: CapabilityCenter
-  private readonly adapters = new Map<AIEngineKind, EngineInjectionAdapter>()
+  private readonly claudeAdapter: ClaudeEngineInjectionAdapter
+  private readonly codexAdapter: CodexEngineInjectionAdapter
+
+  private static isInvariantError(err: unknown): boolean {
+    if (!(err instanceof Error)) return false
+    return err.message.startsWith('Capability injection engine mismatch:')
+  }
 
   constructor(deps: EngineCapabilityRuntimeDeps) {
     this.capabilityCenter = deps.capabilityCenter
 
     const adapters = deps.adapters ?? [new ClaudeInjectionAdapter(), new CodexInjectionAdapter()]
-    for (const adapter of adapters) {
-      this.adapters.set(adapter.engineKind, adapter)
+    const claudeAdapter = adapters.find((adapter): adapter is ClaudeEngineInjectionAdapter => adapter.engineKind === 'claude')
+    const codexAdapter = adapters.find((adapter): adapter is CodexEngineInjectionAdapter => adapter.engineKind === 'codex')
+    if (!claudeAdapter || !codexAdapter) {
+      throw new Error('EngineCapabilityRuntime requires both claude and codex injection adapters')
     }
+    this.claudeAdapter = claudeAdapter
+    this.codexAdapter = codexAdapter
   }
 
   async apply(input: EngineCapabilityRuntimeInput): Promise<EngineCapabilityRuntimeOutput> {
@@ -65,12 +75,6 @@ export class EngineCapabilityRuntime {
       return fallback
     }
 
-    const adapter = this.adapters.get(input.engineKind)
-    if (!adapter) {
-      log.warn(`No injection adapter for engine=${input.engineKind}; skipping capability injection`)
-      return fallback
-    }
-
     try {
       const plan = await this.capabilityCenter.buildCapabilityPlan(input.planInput)
       if (input.engineKind === 'codex' && plan.totalChars > CODEX_PROMPT_SIZE_WARN_CHARS) {
@@ -78,13 +82,27 @@ export class EngineCapabilityRuntime {
           `Codex capability prompt is large (${plan.totalChars} chars) and may impact responsiveness`,
         )
       }
-      const output = adapter.inject({
-        engineKind: input.engineKind,
-        plan,
-        promptLayers: input.promptLayers,
-        options: input.options,
-        builtInHooks: input.builtInHooks,
-      })
+      if (input.options.engineKind !== input.engineKind) {
+        throw new Error(
+          `Capability injection engine mismatch: runtime=${input.engineKind}, options=${input.options.engineKind}`,
+        )
+      }
+
+      const output = input.options.engineKind === 'claude'
+        ? this.claudeAdapter.inject({
+            engineKind: 'claude',
+            plan,
+            promptLayers: input.promptLayers,
+            options: input.options,
+            builtInHooks: input.builtInHooks,
+          })
+        : this.codexAdapter.inject({
+            engineKind: 'codex',
+            plan,
+            promptLayers: input.promptLayers,
+            options: input.options,
+            builtInHooks: input.builtInHooks,
+          })
 
       log.info(
         `Capability injection (${input.engineKind}): ${plan.summary.skills.length} skills, ` +
@@ -103,6 +121,9 @@ export class EngineCapabilityRuntime {
         nativeRequirements: plan.nativeRequirements.length > 0 ? plan.nativeRequirements : undefined,
       }
     } catch (err) {
+      if (EngineCapabilityRuntime.isInvariantError(err)) {
+        throw err
+      }
       log.error(`Capability injection failed for engine=${input.engineKind}`, err)
       return fallback
     }

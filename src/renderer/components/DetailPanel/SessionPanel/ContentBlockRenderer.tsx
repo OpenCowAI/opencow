@@ -88,7 +88,7 @@ export const ContentBlockRenderer = memo(function ContentBlockRenderer({
       )
     }
     case 'tool_result':
-      return <ToolResultBlockView block={block} />
+      return <ToolResultBlockView block={block} sessionId={sessionId} />
     case 'thinking':
       return <div className="py-0.5"><ThinkingBlockView block={block} /></div>
     case 'slash_command': {

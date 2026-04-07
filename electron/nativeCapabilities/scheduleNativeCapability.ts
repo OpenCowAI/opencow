@@ -37,6 +37,7 @@ import type { NativeCapabilityMeta, NativeCapabilityToolContext, NativeCapabilit
 import { BaseNativeCapability, type ToolConfig } from './baseNativeCapability'
 import type { ScheduleService } from '../services/schedule/scheduleService'
 import type { LifecycleOperationCoordinator } from '../services/lifecycleOperations'
+import { normalizeScheduleLifecycleProposalPayload } from '../../src/shared/scheduleLifecycleCanonical'
 import type {
   Schedule,
   SchedulePriority,
@@ -68,6 +69,19 @@ export interface ScheduleNativeCapabilityDeps {
  */
 function normaliseLlmText(text: string): string {
   return text.replace(/\\n/g, '\n').replace(/\\t/g, '\t')
+}
+
+function normalizeConfirmationMode(
+  value: unknown
+): SessionLifecycleOperationProposalInput['confirmationMode'] | undefined {
+  if (typeof value !== 'string') return undefined
+  const normalized = value.trim().toLowerCase().replace(/[\s-]+/g, '_')
+  if (normalized === 'required') return 'required'
+  if (normalized === 'auto_if_user_explicit' || normalized === 'auto_if_explicit') {
+    return 'auto_if_user_explicit'
+  }
+  if (normalized === 'draft') return 'required'
+  return undefined
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -472,8 +486,7 @@ export class ScheduleNativeCapability extends BaseNativeCapability {
     return {
       name: 'propose_schedule_operation',
       description:
-        'Propose one or more schedule lifecycle operations for confirmation in-session. ' +
-        'This tool does not directly mutate schedule records in Phase A.',
+        'Propose one or more schedule lifecycle operations for in-session governance and execution.',
       schema: {
         userInstruction: z
           .string()
@@ -485,7 +498,10 @@ export class ScheduleNativeCapability extends BaseNativeCapability {
             normalizedPayload: z.record(z.string(), z.unknown()),
             summary: z.record(z.string(), z.unknown()).optional(),
             warnings: z.array(z.string()).optional(),
-            confirmationMode: z.enum(['required', 'auto_if_user_explicit']).optional(),
+            confirmationMode: z
+              .string()
+              .optional()
+              .describe('Confirmation mode. Prefer "required" or "auto_if_user_explicit"; legacy "draft" is accepted.'),
             idempotencyKey: z.string().optional(),
           }))
           .min(1)
@@ -501,16 +517,16 @@ export class ScheduleNativeCapability extends BaseNativeCapability {
         const proposals: SessionLifecycleOperationProposalInput[] = operationArgs.map((candidate) => ({
           entity: 'schedule',
           action: candidate.action as SessionLifecycleOperationProposalInput['action'],
-          normalizedPayload: {
-            ...(candidate.normalizedPayload as Record<string, unknown>),
-            projectId:
-              (candidate.normalizedPayload as Record<string, unknown>)?.projectId === undefined
-                ? session.projectId
-                : (candidate.normalizedPayload as Record<string, unknown>).projectId,
-          },
+          normalizedPayload: normalizeScheduleLifecycleProposalPayload(
+            (candidate.normalizedPayload as Record<string, unknown>) ?? {},
+            {
+              sessionId: session.sessionId,
+              projectId: session.projectId,
+            }
+          ),
           summary: candidate.summary as Record<string, unknown> | undefined,
           warnings: candidate.warnings as string[] | undefined,
-          confirmationMode: candidate.confirmationMode as SessionLifecycleOperationProposalInput['confirmationMode'] | undefined,
+          confirmationMode: normalizeConfirmationMode(candidate.confirmationMode),
           idempotencyKey: typeof candidate.idempotencyKey === 'string' ? candidate.idempotencyKey : undefined,
           userInstruction: typeof args.userInstruction === 'string' ? args.userInstruction : undefined,
         }))

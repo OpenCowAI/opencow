@@ -321,9 +321,7 @@ function ChatPanelActive({ agent }: { agent: AgentSessionHandle }): React.JSX.El
       controlsClassName="px-3"
       pausedPlaceholder={t('agentChat.continueConversation')}
       sessionDraftFooterConfig={{
-        projectId: agent.session!.projectId,
-        issueCreationMode: 'standalone',
-        source: 'lifecycle-operation',
+        strategy: 'lifecycle-tool-result-only',
       }}
       registerAsChatTabInput
     />

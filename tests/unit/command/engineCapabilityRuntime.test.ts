@@ -5,6 +5,34 @@ import type { CapabilityCenter } from '../../../electron/services/capabilityCent
 import type { CapabilityPlan } from '../../../electron/services/capabilityCenter/sessionInjector'
 import { EngineCapabilityRuntime } from '../../../electron/command/engineCapabilityRuntime'
 import type { SDKHookMap } from '../../../electron/services/capabilityCenter/claudeCodeAdapter'
+import {
+  createCodexSyntheticSystemPrompt,
+  createProviderNativeSystemPrompt,
+} from '../../../electron/command/systemPromptTransport'
+
+function createClaudeOptions() {
+  return {
+    engineKind: 'claude' as const,
+    maxTurns: 8,
+    includePartialMessages: true,
+    permissionMode: 'acceptEdits',
+    allowDangerouslySkipPermissions: true,
+    env: {},
+    systemPromptPayload: createProviderNativeSystemPrompt(''),
+  }
+}
+
+function createCodexOptions() {
+  return {
+    engineKind: 'codex' as const,
+    maxTurns: 8,
+    includePartialMessages: true,
+    permissionMode: 'acceptEdits',
+    allowDangerouslySkipPermissions: true,
+    env: {},
+    systemPromptPayload: createCodexSyntheticSystemPrompt(''),
+  }
+}
 
 function createPlan(overrides: Partial<CapabilityPlan> = {}): CapabilityPlan {
   return {
@@ -46,7 +74,7 @@ describe('EngineCapabilityRuntime', () => {
         identity: 'identity',
         base: 'base',
       },
-      options: {},
+      options: createClaudeOptions(),
       builtInHooks,
     })
 
@@ -77,7 +105,7 @@ describe('EngineCapabilityRuntime', () => {
         base: 'base',
         session: 'session-original',
       },
-      options: {},
+      options: createCodexOptions(),
     })
 
     expect(buildCapabilityPlan).toHaveBeenCalledWith({
@@ -108,10 +136,32 @@ describe('EngineCapabilityRuntime', () => {
       promptLayers: {
         identity: 'identity',
       },
-      options: {},
+      options: createCodexOptions(),
     })
 
     expect(result.promptLayers).toEqual({ identity: 'identity' })
     expect(result.optionPatch).toEqual({})
+  })
+
+  it('fails fast when runtime engine and launch options engine mismatch', async () => {
+    const buildCapabilityPlan = vi.fn().mockResolvedValue(createPlan())
+    const runtime = new EngineCapabilityRuntime({
+      capabilityCenter: { buildCapabilityPlan } as unknown as CapabilityCenter,
+    })
+
+    await expect(
+      runtime.apply({
+        engineKind: 'codex',
+        planInput: {
+          request: {
+            session: { engineKind: 'codex' },
+          },
+        },
+        promptLayers: {
+          identity: 'identity',
+        },
+        options: createClaudeOptions(),
+      }),
+    ).rejects.toThrow('Capability injection engine mismatch')
   })
 })

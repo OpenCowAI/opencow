@@ -68,6 +68,19 @@ function normaliseLlmText(text: string): string {
   return text.replace(/\\n/g, '\n').replace(/\\t/g, '\t')
 }
 
+function normalizeConfirmationMode(
+  value: unknown
+): SessionLifecycleOperationProposalInput['confirmationMode'] | undefined {
+  if (typeof value !== 'string') return undefined
+  const normalized = value.trim().toLowerCase().replace(/[\s-]+/g, '_')
+  if (normalized === 'required') return 'required'
+  if (normalized === 'auto_if_user_explicit' || normalized === 'auto_if_explicit') {
+    return 'auto_if_user_explicit'
+  }
+  if (normalized === 'draft') return 'required'
+  return undefined
+}
+
 // ─── Serialisation constants ───────────────────────────────────────────────────
 
 /** Maximum issues returned by list_issues (prevents flooding Claude's context). */
@@ -392,8 +405,7 @@ export class IssueNativeCapability extends BaseNativeCapability {
     return {
       name: 'propose_issue_operation',
       description:
-        'Propose one or more issue lifecycle operations for confirmation in-session. ' +
-        'This tool does not directly mutate issue records in Phase A.',
+        'Propose one or more issue lifecycle operations for in-session governance and execution.',
       schema: {
         userInstruction: z
           .string()
@@ -405,7 +417,10 @@ export class IssueNativeCapability extends BaseNativeCapability {
             normalizedPayload: z.record(z.string(), z.unknown()),
             summary: z.record(z.string(), z.unknown()).optional(),
             warnings: z.array(z.string()).optional(),
-            confirmationMode: z.enum(['required', 'auto_if_user_explicit']).optional(),
+            confirmationMode: z
+              .string()
+              .optional()
+              .describe('Confirmation mode. Prefer "required" or "auto_if_user_explicit"; legacy "draft" is accepted.'),
             idempotencyKey: z.string().optional(),
           }))
           .min(1)
@@ -430,7 +445,7 @@ export class IssueNativeCapability extends BaseNativeCapability {
           },
           summary: candidate.summary as Record<string, unknown> | undefined,
           warnings: candidate.warnings as string[] | undefined,
-          confirmationMode: candidate.confirmationMode as SessionLifecycleOperationProposalInput['confirmationMode'] | undefined,
+          confirmationMode: normalizeConfirmationMode(candidate.confirmationMode),
           idempotencyKey: typeof candidate.idempotencyKey === 'string' ? candidate.idempotencyKey : undefined,
           userInstruction: typeof args.userInstruction === 'string' ? args.userInstruction : undefined,
         }))

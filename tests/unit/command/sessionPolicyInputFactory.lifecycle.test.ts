@@ -13,6 +13,7 @@ describe('buildSessionPolicyInput lifecycle propose defaults', () => {
     expect(policy?.tools?.native?.allow).toEqual([
       { capability: 'browser' },
       { capability: 'html' },
+      { capability: 'interaction', tool: 'ask_user_question' },
       { capability: 'issues', tool: 'propose_issue_operation' },
       { capability: 'schedules', tool: 'propose_schedule_operation' },
     ])
@@ -27,6 +28,7 @@ describe('buildSessionPolicyInput lifecycle propose defaults', () => {
     expect(policy?.tools?.native?.allow).toEqual([
       { capability: 'browser' },
       { capability: 'html' },
+      { capability: 'interaction', tool: 'ask_user_question' },
       { capability: 'issues', tool: 'propose_issue_operation' },
       { capability: 'schedules', tool: 'propose_schedule_operation' },
     ])
@@ -43,6 +45,7 @@ describe('buildSessionPolicyInput lifecycle propose defaults', () => {
     const expectedAllow = [
       { capability: 'browser' },
       { capability: 'html' },
+      { capability: 'interaction', tool: 'ask_user_question' },
       { capability: 'issues', tool: 'propose_issue_operation' },
       { capability: 'schedules', tool: 'propose_schedule_operation' },
     ]

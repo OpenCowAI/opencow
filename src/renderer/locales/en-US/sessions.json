@@ -245,6 +245,34 @@
     "fileDropHint": "Drop files to attach",
     "fileDropHintSub": "Images, PDFs, and text files will be attached to your message"
   },
+  "lifecycleOperation": {
+    "status": {
+      "pendingConfirmation": "Pending confirmation",
+      "applying": "Applying",
+      "applied": "Applied",
+      "failed": "Failed",
+      "cancelled": "Cancelled"
+    },
+    "editFields": "Edit fields",
+    "confirming": "Confirming...",
+    "applying": "Applying...",
+    "preview": {
+      "schedule": "Schedule",
+      "task": "Task",
+      "timezone": "Timezone",
+      "description": "Description",
+      "status": "Status",
+      "priority": "Priority",
+      "labels": "Labels"
+    },
+    "error": {
+      "missingSession": "Operation session context is missing. Please regenerate the draft.",
+      "crossSession": "This draft belongs to another session. Please regenerate it in the current session.",
+      "crossSessionReadonly": "This draft belongs to another session and cannot be confirmed here.",
+      "confirmTimeout": "Confirmation timed out. Please retry.",
+      "rejectTimeout": "Cancellation timed out. Please retry."
+    }
+  },
   "taskWidget": {
     "state": {
       "launching": "Launching…",

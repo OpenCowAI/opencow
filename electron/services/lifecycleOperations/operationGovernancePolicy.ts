@@ -18,8 +18,8 @@ export class OperationGovernancePolicy {
     proposal: SessionLifecycleOperationProposalInput
     noConfirmDetection: ExplicitNoConfirmDetectionResult
   }): SessionLifecycleOperationConfirmationMode {
-    const requested = params.proposal.confirmationMode ?? 'required'
-    if (requested === 'required') return 'required'
+    const requested = params.proposal.confirmationMode
+    if (requested !== 'auto_if_user_explicit') return 'required'
 
     if (params.noConfirmDetection.explicitNoConfirm && params.noConfirmDetection.confidence === 'high') {
       return 'auto_if_user_explicit'

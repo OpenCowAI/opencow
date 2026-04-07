@@ -622,6 +622,7 @@ describe('SessionOrchestrator.startSession — idempotency', () => {
 
     codexMocks.state.turnPlans.push([
       { type: 'thread.started', thread_id: 'codex-thread-capability-prompt' },
+      { type: 'turn.started' },
       { type: 'item.completed', item: { type: 'agent_message', text: 'capability-injected' } },
       { type: 'turn.completed', usage: { input_tokens: 1, cached_input_tokens: 0, output_tokens: 1 } },
     ])

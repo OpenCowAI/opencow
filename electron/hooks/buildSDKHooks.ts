@@ -10,6 +10,7 @@ import type {
 import type { DataBusEvent, HookEvent } from '@shared/types'
 import { createLogger } from '../platform/logger'
 import { mapHookEventType, SDK_SIGNAL_HOOK_EVENTS } from './hookEventMap'
+import type { SessionExecutionContextSignal } from '../command/sessionLifecycle'
 
 const log = createLogger('SDKHooks')
 
@@ -38,7 +39,7 @@ const SIGNAL_EVENTS: readonly SDKHookEventName[] = SDK_SIGNAL_HOOK_EVENTS
 export function buildSDKHooks(
   dispatch: Dispatch,
   fallbackSessionId: string,
-  onCwdDetected?: (cwd: string, occurredAtMs?: number) => void,
+  onExecutionContextSignal?: (signal: SessionExecutionContextSignal) => void,
 ): Partial<Record<SDKHookEventName, HookCallbackMatcher[]>> {
   const hooks: Partial<Record<SDKHookEventName, HookCallbackMatcher[]>> = {}
 
@@ -67,11 +68,15 @@ export function buildSDKHooks(
         // Detect cwd changes across hook events (e.g. after EnterWorktree).
         // BaseHookInput carries `cwd` on every event — compare to last-seen
         // value and fire the callback only when it actually changes.
-        if (onCwdDetected) {
+        if (onExecutionContextSignal) {
           const cwd = (input as { cwd?: string }).cwd
           if (cwd && cwd !== lastCwd) {
             lastCwd = cwd
-            onCwdDetected(cwd, Date.now())
+            onExecutionContextSignal({
+              cwd,
+              source: 'hook',
+              occurredAtMs: Date.now(),
+            })
           }
         }
       } catch (err) {

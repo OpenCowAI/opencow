@@ -41,6 +41,7 @@ import { SessionContext } from './sessionContext'
 import { getBaseSystemPrompt } from './baseSystemPrompt'
 import { getIdentityPrompt } from './identityPrompt'
 import { composeSystemPrompt, type SystemPromptLayers } from './systemPromptComposer'
+import { createCodexSyntheticSystemPrompt, createProviderNativeSystemPrompt } from './systemPromptTransport'
 import { EngineCapabilityRuntime } from './engineCapabilityRuntime'
 import type { CodexNativeBridgeManager } from './codexNativeBridgeManager'
 import { mergeCodexMcpServers } from './codexMcpConfigBuilder'
@@ -55,7 +56,12 @@ import {
 import {
   applyClaudeSessionPolicy,
 } from './enginePolicy'
-import { type SessionLaunchOptions, toSdkOptions } from './sessionLaunchOptions'
+import {
+  applySessionLaunchOptionPatch,
+  type SessionLaunchOptions,
+  type ClaudeSessionLaunchOptions,
+  type CodexSessionLaunchOptions,
+} from './sessionLaunchOptions'
 import type { SessionRuntime, SessionCompletionCallback, SessionCompletionResult } from './sessionRuntime'
 import { planSessionPolicy } from './policy/sessionPolicyPlanner'
 import { decideSessionReconfiguration } from './policy/sessionReconfigurationCoordinator'
@@ -562,13 +568,24 @@ export class SessionOrchestrator {
     }
 
     const defaults = this.deps.getCommandDefaults()
-    const options: SessionLaunchOptions = {
+    const baseOptions = {
       maxTurns: config.maxTurns ?? defaults.maxTurns,
       includePartialMessages: true,
       permissionMode: config.permissionMode ?? defaults.permissionMode,
       allowDangerouslySkipPermissions: true,
       env: sessionEnv,
     }
+    const options: ClaudeSessionLaunchOptions | CodexSessionLaunchOptions = isClaudeEngine
+      ? {
+          engineKind: 'claude',
+          ...baseOptions,
+          systemPromptPayload: createProviderNativeSystemPrompt(''),
+        } satisfies ClaudeSessionLaunchOptions
+      : {
+          engineKind: 'codex',
+          ...baseOptions,
+          systemPromptPayload: createCodexSyntheticSystemPrompt(''),
+        } satisfies CodexSessionLaunchOptions
 
     const executionContextCoordinator = new ExecutionContextCoordinator({
       sessionId,
@@ -581,10 +598,13 @@ export class SessionOrchestrator {
 
     const notifyExecutionContextCwd = (params: {
       cwd: string
-      source: 'startup' | 'codex.turn_context' | 'codex.session_meta' | 'claude.hook' | 'unknown'
+      source: 'startup' | 'runtime' | 'hook' | 'external'
       occurredAtMs?: number
     }): void => {
       executionContextCoordinator.notify(params)
+    }
+    if (rt) {
+      rt.executionContextSignalHandler = (signal) => notifyExecutionContextCwd(signal)
     }
 
     const modelOverride = session.getModelOverride()
@@ -628,7 +648,7 @@ export class SessionOrchestrator {
       session: config.systemPrompt,
     }
 
-    if (isClaudeEngine) {
+    if (options.engineKind === 'claude') {
       // Claude-specific runtime policy lives in enginePolicy.ts.
       applyClaudeSessionPolicy({
         options,
@@ -690,6 +710,7 @@ export class SessionOrchestrator {
           }, 0)
         }
       },
+      onExecutionContextSignal: (signal) => notifyExecutionContextCwd(signal),
     })
 
     // ── Capability & prompt injection ───────────────────────────────────────
@@ -698,16 +719,11 @@ export class SessionOrchestrator {
 
     // Built-in observational hooks (Claude only). Capability hooks are merged later by runtime.
     let hooks: ReturnType<typeof buildSDKHooks> | undefined
-    if (isClaudeEngine) {
+    if (options.engineKind === 'claude') {
       hooks = buildSDKHooks(
         (e) => this.deps.dispatch(e),
         sessionId,
-        (cwd, occurredAtMs) =>
-          notifyExecutionContextCwd({
-            cwd,
-            source: 'claude.hook',
-            occurredAtMs,
-          }),
+        (signal) => notifyExecutionContextCwd(signal),
       )
     }
 
@@ -735,9 +751,7 @@ export class SessionOrchestrator {
     })
 
     promptLayers = capabilityOutput.promptLayers
-    if (Object.keys(capabilityOutput.optionPatch).length > 0) {
-      Object.assign(options, capabilityOutput.optionPatch)
-    }
+    applySessionLaunchOptionPatch(options, capabilityOutput.optionPatch)
     if (capabilityOutput.hooks) {
       hooks = capabilityOutput.hooks
     }
@@ -767,7 +781,7 @@ export class SessionOrchestrator {
     // Injected as in-process MCP server (Claude) or via HTTP bridge (Codex).
     const customTools = this.runtimes.get(sessionId)?.customTools
 
-    if (isClaudeEngine) {
+    if (options.engineKind === 'claude') {
       // Per-session custom MCP servers (marketplace analysis tools, etc.)
       // Applied after capability servers so custom servers take precedence.
       if (config.customMcpServers && Object.keys(config.customMcpServers).length > 0) {
@@ -786,7 +800,7 @@ export class SessionOrchestrator {
       }
 
       // Compose final system prompt after all layer adjustments.
-      options.systemPrompt = composeSystemPrompt(promptLayers)
+      options.systemPromptPayload = createProviderNativeSystemPrompt(composeSystemPrompt(promptLayers))
 
       // Built-in native capability tools (after injection plan + allowlist merge).
       if (this.deps.nativeCapabilityRegistry) {
@@ -855,7 +869,7 @@ export class SessionOrchestrator {
 
       // Codex SDK currently has no direct equivalent to Claude's systemPrompt/tool hooks,
       // so we pass a composed prompt that the Codex lifecycle prepends on first turn.
-      options.codexSystemPrompt = composeSystemPrompt(promptLayers)
+      options.systemPromptPayload = createCodexSyntheticSystemPrompt(composeSystemPrompt(promptLayers))
     }
 
     // Conversation V3 pipeline state (runtime -> domain -> projection)
@@ -878,10 +892,13 @@ export class SessionOrchestrator {
         session: promptLayers.session?.length ?? 0,
         capability: promptLayers.capability?.length ?? 0,
       },
-      systemPromptLength: (options.systemPrompt ?? options.codexSystemPrompt ?? '').length,
+      systemPromptTransport: options.systemPromptPayload.transport,
+      systemPromptLength: options.systemPromptPayload.text.length,
       messageCount: session.getMessages().length,
-      mcpServerCount: Object.keys(options.mcpServers ?? {}).length,
-      hasHooks: !!options.hooks,
+      mcpServerCount: options.engineKind === 'claude'
+        ? Object.keys(options.mcpServers ?? {}).length
+        : 0,
+      hasHooks: options.engineKind === 'claude' && !!options.hooks,
       maxTurns: options.maxTurns,
     })
 
@@ -901,8 +918,8 @@ export class SessionOrchestrator {
 
       const runtimeEventStream = lifecycle.start({
         initialPrompt,
-        launchOptions: toSdkOptions(options),
-        callbacks: isClaudeEngine
+        launchOptions: options,
+        callbacks: options.engineKind === 'claude'
           ? undefined
           : {
               onExecutionContextSignal: (signal) => notifyExecutionContextCwd(signal),
@@ -937,7 +954,7 @@ export class SessionOrchestrator {
         durationMs: Date.now() - startTime,
       })
     } finally {
-      if (!isClaudeEngine && this.deps.codexNativeBridgeManager) {
+      if (options.engineKind === 'codex' && this.deps.codexNativeBridgeManager) {
         await this.deps.codexNativeBridgeManager.unregisterSession(sessionId).catch((err) => {
           log.warn(`Failed to unregister Codex native bridge session ${sessionId}`, err)
         })
@@ -946,6 +963,7 @@ export class SessionOrchestrator {
       if (rtCleanup) {
         rtCleanup.pipeline = null
         rtCleanup.policy = null
+        rtCleanup.executionContextSignalHandler = undefined
       }
       hookCleanup?.()  // v3.1 #31: cleanup signal listeners
 
@@ -1550,6 +1568,7 @@ export class SessionOrchestrator {
         // Clear operational fields since the lifecycle is dead.
         rt.pipeline = null
         rt.policy = null
+        rt.executionContextSignalHandler = undefined
         this.dispatchSessionTerminal({
           sessionId,
           session,
@@ -1717,6 +1736,26 @@ export class SessionOrchestrator {
     const rt = this.findActiveRuntime(sessionId)
     if (!rt) return false
     return rt.session.getEngineKind() === 'claude'
+  }
+
+  /**
+   * Feed execution-context signal from external runtime sources (e.g. hook logs).
+   *
+   * Allows any external signal producer (hook bus, adapters, future runtime bridges)
+   * to push cwd updates into the same per-session ExecutionContextCoordinator pipeline
+   * used by startup/runtime callbacks.
+   */
+  ingestExecutionContextSignal(
+    sessionRef: string,
+    signal: { cwd: string; source: 'external' | 'hook'; occurredAtMs?: number },
+  ): void {
+    const rt = this.findActiveRuntime(sessionRef)
+    if (!rt) return
+    rt.executionContextSignalHandler?.({
+      cwd: signal.cwd,
+      source: signal.source,
+      occurredAtMs: signal.occurredAtMs,
+    })
   }
 
   private findActiveRuntime(sessionRef: string): SessionRuntime | null {

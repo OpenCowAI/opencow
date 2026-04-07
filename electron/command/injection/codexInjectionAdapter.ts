@@ -1,20 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { createLogger } from '../../platform/logger'
-import type { EngineInjectionAdapter, EngineInjectionRequest, EngineInjectionResult } from './types'
-import type { SessionLaunchOptions } from '../sessionLaunchOptions'
+import type { CodexEngineInjectionAdapter, CodexEngineInjectionRequest, EngineInjectionResult } from './types'
+import type { CodexSessionLaunchOptionPatch } from '../sessionLaunchOptions'
 import { mergeCodexMcpServers } from '../codexMcpConfigBuilder'
 
 const log = createLogger('CodexInjectionAdapter')
 
-export class CodexInjectionAdapter implements EngineInjectionAdapter {
+export class CodexInjectionAdapter implements CodexEngineInjectionAdapter {
   readonly engineKind = 'codex' as const
 
-  inject(request: EngineInjectionRequest): EngineInjectionResult {
-    if (request.engineKind !== 'codex') {
-      throw new Error(`CodexInjectionAdapter cannot handle engine=${request.engineKind}`)
-    }
-
+  inject(request: CodexEngineInjectionRequest): EngineInjectionResult {
     const nextPromptLayers = { ...request.promptLayers }
     if (request.plan.agentPrompt) {
       nextPromptLayers.session = request.plan.agentPrompt
@@ -31,7 +27,7 @@ export class CodexInjectionAdapter implements EngineInjectionAdapter {
     }
 
     const mcpServerEntries = Object.entries(request.plan.mcpServers)
-    const optionPatch: Partial<SessionLaunchOptions> = {}
+    const optionPatch: CodexSessionLaunchOptionPatch = {}
     let activeMcpServerNames: ReadonlySet<string> | undefined
     if (mcpServerEntries.length > 0) {
       const merged = mergeCodexMcpServers({

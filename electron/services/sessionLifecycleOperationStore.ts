@@ -56,6 +56,11 @@ function operationToRow(operation: SessionLifecycleOperation): SessionLifecycleO
   }
 }
 
+function isUniqueConstraintError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false
+  return error.message.includes('UNIQUE constraint failed')
+}
+
 export class SessionLifecycleOperationStore {
   constructor(private readonly db: Kysely<Database>) {}
 
@@ -72,29 +77,55 @@ export class SessionLifecycleOperationStore {
     })
   }
 
-  async upsert(operation: SessionLifecycleOperation): Promise<void> {
+  async upsert(operation: SessionLifecycleOperation): Promise<{
+    operation: SessionLifecycleOperation
+    created: boolean
+  }> {
     const row = operationToRow(operation)
-    await this.db
-      .insertInto('session_lifecycle_operations')
-      .values(row)
-      .onConflict((oc) =>
-        oc.columns(['session_id', 'tool_use_id', 'operation_index']).doUpdateSet({
-          entity: row.entity,
-          action: row.action,
-          normalized_payload_json: row.normalized_payload_json,
-          summary_json: row.summary_json,
-          warnings_json: row.warnings_json,
-          confirmation_mode: row.confirmation_mode,
-          state: row.state,
-          idempotency_key: row.idempotency_key,
-          result_snapshot_json: row.result_snapshot_json,
-          error_code: row.error_code,
-          error_message: row.error_message,
-          updated_at: row.updated_at,
-          applied_at: row.applied_at,
+    try {
+      await this.db
+        .insertInto('session_lifecycle_operations')
+        .values(row)
+        .execute()
+
+      const inserted = await this.getById(operation.id)
+      if (!inserted) {
+        throw new Error(`Failed to load inserted lifecycle operation: ${operation.id}`)
+      }
+      return {
+        operation: inserted,
+        created: true,
+      }
+    } catch (error) {
+      if (!isUniqueConstraintError(error)) throw error
+
+      if (operation.idempotencyKey) {
+        const byIdempotency = await this.findByIdempotencyKey({
+          sessionId: operation.sessionId,
+          idempotencyKey: operation.idempotencyKey,
         })
-      )
-      .execute()
+        if (byIdempotency) {
+          return {
+            operation: byIdempotency,
+            created: false,
+          }
+        }
+      }
+
+      const byTuple = await this.findBySessionToolUseOperationIndex({
+        sessionId: operation.sessionId,
+        toolUseId: operation.toolUseId,
+        operationIndex: operation.operationIndex,
+      })
+      if (byTuple) {
+        return {
+          operation: byTuple,
+          created: false,
+        }
+      }
+
+      throw error
+    }
   }
 
   async getById(id: string): Promise<SessionLifecycleOperation | null> {
@@ -121,11 +152,15 @@ export class SessionLifecycleOperationStore {
     return row ? rowToOperation(row) : null
   }
 
-  async findByIdempotencyKey(idempotencyKey: string): Promise<SessionLifecycleOperation | null> {
+  async findByIdempotencyKey(params: {
+    sessionId: string
+    idempotencyKey: string
+  }): Promise<SessionLifecycleOperation | null> {
     const row = await this.db
       .selectFrom('session_lifecycle_operations')
       .selectAll()
-      .where('idempotency_key', '=', idempotencyKey)
+      .where('session_id', '=', params.sessionId)
+      .where('idempotency_key', '=', params.idempotencyKey)
       .executeTakeFirst()
     return row ? rowToOperation(row) : null
   }
