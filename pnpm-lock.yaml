@@ -69,6 +69,9 @@ importers:
       '@openai/codex-sdk':
         specifier: ^0.115.0
         version: 0.115.0
+      '@pydantic/genai-prices':
+        specifier: 0.0.56
+        version: 0.0.56
       '@tailwindcss/vite':
         specifier: ^4.2.0
         version: 4.2.0(vite@7.3.2(@types/node@25.3.0)(jiti@2.6.1)(lightningcss@1.31.1)(yaml@2.8.3))
@@ -1416,6 +1419,11 @@ packages:
 
   '@protobufjs/utf8@1.1.0':
     resolution: {integrity: sha512-Vvn3zZrhQZkkBE8LSuW3em98c0FwgO4nxzv6OdSxPKJIEKY2bGbHn+mhGIPerzI4twdxaP8/0+06HBpwf345Lw==}
+
+  '@pydantic/genai-prices@0.0.56':
+    resolution: {integrity: sha512-QfvMLHWsy5C+yepycd8FRciSvy9jLm82HdGY9b8Rlc3qvTiby2MlwNun5e+hXsk1mYwJNGIZybi0+gAXdJL+gQ==}
+    engines: {node: '>=20'}
+    hasBin: true
 
   '@react-spring/animated@10.0.3':
     resolution: {integrity: sha512-7MrxADV3vaUADn2V9iYhaIL6iOWRx9nCJjYrsk2AHD2kwPr6fg7Pt0v+deX5RnCDmCKNnD6W5fasiyM8D+wzJQ==}
@@ -6171,6 +6179,10 @@ snapshots:
   '@protobufjs/pool@1.1.0': {}
 
   '@protobufjs/utf8@1.1.0': {}
+
+  '@pydantic/genai-prices@0.0.56':
+    dependencies:
+      yargs: 17.7.2
 
   '@react-spring/animated@10.0.3(react@19.2.4)':
     dependencies:

@@ -66,6 +66,7 @@
     "@nivo/calendar": "^0.99.0",
     "@nivo/core": "^0.99.0",
     "@openai/codex-sdk": "^0.115.0",
+    "@pydantic/genai-prices": "0.0.56",
     "@tailwindcss/vite": "^4.2.0",
     "@tiptap/core": "^3.20.0",
     "@tiptap/extension-document": "^3.20.0",

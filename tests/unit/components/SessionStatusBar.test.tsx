@@ -269,8 +269,18 @@ describe('SessionStatusBar', () => {
     expect(durationEl.className).toContain('tabular-nums')
   })
 
-  it('renders context window ring when lastInputTokens > 0', () => {
-    const session = makeSession({ lastInputTokens: 50_000, model: 'claude-sonnet-4-6' })
+  it('renders context window ring when contextState.usedTokens > 0', () => {
+    const session = makeSession({
+      model: 'claude-sonnet-4-6',
+      contextState: {
+        metricKind: 'context_occupancy',
+        usedTokens: 50_000,
+        limitTokens: 200_000,
+        source: 'claude.assistant_usage',
+        confidence: 'estimated',
+        updatedAtMs: Date.now(),
+      },
+    })
     setupStore(session)
     render(
       <SessionStatusBar
@@ -283,12 +293,24 @@ describe('SessionStatusBar', () => {
     )
     const meter = screen.getByRole('meter')
     expect(meter).toBeInTheDocument()
-    // 50k / 200k = 25% used → 75% remaining
-    expect(meter).toHaveAttribute('aria-valuenow', '75')
+    // estimated contextState limit is ignored, genai fallback gives 1,000,000:
+    // 50k / 1,000k = 5% used -> 95% remaining
+    expect(meter).toHaveAttribute('aria-valuenow', '95')
   })
 
   it('prefers dynamic contextLimitOverride over static model mapping', () => {
-    const session = makeSession({ lastInputTokens: 50_000, contextLimitOverride: 1_000_000, model: 'claude-sonnet-4-6' })
+    const session = makeSession({
+      contextLimitOverride: 1_000_000,
+      model: 'claude-sonnet-4-6',
+      contextState: {
+        metricKind: 'context_occupancy',
+        usedTokens: 50_000,
+        limitTokens: null,
+        source: 'claude.assistant_usage',
+        confidence: 'estimated',
+        updatedAtMs: Date.now(),
+      },
+    })
     setupStore(session)
     render(
       <SessionStatusBar
@@ -301,7 +323,7 @@ describe('SessionStatusBar', () => {
     )
     const meter = screen.getByRole('meter')
     expect(meter).toBeInTheDocument()
-    // 50k / 1M = 5% used → 95% remaining
+    // 50k / 1M = 5% used -> 95% remaining
     expect(meter).toHaveAttribute('aria-valuenow', '95')
   })
 
@@ -312,14 +334,14 @@ describe('SessionStatusBar', () => {
       lastInputTokens: 10_000,
       contextLimitOverride: 120_000,
       contextState: {
-        usedTokens: 50_000,
+        metricKind: 'context_occupancy', usedTokens: 50_000,
         limitTokens: 1_000_000,
         source: 'codex.token_count',
         confidence: 'authoritative',
         updatedAtMs: Date.now(),
       },
       contextTelemetry: {
-        usedTokens: 12_000,
+        metricKind: 'context_occupancy', usedTokens: 12_000,
         limitTokens: 120_000,
         remainingTokens: 108_000,
         remainingPct: 90,
@@ -344,7 +366,7 @@ describe('SessionStatusBar', () => {
     expect(meter).toHaveAttribute('aria-label', expect.not.stringContaining('estimated'))
   })
 
-  it('does not render context window ring when lastInputTokens is 0', () => {
+  it('does not render context window ring when contextState is absent', () => {
     const session = makeSession({ lastInputTokens: 0 })
     setupStore(session)
     render(
