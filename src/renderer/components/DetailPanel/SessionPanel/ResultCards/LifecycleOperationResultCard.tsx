@@ -26,6 +26,7 @@ import {
 } from '@/lib/sessionLifecycleOperationClient'
 import type { ParsedIssueOutput } from '@shared/issueOutputParser'
 import type { ParsedScheduleOutput } from '@shared/scheduleOutputParser'
+import { getAppAPI } from '@/windowAPI'
 
 export type LifecycleOperationCardData =
   | SessionLifecycleOperationEnvelope
@@ -297,6 +298,34 @@ function LifecycleOperationSingleCard(
   useEffect(() => {
     setOperation(data)
   }, [data.operationId, data.updatedAt])
+
+  // Rehydrate from operation store on mount so page refresh / session switch-back
+  // does not fall back to stale tool_result snapshot state.
+  useEffect(() => {
+    const candidateSessionIds = [
+      currentSessionId ?? null,
+      resolveSessionId(data),
+    ].filter((value, index, arr): value is string => typeof value === 'string' && value.length > 0 && arr.indexOf(value) === index)
+    if (candidateSessionIds.length === 0) return
+    let cancelled = false
+    void Promise.all(
+      candidateSessionIds.map((sessionId) => getAppAPI()['command:list-session-lifecycle-operations'](sessionId))
+    ).then((operationGroups) => {
+      if (cancelled) return
+      const latest = operationGroups
+        .flat()
+        .filter((item) => item.operationId === data.operationId)
+        .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0]
+      if (!latest) return
+      setOperation((prev) => (latest.updatedAt > prev.updatedAt ? latest : prev))
+    })
+      .catch(() => {
+        // best-effort hydration only
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [currentSessionId, data.operationId, data.updatedAt])
 
   const isPending = operation.state === 'pending_confirmation'
   const isApplying = operation.state === 'applying'

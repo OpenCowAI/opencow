@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react'
+import { createPortal } from 'react-dom'
 import { useTranslation } from 'react-i18next'
 import { X, Check, Tag, ImagePlus, Plus, Pencil, Trash2, ChevronDown } from 'lucide-react'
 import { EditorContent } from '@tiptap/react'
@@ -131,18 +132,24 @@ export function IssueFormModal(props: IssueFormModalProps): React.JSX.Element {
       })
   }, [props.issueId, props.defaultProjectId])
 
-  return (
-    <ProjectScopeProvider projectPath={projectPath} projectId={projectId ?? undefined}>
-      {props.issueId && isLoading ? (
-        <IssueFormLoadingOverlay onClose={props.onClose} zIndex={props.zIndex} />
-      ) : (
+  const modalNode = props.issueId && isLoading
+    ? <IssueFormLoadingOverlay onClose={props.onClose} zIndex={props.zIndex} />
+    : (
         <IssueFormContent
           {...props}
           issue={props.issueId ? fetchedIssue : null}
           projectId={projectId}
           setProjectId={setProjectId}
         />
-      )}
+      )
+
+  if (typeof document === 'undefined') {
+    return <></>
+  }
+
+  return (
+    <ProjectScopeProvider projectPath={projectPath} projectId={projectId ?? undefined}>
+      {createPortal(modalNode, document.body)}
     </ProjectScopeProvider>
   )
 }

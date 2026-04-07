@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useState, useRef, useCallback } from 'react'
+import { createPortal } from 'react-dom'
 import { useTranslation } from 'react-i18next'
 import { X, Clock, Pencil } from 'lucide-react'
 import { useAppStore } from '@/stores/appStore'
@@ -92,7 +93,7 @@ export function ScheduleFormModal({ onClose, editSchedule, defaultValues, onCrea
     }
   }
 
-  return (
+  const modalNode = (
     <div
       className={cn('fixed inset-0 flex items-center justify-center overscroll-contain no-drag', zIndex ? '' : 'z-50')}
       style={zIndex ? { zIndex } : undefined}
@@ -241,4 +242,10 @@ export function ScheduleFormModal({ onClose, editSchedule, defaultValues, onCrea
       </div>
     </div>
   )
+
+  if (typeof document === 'undefined') {
+    return <></>
+  }
+
+  return createPortal(modalNode, document.body)
 }

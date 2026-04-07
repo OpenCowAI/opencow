@@ -21,15 +21,18 @@ vi.mock('react-i18next', () => ({
 const apiMock = vi.hoisted(() => {
   const confirm = vi.fn()
   const reject = vi.fn()
+  const listLifecycleOperations = vi.fn(async () => [])
   const logWrite = vi.fn(async () => {})
   return {
     api: {
       'command:confirm-session-lifecycle-operation': confirm,
       'command:reject-session-lifecycle-operation': reject,
+      'command:list-session-lifecycle-operations': listLifecycleOperations,
       'log:write': logWrite,
     },
     confirm,
     reject,
+    listLifecycleOperations,
     logWrite,
   }
 })
@@ -85,6 +88,8 @@ describe('LifecycleOperationResultCard', () => {
   beforeEach(() => {
     apiMock.confirm.mockReset()
     apiMock.reject.mockReset()
+    apiMock.listLifecycleOperations.mockReset()
+    apiMock.listLifecycleOperations.mockResolvedValue([])
     issueStoreMock.loadIssues.mockClear()
     scheduleStoreMock.loadSchedules.mockClear()
   })
@@ -259,5 +264,49 @@ describe('LifecycleOperationResultCard', () => {
     const user = userEvent.setup()
     await user.click(confirmButton)
     expect(apiMock.confirm).not.toHaveBeenCalled()
+  })
+
+  it('rehydrates latest operation state from lifecycle store and hides stale pending confirm', async () => {
+    const stalePending = makeEnvelope({
+      operationId: 'lop-rehydrate-1',
+      entity: 'schedule',
+      action: 'create',
+      state: 'pending_confirmation',
+      normalizedPayload: {
+        sessionId: 'session-1',
+        title: 'Daily sync',
+      },
+      summary: {
+        sessionId: 'session-1',
+        title: 'Daily sync',
+      },
+      updatedAt: '2026-04-08T00:00:00.000Z',
+    })
+
+    const latestApplied = makeEnvelope({
+      operationId: 'lop-rehydrate-1',
+      entity: 'schedule',
+      action: 'create',
+      state: 'applied',
+      normalizedPayload: {
+        sessionId: 'session-1',
+        title: 'Daily sync',
+      },
+      summary: {
+        sessionId: 'session-1',
+        title: 'Daily sync',
+      },
+      updatedAt: '2026-04-08T00:01:00.000Z',
+      appliedAt: '2026-04-08T00:01:00.000Z',
+    })
+
+    apiMock.listLifecycleOperations.mockResolvedValueOnce([latestApplied])
+
+    render(<LifecycleOperationResultCard data={stalePending} currentSessionId="session-1" />)
+
+    await waitFor(() => {
+      expect(screen.getByText('Applied')).toBeInTheDocument()
+    })
+    expect(screen.queryByRole('button', { name: /confirm/i })).toBeNull()
   })
 })
