@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.3.21] - 2026-04-07
+
+### Added
+- Secure native browser upload flow for agent-driven file and image uploads
+
+### Changed
+- Improved issue template quality checks by adding language self-check guidance to bug report and feature request templates
+
+### Fixed
+- Stabilized onboarding and issues page layout consistency
+
 ## [0.3.20] - 2026-04-06
 
 ### Added
