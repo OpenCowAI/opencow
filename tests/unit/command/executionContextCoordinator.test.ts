@@ -84,13 +84,13 @@ describe('ExecutionContextCoordinator', () => {
     // Older signal
     coordinator.notify({
       cwd: '/older',
-      source: 'codex.turn_context',
+      source: 'runtime',
       occurredAtMs: 100,
     })
     // Newer signal
     coordinator.notify({
       cwd: '/newer',
-      source: 'codex.turn_context',
+      source: 'runtime',
       occurredAtMs: 200,
     })
 
@@ -137,12 +137,12 @@ describe('ExecutionContextCoordinator', () => {
 
     coordinator.notify({
       cwd: '/first',
-      source: 'codex.turn_context',
+      source: 'runtime',
       occurredAtMs: 100,
     })
     coordinator.notify({
       cwd: '/second',
-      source: 'codex.turn_context',
+      source: 'runtime',
       occurredAtMs: 100,
     })
 
@@ -153,6 +153,56 @@ describe('ExecutionContextCoordinator', () => {
     await Promise.resolve()
 
     expect(current.cwd).toBe('/second')
+    expect(updateExecutionContext).toHaveBeenCalledTimes(1)
+  })
+
+  it('prefers higher-priority runtime signal over startup when occurredAtMs is equal', async () => {
+    let current = makeCtx('/startup', 1)
+    const updateExecutionContext = vi.fn((ctx: SessionExecutionContext) => {
+      if (current.cwd === ctx.cwd) return false
+      current = ctx
+      return true
+    })
+    const dispatch = vi.fn((_event: DataBusEvent) => {})
+    const persist = vi.fn(async () => {})
+
+    const resolvers = new Map<string, (ctx: SessionExecutionContext) => void>()
+    const resolveExecutionContext = vi.fn((cwd: string) => {
+      return new Promise<SessionExecutionContext>((resolve) => {
+        resolvers.set(cwd, resolve)
+      })
+    })
+
+    const coordinator = new ExecutionContextCoordinator({
+      sessionId: 's1',
+      session: {
+        updateExecutionContext,
+        snapshot: () => makeSnapshot(current.cwd),
+      },
+      projectPath: null,
+      gitExecutor: null,
+      dispatch,
+      persistSession: persist,
+      resolveExecutionContext,
+    })
+
+    coordinator.notify({
+      cwd: '/startup-cwd',
+      source: 'startup',
+      occurredAtMs: 100,
+    })
+    coordinator.notify({
+      cwd: '/runtime-cwd',
+      source: 'runtime',
+      occurredAtMs: 100,
+    })
+
+    resolvers.get('/runtime-cwd')?.(makeCtx('/runtime-cwd', 100))
+    await Promise.resolve()
+    resolvers.get('/startup-cwd')?.(makeCtx('/startup-cwd', 100))
+    await Promise.resolve()
+
+    expect(current.cwd).toBe('/runtime-cwd')
     expect(updateExecutionContext).toHaveBeenCalledTimes(1)
   })
 })

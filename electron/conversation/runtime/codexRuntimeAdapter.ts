@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import type {
+  CommandExecutionItem,
   ThreadEvent,
   ThreadItem,
   Usage,
 } from '@openai/codex-sdk'
+import { isAbsolute } from 'node:path'
 import { normalizeContentBlocks } from '../../command/contentBlocks'
 import { CodexTurnProjector, type CodexThreadItemStage } from './codex/codexTurnProjector'
 import { classifyCodexErrorMessage } from './codex/codexEventFilters'
@@ -15,6 +17,49 @@ import { toConversationContentBlocks } from './contentBlockMapper'
 interface CodexRuntimeAdaptResult {
   readonly events: EngineRuntimeEvent[]
   readonly hasTerminalResult: boolean
+}
+
+const QUOTED_SHELL_WRAPPER_PATTERN = /^[^'"`]*?\s-lc\s+(['"`])([\s\S]*)\1\s*$/
+const UNQUOTED_SHELL_WRAPPER_PATTERN = /^[^'"`]*?\s-lc\s+([\s\S]+)$/
+const PWD_TOKEN_PATTERN = /(^|&&\s*|;\s*|\|\|\s*)pwd(?=$|\s|;|&&|\|\|)/i
+
+function extractShellScript(command: string): string {
+  const trimmed = command.trim()
+  const quotedWrapped = trimmed.match(QUOTED_SHELL_WRAPPER_PATTERN)
+  if (quotedWrapped) return quotedWrapped[2]?.trim() ?? trimmed
+
+  const unquotedWrapped = trimmed.match(UNQUOTED_SHELL_WRAPPER_PATTERN)
+  if (unquotedWrapped) return unquotedWrapped[1]?.trim() ?? trimmed
+
+  return trimmed
+}
+
+function firstAbsolutePathLine(text: string): string {
+  for (const line of text.split(/\r?\n/)) {
+    const trimmed = line.trim()
+    if (trimmed.length > 0 && isAbsolute(trimmed)) return trimmed
+  }
+  return ''
+}
+
+function extractExecutionContextSignalFromCommandExecution(
+  item: CommandExecutionItem,
+): { cwd: string; source: 'runtime.tool'; toolUseId: string; toolName: 'Bash' } | null {
+  if (item.status !== 'completed') return null
+  if (typeof item.exit_code === 'number' && item.exit_code !== 0) return null
+
+  const script = extractShellScript(item.command)
+  if (!PWD_TOKEN_PATTERN.test(script)) return null
+
+  const cwd = firstAbsolutePathLine(item.aggregated_output)
+  if (!cwd) return null
+
+  return {
+    cwd,
+    source: 'runtime.tool',
+    toolUseId: item.id,
+    toolName: 'Bash',
+  }
 }
 
 function toModelUsage(usage: Usage): Record<string, RuntimeModelUsage> {
@@ -195,6 +240,16 @@ export class CodexRuntimeEventAdapter {
           blocks: this.toConversationBlocks(projection.blocks),
         },
       })
+    }
+
+    if (item.type === 'command_execution') {
+      const signal = extractExecutionContextSignalFromCommandExecution(item)
+      if (signal) {
+        events.push({
+          kind: 'execution_context.signal',
+          payload: signal,
+        })
+      }
     }
 
     if (stage === 'completed' && item.type === 'error') {

@@ -174,8 +174,9 @@ export function applyConversationDomainEffects(params: {
         if (effect.payload.model) {
           ctx.session.setModel(effect.payload.model)
         }
-        ctx.session.transition({ type: 'engine_initialized' })
-        ctx.onStreamStarted()
+        if (ctx.notifyStreamStartedOnce()) {
+          ctx.session.transition({ type: 'engine_initialized' })
+        }
         ctx.dispatchSessionUpdated()
         break
       }
@@ -309,6 +310,15 @@ export function applyConversationDomainEffects(params: {
         if (changed) {
           ctx.throttle.scheduleSession()   // throttled: coalesce O(n) getInfo()
         }
+        break
+      }
+
+      case 'apply_execution_context_signal': {
+        ctx.onExecutionContextSignal({
+          cwd: effect.payload.cwd,
+          source: 'runtime',
+          occurredAtMs: effect.payload.occurredAtMs,
+        })
         break
       }
 

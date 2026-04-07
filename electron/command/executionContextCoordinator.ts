@@ -15,12 +15,26 @@ interface ExecutionContextSession {
 
 interface SignalOrderKey {
   occurredAtMs: number
+  sourceRank: number
   seq: number
 }
 
 function compareSignalOrder(a: SignalOrderKey, b: SignalOrderKey): number {
   if (a.occurredAtMs !== b.occurredAtMs) return a.occurredAtMs - b.occurredAtMs
+  if (a.sourceRank !== b.sourceRank) return a.sourceRank - b.sourceRank
   return a.seq - b.seq
+}
+
+function getSignalSourceRank(source: SessionExecutionContextSignal['source']): number {
+  switch (source) {
+    case 'runtime':
+      return 3
+    case 'hook':
+    case 'external':
+      return 2
+    case 'startup':
+      return 1
+  }
 }
 
 function normalizeOccurredAtMs(value: number | undefined): number {
@@ -66,6 +80,7 @@ export class ExecutionContextCoordinator {
 
     const key: SignalOrderKey = {
       occurredAtMs: normalizeOccurredAtMs(signal.occurredAtMs),
+      sourceRank: getSignalSourceRank(signal.source),
       seq: this.nextSignalSeq++,
     }
     if (this.latestSignalKey && compareSignalOrder(key, this.latestSignalKey) < 0) {

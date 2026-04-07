@@ -245,4 +245,72 @@ describe('CodexRuntimeEventAdapter', () => {
       expect(turnResult.payload.modelUsage?.codex.outputTokens).toBe(20)
     }
   })
+
+  it('emits execution_context.signal when a completed bash command reports cwd via pwd', () => {
+    const adapter = new CodexRuntimeEventAdapter()
+
+    const result = adapter.adapt({
+      type: 'item.completed',
+      item: {
+        id: 'cmd-cwd-1',
+        type: 'command_execution',
+        command: "/bin/zsh -lc 'cd .worktrees/feat-issue-schedule-session-reuse && pwd'",
+        aggregated_output: '/Users/hikoqiu/workspace/ai-agent-workspace/OpenCow/.worktrees/feat-issue-schedule-session-reuse\n',
+        exit_code: 0,
+        status: 'completed',
+      },
+    } as never)
+
+    const signal = result.events.find((event) => event.kind === 'execution_context.signal')
+    expect(signal?.kind).toBe('execution_context.signal')
+    if (signal?.kind === 'execution_context.signal') {
+      expect(signal.payload.cwd).toBe('/Users/hikoqiu/workspace/ai-agent-workspace/OpenCow/.worktrees/feat-issue-schedule-session-reuse')
+      expect(signal.payload.source).toBe('runtime.tool')
+      expect(signal.payload.toolUseId).toBe('cmd-cwd-1')
+      expect(signal.payload.toolName).toBe('Bash')
+    }
+  })
+
+  it('emits execution_context.signal for unquoted shell wrapper commands (e.g. /bin/zsh -lc pwd)', () => {
+    const adapter = new CodexRuntimeEventAdapter()
+
+    const result = adapter.adapt({
+      type: 'item.completed',
+      item: {
+        id: 'cmd-cwd-unquoted-1',
+        type: 'command_execution',
+        command: '/bin/zsh -lc pwd',
+        aggregated_output: '/Users/hikoqiu/workspace/ai-agent-workspace/OpenCow/.worktrees/feat-issue-schedule-session-reuse\n',
+        exit_code: 0,
+        status: 'completed',
+      },
+    } as never)
+
+    const signal = result.events.find((event) => event.kind === 'execution_context.signal')
+    expect(signal?.kind).toBe('execution_context.signal')
+    if (signal?.kind === 'execution_context.signal') {
+      expect(signal.payload.cwd).toBe('/Users/hikoqiu/workspace/ai-agent-workspace/OpenCow/.worktrees/feat-issue-schedule-session-reuse')
+      expect(signal.payload.source).toBe('runtime.tool')
+      expect(signal.payload.toolUseId).toBe('cmd-cwd-unquoted-1')
+      expect(signal.payload.toolName).toBe('Bash')
+    }
+  })
+
+  it('does not emit execution_context.signal for commands without pwd token', () => {
+    const adapter = new CodexRuntimeEventAdapter()
+
+    const result = adapter.adapt({
+      type: 'item.completed',
+      item: {
+        id: 'cmd-no-pwd-1',
+        type: 'command_execution',
+        command: "/bin/zsh -lc 'cd .worktrees/feat-issue-schedule-session-reuse && ls -la'",
+        aggregated_output: '/Users/hikoqiu/workspace/ai-agent-workspace/OpenCow/.worktrees/feat-issue-schedule-session-reuse\n',
+        exit_code: 0,
+        status: 'completed',
+      },
+    } as never)
+
+    expect(result.events.some((event) => event.kind === 'execution_context.signal')).toBe(false)
+  })
 })
