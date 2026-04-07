@@ -132,6 +132,10 @@ export interface NativeCapabilitySessionContext {
    * render them.
    */
   readonly originSource: string
+  /** Resolved workspace root for the session (when project-scoped). */
+  readonly projectPath?: string
+  /** Session startup cwd used by the runtime before any cwd changes. */
+  readonly startupCwd?: string
 }
 
 // ─── Tool Context ────────────────────────────────────────────────────────

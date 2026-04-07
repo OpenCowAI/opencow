@@ -23,6 +23,7 @@ export { CardShell } from './CardShell'
 export {
   BrowserNavigateCard,
   BrowserActionStatusCard,
+  BrowserUploadStatusCard,
   BrowserExtractCard,
   BrowserSnapshotCard,
   BrowserScreenshotResultCard,
@@ -38,6 +39,7 @@ export type { ProjectListData, ProjectSummary } from './ProjectListResultCard'
 export type {
   BrowserNavigateResult,
   BrowserActionResult,
+  BrowserUploadResult,
   BrowserExtractResult,
   BrowserSnapshotResult,
   BrowserScreenshotResult,
@@ -53,6 +55,7 @@ export { parseProjectListData } from './ProjectListResultCard'
 export {
   parseBrowserNavigate,
   parseBrowserAction,
+  parseBrowserUpload,
   parseBrowserExtract,
   parseBrowserSnapshot,
   parseBrowserScreenshot,

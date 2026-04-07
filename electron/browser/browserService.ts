@@ -1746,8 +1746,7 @@ export class BrowserService {
 
       return { status: 'success', data }
     } catch (err) {
-      // err is already a BrowserError from the executor
-      const error = err as BrowserError
+      const error = this.normalizeBrowserError(err, command)
 
       managed.decorator.deferStopBorderGlow()
       this.dispatch({
@@ -1782,6 +1781,100 @@ export class BrowserService {
   }
 
   // ── Private ───────────────────────────────────────────────────────
+
+  private normalizeBrowserError(err: unknown, command: BrowserCommand): BrowserError {
+    if (this.isBrowserError(err)) return err
+
+    const rawMessage = this.stringifyUnknownError(err)
+    log.warn('browser:command:error-normalized', {
+      action: command.action,
+      viewId: command.viewId,
+      error: rawMessage,
+    })
+
+    return {
+      code: 'CDP_ERROR',
+      method: command.action,
+      message: rawMessage,
+    }
+  }
+
+  private isBrowserError(err: unknown): err is BrowserError {
+    if (!this.isErrorRecord(err)) return false
+    if (typeof err.code !== 'string' || typeof err.message !== 'string') return false
+
+    switch (err.code) {
+      case 'SELECTOR_NOT_FOUND':
+      case 'ELEMENT_NOT_VISIBLE':
+      case 'ELEMENT_NOT_INTERACTABLE':
+        return typeof err.selector === 'string'
+      case 'NAVIGATION_FAILED':
+        return typeof err.url === 'string' && (err.httpStatus === undefined || typeof err.httpStatus === 'number')
+      case 'DOMAIN_BLOCKED':
+        return (
+          typeof err.domain === 'string' &&
+          Array.isArray(err.allowedDomains) &&
+          err.allowedDomains.every((domain) => typeof domain === 'string')
+        )
+      case 'TIMEOUT':
+        return typeof err.action === 'string' && typeof err.timeoutMs === 'number'
+      case 'ABORTED':
+        return typeof err.action === 'string'
+      case 'PAGE_CRASHED':
+      case 'PAGE_CLOSED':
+      case 'DEBUGGER_ALREADY_ATTACHED':
+      case 'SNAPSHOT_STALE':
+      case 'AX_TREE_FAILED':
+        return true
+      case 'CDP_ERROR':
+        return typeof err.method === 'string'
+      case 'DEBUGGER_DETACHED':
+        return typeof err.reason === 'string'
+      case 'SENSITIVE_ACTION_DENIED':
+        return typeof err.action === 'string'
+      case 'UPLOAD_TARGET_INVALID':
+        return typeof err.target === 'string'
+      case 'FILE_NOT_FOUND':
+        return typeof err.path === 'string'
+      case 'FILE_NOT_ALLOWED':
+        return typeof err.path === 'string' && typeof err.root === 'string'
+      case 'UPLOAD_TOO_MANY_FILES':
+        return typeof err.maxFiles === 'number' && typeof err.received === 'number'
+      case 'UPLOAD_FILE_TOO_LARGE':
+        return (
+          typeof err.path === 'string' &&
+          typeof err.sizeBytes === 'number' &&
+          typeof err.maxBytes === 'number'
+        )
+      case 'UPLOAD_TOTAL_TOO_LARGE':
+        return typeof err.totalBytes === 'number' && typeof err.maxBytes === 'number'
+      case 'REF_NOT_FOUND':
+        return typeof err.ref === 'string'
+      default:
+        return false
+    }
+  }
+
+  private isErrorRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null
+  }
+
+  private stringifyUnknownError(err: unknown): string {
+    if (err instanceof Error) return err.message
+    if (typeof err === 'string' && err.length > 0) return err
+    if (this.isErrorRecord(err)) {
+      if (typeof err.message === 'string' && err.message.length > 0) {
+        const codePrefix = typeof err.code === 'string' && err.code.length > 0 ? `[${err.code}] ` : ''
+        return `${codePrefix}${err.message}`
+      }
+      try {
+        return JSON.stringify(err)
+      } catch {
+        return String(err)
+      }
+    }
+    return String(err)
+  }
 
   private isDomainAllowed(hostname: string, allowedDomains: string[]): boolean {
     return allowedDomains.some((pattern) => {

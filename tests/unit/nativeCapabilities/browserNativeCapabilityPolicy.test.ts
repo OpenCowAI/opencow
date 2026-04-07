@@ -16,6 +16,8 @@ import { BrowserNativeCapability } from '../../../electron/nativeCapabilities/br
 function makeContext(params: {
   projectId: string | null
   issueId?: string | null
+  projectPath?: string | null
+  startupCwd?: string
 }): NativeCapabilityToolContext {
   return {
     session: {
@@ -23,6 +25,8 @@ function makeContext(params: {
       projectId: params.projectId,
       issueId: params.issueId ?? null,
       originSource: 'agent',
+      projectPath: params.projectPath,
+      startupCwd: params.startupCwd,
     },
     relay: {
       register: vi.fn(),
@@ -42,6 +46,7 @@ describe('BrowserNativeCapability default policy', () => {
   const busDispatch = vi.fn()
 
   beforeEach(() => {
+    vi.useRealTimers()
     vi.clearAllMocks()
     resolveStateBinding.mockResolvedValue({
       policy: 'shared-global',
@@ -196,5 +201,50 @@ describe('BrowserNativeCapability default policy', () => {
       issueId: undefined,
       projectId: 'project-1',
     })
+  })
+
+  it('injects session projectPath/startupCwd into browser_upload execution context', async () => {
+    const capability = new BrowserNativeCapability({
+      browserService: {
+        resolveStateBinding,
+        getOrCreateSessionView,
+        executeCommand,
+        getPageInfo,
+      } as never,
+      bus: { dispatch: busDispatch } as never,
+    })
+
+    const tools = capability.getToolDescriptors(
+      makeContext({
+        projectId: 'project-1',
+        projectPath: '/workspace/project-1',
+        startupCwd: '/workspace/project-1/packages/app',
+      }),
+    )
+    const uploadTool = tools.find((t) => t.name === 'browser_upload')
+    expect(uploadTool).toBeTruthy()
+    expect(uploadTool!.name).toBe('browser_upload')
+
+    await uploadTool!.execute({
+      args: {
+        target: { kind: 'css', selector: '#file' },
+        files: ['fixtures/avatar.png'],
+      },
+      context: {},
+    })
+
+    expect(resolveStateBinding).toHaveBeenCalledTimes(1)
+    expect(getOrCreateSessionView).toHaveBeenCalledTimes(1)
+    expect(executeCommand).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'upload',
+        target: { kind: 'css', selector: '#file' },
+        files: ['fixtures/avatar.png'],
+      }),
+      expect.objectContaining({
+        projectPath: '/workspace/project-1',
+        startupCwd: '/workspace/project-1/packages/app',
+      }),
+    )
   })
 })

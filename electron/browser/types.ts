@@ -37,6 +37,10 @@ interface BrowserCommandBase {
   viewId: string
 }
 
+export type BrowserUploadTarget =
+  | { kind: 'css'; selector: string }
+  | { kind: 'ref'; ref: string }
+
 export type BrowserCommand =
   | (BrowserCommandBase & { action: 'navigate'; url: string })
   | (BrowserCommandBase & { action: 'go-back' })
@@ -44,6 +48,7 @@ export type BrowserCommand =
   | (BrowserCommandBase & { action: 'reload' })
   | (BrowserCommandBase & { action: 'click'; selector: string })
   | (BrowserCommandBase & { action: 'type'; selector: string; text: string })
+  | (BrowserCommandBase & { action: 'upload'; target: BrowserUploadTarget; files: string[]; strict?: boolean })
   | (BrowserCommandBase & { action: 'select'; selector: string; value: string })
   | (BrowserCommandBase & { action: 'scroll'; direction: 'up' | 'down'; amount?: number })
   | (BrowserCommandBase & { action: 'wait-for-selector'; selector: string; timeout?: number })
@@ -68,6 +73,10 @@ export interface BrowserExecutionContext {
   signal?: AbortSignal
   /** Absolute deadline (epoch ms) for bounded execution. */
   deadlineAt?: number
+  /** Project root used as the upload path allowlist boundary. */
+  projectPath?: string | null
+  /** Session startup cwd for resolving relative upload paths. */
+  startupCwd?: string
 }
 
 // ─── Error Taxonomy (Discriminated Union) ───────────────────────────────
@@ -93,6 +102,12 @@ export type BrowserError =
   | { code: 'DEBUGGER_ALREADY_ATTACHED'; message: string }
   // Security
   | { code: 'SENSITIVE_ACTION_DENIED'; action: string; message: string }
+  | { code: 'UPLOAD_TARGET_INVALID'; target: string; message: string }
+  | { code: 'FILE_NOT_FOUND'; path: string; message: string }
+  | { code: 'FILE_NOT_ALLOWED'; path: string; root: string; message: string }
+  | { code: 'UPLOAD_TOO_MANY_FILES'; maxFiles: number; received: number; message: string }
+  | { code: 'UPLOAD_FILE_TOO_LARGE'; path: string; sizeBytes: number; maxBytes: number; message: string }
+  | { code: 'UPLOAD_TOTAL_TOO_LARGE'; totalBytes: number; maxBytes: number; message: string }
   // Snapshot-Ref errors
   | { code: 'REF_NOT_FOUND'; ref: string; message: string }
   | { code: 'SNAPSHOT_STALE'; message: string }

@@ -49,6 +49,41 @@ export function parseBrowserAction(raw: string): BrowserActionResult {
   return { status: 'ok' }
 }
 
+// ─── Upload ────────────────────────────────────────────────────────────────
+
+export interface BrowserUploadResult {
+  uploaded: number
+  target: string
+  files: string[]
+  mode: string
+}
+
+export function parseBrowserUpload(raw: string): BrowserUploadResult {
+  const data = JSON.parse(raw)
+  if (!data || typeof data !== 'object') throw new Error('Invalid upload result')
+
+  const uploaded = (data as { uploaded?: unknown }).uploaded
+  const target = (data as { target?: unknown }).target
+  const files = (data as { files?: unknown }).files
+  const mode = (data as { mode?: unknown }).mode
+
+  if (
+    typeof uploaded !== 'number' ||
+    typeof target !== 'string' ||
+    !Array.isArray(files) ||
+    !files.every((f) => typeof f === 'string')
+  ) {
+    throw new Error('Invalid upload result')
+  }
+
+  return {
+    uploaded,
+    target,
+    files,
+    mode: typeof mode === 'string' ? mode : 'setFileInputFiles',
+  }
+}
+
 // ─── Extract ────────────────────────────────────────────────────────────────
 
 export interface BrowserExtractResult {

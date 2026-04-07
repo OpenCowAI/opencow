@@ -3,10 +3,10 @@
 /**
  * BrowserNativeCapability — the first built-in OpenCow native capability.
  *
- * Exposes 10 MCP tools that allow Claude to control the embedded browser:
+ * Exposes 11 MCP tools that allow Claude to control the embedded browser:
  *   browser_navigate, browser_click, browser_type, browser_extract,
  *   browser_screenshot, browser_scroll, browser_wait,
- *   browser_snapshot, browser_ref_click, browser_ref_type
+ *   browser_snapshot, browser_ref_click, browser_ref_type, browser_upload
  *
  * Tool handlers run in-process (Electron main), directly calling BrowserService.
  * No extra process, no network round-trips.
@@ -33,6 +33,7 @@ import type { DataBus } from '../../core/dataBus'
 import type { BrowserService } from '../../browser/browserService'
 import type { BrowserCommand, BrowserCommandResult } from '../../browser/types'
 import type { SnapshotResult } from '../../browser/snapshot'
+import { buildBrowserExecutionContext } from '../../browser/upload'
 import { createLogger } from '../../platform/logger'
 import { getMainWindow } from '../../window/windowManager'
 import type { BrowserStatePolicy, ProjectBrowserStatePolicy } from '@shared/types'
@@ -77,7 +78,7 @@ const CHROME_DEVTOOLS_MCP_NAME = 'chrome-devtools'
  *   browser_screenshot→ take_screenshot (+ file persistence)
  *   browser_wait      → wait_for (+ URL/text conditions)
  *
- * browser_scroll, browser_ref_click, browser_ref_type are NOT in this set —
+ * browser_scroll, browser_ref_click, browser_ref_type, browser_upload are NOT in this set —
  * Chrome DevTools MCP has no scroll tool and no ref-based interaction tools.
  */
 const CHROME_DEVTOOLS_OVERLAPPING_TOOLS = new Set([
@@ -116,7 +117,11 @@ interface BrowserToolConfig {
    * Receives validated args and a guaranteed-active viewId.
    * Returns CallToolResult directly for maximum flexibility.
    */
-  execute: (args: Record<string, unknown>, viewId: string, input: NativeToolCallInput) => Promise<CallToolResult>
+  execute: (
+    args: Record<string, unknown>,
+    viewId: string,
+    executionContext: import('../../browser/types').BrowserExecutionContext,
+  ) => Promise<CallToolResult>
   /**
    * Whether to make the browser window visible before executing this tool.
    *
@@ -212,7 +217,8 @@ export class BrowserNativeCapability extends BaseNativeCapability {
       execute: async (args, input) => {
         return this.withToolTimeout(config.name, input, async () => {
           const viewId = await this.ensureSessionView(session, config.showWindow ?? true)
-          return config.execute(args, viewId, input)
+          const executionContext = this.buildExecutionContext(session, input)
+          return config.execute(args, viewId, executionContext)
         })
       },
     })
@@ -231,12 +237,12 @@ export class BrowserNativeCapability extends BaseNativeCapability {
         schema: {
           url: z.url('Must be a valid URL (e.g. https://example.com)'),
         },
-        execute: async (args, viewId, input) => {
+        execute: async (args, viewId, executionContext) => {
           const result = await this.browserService.executeCommand({
             viewId,
             action: 'navigate',
             url: args.url as string,
-          }, input.context)
+          }, executionContext)
 
           if (result.status === 'success') {
             const info = this.browserService.getPageInfo(viewId)
@@ -269,12 +275,12 @@ export class BrowserNativeCapability extends BaseNativeCapability {
               'CSS selector of the element to click (e.g. "button.submit", "#login-btn", "a[href=\'/about\']")',
             ),
         },
-        execute: async (args, viewId, input) => {
+        execute: async (args, viewId, executionContext) => {
           const result = await this.browserService.executeCommand({
             viewId,
             action: 'click',
             selector: args.selector as string,
-          }, input.context)
+          }, executionContext)
           return this.toCallToolResult(result)
         },
       },
@@ -292,13 +298,60 @@ export class BrowserNativeCapability extends BaseNativeCapability {
             ),
           text: z.string().describe('The text to type into the element'),
         },
-        execute: async (args, viewId, input) => {
+        execute: async (args, viewId, executionContext) => {
           const result = await this.browserService.executeCommand({
             viewId,
             action: 'type',
             selector: args.selector as string,
             text: args.text as string,
-          }, input.context)
+          }, executionContext)
+          return this.toCallToolResult(result)
+        },
+      },
+
+      // ── browser_upload ─────────────────────────────────────────
+      {
+        name: 'browser_upload',
+        description:
+          'Upload local files to a file input element. Supports explicit css/ref targets. ' +
+          'This tool uses DOM.setFileInputFiles and requires files within the current project path.',
+        schema: {
+          target: z
+            .object({
+              kind: z.enum(['css', 'ref']).describe('Target kind: css selector or snapshot ref'),
+              selector: z.string().optional().describe('CSS selector when kind is css'),
+              ref: z.string().optional().describe('Snapshot ref when kind is ref (e.g. "e3" or "@e3")'),
+            })
+            .refine(
+              (v) => (v.kind === 'css' ? typeof v.selector === 'string' && v.selector.length > 0 : true),
+              { message: 'target.selector is required when target.kind is "css"' },
+            )
+            .refine(
+              (v) => (v.kind === 'ref' ? typeof v.ref === 'string' && v.ref.length > 0 : true),
+              { message: 'target.ref is required when target.kind is "ref"' },
+            )
+            .describe('Structured upload target'),
+          files: z
+            .array(z.string())
+            .min(1)
+            .describe('Absolute or project-relative local file paths to upload'),
+          strict: z
+            .boolean()
+            .optional()
+            .describe('When true (default), target must be input[type=file]'),
+        },
+        execute: async (args, viewId, executionContext) => {
+          const rawTarget = args.target as { kind: 'css' | 'ref'; selector?: string; ref?: string }
+          const target = rawTarget.kind === 'css'
+            ? { kind: 'css' as const, selector: rawTarget.selector as string }
+            : { kind: 'ref' as const, ref: rawTarget.ref as string }
+          const result = await this.browserService.executeCommand({
+            viewId,
+            action: 'upload',
+            target,
+            files: args.files as string[],
+            strict: args.strict as boolean | undefined,
+          }, executionContext)
           return this.toCallToolResult(result)
         },
       },
@@ -314,11 +367,11 @@ export class BrowserNativeCapability extends BaseNativeCapability {
             .optional()
             .describe('Optional CSS selector. If omitted, extracts full page content.'),
         },
-        execute: async (args, viewId, input) => {
+        execute: async (args, viewId, executionContext) => {
           const command: BrowserCommand = args.selector
             ? { viewId, action: 'extract-text', selector: args.selector as string }
             : { viewId, action: 'extract-page' }
-          const result = await this.browserService.executeCommand(command, input.context)
+          const result = await this.browserService.executeCommand(command, executionContext)
           return this.toCallToolResult(result)
         },
       },
@@ -336,11 +389,11 @@ export class BrowserNativeCapability extends BaseNativeCapability {
         // Skipping ensureVisible() avoids any window state changes during
         // what is purely a silent data-capture operation.
         showWindow: false,
-        execute: async (_args, viewId, input) => {
+        execute: async (_args, viewId, executionContext) => {
           const result = await this.browserService.executeCommand({
             viewId,
             action: 'screenshot',
-          }, input.context)
+          }, executionContext)
 
           if (result.status === 'success' && typeof result.data === 'string') {
             return {
@@ -367,13 +420,13 @@ export class BrowserNativeCapability extends BaseNativeCapability {
               'Only provide when you need a specific partial scroll (e.g. 300 for half a screen).',
             ),
         },
-        execute: async (args, viewId, input) => {
+        execute: async (args, viewId, executionContext) => {
           const result = await this.browserService.executeCommand({
             viewId,
             action: 'scroll',
             direction: args.direction as 'up' | 'down',
             amount: args.amount as number | undefined,
-          }, input.context)
+          }, executionContext)
           return this.toCallToolResult(result)
         },
       },
@@ -390,13 +443,13 @@ export class BrowserNativeCapability extends BaseNativeCapability {
             .optional()
             .describe('Maximum wait time in milliseconds (default: 10000)'),
         },
-        execute: async (args, viewId, input) => {
+        execute: async (args, viewId, executionContext) => {
           const result = await this.browserService.executeCommand({
             viewId,
             action: 'wait-for-selector',
             selector: args.selector as string,
             timeout: args.timeout as number | undefined,
-          }, input.context)
+          }, executionContext)
           return this.toCallToolResult(result)
         },
       },
@@ -426,7 +479,7 @@ export class BrowserNativeCapability extends BaseNativeCapability {
             .describe('Compact mode — only ref lines + ancestors (default: false)'),
         },
         showWindow: false,
-        execute: async (args, viewId, input) => {
+        execute: async (args, viewId, executionContext) => {
           const result = await this.browserService.executeCommand(
             {
               viewId,
@@ -438,7 +491,7 @@ export class BrowserNativeCapability extends BaseNativeCapability {
                 detectCursorInteractive: true,
               },
             },
-            input.context,
+            executionContext,
           )
 
           if (result.status === 'success') {
@@ -465,14 +518,14 @@ export class BrowserNativeCapability extends BaseNativeCapability {
             .string()
             .describe('Element reference from browser_snapshot (e.g. "e1", "e5")'),
         },
-        execute: async (args, viewId, input) => {
+        execute: async (args, viewId, executionContext) => {
           const result = await this.browserService.executeCommand(
             {
               viewId,
               action: 'ref-click',
               ref: args.ref as string,
             },
-            input.context,
+            executionContext,
           )
 
           if (result.status === 'success' && result.data) {
@@ -502,7 +555,7 @@ export class BrowserNativeCapability extends BaseNativeCapability {
             .string()
             .describe('The text to type'),
         },
-        execute: async (args, viewId, input) => {
+        execute: async (args, viewId, executionContext) => {
           const result = await this.browserService.executeCommand(
             {
               viewId,
@@ -510,7 +563,7 @@ export class BrowserNativeCapability extends BaseNativeCapability {
               ref: args.ref as string,
               text: args.text as string,
             },
-            input.context,
+            executionContext,
           )
 
           if (result.status === 'success' && result.data) {
@@ -657,6 +710,16 @@ export class BrowserNativeCapability extends BaseNativeCapability {
   private resolveTimeoutMs(deadlineAt?: number): number {
     if (deadlineAt === undefined) return TOOL_TIMEOUT_MS
     return Math.max(0, Math.min(TOOL_TIMEOUT_MS, deadlineAt - Date.now()))
+  }
+
+  private buildExecutionContext(
+    session: import('../types').NativeCapabilitySessionContext,
+    input: NativeToolCallInput,
+  ): import('../../browser/types').BrowserExecutionContext {
+    return buildBrowserExecutionContext(input.context, {
+      projectPath: session.projectPath,
+      startupCwd: session.startupCwd,
+    })
   }
 
   // ── Result Helpers ────────────────────────────────────────────────

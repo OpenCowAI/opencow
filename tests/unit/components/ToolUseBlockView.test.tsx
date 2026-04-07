@@ -6,8 +6,10 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import '@testing-library/jest-dom/vitest'
+import path from 'node:path'
 import { ToolUseBlockView } from '../../../src/renderer/components/DetailPanel/SessionPanel/ToolUseBlockView'
 import { ContentViewerProvider } from '../../../src/renderer/components/DetailPanel/SessionPanel/ContentViewerContext'
+import { NativeCapabilityTools } from '../../../src/shared/nativeCapabilityToolNames'
 import type { ToolUseBlock } from '../../../src/shared/types'
 
 // Mock window.opencow — ToolUseBlockView uses getAppAPI() for file viewer and download
@@ -311,6 +313,43 @@ describe('ToolUseBlockView', () => {
       expect(screen.getByText('bar')).toBeInTheDocument()
       expect(screen.getByText('count')).toBeInTheDocument()
       expect(screen.getByText('42')).toBeInTheDocument()
+    })
+
+    it('redacts file paths in browser upload details', async () => {
+      const user = userEvent.setup()
+      const unixAbsPath = path.resolve('workspace', 'secret', 'bank-statement.pdf')
+      const unixAbsPathDisplay = path.basename(unixAbsPath)
+      const windowsAbsPath = ['X:', 'Users', 'alice', 'Desktop', 'resume.pdf'].join('/')
+      render(
+        <ToolUseBlockView
+          block={makeBlock({
+            name: NativeCapabilityTools.BROWSER_UPLOAD,
+            input: {
+              target: { kind: 'css', selector: 'input[type=file]' },
+              files: [
+                unixAbsPath,
+                'src/assets/logo.png',
+                '../private/token.txt',
+                windowsAbsPath,
+              ],
+              strict: true,
+            },
+          })}
+        />
+      )
+
+      await user.click(screen.getByRole('button', { name: /tool details/i }))
+
+      const filesBlock = screen.getByText((content, node) => {
+        return node?.tagName === 'PRE' && content.includes(unixAbsPathDisplay)
+      })
+      expect(filesBlock).toHaveTextContent(unixAbsPathDisplay)
+      expect(filesBlock).toHaveTextContent('.../assets/logo.png')
+      expect(filesBlock).toHaveTextContent('private/token.txt')
+      expect(filesBlock).toHaveTextContent('resume.pdf')
+
+      expect(screen.queryByText(unixAbsPath)).not.toBeInTheDocument()
+      expect(screen.queryByText(windowsAbsPath)).not.toBeInTheDocument()
     })
   })
 

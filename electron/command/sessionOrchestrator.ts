@@ -791,6 +791,8 @@ export class SessionOrchestrator {
             projectId: config.projectId ?? null,
             issueId: getOriginIssueId(config.origin),
             originSource: config.origin.source,
+            projectPath: config.projectPath,
+            startupCwd: config.startupCwd,
           },
           relay,
           activeMcpServerNames,
@@ -822,6 +824,8 @@ export class SessionOrchestrator {
             projectId: config.projectId ?? null,
             issueId: getOriginIssueId(config.origin),
             originSource: config.origin.source,
+            projectPath: config.projectPath,
+            startupCwd: config.startupCwd,
           },
           relay,
           nativeToolAllowlist: sessionPolicy.tools.native.mode === 'allowlist'

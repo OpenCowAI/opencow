@@ -18,13 +18,15 @@
  */
 
 import { useState } from 'react'
-import { Check, FileText, ScanSearch } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
+import { Check, FileText, ScanSearch, Upload } from 'lucide-react'
 import { CardShell } from './CardShell'
 import { BrowserScreenshotCard } from '../PreviewCards/BrowserScreenshotCard'
 import type {
   BrowserNavigateResult,
   BrowserActionResult,
   BrowserExtractResult,
+  BrowserUploadResult,
   BrowserSnapshotResult,
   BrowserScreenshotResult,
 } from './parseBrowserResult'
@@ -112,6 +114,34 @@ export function BrowserActionStatusCard({ data: _data }: BrowserActionStatusCard
       <span className="text-xs text-[hsl(var(--muted-foreground))]">
         Done
       </span>
+    </div>
+  )
+}
+
+// ─── Upload ───────────────────────────────────────────────────────────────
+
+interface BrowserUploadStatusCardProps {
+  data: BrowserUploadResult
+}
+
+export function BrowserUploadStatusCard({ data }: BrowserUploadStatusCardProps): React.JSX.Element {
+  const { t } = useTranslation('sessions')
+
+  return (
+    <div className="ml-4 mt-0.5 flex items-start gap-1.5">
+      <Upload
+        className="w-3.5 h-3.5 shrink-0 mt-0.5 text-emerald-500"
+        strokeWidth={2.2}
+        aria-hidden="true"
+      />
+      <div className="min-w-0">
+        <span className="text-xs font-medium text-[hsl(var(--foreground))]">
+          {t('sessionPanel.browserUploadStatus', { count: data.uploaded })}
+        </span>
+        <p className="text-[11px] text-[hsl(var(--muted-foreground))] truncate leading-tight mt-px">
+          {data.target}
+        </p>
+      </div>
     </div>
   )
 }

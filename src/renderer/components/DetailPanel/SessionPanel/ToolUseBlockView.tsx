@@ -30,6 +30,35 @@ interface DisplayField {
 
 // ─── Pure helpers ────────────────────────────────────────────────────────────
 
+function isAbsolutePath(path: string): boolean {
+  return path.startsWith('/') || path.startsWith('//') || /^[a-zA-Z]:\//.test(path)
+}
+
+function basename(path: string): string {
+  const normalized = path.replace(/\\/g, '/')
+  const parts = normalized.split('/').filter(Boolean)
+  return parts[parts.length - 1] ?? normalized
+}
+
+/**
+ * Upload paths can contain sensitive absolute directories (home/workspace).
+ * Render only a safe hint: basename for absolute paths, short relative tail for relative paths.
+ */
+function redactUploadPathForDisplay(rawPath: string): string {
+  const normalized = rawPath.replace(/\\/g, '/').trim()
+  if (normalized.length === 0) return ''
+
+  if (isAbsolutePath(normalized)) {
+    return basename(normalized)
+  }
+
+  const segments = normalized.split('/').filter((segment) => segment.length > 0 && segment !== '.')
+  const safeSegments = segments.filter((segment) => segment !== '..')
+  if (safeSegments.length === 0) return basename(normalized)
+  if (safeSegments.length <= 2) return safeSegments.join('/')
+  return `.../${safeSegments.slice(-2).join('/')}`
+}
+
 /**
  * Safely format any unknown value to a human-readable string.
  */
@@ -239,6 +268,25 @@ function getToolDisplayFields(name: string, input: Record<string, unknown>): Dis
           format: 'code' as const
         },
         input.text != null && { label: 'text', value: String(input.text), format: 'text' as const }
+      ].filter(Boolean) as DisplayField[]
+
+    case NativeCapabilityTools.BROWSER_UPLOAD:
+      return [
+        (input.target != null && typeof input.target === 'object') && {
+          label: 'target',
+          value: JSON.stringify(input.target, null, 2),
+          format: 'code' as const,
+        },
+        Array.isArray(input.files) && {
+          label: 'files',
+          value: (input.files as unknown[]).map((f) => redactUploadPathForDisplay(String(f))).join('\n'),
+          format: 'code' as const,
+        },
+        input.strict != null && {
+          label: 'strict',
+          value: String(input.strict),
+          format: 'text' as const,
+        },
       ].filter(Boolean) as DisplayField[]
 
     case NativeCapabilityTools.BROWSER_EXTRACT:

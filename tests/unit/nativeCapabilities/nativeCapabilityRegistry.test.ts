@@ -10,7 +10,13 @@ import type {
 
 function makeContext(): NativeCapabilityToolContext {
   return {
-    session: { sessionId: 'session-registry-1', projectId: null, issueId: null, originSource: 'agent' },
+    session: {
+      sessionId: 'session-registry-1',
+      projectId: null,
+      issueId: null,
+      originSource: 'agent',
+      startupCwd: process.cwd(),
+    },
     relay: {
       register: vi.fn(),
       unregister: vi.fn(),
