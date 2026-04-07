@@ -11,8 +11,8 @@
  * Domain-specific concerns only:
  *   - `ScheduleConfirmationCard` footer for create/edit/navigate
  *   - `ScheduleFormModal` for full-featured editing
- *   - Schedule creation via `createSchedule` store action
- *   - Mapping helpers (ParsedScheduleOutput → CreateScheduleInput / FormDefaults)
+ *   - Schedule creation via shared `useDraftApplyActions`
+ *   - Mapping helpers reused from `scheduleDraftMapper`
  *
  * @module
  */
@@ -27,15 +27,12 @@ import {
   type ScheduleCreatorSessionConfig
 } from '@/hooks/useScheduleCreatorSession'
 import { useCreatorModalBehavior } from '@/hooks/useCreatorModalBehavior'
+import { useDraftApplyActions } from '@/hooks/useDraftApplyActions'
 import { useAppStore, selectProjectId } from '@/stores/appStore'
-import { useScheduleStore } from '@/stores/scheduleStore'
+import { mapScheduleDraftToFormDefaults } from '@/lib/scheduleDraftMapper'
 import { toast } from '@/lib/toast'
-import type {
-  Schedule,
-  CreateScheduleInput
-} from '@shared/types'
+import type { Schedule } from '@shared/types'
 import type { ParsedScheduleOutput } from '@shared/scheduleOutputParser'
-import type { ScheduleFormDefaultValues } from '../ScheduleView/ScheduleFormModal/useScheduleForm'
 
 // ═══════════════════════════════════════════════════════════════════
 // Helpers
@@ -45,64 +42,6 @@ import type { ScheduleFormDefaultValues } from '../ScheduleView/ScheduleFormModa
 function scheduleOutputKey(p: ParsedScheduleOutput | null): string | null {
   if (!p) return null
   return `${p.name}\0${p.frequency}\0${p.prompt.slice(0, 100)}`
-}
-
-// ═══════════════════════════════════════════════════════════════════
-// Mapping helpers
-// ═══════════════════════════════════════════════════════════════════
-
-/** ParsedScheduleOutput → ScheduleFormDefaultValues (Edit flow) */
-function toFormDefaults(
-  parsed: ParsedScheduleOutput,
-  projectId?: string | null
-): ScheduleFormDefaultValues {
-  return {
-    name: parsed.name,
-    description: parsed.description,
-    projectId: projectId ?? null,
-    triggerMode: 'time',
-    timeTrigger: {
-      freqType: parsed.frequency,
-      timeOfDay: parsed.timeOfDay ?? '09:00',
-      intervalMinutes: parsed.intervalMinutes ?? 60,
-      daysOfWeek: parsed.daysOfWeek ?? [1, 2, 3, 4, 5],
-      cronExpression: parsed.cronExpression ?? '',
-      executeAt: parsed.executeAt ?? '',
-    },
-    action: {
-      type: 'start_session',
-      promptTemplate: parsed.prompt,
-    },
-  }
-}
-
-/** ParsedScheduleOutput → CreateScheduleInput (Direct create flow) */
-function toCreateScheduleInput(
-  parsed: ParsedScheduleOutput,
-  projectId?: string | null
-): CreateScheduleInput {
-  return {
-    name: parsed.name,
-    description: parsed.description || undefined,
-    trigger: {
-      time: {
-        type: parsed.frequency,
-        workMode: 'all_days',
-        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-        timeOfDay: parsed.timeOfDay,
-        intervalMinutes: parsed.intervalMinutes,
-        daysOfWeek: parsed.daysOfWeek,
-        cronExpression: parsed.cronExpression,
-        executeAt: parsed.executeAt ? new Date(parsed.executeAt).getTime() : undefined,
-      },
-    },
-    action: {
-      type: 'start_session',
-      session: { promptTemplate: parsed.prompt },
-      projectId: projectId ?? undefined,
-    },
-    priority: parsed.priority || 'normal',
-  }
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -128,7 +67,7 @@ export function ScheduleAICreatorModal({
   config = {}
 }: ScheduleAICreatorModalProps): React.JSX.Element | null {
   const { t } = useTranslation('schedule')
-  const createSchedule = useScheduleStore((s) => s.createSchedule)
+  const { applyScheduleDraft } = useDraftApplyActions()
   const projectId = useAppStore(selectProjectId)
   const projects = useAppStore((s) => s.projects)
   const openDetail = useAppStore((s) => s.openDetail)
@@ -189,14 +128,14 @@ export function ScheduleAICreatorModal({
 
   // ── Edit via ScheduleFormModal ─────────────────────────────────
   const [editingSchedule, setEditingSchedule] = useState<ParsedScheduleOutput | null>(null)
-  const [createdScheduleFromForm, setCreatedScheduleFromForm] = useState<Schedule | null>(null)
+  const [createdScheduleRefFromForm, setCreatedScheduleRefFromForm] = useState<{ id: string } | null>(null)
 
   const handleEditSchedule = useCallback((parsed: ParsedScheduleOutput) => {
     setEditingSchedule(parsed)
   }, [])
 
   const handleScheduleCreatedFromForm = useCallback((created: Schedule) => {
-    setCreatedScheduleFromForm(created)
+    setCreatedScheduleRefFromForm({ id: created.id })
     setEditingSchedule(null)
     modal.markConfirmed()
     toast(
@@ -217,21 +156,14 @@ export function ScheduleAICreatorModal({
   // ── Schedule creation handler (direct from card) ───────────────
   const handleConfirmSchedule = useCallback(
     async (parsed: ParsedScheduleOutput): Promise<Schedule> => {
-      const input = toCreateScheduleInput(parsed, sessionConfig.projectId)
-      const created = await createSchedule(input)
+      const created = await applyScheduleDraft({
+        parsed,
+        projectId: sessionConfig.projectId,
+      })
       modal.markConfirmed()
-      toast(
-        `${t('aiCreator.scheduleCreated')}: ${created.name}`,
-        {
-          action: {
-            label: t('aiCreator.card.view'),
-            onClick: () => openDetail({ type: 'schedule', scheduleId: created.id })
-          }
-        }
-      )
       return created
     },
-    [createSchedule, sessionConfig, t, openDetail, modal]
+    [applyScheduleDraft, sessionConfig.projectId, modal]
   )
 
   const handleNavigateToSchedule = useCallback(
@@ -250,10 +182,10 @@ export function ScheduleAICreatorModal({
         onConfirm={handleConfirmSchedule}
         onNavigate={handleNavigateToSchedule}
         onEdit={handleEditSchedule}
-        createdSchedule={createdScheduleFromForm}
+        createdScheduleRef={createdScheduleRefFromForm}
       />
     )
-  }, [creator.parsedSchedule, handleConfirmSchedule, handleNavigateToSchedule, handleEditSchedule, createdScheduleFromForm])
+  }, [creator.parsedSchedule, handleConfirmSchedule, handleNavigateToSchedule, handleEditSchedule, createdScheduleRefFromForm])
 
   // ── Render ─────────────────────────────────────────────────────
   return (
@@ -266,7 +198,7 @@ export function ScheduleAICreatorModal({
       extraPortals={
         editingSchedule ? (
           <ScheduleFormModal
-            defaultValues={toFormDefaults(editingSchedule, sessionConfig.projectId)}
+            defaultValues={mapScheduleDraftToFormDefaults(editingSchedule, sessionConfig.projectId)}
             onCreated={handleScheduleCreatedFromForm}
             onClose={handleEditFormClose}
             zIndex={101}

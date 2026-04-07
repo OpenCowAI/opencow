@@ -28,10 +28,12 @@ import { shouldSuppressResult } from './WidgetToolRegistry'
 import {
   IssueResultCard,
   IssueListResultCard,
+  LifecycleOperationResultCard,
   ProjectResultCard,
   ProjectListResultCard,
   parseIssueData,
   parseIssueListData,
+  parseLifecycleOperationData,
   parseProjectData,
   parseProjectListData,
   BrowserNavigateCard,
@@ -95,6 +97,9 @@ const RESULT_CARD_REGISTRY = new Map<string, ResultCardRenderer>([
   [NativeCapabilityTools.ISSUE_CREATE, createResultCardRenderer(parseIssueData, IssueResultCard)],
   [NativeCapabilityTools.ISSUE_UPDATE, createResultCardRenderer(parseIssueData, IssueResultCard)],
   [NativeCapabilityTools.ISSUE_LIST,   createResultCardRenderer(parseIssueListData, IssueListResultCard)],
+  [NativeCapabilityTools.ISSUE_PROPOSE_OPERATION, createResultCardRenderer(parseLifecycleOperationData, LifecycleOperationResultCard)],
+  [NativeCapabilityTools.ISSUE_CONFIRM_OPERATION, createResultCardRenderer(parseLifecycleOperationData, LifecycleOperationResultCard)],
+  [NativeCapabilityTools.ISSUE_REJECT_OPERATION, createResultCardRenderer(parseLifecycleOperationData, LifecycleOperationResultCard)],
 
   // ── Project tools ─────────────────────────────────────────────────────────
   [NativeCapabilityTools.PROJECT_GET,  createResultCardRenderer(parseProjectData, ProjectResultCard)],
@@ -112,6 +117,9 @@ const RESULT_CARD_REGISTRY = new Map<string, ResultCardRenderer>([
   [NativeCapabilityTools.BROWSER_SNAPSHOT,  createResultCardRenderer(parseBrowserSnapshot, BrowserSnapshotCard)],
   [NativeCapabilityTools.BROWSER_REF_CLICK, createResultCardRenderer(parseBrowserSnapshot, BrowserSnapshotCard)],
   [NativeCapabilityTools.BROWSER_REF_TYPE,  createResultCardRenderer(parseBrowserSnapshot, BrowserSnapshotCard)],
+  [NativeCapabilityTools.SCHEDULE_PROPOSE_OPERATION, createResultCardRenderer(parseLifecycleOperationData, LifecycleOperationResultCard)],
+  [NativeCapabilityTools.SCHEDULE_CONFIRM_OPERATION, createResultCardRenderer(parseLifecycleOperationData, LifecycleOperationResultCard)],
+  [NativeCapabilityTools.SCHEDULE_REJECT_OPERATION, createResultCardRenderer(parseLifecycleOperationData, LifecycleOperationResultCard)],
 ])
 
 // ─── Constants ──────────────────────────────────────────────────────────────

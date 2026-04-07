@@ -20,6 +20,14 @@ type MockCodexEvent =
     }
   | { type: 'turn.started' }
   | {
+      type: 'turn_context'
+      payload: Record<string, unknown>
+    }
+  | {
+      type: 'session_meta'
+      payload: Record<string, unknown>
+    }
+  | {
       type: 'event_msg'
       payload: Record<string, unknown>
     }
@@ -135,7 +143,10 @@ describe('CodexQueryLifecycle', () => {
     })
 
     const lifecycle = new CodexQueryLifecycle()
-    const stream = lifecycle.start('hi', { model: 'gpt-5-codex' })
+    const stream = lifecycle.start({
+      initialPrompt: 'hi',
+      launchOptions: { model: 'gpt-5-codex' },
+    })
     const iter = stream[Symbol.asyncIterator]()
 
     const emitted = await collectUntilResult(iter)
@@ -190,7 +201,10 @@ describe('CodexQueryLifecycle', () => {
     )
 
     const lifecycle = new CodexQueryLifecycle()
-    const stream = lifecycle.start('turn-1', {})
+    const stream = lifecycle.start({
+      initialPrompt: 'turn-1',
+      launchOptions: {},
+    })
     const iter = stream[Symbol.asyncIterator]()
 
     const firstTurn = await collectUntilResult(iter)
@@ -224,7 +238,10 @@ describe('CodexQueryLifecycle', () => {
     ]
 
     const lifecycle = new CodexQueryLifecycle()
-    const stream = lifecycle.start(messageWithImage, {})
+    const stream = lifecycle.start({
+      initialPrompt: messageWithImage,
+      launchOptions: {},
+    })
     const iter = stream[Symbol.asyncIterator]()
     const emitted = await collectUntilResult(iter)
 
@@ -286,7 +303,10 @@ describe('CodexQueryLifecycle', () => {
     ]
 
     const lifecycle = new CodexQueryLifecycle()
-    const stream = lifecycle.start(message, {})
+    const stream = lifecycle.start({
+      initialPrompt: message,
+      launchOptions: {},
+    })
     const iter = stream[Symbol.asyncIterator]()
     const emitted = await collectUntilResult(iter)
 
@@ -340,7 +360,10 @@ describe('CodexQueryLifecycle', () => {
     ]
 
     const lifecycle = new CodexQueryLifecycle()
-    const stream = lifecycle.start(message, {})
+    const stream = lifecycle.start({
+      initialPrompt: message,
+      launchOptions: {},
+    })
     const iter = stream[Symbol.asyncIterator]()
     const emitted = await collectUntilResult(iter)
 
@@ -378,7 +401,10 @@ describe('CodexQueryLifecycle', () => {
     })
 
     const lifecycle = new CodexQueryLifecycle()
-    const stream = lifecycle.start('fail', {})
+    const stream = lifecycle.start({
+      initialPrompt: 'fail',
+      launchOptions: {},
+    })
     const iter = stream[Symbol.asyncIterator]()
     const emitted = await collectUntilResult(iter)
 
@@ -407,7 +433,10 @@ describe('CodexQueryLifecycle', () => {
     })
 
     const lifecycle = new CodexQueryLifecycle()
-    const stream = lifecycle.start('warn-turn', {})
+    const stream = lifecycle.start({
+      initialPrompt: 'warn-turn',
+      launchOptions: {},
+    })
     const iter = stream[Symbol.asyncIterator]()
     const emitted = await collectUntilResult(iter)
 
@@ -436,7 +465,10 @@ describe('CodexQueryLifecycle', () => {
     })
 
     const lifecycle = new CodexQueryLifecycle()
-    const stream = lifecycle.start('resume-turn', { resume: 'resume-thread-id' })
+    const stream = lifecycle.start({
+      initialPrompt: 'resume-turn',
+      launchOptions: { resume: 'resume-thread-id' },
+    })
     const iter = stream[Symbol.asyncIterator]()
 
     const first = await iter.next()
@@ -470,7 +502,10 @@ describe('CodexQueryLifecycle', () => {
     })
 
     const lifecycle = new CodexQueryLifecycle()
-    const stream = lifecycle.start('malformed-token-count', {})
+    const stream = lifecycle.start({
+      initialPrompt: 'malformed-token-count',
+      launchOptions: {},
+    })
     const iter = stream[Symbol.asyncIterator]()
     const emitted = await collectUntilResult(iter)
 
@@ -490,6 +525,102 @@ describe('CodexQueryLifecycle', () => {
     await lifecycle.stop()
   })
 
+  it('notifies callback when turn_context carries cwd updates', async () => {
+    const onCwdDetected = vi.fn()
+    const onExecutionContextSignal = vi.fn()
+    codexMocks.state.turnPlans.push({
+      events: [
+        { type: 'thread.started', thread_id: 'thread-cwd-signal' },
+        { type: 'turn.started' },
+        {
+          type: 'turn_context',
+          payload: {
+            cwd: '/tmp/opencow-worktree-1',
+          },
+        },
+        { type: 'item.completed', item: { id: 'm1', type: 'agent_message', text: 'done' } },
+        { type: 'turn.completed', usage: { input_tokens: 1, cached_input_tokens: 0, output_tokens: 1 } },
+      ],
+    })
+
+    const lifecycle = new CodexQueryLifecycle()
+    const stream = lifecycle.start({
+      initialPrompt: 'cwd-signal',
+      launchOptions: {
+        cwd: '/tmp/opencow-root',
+      },
+      callbacks: {
+        onCwdDetected,
+        onExecutionContextSignal,
+      },
+    })
+    const iter = stream[Symbol.asyncIterator]()
+    const emitted = await collectUntilResult(iter)
+
+    const result = emitted.find((item) => item.event.kind === 'turn.result')
+    expect(result).toBeTruthy()
+    if (result?.event.kind === 'turn.result') {
+      expect(result.event.payload.outcome).toBe('success')
+    }
+
+    expect(onCwdDetected).toHaveBeenCalledTimes(1)
+    expect(onCwdDetected).toHaveBeenCalledWith('/tmp/opencow-worktree-1')
+    expect(onExecutionContextSignal).toHaveBeenCalledTimes(1)
+    expect(onExecutionContextSignal).toHaveBeenCalledWith(
+      expect.objectContaining({
+        cwd: '/tmp/opencow-worktree-1',
+        source: 'codex.turn_context',
+      }),
+    )
+
+    await lifecycle.stop()
+  })
+
+  it('notifies callback when session_meta carries cwd updates', async () => {
+    const onCwdDetected = vi.fn()
+    const onExecutionContextSignal = vi.fn()
+    codexMocks.state.turnPlans.push({
+      events: [
+        { type: 'thread.started', thread_id: 'thread-cwd-session-meta' },
+        {
+          type: 'session_meta',
+          payload: {
+            cwd: '/tmp/opencow-worktree-2',
+          },
+        },
+        { type: 'turn.started' },
+        { type: 'item.completed', item: { id: 'm1', type: 'agent_message', text: 'done' } },
+        { type: 'turn.completed', usage: { input_tokens: 1, cached_input_tokens: 0, output_tokens: 1 } },
+      ],
+    })
+
+    const lifecycle = new CodexQueryLifecycle()
+    const stream = lifecycle.start({
+      initialPrompt: 'cwd-session-meta',
+      launchOptions: {},
+      callbacks: {
+        onCwdDetected,
+        onExecutionContextSignal,
+      },
+    })
+    const iter = stream[Symbol.asyncIterator]()
+    const emitted = await collectUntilResult(iter)
+
+    const result = emitted.find((item) => item.event.kind === 'turn.result')
+    expect(result).toBeTruthy()
+    expect(onCwdDetected).toHaveBeenCalledTimes(1)
+    expect(onCwdDetected).toHaveBeenCalledWith('/tmp/opencow-worktree-2')
+    expect(onExecutionContextSignal).toHaveBeenCalledTimes(1)
+    expect(onExecutionContextSignal).toHaveBeenCalledWith(
+      expect.objectContaining({
+        cwd: '/tmp/opencow-worktree-2',
+        source: 'codex.session_meta',
+      }),
+    )
+
+    await lifecycle.stop()
+  })
+
   it('keeps turn active across reconnecting retries and succeeds after recovery', async () => {
     codexMocks.state.turnPlans.push({
       events: [
@@ -503,7 +634,10 @@ describe('CodexQueryLifecycle', () => {
     })
 
     const lifecycle = new CodexQueryLifecycle()
-    const stream = lifecycle.start('retry-prompt', {})
+    const stream = lifecycle.start({
+      initialPrompt: 'retry-prompt',
+      launchOptions: {},
+    })
     const iter = stream[Symbol.asyncIterator]()
     const emitted = await collectUntilResult(iter)
 
@@ -537,7 +671,10 @@ describe('CodexQueryLifecycle', () => {
     codexMocks.mockThreadRunStreamed.mockImplementationOnce(throwAfterErrors)
 
     const lifecycle = new CodexQueryLifecycle()
-    const stream = lifecycle.start('failing-prompt', {})
+    const stream = lifecycle.start({
+      initialPrompt: 'failing-prompt',
+      launchOptions: {},
+    })
     const iter = stream[Symbol.asyncIterator]()
     const emitted = await collectUntilResult(iter)
 
@@ -557,7 +694,10 @@ describe('CodexQueryLifecycle', () => {
     codexMocks.state.turnPlans.push({ waitForAbort: true })
 
     const lifecycle = new CodexQueryLifecycle()
-    const stream = lifecycle.start('waiting', {})
+    const stream = lifecycle.start({
+      initialPrompt: 'waiting',
+      launchOptions: {},
+    })
 
     const consuming = (async () => {
       for await (const _event of stream) {

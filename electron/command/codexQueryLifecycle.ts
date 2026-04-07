@@ -16,6 +16,8 @@ import { join } from 'node:path'
 import type { UserMessageContent } from '../../src/shared/types'
 import { createLogger } from '../platform/logger'
 import type { SessionLifecycle } from './sessionLifecycle'
+import type { SessionLifecycleStartInput } from './sessionLifecycle'
+import type { SessionExecutionContextSignalSource } from './sessionLifecycle'
 import type { CodexConfigObject, CodexConfigValue } from './codexMcpConfigBuilder'
 import {
   createRuntimeEventEnvelope,
@@ -417,6 +419,11 @@ type CodexTokenCountParseResult =
   | { kind: 'ok'; snapshotEvent: EngineRuntimeEvent }
   | { kind: 'malformed'; reason: string }
 
+type CodexCwdSignalParseResult =
+  | { kind: 'none' }
+  | { kind: 'ok'; cwd: string; source: SessionExecutionContextSignalSource }
+  | { kind: 'malformed'; reason: string; source: 'turn_context' | 'session_meta' }
+
 function parseCodexTokenCountSnapshot(value: unknown): CodexTokenCountParseResult {
   const envelope = asObject(value)
   if (!envelope || envelope.type !== 'event_msg') return { kind: 'none' }
@@ -461,6 +468,27 @@ function parseCodexTokenCountSnapshot(value: unknown): CodexTokenCountParseResul
   }
 }
 
+function parseCodexCwdSignal(value: unknown): CodexCwdSignalParseResult {
+  const envelope = asObject(value)
+  if (!envelope) return { kind: 'none' }
+  const type = envelope.type
+  if (type !== 'turn_context' && type !== 'session_meta') return { kind: 'none' }
+
+  const payload = asObject(envelope.payload)
+  if (!payload) {
+    return { kind: 'malformed', source: type, reason: `${type}.payload is missing or not an object` }
+  }
+  const cwdRaw = payload.cwd
+  if (typeof cwdRaw !== 'string' || cwdRaw.trim().length === 0) {
+    return { kind: 'malformed', source: type, reason: `${type}.payload.cwd is missing or not a non-empty string` }
+  }
+  return {
+    kind: 'ok',
+    cwd: cwdRaw.trim(),
+    source: type === 'turn_context' ? 'codex.turn_context' : 'codex.session_meta',
+  }
+}
+
 async function withTimeout<T>(
   promise: Promise<T>,
   timeoutMs: number,
@@ -501,6 +529,8 @@ export class CodexQueryLifecycle implements SessionLifecycle {
   private activeTurnAbortController: AbortController | null = null
   private firstTurnSystemPrompt: string | null = null
   private startupOptions: ParsedCodexLifecycleOptions | null = null
+  private callbacks: SessionLifecycleStartInput['callbacks'] = undefined
+  private lastDetectedCwd: string | null = null
   private nextTurnSeq = 1
 
   constructor() {
@@ -513,16 +543,17 @@ export class CodexQueryLifecycle implements SessionLifecycle {
     return this._stopped
   }
 
-  start(
-    initialPrompt: UserMessageContent,
-    rawOptions: Record<string, unknown>
-  ): AsyncIterable<EngineRuntimeEventEnvelope> {
+  start(input: SessionLifecycleStartInput): AsyncIterable<EngineRuntimeEventEnvelope> {
     if (this.worker) throw new Error('CodexQueryLifecycle already started')
     if (this._stopped) throw new Error('CodexQueryLifecycle already stopped')
+    const initialPrompt: UserMessageContent = input.initialPrompt
+    const rawOptions = input.launchOptions
 
     this.startupOptions = parseOptions(rawOptions)
+    this.callbacks = input.callbacks
     this.model = this.startupOptions.model
     this.firstTurnSystemPrompt = this.startupOptions.systemPrompt ?? null
+    this.lastDetectedCwd = this.startupOptions.cwd?.trim() || null
 
     if (this.startupOptions.resume) {
       this.emitRuntimeEvent({
@@ -550,6 +581,7 @@ export class CodexQueryLifecycle implements SessionLifecycle {
         this._stopped = true
         this.promptQueue.close()
         this.outputQueue.close()
+        this.callbacks = undefined
         this.doneResolve?.()
         this.doneResolve = null
       })
@@ -611,6 +643,31 @@ export class CodexQueryLifecycle implements SessionLifecycle {
         normalizedEvent,
         isTurnScopedRuntimeEventKind(normalizedEvent.kind) ? { turnRef: params?.turnRef } : undefined,
       )
+    }
+  }
+
+  private notifyDetectedCwd(params: {
+    cwd: string
+    source: SessionExecutionContextSignalSource
+    occurredAtMs?: number
+  }): void {
+    const { cwd, source, occurredAtMs } = params
+    if (!cwd || cwd === this.lastDetectedCwd) return
+    this.lastDetectedCwd = cwd
+    const onExecutionContextSignal = this.callbacks?.onExecutionContextSignal
+    if (onExecutionContextSignal) {
+      try {
+        onExecutionContextSignal({ cwd, source, occurredAtMs })
+      } catch (err) {
+        log.warn(`Codex onExecutionContextSignal callback failed for cwd="${cwd}"`, err)
+      }
+    }
+    const onCwdDetected = this.callbacks?.onCwdDetected
+    if (!onCwdDetected) return
+    try {
+      onCwdDetected(cwd)
+    } catch (err) {
+      log.warn(`Codex onCwdDetected callback failed for cwd="${cwd}"`, err)
     }
   }
 
@@ -772,6 +829,7 @@ export class CodexQueryLifecycle implements SessionLifecycle {
       const iter = events[Symbol.asyncIterator]()
       let firstEventReceived = false
       let tokenCountParseDiagnosticEmitted = false
+      let cwdSignalParseDiagnosticEmitted = false
 
       while (true) {
         const next = firstEventReceived
@@ -789,6 +847,17 @@ export class CodexQueryLifecycle implements SessionLifecycle {
         if (this._stopped) return
 
         const rawEvent: unknown = next.value
+        const cwdSignalResult = parseCodexCwdSignal(rawEvent)
+        if (cwdSignalResult.kind === 'ok') {
+          this.notifyDetectedCwd({
+            cwd: cwdSignalResult.cwd,
+            source: cwdSignalResult.source,
+          })
+        } else if (cwdSignalResult.kind === 'malformed' && !cwdSignalParseDiagnosticEmitted) {
+          cwdSignalParseDiagnosticEmitted = true
+          log.warn(`Malformed Codex ${cwdSignalResult.source} event: ${cwdSignalResult.reason}`)
+        }
+
         const tokenCountResult = parseCodexTokenCountSnapshot(rawEvent)
         if (tokenCountResult.kind === 'ok') {
           this.emitRuntimeEvent(tokenCountResult.snapshotEvent)

@@ -34,7 +34,12 @@ import { BaseNativeCapability, type ToolConfig } from './baseNativeCapability'
 import type { IssueService } from '../services/issueService'
 import type { IssueProviderService } from '../services/issueProviderService'
 import type { AdapterRegistry } from '../services/issue-sync/adapterRegistry'
-import type { Issue, IssuePriority } from '../../src/shared/types'
+import type { LifecycleOperationCoordinator } from '../services/lifecycleOperations'
+import type {
+  Issue,
+  IssuePriority,
+  SessionLifecycleOperationProposalInput,
+} from '../../src/shared/types'
 
 // ─── Dependencies ─────────────────────────────────────────────────────────────
 
@@ -43,6 +48,7 @@ export interface IssueNativeCapabilityDeps {
   /** Optional — when provided, remote issue tools are enabled. */
   issueProviderService?: IssueProviderService
   adapterRegistry?: AdapterRegistry
+  lifecycleOperationCoordinator?: LifecycleOperationCoordinator
 }
 
 // ─── Text normalisation ──────────────────────────────────────────────────────
@@ -96,12 +102,14 @@ export class IssueNativeCapability extends BaseNativeCapability {
   private readonly issueService: IssueService
   private readonly issueProviderService: IssueProviderService | null
   private readonly adapterRegistry: AdapterRegistry | null
+  private readonly lifecycleOperationCoordinator: LifecycleOperationCoordinator | null
 
   constructor(deps: IssueNativeCapabilityDeps) {
     super()
     this.issueService = deps.issueService
     this.issueProviderService = deps.issueProviderService ?? null
     this.adapterRegistry = deps.adapterRegistry ?? null
+    this.lifecycleOperationCoordinator = deps.lifecycleOperationCoordinator ?? null
   }
 
   protected toolConfigs(context: NativeCapabilityToolContext): ToolConfig[] {
@@ -109,6 +117,7 @@ export class IssueNativeCapability extends BaseNativeCapability {
     const configs: ToolConfig[] = [
       this.listIssuesConfig(session),
       this.getIssueConfig(),
+      this.proposeIssueOperationConfig(session),
       this.createIssueConfig(session),
       this.updateIssueConfig(),
     ]
@@ -373,6 +382,66 @@ export class IssueNativeCapability extends BaseNativeCapability {
           // not the chat session that created it.
         })
         return this.textResult(JSON.stringify(this.toDetail(issue), null, 2))
+      },
+    }
+  }
+
+  // ── propose_issue_operation ────────────────────────────────────────────────
+
+  private proposeIssueOperationConfig(session: NativeCapabilitySessionContext): ToolConfig {
+    return {
+      name: 'propose_issue_operation',
+      description:
+        'Propose one or more issue lifecycle operations for confirmation in-session. ' +
+        'This tool does not directly mutate issue records in Phase A.',
+      schema: {
+        userInstruction: z
+          .string()
+          .optional()
+          .describe('Original user instruction used for explicit no-confirm detection'),
+        operations: z
+          .array(z.object({
+            action: z.enum(['create', 'update', 'transition_status']),
+            normalizedPayload: z.record(z.string(), z.unknown()),
+            summary: z.record(z.string(), z.unknown()).optional(),
+            warnings: z.array(z.string()).optional(),
+            confirmationMode: z.enum(['required', 'auto_if_user_explicit']).optional(),
+            idempotencyKey: z.string().optional(),
+          }))
+          .min(1)
+          .describe('Structured issue lifecycle proposals'),
+      },
+      execute: async (args, input) => {
+        if (!this.lifecycleOperationCoordinator) {
+          return this.errorResult(new Error('Lifecycle operation coordinator is not available'))
+        }
+
+        const toolUseId = input.context.toolUseId ?? input.context.invocationId ?? 'missing-tool-use-id'
+        const operationArgs = args.operations as Array<Record<string, unknown>>
+        const proposals: SessionLifecycleOperationProposalInput[] = operationArgs.map((candidate) => ({
+          entity: 'issue',
+          action: candidate.action as SessionLifecycleOperationProposalInput['action'],
+          normalizedPayload: {
+            ...(candidate.normalizedPayload as Record<string, unknown>),
+            projectId:
+              (candidate.normalizedPayload as Record<string, unknown>)?.projectId === undefined
+                ? session.projectId
+                : (candidate.normalizedPayload as Record<string, unknown>).projectId,
+          },
+          summary: candidate.summary as Record<string, unknown> | undefined,
+          warnings: candidate.warnings as string[] | undefined,
+          confirmationMode: candidate.confirmationMode as SessionLifecycleOperationProposalInput['confirmationMode'] | undefined,
+          idempotencyKey: typeof candidate.idempotencyKey === 'string' ? candidate.idempotencyKey : undefined,
+          userInstruction: typeof args.userInstruction === 'string' ? args.userInstruction : undefined,
+        }))
+
+        const envelopes = await this.lifecycleOperationCoordinator.proposeOperations({
+          sessionId: session.sessionId,
+          toolUseId,
+          proposals,
+        })
+
+        return this.textResult(JSON.stringify(envelopes, null, 2))
       },
     }
   }

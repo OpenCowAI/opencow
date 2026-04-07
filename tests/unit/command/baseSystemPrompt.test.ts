@@ -44,4 +44,14 @@ describe('getBaseSystemPrompt', () => {
     expect(prompt).toContain('start')
     expect(prompt).toContain('xdg-open')
   })
+
+  it('includes decoupled entity governance rules for issue and schedule', () => {
+    const prompt = getBaseSystemPrompt('agent')!
+    expect(prompt).toContain('<entity-governance>')
+    expect(prompt).toContain('<rule name="entity-router">')
+    expect(prompt).toContain('<rule name="issue-governance">')
+    expect(prompt).toContain('<rule name="schedule-governance">')
+    expect(prompt).toContain('For any scheduled-plan intent (daily/weekly/monthly/cron/time-based execution), prioritize schedule native capability tools.')
+    expect(prompt).toContain('Do not use OS-level schedulers (cron/launchd/systemd) as the first choice.')
+  })
 })

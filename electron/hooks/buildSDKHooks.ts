@@ -38,7 +38,7 @@ const SIGNAL_EVENTS: readonly SDKHookEventName[] = SDK_SIGNAL_HOOK_EVENTS
 export function buildSDKHooks(
   dispatch: Dispatch,
   fallbackSessionId: string,
-  onCwdDetected?: (cwd: string) => void,
+  onCwdDetected?: (cwd: string, occurredAtMs?: number) => void,
 ): Partial<Record<SDKHookEventName, HookCallbackMatcher[]>> {
   const hooks: Partial<Record<SDKHookEventName, HookCallbackMatcher[]>> = {}
 
@@ -71,7 +71,7 @@ export function buildSDKHooks(
           const cwd = (input as { cwd?: string }).cwd
           if (cwd && cwd !== lastCwd) {
             lastCwd = cwd
-            onCwdDetected(cwd)
+            onCwdDetected(cwd, Date.now())
           }
         }
       } catch (err) {

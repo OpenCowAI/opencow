@@ -11,7 +11,7 @@
  * Domain-specific concerns only:
  *   - `IssueConfirmationCard` footer for create/edit/navigate
  *   - `IssueFormModal` for full-featured editing
- *   - Issue creation via `createIssue` store action
+ *   - Issue creation via shared `useDraftApplyActions`
  *
  * @module
  */
@@ -25,13 +25,13 @@ import {
   useIssueCreatorSession,
   type IssueCreatorSessionConfig
 } from '@/hooks/useIssueCreatorSession'
+import { useDraftApplyActions } from '@/hooks/useDraftApplyActions'
 import { useCreatorModalBehavior } from '@/hooks/useCreatorModalBehavior'
 import { useAppStore, selectProjectId } from '@/stores/appStore'
-import { useIssueStore } from '@/stores/issueStore'
 import { useIssueProviderStore } from '@/stores/issueProviderStore'
 import { selectIssue } from '@/actions/issueActions'
 import { toast } from '@/lib/toast'
-import { issueProviderPlatformLabel, issueProviderRepoLabel, type Issue, type CreateIssueInput } from '@shared/types'
+import { issueProviderPlatformLabel, issueProviderRepoLabel, type Issue } from '@shared/types'
 import type { ParsedIssueOutput } from '@shared/issueOutputParser'
 
 // ═══════════════════════════════════════════════════════════════════
@@ -67,7 +67,7 @@ export function IssueAICreatorModal({
   config = {}
 }: IssueAICreatorModalProps): React.JSX.Element | null {
   const { t } = useTranslation('issues')
-  const createIssue = useIssueStore((s) => s.createIssue)
+  const { applyIssueDraft } = useDraftApplyActions()
   const projectId = useAppStore(selectProjectId)
   const projects = useAppStore((s) => s.projects)
 
@@ -156,14 +156,14 @@ export function IssueAICreatorModal({
 
   // ── Edit via IssueFormModal ────────────────────────────────────
   const [editingIssue, setEditingIssue] = useState<ParsedIssueOutput | null>(null)
-  const [createdIssueFromForm, setCreatedIssueFromForm] = useState<Issue | null>(null)
+  const [createdIssueRefFromForm, setCreatedIssueRefFromForm] = useState<{ id: string } | null>(null)
 
   const handleEditIssue = useCallback((parsed: ParsedIssueOutput) => {
     setEditingIssue(parsed)
   }, [])
 
   const handleIssueCreatedFromForm = useCallback((created: Issue) => {
-    setCreatedIssueFromForm(created)
+    setCreatedIssueRefFromForm({ id: created.id })
     setEditingIssue(null)
     modal.markConfirmed()
     toast(
@@ -184,30 +184,16 @@ export function IssueAICreatorModal({
   // ── Issue creation handler (direct from card) ──────────────────
   const handleConfirmIssue = useCallback(
     async (parsed: ParsedIssueOutput): Promise<Issue> => {
-      const input: CreateIssueInput = {
-        title: parsed.title,
-        description: parsed.description,
-        status: parsed.status,
-        priority: parsed.priority,
-        labels: parsed.labels,
+      const created = await applyIssueDraft({
+        parsed,
         projectId: sessionConfig.projectId,
-        parentIssueId: parsed.parentIssueId ?? sessionConfig.parentIssueId,
+        parentIssueId: sessionConfig.parentIssueId,
         providerId: effectiveProviderId,
-      }
-      const created = await createIssue(input)
+      })
       modal.markConfirmed()
-      toast(
-        `${t('aiCreator.issueCreated')}: ${created.title}`,
-        {
-          action: {
-            label: t('aiCreator.card.view'),
-            onClick: () => selectIssue(created.id)
-          }
-        }
-      )
       return created
     },
-    [createIssue, sessionConfig, effectiveProviderId, t, modal]
+    [applyIssueDraft, sessionConfig.projectId, sessionConfig.parentIssueId, effectiveProviderId, modal]
   )
 
   const handleNavigateToIssue = useCallback(
@@ -259,11 +245,11 @@ export function IssueAICreatorModal({
           onConfirm={handleConfirmIssue}
           onNavigate={handleNavigateToIssue}
           onEdit={handleEditIssue}
-          createdIssue={createdIssueFromForm}
+          createdIssueRef={createdIssueRefFromForm}
         />
       </div>
     )
-  }, [creator.parsedIssue, handleConfirmIssue, handleNavigateToIssue, handleEditIssue, createdIssueFromForm, writableProviders, publishToRemote, selectedProviderId, t])
+  }, [creator.parsedIssue, handleConfirmIssue, handleNavigateToIssue, handleEditIssue, createdIssueRefFromForm, writableProviders, publishToRemote, selectedProviderId, t])
 
   // ── Render ─────────────────────────────────────────────────────
   return (

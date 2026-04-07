@@ -53,6 +53,7 @@ import * as m049 from './049_extend_issue_providers_for_phase2'
 import * as m050 from './050_extend_issue_providers_for_linear'
 import * as m051 from './051_add_project_preferences'
 import * as m052 from './052_add_project_browser_state_policy'
+import * as m053 from './053_create_session_lifecycle_operations'
 
 /**
  * Compile-time migration provider.
@@ -119,6 +120,7 @@ class CodeMigrationProvider implements MigrationProvider {
       '050_extend_issue_providers_for_linear': m050,
       '051_add_project_preferences': m051,
       '052_add_project_browser_state_policy': m052,
+      '053_create_session_lifecycle_operations': m053,
     }
   }
 }

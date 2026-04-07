@@ -14,6 +14,7 @@
 
 export { IssueResultCard } from './IssueResultCard'
 export { IssueListResultCard } from './IssueListResultCard'
+export { LifecycleOperationResultCard } from './LifecycleOperationResultCard'
 export { ProjectResultCard } from './ProjectResultCard'
 export { ProjectListResultCard } from './ProjectListResultCard'
 export { CardShell } from './CardShell'
@@ -49,6 +50,7 @@ export type {
 
 export { parseIssueData } from './IssueResultCard'
 export { parseIssueListData } from './IssueListResultCard'
+export { parseLifecycleOperationData } from './LifecycleOperationResultCard'
 export { parseProjectData } from './ProjectResultCard'
 export { parseProjectListData } from './ProjectListResultCard'
 

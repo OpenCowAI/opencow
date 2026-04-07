@@ -30,7 +30,12 @@ describe('buildSessionPolicyInput', () => {
       tools: {
         native: {
           mode: 'allowlist',
-          allow: [{ capability: 'browser' }, { capability: 'html' }],
+          allow: [
+            { capability: 'browser' },
+            { capability: 'html' },
+            { capability: 'issues', tool: 'propose_issue_operation' },
+            { capability: 'schedules', tool: 'propose_schedule_operation' },
+          ],
         },
       },
     })
@@ -136,8 +141,7 @@ describe('buildSessionPolicyInput', () => {
 
   // ── Default case: other general-purpose origins get browser ─────────
 
-  it('applies browser and html defaults for origins that fall through to default case', () => {
-    // schedule, telegram, discord, etc. — any non-specialised, non-creator origin
+  it('applies lifecycle defaults for schedule origin', () => {
     const policy = buildSessionPolicyInput({
       origin: { source: 'schedule', scheduleId: 'sched-1' },
     })
@@ -146,7 +150,30 @@ describe('buildSessionPolicyInput', () => {
       tools: {
         native: {
           mode: 'allowlist',
-          allow: [{ capability: 'browser' }, { capability: 'html' }],
+          allow: [
+            { capability: 'browser' },
+            { capability: 'html' },
+            { capability: 'issues', tool: 'propose_issue_operation' },
+            { capability: 'schedules', tool: 'propose_schedule_operation' },
+          ],
+        },
+      },
+    })
+  })
+
+  it('applies browser and html defaults for generic origins that fall through to default case', () => {
+    const policy = buildSessionPolicyInput({
+      origin: { source: 'telegram', botId: 'bot-1', chatId: 'chat-1' },
+    })
+
+    expect(policy).toEqual({
+      tools: {
+        native: {
+          mode: 'allowlist',
+          allow: [
+            { capability: 'browser' },
+            { capability: 'html' },
+          ],
         },
       },
     })
@@ -191,7 +218,13 @@ describe('buildSessionPolicyInput', () => {
       tools: {
         native: {
           mode: 'allowlist',
-          allow: [{ capability: 'browser' }, { capability: 'html' }, { capability: 'evose' }],
+          allow: [
+            { capability: 'browser' },
+            { capability: 'html' },
+            { capability: 'issues', tool: 'propose_issue_operation' },
+            { capability: 'schedules', tool: 'propose_schedule_operation' },
+            { capability: 'evose' },
+          ],
         },
       },
       capabilities: {

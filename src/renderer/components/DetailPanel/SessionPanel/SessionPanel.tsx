@@ -75,6 +75,24 @@ function ArtifactSummaryFooter({ onViewAll }: { onViewAll: () => void }): React.
   return <ArtifactsSummaryBlock artifacts={artifacts} onViewAll={onViewAll} />
 }
 
+function SessionFooterStack({
+  showArtifacts,
+  onViewAll,
+}: {
+  showArtifacts: boolean
+  onViewAll: () => void
+}): React.JSX.Element {
+  if (!showArtifacts) {
+    return <></>
+  }
+
+  return (
+    <>
+      <ArtifactSummaryFooter onViewAll={onViewAll} />
+    </>
+  )
+}
+
 /**
  * Guard: when the Artifacts tab is active but has 0 artifacts, switch back
  * to Console.  Lives inside ArtifactViewerProvider so it can read context.
@@ -651,10 +669,16 @@ export const SessionPanel = React.memo(function SessionPanel({
                     onSendAnswer={isReadOnly ? undefined : handleSendOrQueue}
                     onContextualQuestionChange={handleContextualQuestionChange}
                     issueId={issueId}
+                    sessionDraftFooterConfig={{
+                      projectId: session.projectId,
+                      issueCreationMode: 'standalone',
+                      source: 'lifecycle-operation',
+                    }}
                     footerNode={
-                      !isProcessing ? (
-                        <ArtifactSummaryFooter onViewAll={() => setActiveTab('artifacts')} />
-                      ) : undefined
+                      <SessionFooterStack
+                        showArtifacts={!isProcessing}
+                        onViewAll={() => setActiveTab('artifacts')}
+                      />
                     }
                   />
                 </div>

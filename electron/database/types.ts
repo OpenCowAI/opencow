@@ -430,6 +430,27 @@ export interface IssueSyncLogTable {
   duration_ms: number | null
 }
 
+export interface SessionLifecycleOperationTable {
+  id: string
+  session_id: string
+  tool_use_id: string
+  operation_index: number
+  entity: string
+  action: string
+  normalized_payload_json: string
+  summary_json: string
+  warnings_json: string
+  confirmation_mode: string
+  state: string
+  idempotency_key: string | null
+  result_snapshot_json: string | null
+  error_code: string | null
+  error_message: string | null
+  created_at: number
+  updated_at: number
+  applied_at: number | null
+}
+
 // ─── Database schema ─────────────────────────────────────────────────────
 
 export interface Database {
@@ -438,6 +459,7 @@ export interface Database {
   issue_change_queue: IssueChangeQueueTable
   issue_comments: IssueCommentTable
   issue_sync_logs: IssueSyncLogTable
+  session_lifecycle_operations: SessionLifecycleOperationTable
   custom_labels: CustomLabelTable
   inbox_messages: InboxMessageTable
   managed_sessions: ManagedSessionTable

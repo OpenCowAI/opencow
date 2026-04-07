@@ -39,6 +39,8 @@ describe('sessionPolicyPlanner', () => {
     expect(plan.effectivePolicy.tools.native.allow).toEqual([
       { capability: 'browser' },
       { capability: 'html' },
+      { capability: 'issues', tool: 'propose_issue_operation' },
+      { capability: 'schedules', tool: 'propose_schedule_operation' },
       { capability: 'evose' },
     ])
   })

@@ -86,7 +86,7 @@ describe('QueryLifecycle', () => {
 
   it('starts and yields messages from the SDK stream', async () => {
     const lifecycle = new QueryLifecycle()
-    const stream = lifecycle.start('hello', {})
+    const stream = lifecycle.start({ initialPrompt: 'hello', launchOptions: {} })
     const iter = stream[Symbol.asyncIterator]()
 
     // Call next() first (starts generator, blocks on mock), then emit to resolve
@@ -123,7 +123,7 @@ describe('QueryLifecycle', () => {
 
   it('stop() during streaming calls query.close()', async () => {
     const lifecycle = new QueryLifecycle()
-    const stream = lifecycle.start('hello', {})
+    const stream = lifecycle.start({ initialPrompt: 'hello', launchOptions: {} })
 
     const consuming = (async () => {
       for await (const _msg of stream) {
@@ -140,7 +140,7 @@ describe('QueryLifecycle', () => {
 
   it('natural completion calls close() to clean up child process', async () => {
     const lifecycle = new QueryLifecycle()
-    const stream = lifecycle.start('hello', {})
+    const stream = lifecycle.start({ initialPrompt: 'hello', launchOptions: {} })
 
     const consuming = (async () => {
       for await (const _msg of stream) {
@@ -168,7 +168,7 @@ describe('QueryLifecycle', () => {
 
   it('double stop() is safe', async () => {
     const lifecycle = new QueryLifecycle()
-    const stream = lifecycle.start('hello', {})
+    const stream = lifecycle.start({ initialPrompt: 'hello', launchOptions: {} })
 
     const consuming = (async () => {
       for await (const _msg of stream) {
@@ -185,13 +185,13 @@ describe('QueryLifecycle', () => {
 
   it('start() throws if already started', () => {
     const lifecycle = new QueryLifecycle()
-    lifecycle.start('hello', {})
-    expect(() => lifecycle.start('again', {})).toThrow('already started')
+    lifecycle.start({ initialPrompt: 'hello', launchOptions: {} })
+    expect(() => lifecycle.start({ initialPrompt: 'again', launchOptions: {} })).toThrow('already started')
   })
 
   it('start() throws if already stopped', async () => {
     const lifecycle = new QueryLifecycle()
     await lifecycle.stop()
-    expect(() => lifecycle.start('hello', {})).toThrow('already stopped')
+    expect(() => lifecycle.start({ initialPrompt: 'hello', launchOptions: {} })).toThrow('already stopped')
   })
 })

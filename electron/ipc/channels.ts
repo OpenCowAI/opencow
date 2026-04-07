@@ -23,6 +23,7 @@ import type { BrowserService } from '../browser/browserService'
 import type { ScheduleService } from '../services/schedule/scheduleService'
 import type { TerminalService } from '../terminal/terminalService'
 import type { TrayManager } from '../tray'
+import type { LifecycleOperationCoordinator } from '../services/lifecycleOperations'
 import type {
   IPCChannels,
   IPCEventChannels,
@@ -148,6 +149,7 @@ export interface IPCDeps {
   issueCommentService?: import('../services/issueCommentService').IssueCommentService
   syncLogStore?: import('../services/issue-sync/syncLogStore').SyncLogStore
   changeQueueStore?: import('../services/issue-sync/changeQueueStore').ChangeQueueStore
+  lifecycleOperationCoordinator?: LifecycleOperationCoordinator
 }
 
 /* ------------------------------------------------------------------ */
@@ -1057,6 +1059,30 @@ export function registerIPCHandlers(deps: IPCDeps): void {
     registerHandler('command:get-session-messages', async (sessionId) => {
       const full = await orchestrator.getFullSession(sessionId)
       return full?.messages ?? []
+    })
+    registerHandler('command:list-session-lifecycle-operations', async (sessionId) => {
+      if (!deps.lifecycleOperationCoordinator) return []
+      return deps.lifecycleOperationCoordinator.listSessionOperations({ sessionId })
+    })
+    registerHandler('command:confirm-session-lifecycle-operation', async (sessionId, operationId) => {
+      if (!deps.lifecycleOperationCoordinator) {
+        return {
+          ok: false,
+          code: 'invalid_state',
+          operation: null,
+        }
+      }
+      return deps.lifecycleOperationCoordinator.confirmOperation({ sessionId, operationId })
+    })
+    registerHandler('command:reject-session-lifecycle-operation', async (sessionId, operationId) => {
+      if (!deps.lifecycleOperationCoordinator) {
+        return {
+          ok: false,
+          code: 'invalid_state',
+          operation: null,
+        }
+      }
+      return deps.lifecycleOperationCoordinator.rejectOperation({ sessionId, operationId })
     })
     registerHandler('command:delete-session', (sessionId) =>
       orchestrator.deleteSession(sessionId)

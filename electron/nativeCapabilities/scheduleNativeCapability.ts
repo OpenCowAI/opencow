@@ -36,6 +36,7 @@ import { z } from 'zod/v4'
 import type { NativeCapabilityMeta, NativeCapabilityToolContext, NativeCapabilitySessionContext } from './types'
 import { BaseNativeCapability, type ToolConfig } from './baseNativeCapability'
 import type { ScheduleService } from '../services/schedule/scheduleService'
+import type { LifecycleOperationCoordinator } from '../services/lifecycleOperations'
 import type {
   Schedule,
   SchedulePriority,
@@ -48,12 +49,14 @@ import type {
   WorkMode,
   ActionType,
   ContextInjectionType,
+  SessionLifecycleOperationProposalInput,
 } from '../../src/shared/types'
 
 // ─── Dependencies ─────────────────────────────────────────────────────────────
 
 export interface ScheduleNativeCapabilityDeps {
   scheduleService: ScheduleService
+  lifecycleOperationCoordinator?: LifecycleOperationCoordinator
 }
 
 // ─── Text normalisation ──────────────────────────────────────────────────────
@@ -256,10 +259,12 @@ export class ScheduleNativeCapability extends BaseNativeCapability {
   }
 
   private readonly scheduleService: ScheduleService
+  private readonly lifecycleOperationCoordinator: LifecycleOperationCoordinator | null
 
   constructor(deps: ScheduleNativeCapabilityDeps) {
     super()
     this.scheduleService = deps.scheduleService
+    this.lifecycleOperationCoordinator = deps.lifecycleOperationCoordinator ?? null
   }
 
   protected toolConfigs(context: NativeCapabilityToolContext): ToolConfig[] {
@@ -267,6 +272,7 @@ export class ScheduleNativeCapability extends BaseNativeCapability {
     return [
       this.listSchedulesConfig(session),
       this.getScheduleConfig(),
+      this.proposeScheduleOperationConfig(session),
       this.createScheduleConfig(session),
       this.updateScheduleConfig(),
       this.pauseScheduleConfig(),
@@ -456,6 +462,66 @@ export class ScheduleNativeCapability extends BaseNativeCapability {
         })
 
         return this.textResult(JSON.stringify(this.toDetail(schedule), null, 2))
+      },
+    }
+  }
+
+  // ── propose_schedule_operation ─────────────────────────────────────────────
+
+  private proposeScheduleOperationConfig(session: NativeCapabilitySessionContext): ToolConfig {
+    return {
+      name: 'propose_schedule_operation',
+      description:
+        'Propose one or more schedule lifecycle operations for confirmation in-session. ' +
+        'This tool does not directly mutate schedule records in Phase A.',
+      schema: {
+        userInstruction: z
+          .string()
+          .optional()
+          .describe('Original user instruction used for explicit no-confirm detection'),
+        operations: z
+          .array(z.object({
+            action: z.enum(['create', 'update', 'pause', 'resume', 'trigger_now']),
+            normalizedPayload: z.record(z.string(), z.unknown()),
+            summary: z.record(z.string(), z.unknown()).optional(),
+            warnings: z.array(z.string()).optional(),
+            confirmationMode: z.enum(['required', 'auto_if_user_explicit']).optional(),
+            idempotencyKey: z.string().optional(),
+          }))
+          .min(1)
+          .describe('Structured schedule lifecycle proposals'),
+      },
+      execute: async (args, input) => {
+        if (!this.lifecycleOperationCoordinator) {
+          return this.errorResult(new Error('Lifecycle operation coordinator is not available'))
+        }
+
+        const toolUseId = input.context.toolUseId ?? input.context.invocationId ?? 'missing-tool-use-id'
+        const operationArgs = args.operations as Array<Record<string, unknown>>
+        const proposals: SessionLifecycleOperationProposalInput[] = operationArgs.map((candidate) => ({
+          entity: 'schedule',
+          action: candidate.action as SessionLifecycleOperationProposalInput['action'],
+          normalizedPayload: {
+            ...(candidate.normalizedPayload as Record<string, unknown>),
+            projectId:
+              (candidate.normalizedPayload as Record<string, unknown>)?.projectId === undefined
+                ? session.projectId
+                : (candidate.normalizedPayload as Record<string, unknown>).projectId,
+          },
+          summary: candidate.summary as Record<string, unknown> | undefined,
+          warnings: candidate.warnings as string[] | undefined,
+          confirmationMode: candidate.confirmationMode as SessionLifecycleOperationProposalInput['confirmationMode'] | undefined,
+          idempotencyKey: typeof candidate.idempotencyKey === 'string' ? candidate.idempotencyKey : undefined,
+          userInstruction: typeof args.userInstruction === 'string' ? args.userInstruction : undefined,
+        }))
+
+        const envelopes = await this.lifecycleOperationCoordinator.proposeOperations({
+          sessionId: session.sessionId,
+          toolUseId,
+          proposals,
+        })
+
+        return this.textResult(JSON.stringify(envelopes, null, 2))
       },
     }
   }

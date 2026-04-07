@@ -15,7 +15,10 @@
  */
 
 import { useSessionMessages } from '@/hooks/useSessionMessages'
-import { SessionMessageList } from '@/components/DetailPanel/SessionPanel/SessionMessageList'
+import {
+  SessionMessageList
+} from '@/components/DetailPanel/SessionPanel/SessionMessageList'
+import type { SessionDraftFooterConfig } from '@/components/DetailPanel/SessionPanel/sessionDraftFooterTypes'
 import { StreamingFooter } from '@/components/DetailPanel/SessionPanel/StreamingFooter'
 import { QueuedMessageList } from '@/components/DetailPanel/SessionPanel/QueuedMessageList'
 import { TodoStatusPill } from '@/components/DetailPanel/SessionPanel/TodoWidgets'
@@ -58,6 +61,8 @@ export interface SessionChatLayoutProps {
    * conversation (e.g. IssueConfirmationCard, ArtifactsSummaryBlock).
    */
   footerNode?: React.ReactNode
+  /** Optional config to render unified issue/schedule draft confirmation footer. */
+  sessionDraftFooterConfig?: SessionDraftFooterConfig
   /**
    * When true, the ConnectedContentViewer dialog is not rendered.
    * Useful for embedded contexts (e.g. InstallDialog) where opening a
@@ -81,6 +86,7 @@ export function SessionChatLayout({
   pausedPlaceholder,
   controlsClassName,
   footerNode,
+  sessionDraftFooterConfig,
   hideContentViewer,
   registerAsChatTabInput = false,
 }: SessionChatLayoutProps): React.JSX.Element {
@@ -104,6 +110,7 @@ export function SessionChatLayout({
           onSendAnswer={onSendOrQueue}
           variant="chat"
           footerNode={footerNode}
+          sessionDraftFooterConfig={sessionDraftFooterConfig}
         />
 
         {/* ── Bottom controls ─────────────────────────────────────────── */}

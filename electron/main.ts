@@ -499,6 +499,7 @@ app.whenReady().then(async () => {
     marketplaceService, repoSourceRegistry, gitService, memoryService,
     issueProviderService, issueSyncEngine,
     changeQueueStore, changeQueueService, pushEngine, issueCommentService, syncLogStore,
+    lifecycleOperationCoordinator,
   } = svc
 
   // Wire up TrayIssueService for issue-centric tray popover data
@@ -548,6 +549,7 @@ app.whenReady().then(async () => {
     issueCommentService,
     syncLogStore,
     changeQueueStore,
+    lifecycleOperationCoordinator,
     getProxyFetch: () => proxyFetchFactory.getStandardFetch(),
     onQuit: requestQuit,
     updateChecker,

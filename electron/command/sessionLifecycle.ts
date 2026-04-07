@@ -5,6 +5,34 @@ import type { EngineRuntimeEventEnvelope } from '../conversation/runtime/events'
 import { QueryLifecycle } from './queryLifecycle'
 import { CodexQueryLifecycle } from './codexQueryLifecycle'
 
+export interface SessionLifecycleCallbacks {
+  onExecutionContextSignal?: (signal: SessionExecutionContextSignal) => void
+  /**
+   * Runtime-reported working directory changes (e.g. Codex turn_context.cwd).
+   * Optional because some engines do not expose cwd runtime signals.
+   */
+  onCwdDetected?: (cwd: string) => void
+}
+
+export type SessionExecutionContextSignalSource =
+  | 'startup'
+  | 'codex.turn_context'
+  | 'codex.session_meta'
+  | 'claude.hook'
+  | 'unknown'
+
+export interface SessionExecutionContextSignal {
+  cwd: string
+  source: SessionExecutionContextSignalSource
+  occurredAtMs?: number
+}
+
+export interface SessionLifecycleStartInput {
+  initialPrompt: UserMessageContent
+  launchOptions: Record<string, unknown>
+  callbacks?: SessionLifecycleCallbacks
+}
+
 /**
  * Engine-agnostic lifecycle contract used by SessionOrchestrator.
  *
@@ -15,10 +43,7 @@ import { CodexQueryLifecycle } from './codexQueryLifecycle'
  */
 export interface SessionLifecycle {
   readonly stopped: boolean
-  start(
-    initialPrompt: UserMessageContent,
-    options: Record<string, unknown>
-  ): AsyncIterable<EngineRuntimeEventEnvelope>
+  start(input: SessionLifecycleStartInput): AsyncIterable<EngineRuntimeEventEnvelope>
   pushMessage(content: UserMessageContent): void
   stop(): Promise<void>
 }

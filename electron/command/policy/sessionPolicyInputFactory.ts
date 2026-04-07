@@ -63,6 +63,11 @@ const GENERAL_PURPOSE_NATIVE_TOOLS: StartSessionNativeToolAllowItem[] = [
   { capability: 'html' },
 ]
 
+const ISSUE_SCHEDULE_PROPOSE_NATIVE_TOOLS: StartSessionNativeToolAllowItem[] = [
+  { capability: 'issues', tool: 'propose_issue_operation' },
+  { capability: 'schedules', tool: 'propose_schedule_operation' },
+]
+
 /**
  * Resolve the default session policy based on origin type.
  *
@@ -113,10 +118,25 @@ function resolveDefaultPolicyByOrigin(origin: SessionOrigin): StartSessionPolicy
     case 'agent-creator':
     case 'command-creator':
     case 'rule-creator':
-    case 'issue-creator':
-    case 'schedule-creator':
     case 'bot-creator':
       return undefined
+
+    // ── Issue/Schedule lifecycle sources: explicitly expose propose tools ──
+    case 'issue':
+    case 'schedule':
+    case 'issue-creator':
+    case 'schedule-creator':
+      return {
+        tools: {
+          native: {
+            mode: 'allowlist',
+            allow: [
+              ...GENERAL_PURPOSE_NATIVE_TOOLS,
+              ...ISSUE_SCHEDULE_PROPOSE_NATIVE_TOOLS,
+            ],
+          },
+        },
+      }
 
     // ── All other origins: general-purpose with browser ──────────────
     default:

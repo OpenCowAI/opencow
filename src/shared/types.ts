@@ -574,6 +574,18 @@ export interface IPCChannels {
   'command:list-managed-sessions': { args: []; return: SessionSnapshot[] }
   'command:get-managed-session': { args: [sessionId: string]; return: SessionSnapshot | null }
   'command:get-session-messages': { args: [sessionId: string]; return: ManagedSessionMessage[] }
+  'command:list-session-lifecycle-operations': {
+    args: [sessionId: string]
+    return: SessionLifecycleOperationEnvelope[]
+  }
+  'command:confirm-session-lifecycle-operation': {
+    args: [sessionId: string, operationId: string]
+    return: SessionLifecycleOperationConfirmResult
+  }
+  'command:reject-session-lifecycle-operation': {
+    args: [sessionId: string, operationId: string]
+    return: SessionLifecycleOperationRejectResult
+  }
   'command:delete-session': { args: [sessionId: string]; return: boolean }
   // Settings
   'get-settings': { args: []; return: AppSettings }
@@ -1921,6 +1933,16 @@ export type DataBusEvent =
       payload: { sessionId: string; origin: SessionOrigin; error: string }
     }
   | { type: 'command:session:deleted'; payload: { sessionId: string } }
+  | {
+      type: 'session:lifecycle-operation:updated'
+      payload: {
+        sessionId: string
+        operationId: string
+        entity: SessionLifecycleOperationEntity
+        action: SessionLifecycleOperationAction
+        state: SessionLifecycleOperationState
+      }
+    }
   | {
       type: 'command:session:ask-question'
       payload: {
@@ -4380,6 +4402,127 @@ export interface UpdateScheduleInput {
   endDate?: number
   maxExecutions?: number
   projectId?: string | null
+}
+
+// === Session Lifecycle Operations (Issue/Schedule Native Capabilities) ===
+
+/** P1 lifecycle entity scope — intentionally limited to Issue + Schedule. */
+export type SessionLifecycleOperationEntity = 'issue' | 'schedule'
+
+/** Issue lifecycle actions available to the native lifecycle protocol. */
+export type IssueLifecycleOperationAction =
+  | 'create'
+  | 'update'
+  | 'transition_status'
+
+/** Schedule lifecycle actions available to the native lifecycle protocol. */
+export type ScheduleLifecycleOperationAction =
+  | 'create'
+  | 'update'
+  | 'pause'
+  | 'resume'
+  | 'trigger_now'
+
+/** Union of all P1 lifecycle actions. */
+export type SessionLifecycleOperationAction =
+  | IssueLifecycleOperationAction
+  | ScheduleLifecycleOperationAction
+
+/** Confirmation strategy for a proposed lifecycle operation. */
+export type SessionLifecycleOperationConfirmationMode =
+  | 'required'
+  | 'auto_if_user_explicit'
+
+/** Backend state machine for lifecycle operations. */
+export type SessionLifecycleOperationState =
+  | 'pending_confirmation'
+  | 'applying'
+  | 'applied'
+  | 'failed'
+  | 'cancelled'
+
+/** Persisted lifecycle operation record (backend canonical source of truth). */
+export interface SessionLifecycleOperation {
+  id: string
+  sessionId: string
+  toolUseId: string
+  operationIndex: number
+  entity: SessionLifecycleOperationEntity
+  action: SessionLifecycleOperationAction
+  normalizedPayload: Record<string, unknown>
+  summary: Record<string, unknown>
+  warnings: string[]
+  confirmationMode: SessionLifecycleOperationConfirmationMode
+  state: SessionLifecycleOperationState
+  idempotencyKey: string | null
+  resultSnapshot: Record<string, unknown> | null
+  errorCode: string | null
+  errorMessage: string | null
+  createdAt: number
+  updatedAt: number
+  appliedAt: number | null
+}
+
+/** Internal proposal input used by coordinator/native-capability integration. */
+export interface SessionLifecycleOperationProposalInput {
+  entity: SessionLifecycleOperationEntity
+  action: SessionLifecycleOperationAction
+  normalizedPayload: Record<string, unknown>
+  summary?: Record<string, unknown>
+  warnings?: string[]
+  confirmationMode?: SessionLifecycleOperationConfirmationMode
+  idempotencyKey?: string | null
+  userInstruction?: string
+}
+
+/**
+ * Tool-facing envelope for session message rendering.
+ *
+ * `createdAt`/`updatedAt`/`appliedAt` are ISO-8601 strings because tool outputs
+ * are text-serialised and consumed by cross-runtime renderers.
+ */
+export interface SessionLifecycleOperationEnvelope {
+  operationId: string
+  operationIndex: number
+  entity: SessionLifecycleOperationEntity
+  action: SessionLifecycleOperationAction
+  confirmationMode: SessionLifecycleOperationConfirmationMode
+  state: SessionLifecycleOperationState
+  normalizedPayload: Record<string, unknown>
+  summary: Record<string, unknown>
+  warnings: string[]
+  createdAt: string
+  updatedAt: string
+  appliedAt: string | null
+  resultSnapshot: Record<string, unknown> | null
+  errorCode: string | null
+  errorMessage: string | null
+}
+
+export type SessionLifecycleOperationConfirmResultCode =
+  | 'confirmed_applied'
+  | 'already_applied'
+  | 'rejected_concurrent'
+  | 'not_found'
+  | 'invalid_state'
+
+export interface SessionLifecycleOperationConfirmResult {
+  ok: boolean
+  code: SessionLifecycleOperationConfirmResultCode
+  operation: SessionLifecycleOperationEnvelope | null
+}
+
+export type SessionLifecycleOperationRejectResultCode =
+  | 'rejected'
+  | 'already_terminal'
+  | 'rejected_concurrent'
+  | 'not_found'
+  | 'invalid_state'
+
+export interface SessionLifecycleOperationRejectResult {
+  ok: boolean
+  code: SessionLifecycleOperationRejectResultCode
+  operation: SessionLifecycleOperationEnvelope | null
 }
 
 // === Pipeline CRUD Input Types ===

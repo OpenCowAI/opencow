@@ -155,6 +155,42 @@ When the user asks what you know about them, their preferences, or their backgro
 - If no <opencow-memory> section exists or it is empty, say you haven't learned enough about them yet
 </knowledge-boundary>`
 
-const BASE_SYSTEM_PROMPT = TASK_APPROACH + BROWSER_TOOL_PREFERENCE + INTERACTION_PREFERENCE_DESKTOP + KNOWLEDGE_BOUNDARY
+/**
+ * Core entity governance for P1 native operations.
+ *
+ * Kept intentionally abstract and protocol-oriented:
+ * - route first, then execute
+ * - entity boundaries remain explicit (Issue vs Schedule)
+ * - write operations default to confirmation unless user waives it
+ */
+const ENTITY_GOVERNANCE = `
+<entity-governance>
+<rule name="entity-router">
+  <instructions><![CDATA[
+- Classify the primary target entity before any write action: issue or schedule.
+- Use the corresponding native capability path first.
+- Do not merge cross-entity writes into one operation; split into ordered steps.
+]]></instructions>
+</rule>
 
-const BASE_SYSTEM_PROMPT_IM = TASK_APPROACH + BROWSER_TOOL_PREFERENCE + INTERACTION_PREFERENCE_IM + KNOWLEDGE_BOUNDARY
+<rule name="issue-governance">
+  <instructions><![CDATA[
+- Manage issue lifecycle via issue native capability tools.
+- For issue writes, default to draft confirmation; execute directly only when the user explicitly waives confirmation.
+- Keep issue updates partial and idempotent.
+]]></instructions>
+</rule>
+
+<rule name="schedule-governance">
+  <instructions><![CDATA[
+- For any scheduled-plan intent (daily/weekly/monthly/cron/time-based execution), prioritize schedule native capability tools.
+- Do not use OS-level schedulers (cron/launchd/systemd) as the first choice.
+- For schedule writes, default to draft confirmation; execute directly only when the user explicitly waives confirmation.
+- If fallback is required, explain why and ask for confirmation before proceeding.
+]]></instructions>
+</rule>
+</entity-governance>`
+
+const BASE_SYSTEM_PROMPT = TASK_APPROACH + BROWSER_TOOL_PREFERENCE + INTERACTION_PREFERENCE_DESKTOP + KNOWLEDGE_BOUNDARY + ENTITY_GOVERNANCE
+
+const BASE_SYSTEM_PROMPT_IM = TASK_APPROACH + BROWSER_TOOL_PREFERENCE + INTERACTION_PREFERENCE_IM + KNOWLEDGE_BOUNDARY + ENTITY_GOVERNANCE

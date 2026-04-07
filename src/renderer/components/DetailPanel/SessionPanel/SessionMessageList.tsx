@@ -16,6 +16,7 @@ import { ToolBatchCollapsible, isBatchableToolMessage, MIN_BATCH_SIZE } from './
 import type { MessageGroup } from './ToolBatchCollapsible'
 import { SessionScrollNav } from './SessionScrollNav'
 import type { NavAnchor } from './SessionScrollNav'
+import type { SessionDraftFooterConfig } from './sessionDraftFooterTypes'
 import {
   AskUserQuestionProvider
 } from './AskUserQuestionWidgets'
@@ -27,6 +28,7 @@ import { useIncrementalMemo } from '@/hooks/useIncrementalMemo'
 import { cn } from '@/lib/utils'
 import { perfEnabled, perfLog } from '@/lib/perfLogger'
 import { useCommandStore, selectSessionMessages } from '@/stores/commandStore'
+import { useSessionInlineDraftCard } from '@/hooks/useSessionInlineDraftCard'
 import type { ManagedSessionMessage, ManagedSessionState, SessionStopReason, UserMessageContent, ContentBlock } from '@shared/types'
 import { truncate as unicodeTruncate } from '@shared/unicode'
 import { extractUserText, getUserMessageDisplayInfo } from './messageDisplayUtils'
@@ -89,6 +91,12 @@ interface SessionMessageListProps {
    * Optional node rendered inline after all messages, scrolling with the list.
    */
   footerNode?: React.ReactNode
+  /**
+   * Optional session draft footer configuration. When provided, the list parses
+   * the latest issue/schedule draft once from current messages and renders the
+   * unified SessionDraftFooter inline after messages.
+   */
+  sessionDraftFooterConfig?: SessionDraftFooterConfig
   /** Issue ID — forwarded to DiffChangesDialog for the review chat feature */
   issueId?: string
 }
@@ -218,7 +226,18 @@ const SENDABLE_STATES: ReadonlySet<ManagedSessionState> = new Set<ManagedSession
  * switch — giving us a clean state.
  */
 export const SessionMessageList = memo(forwardRef<SessionMessageListHandle, SessionMessageListProps>(
-function SessionMessageList({ sessionId, messages: externalMessages, sessionState, stopReason, onSendAnswer, variant = 'cli', onContextualQuestionChange, footerNode, issueId }: SessionMessageListProps, ref): React.JSX.Element {
+function SessionMessageList({
+  sessionId,
+  messages: externalMessages,
+  sessionState,
+  stopReason,
+  onSendAnswer,
+  variant = 'cli',
+  onContextualQuestionChange,
+  footerNode,
+  sessionDraftFooterConfig,
+  issueId
+}: SessionMessageListProps, ref): React.JSX.Element {
   // ── Perf: measure full render cycle of this component ──────────────
   const _renderT0 = perfEnabled() ? performance.now() : 0
 
@@ -238,6 +257,12 @@ function SessionMessageList({ sessionId, messages: externalMessages, sessionStat
   // useCommandStore(selectStreamingMessage) subscription.
   const virtuosoRef = useRef<VirtuosoHandle>(null)
   const scrollerRef = useRef<HTMLElement | null>(null)
+
+  const inlineDraftCard = useSessionInlineDraftCard(
+    messages,
+    sessionId,
+    sessionDraftFooterConfig
+  )
 
   // State-backed scroller element — triggers useAutoFollow's useEffect when
   // Virtuoso mounts and provides its scroller DOM element.  The ref is kept
@@ -722,6 +747,14 @@ function SessionMessageList({ sessionId, messages: externalMessages, sessionStat
               sessionId={sessionId}
             />
           )
+          if (inlineDraftCard && inlineDraftCard.messageId === msg.id) {
+            element = (
+              <>
+                {element}
+                {inlineDraftCard.node}
+              </>
+            )
+          }
           break
         case 'system':
           element = <SystemEventView key={msg.id} event={msg.event} />
@@ -755,7 +788,12 @@ function SessionMessageList({ sessionId, messages: externalMessages, sessionStat
         </div>
       </div>
     )
-  }, [variant, sessionId, showTurnDiffDialog])
+  }, [
+    variant,
+    sessionId,
+    showTurnDiffDialog,
+    inlineDraftCard,
+  ])
 
   // Initial scroll position — always start at the last item so the first
   // paint shows content near the bottom, minimising visual flash before the

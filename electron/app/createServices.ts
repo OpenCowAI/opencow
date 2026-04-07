@@ -58,6 +58,8 @@ import { PushEngine } from '../services/issue-sync/pushEngine'
 import { SyncLogStore } from '../services/issue-sync/syncLogStore'
 import { IssueCommentStore } from '../services/issueCommentStore'
 import { IssueCommentService } from '../services/issueCommentService'
+import { SessionLifecycleOperationStore } from '../services/sessionLifecycleOperationStore'
+import { LifecycleOperationCoordinator } from '../services/lifecycleOperations'
 import { createMemoryStorage } from '../memory/storage'
 import { MemoryService } from '../memory/memoryService'
 import { MAX_SESSION_CONTENT_LENGTH } from '../memory/constants'
@@ -157,6 +159,7 @@ export interface AppServices {
   pushEngine: PushEngine
   issueCommentService: IssueCommentService
   syncLogStore: SyncLogStore
+  lifecycleOperationCoordinator: LifecycleOperationCoordinator
 }
 
 // ── Factory ──────────────────────────────────────────────────────────────────
@@ -202,6 +205,11 @@ export async function createAppServices(deps: ServiceFactoryDeps): Promise<AppSe
   const pipelineStore = new PipelineStore(database.db)
   const executionStore = new ExecutionStore(database.db)
   const managedSessionStore = new ManagedSessionStore(database.db)
+  const sessionLifecycleOperationStore = new SessionLifecycleOperationStore(database.db)
+  const lifecycleOperationCoordinator = new LifecycleOperationCoordinator({
+    store: sessionLifecycleOperationStore,
+    dispatch: (e) => bus.dispatch(e),
+  })
 
   // Forward-declare for circular references (schedule engine ↔ services)
   // eslint-disable-next-line prefer-const
@@ -564,6 +572,7 @@ export async function createAppServices(deps: ServiceFactoryDeps): Promise<AppSe
     notificationEmitter,
     dispatch: (e) => bus.dispatch(e),
   })
+  lifecycleOperationCoordinator.setScheduleService(scheduleService)
 
   // ── Phase 0.7: NativeCapabilities — OpenCow built-in abilities ──────────────
   nativeCapabilityRegistry.register(
@@ -591,6 +600,7 @@ export async function createAppServices(deps: ServiceFactoryDeps): Promise<AppSe
     issueService,
     issueProviderService,
     adapterRegistry,
+    lifecycleOperationCoordinator,
   }))
 
   // Project NativeCapability — exposes Project read-only queries as MCP tools to Claude.
@@ -615,7 +625,10 @@ export async function createAppServices(deps: ServiceFactoryDeps): Promise<AppSe
 
   // Schedule NativeCapability — exposes Schedule CRUD + pause/resume as MCP tools to Claude.
   // Enables conversational schedule management: "Create a daily report at 9am".
-  nativeCapabilityRegistry.register(new ScheduleNativeCapability({ scheduleService }))
+  nativeCapabilityRegistry.register(new ScheduleNativeCapability({
+    scheduleService,
+    lifecycleOperationCoordinator,
+  }))
   log.info('Service factory phase complete: native capabilities registered', {
     capabilities: ['browser', 'evose', 'issue', 'project', 'html', 'interaction', 'schedule'],
   })
@@ -697,5 +710,6 @@ export async function createAppServices(deps: ServiceFactoryDeps): Promise<AppSe
     pushEngine,
     issueCommentService,
     syncLogStore,
+    lifecycleOperationCoordinator,
   }
 }

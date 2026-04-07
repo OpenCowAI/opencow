@@ -331,6 +331,122 @@ describe('SessionOrchestrator.startSession — idempotency', () => {
     await orchestrator.stopSession(sessionId)
   })
 
+  it('updates codex executionContext when turn_context reports cwd changes', async () => {
+    const fakeGitExecutor = {
+      isGitRepo: vi.fn(async (_cwd: string) => true),
+      getStatus: vi.fn(async (_cwd: string) => ({
+        branch: 'feat/worktree-context',
+        isDetached: false,
+        upstream: null,
+        entries: [],
+      })),
+    }
+
+    deps = {
+      ...makeDeps(db, tmpDir, 'codex'),
+      gitCommandExecutor: fakeGitExecutor as unknown as NonNullable<OrchestratorDeps['gitCommandExecutor']>,
+      resolveProjectById: async (projectId: string) => ({
+        id: projectId,
+        canonicalPath: tmpDir,
+      }),
+    }
+    orchestrator = new SessionOrchestrator(deps)
+
+    const worktreePath = join(tmpdir(), 'opencow-external-worktree')
+    codexMocks.state.turnPlans.push([
+      { type: 'thread.started', thread_id: 'codex-thread-cwd-update' },
+      { type: 'turn.started' },
+      { type: 'turn_context', payload: { cwd: worktreePath } },
+      { type: 'item.completed', item: { type: 'agent_message', text: 'cwd updated' } },
+      { type: 'turn.completed', usage: { input_tokens: 1, cached_input_tokens: 0, output_tokens: 1 } },
+    ])
+
+    const sessionId = await orchestrator.startSession({
+      prompt: 'run with codex cwd update',
+      engineKind: 'codex',
+      workspace: { scope: 'project', projectId: 'project-cwd-update' },
+    })
+
+    let session = await orchestrator.getSession(sessionId)
+    for (let i = 0; i < 30 && session?.executionContext?.cwd !== worktreePath; i++) {
+      await new Promise((resolve) => setTimeout(resolve, 10))
+      session = await orchestrator.getSession(sessionId)
+    }
+
+    expect(session?.executionContext).toBeTruthy()
+    expect(session?.executionContext?.cwd).toBe(worktreePath)
+    expect(session?.executionContext?.gitBranch).toBe('feat/worktree-context')
+    expect(session?.executionContext?.isWorktree).toBe(true)
+
+    await orchestrator.stopSession(sessionId)
+  })
+
+  it('keeps newest executionContext when initial resolve finishes after runtime cwd update', async () => {
+    const startupPath = tmpDir
+    const runtimePath = join(tmpdir(), 'opencow-external-worktree-race')
+
+    const fakeGitExecutor = {
+      isGitRepo: vi.fn(async (_cwd: string) => true),
+      getStatus: vi.fn(async (cwd: string) => {
+        if (cwd === startupPath) {
+          await new Promise((resolve) => setTimeout(resolve, 40))
+          return {
+            branch: 'main',
+            isDetached: false,
+            upstream: null,
+            entries: [],
+          }
+        }
+        return {
+          branch: 'feat/runtime-cwd',
+          isDetached: false,
+          upstream: null,
+          entries: [],
+        }
+      }),
+    }
+
+    deps = {
+      ...makeDeps(db, tmpDir, 'codex'),
+      gitCommandExecutor: fakeGitExecutor as unknown as NonNullable<OrchestratorDeps['gitCommandExecutor']>,
+      resolveProjectById: async (projectId: string) => ({
+        id: projectId,
+        canonicalPath: tmpDir,
+      }),
+    }
+    orchestrator = new SessionOrchestrator(deps)
+
+    codexMocks.state.turnPlans.push([
+      { type: 'thread.started', thread_id: 'codex-thread-cwd-race' },
+      { type: 'turn.started' },
+      { type: 'turn_context', payload: { cwd: runtimePath } },
+      { type: 'item.completed', item: { type: 'agent_message', text: 'race handled' } },
+      { type: 'turn.completed', usage: { input_tokens: 1, cached_input_tokens: 0, output_tokens: 1 } },
+    ])
+
+    const sessionId = await orchestrator.startSession({
+      prompt: 'run with codex cwd race',
+      engineKind: 'codex',
+      workspace: { scope: 'project', projectId: 'project-cwd-race' },
+    })
+
+    let session = await orchestrator.getSession(sessionId)
+    for (let i = 0; i < 40 && session?.executionContext?.gitBranch !== 'feat/runtime-cwd'; i++) {
+      await new Promise((resolve) => setTimeout(resolve, 10))
+      session = await orchestrator.getSession(sessionId)
+    }
+    expect(session?.executionContext?.cwd).toBe(runtimePath)
+    expect(session?.executionContext?.gitBranch).toBe('feat/runtime-cwd')
+
+    // Wait longer than startup path delay; stale init result must not override runtime cwd.
+    await new Promise((resolve) => setTimeout(resolve, 80))
+    const after = await orchestrator.getSession(sessionId)
+    expect(after?.executionContext?.cwd).toBe(runtimePath)
+    expect(after?.executionContext?.gitBranch).toBe('feat/runtime-cwd')
+
+    await orchestrator.stopSession(sessionId)
+  })
+
   it('uses command.defaultEngine when startSession input omits engineKind', async () => {
     deps = makeDeps(db, tmpDir, 'codex')
     orchestrator = new SessionOrchestrator(deps)

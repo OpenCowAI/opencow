@@ -81,6 +81,9 @@ const invokeChannels: (keyof IPCChannels)[] = [
   'command:list-managed-sessions',
   'command:get-managed-session',
   'command:get-session-messages',
+  'command:list-session-lifecycle-operations',
+  'command:confirm-session-lifecycle-operation',
+  'command:reject-session-lifecycle-operation',
   'command:delete-session',
   // Provider
   'provider:get-status',

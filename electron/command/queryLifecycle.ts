@@ -4,7 +4,7 @@ import { query as sdkQuery } from '@anthropic-ai/claude-agent-sdk'
 import type { Query, SDKMessage } from '@anthropic-ai/claude-agent-sdk'
 import { MessageQueue } from './messageQueue'
 import type { UserMessageContent } from '../../src/shared/types'
-import type { SessionLifecycle } from './sessionLifecycle'
+import type { SessionLifecycle, SessionLifecycleStartInput } from './sessionLifecycle'
 import { adaptClaudeSdkMessage } from '../conversation/runtime/claudeRuntimeAdapter'
 import {
   createRuntimeEventEnvelope,
@@ -52,16 +52,14 @@ export class QueryLifecycle implements SessionLifecycle {
    * Start the SDK query and return a message stream.
    * Must be called exactly once per instance.
    *
-   * @param initialPrompt - First user message to push into the queue
-   * @param options - SDK query options (abortController is NOT needed — lifecycle manages cleanup via close())
+   * @param input - Structured start input (prompt + launch options)
    * @returns AsyncIterable of SDK messages
    */
-  start(
-    initialPrompt: UserMessageContent,
-    options: Record<string, unknown>
-  ): AsyncIterable<EngineRuntimeEventEnvelope> {
+  start(input: SessionLifecycleStartInput): AsyncIterable<EngineRuntimeEventEnvelope> {
     if (this._query) throw new Error('QueryLifecycle already started')
     if (this._stopped) throw new Error('QueryLifecycle already stopped')
+    const initialPrompt: UserMessageContent = input.initialPrompt
+    const options = input.launchOptions
 
     // Log initial prompt preview (Codex-style: first 200 + last 100 chars)
     const promptPreview = summarizePrompt(initialPrompt)

@@ -15,7 +15,6 @@ import {
   type SessionOrigin,
   type SessionSnapshot,
   type StartSessionNativeToolAllowItem,
-  type StartSessionPolicy,
   type SessionStopReason,
   type StartSessionInput,
   type UserMessageContent,
@@ -24,7 +23,7 @@ import { getOriginIssueId } from '../../src/shared/types'
 import { ManagedSession } from './managedSession'
 import { ManagedSessionStore } from '../services/managedSessionStore'
 import { buildSDKHooks } from '../hooks/buildSDKHooks'
-import { resolveExecutionContext } from './resolveExecutionContext'
+import { ExecutionContextCoordinator } from './executionContextCoordinator'
 import type { GitCommandExecutor } from '../services/git/gitCommandExecutor'
 import type { NativeCapabilityRegistry } from '../nativeCapabilities/registry'
 import type { NativeCapabilityToolContext, NativeToolDescriptor } from '../nativeCapabilities/types'
@@ -571,6 +570,23 @@ export class SessionOrchestrator {
       env: sessionEnv,
     }
 
+    const executionContextCoordinator = new ExecutionContextCoordinator({
+      sessionId,
+      session,
+      projectPath: config.projectPath ?? null,
+      gitExecutor: this.deps.gitCommandExecutor ?? null,
+      dispatch: this.deps.dispatch,
+      persistSession: () => this.store.save(session.toPersistenceRecord()),
+    })
+
+    const notifyExecutionContextCwd = (params: {
+      cwd: string
+      source: 'startup' | 'codex.turn_context' | 'codex.session_meta' | 'claude.hook' | 'unknown'
+      occurredAtMs?: number
+    }): void => {
+      executionContextCoordinator.notify(params)
+    }
+
     const modelOverride = session.getModelOverride()
     await this.engineBootstrapRegistry.apply({
       engineKind,
@@ -639,15 +655,10 @@ export class SessionOrchestrator {
 
         // Resolve initial execution context (branch, worktree) from the session's cwd.
         // Fire-and-forget — failure is non-fatal (executionContext stays null).
-        resolveExecutionContext(config.startupCwd, config.projectPath ?? null, this.deps.gitCommandExecutor ?? null)
-          .then((ctx) => {
-            session.initExecutionContext(ctx)
-            this.deps.dispatch({ type: 'command:session:updated', payload: session.snapshot() })
-            this.store.save(session.toPersistenceRecord()).catch((err) =>
-              log.error(`Failed to persist initial execution context for ${sessionId}`, err),
-            )
-          })
-          .catch((err) => log.error(`Failed to resolve initial execution context for ${sessionId}`, err))
+        notifyExecutionContextCwd({
+          cwd: config.startupCwd,
+          source: 'startup',
+        })
       },
       onResultReceived: () => {
         // ── Immediate completion notification ──────────────────────────────
@@ -691,18 +702,12 @@ export class SessionOrchestrator {
       hooks = buildSDKHooks(
         (e) => this.deps.dispatch(e),
         sessionId,
-        (newCwd) => {
-          resolveExecutionContext(newCwd, config.projectPath ?? null, this.deps.gitCommandExecutor ?? null)
-            .then((ctx) => {
-              if (session.updateExecutionContext(ctx)) {
-                this.deps.dispatch({ type: 'command:session:updated', payload: session.snapshot() })
-                this.store.save(session.toPersistenceRecord()).catch((err) =>
-                  log.error(`Failed to persist execution context update for ${sessionId}`, err),
-                )
-              }
-            })
-            .catch((err) => log.error(`Failed to resolve execution context change for ${sessionId}`, err))
-        },
+        (cwd, occurredAtMs) =>
+          notifyExecutionContextCwd({
+            cwd,
+            source: 'claude.hook',
+            occurredAtMs,
+          }),
       )
     }
 
@@ -894,7 +899,15 @@ export class SessionOrchestrator {
         return
       }
 
-      const runtimeEventStream = lifecycle.start(initialPrompt, toSdkOptions(options))
+      const runtimeEventStream = lifecycle.start({
+        initialPrompt,
+        launchOptions: toSdkOptions(options),
+        callbacks: isClaudeEngine
+          ? undefined
+          : {
+              onExecutionContextSignal: (signal) => notifyExecutionContextCwd(signal),
+            },
+      })
       for await (const runtimeEvent of runtimeEventStream) {
         // Hard stop guard: manual stop sets session state to `stopped`
         // synchronously, but the runtime stream may still yield buffered
@@ -1508,8 +1521,6 @@ export class SessionOrchestrator {
     const fallbackIssueId = getOriginIssueId(session.origin) ?? undefined
 
     const spawnCategory = classifySpawnError(err)
-    let snap: SessionSnapshot
-
     if (spawnCategory === 'process_corrupted') {
       // EBADF: file descriptor leak in the Electron process.
       // NOT retryable — will fail again with the same error every time.
@@ -1520,7 +1531,7 @@ export class SessionOrchestrator {
         message: `Session process failed (${code}). Please restart OpenCow to recover.`,
       })
       this.runtimes.delete(sessionId)
-      snap = this.dispatchSessionTerminal({
+      this.dispatchSessionTerminal({
         sessionId,
         session,
         terminalEvent: 'error',
@@ -1539,7 +1550,7 @@ export class SessionOrchestrator {
         // Clear operational fields since the lifecycle is dead.
         rt.pipeline = null
         rt.policy = null
-        snap = this.dispatchSessionTerminal({
+        this.dispatchSessionTerminal({
           sessionId,
           session,
           terminalEvent: 'idle',
@@ -1553,7 +1564,7 @@ export class SessionOrchestrator {
           message: `Session process failed (${code}) after ${count} retries. Please restart OpenCow.`,
         })
         this.runtimes.delete(sessionId)
-        snap = this.dispatchSessionTerminal({
+        this.dispatchSessionTerminal({
           sessionId,
           session,
           terminalEvent: 'error',
@@ -1567,7 +1578,7 @@ export class SessionOrchestrator {
         message: err instanceof Error ? err.message : String(err),
       })
       this.runtimes.delete(sessionId)
-      snap = this.dispatchSessionTerminal({
+      this.dispatchSessionTerminal({
         sessionId,
         session,
         terminalEvent: 'error',
