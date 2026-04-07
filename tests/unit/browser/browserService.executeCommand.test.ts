@@ -129,6 +129,35 @@ describe('BrowserService.executeCommand context contract', () => {
     expect(harness.decoratorDeferStopBorderGlow).toHaveBeenCalledTimes(1)
   })
 
+  it('normalizes non-BrowserError throws into CDP_ERROR result', async () => {
+    const harness = createHarness()
+    harness.executorExecute.mockRejectedValue(new Error('boom from executor'))
+
+    const result = await harness.service.executeCommand({
+      viewId: 'view-1',
+      action: 'evaluate',
+      expression: 'document.title',
+    })
+
+    expect(result).toEqual({
+      status: 'error',
+      error: {
+        code: 'CDP_ERROR',
+        method: 'evaluate',
+        message: 'boom from executor',
+      },
+    })
+    expect(harness.dispatch).toHaveBeenNthCalledWith(1, {
+      type: 'browser:command:started',
+      payload: { viewId: 'view-1', action: 'evaluate' },
+    })
+    expect(harness.dispatch).toHaveBeenNthCalledWith(2, {
+      type: 'browser:command:completed',
+      payload: { viewId: 'view-1', action: 'evaluate', success: false },
+    })
+    expect(harness.decoratorDeferStopBorderGlow).toHaveBeenCalledTimes(1)
+  })
+
   it('fails fast with PAGE_CLOSED when target view does not exist', async () => {
     const dispatch = vi.fn()
     const service = new BrowserService({

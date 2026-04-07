@@ -4033,6 +4033,13 @@ export type BrowserCommandPayload =
   | { viewId: string; action: 'reload' }
   | { viewId: string; action: 'click'; selector: string }
   | { viewId: string; action: 'type'; selector: string; text: string }
+  | {
+    viewId: string
+    action: 'upload'
+    target: { kind: 'css'; selector: string } | { kind: 'ref'; ref: string }
+    files: string[]
+    strict?: boolean
+  }
   | { viewId: string; action: 'select'; selector: string; value: string }
   | { viewId: string; action: 'scroll'; direction: 'up' | 'down'; amount?: number }
   | { viewId: string; action: 'wait-for-selector'; selector: string; timeout?: number }

@@ -48,6 +48,7 @@ yarn-error.log*
 plans/
 docs/
 PLAN.md
+.tmp
 
 # Coverage
 coverage/

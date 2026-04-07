@@ -240,6 +240,8 @@
     "taskList": "Task list",
     "jumpToLatest": "Latest",
     "jumpToLatestAria": "Jump to latest response",
+    "browserUploadStatus_one": "Uploaded {{count}} file",
+    "browserUploadStatus_other": "Uploaded {{count}} files",
     "fileDropHint": "Drop files to attach",
     "fileDropHintSub": "Images, PDFs, and text files will be attached to your message"
   },

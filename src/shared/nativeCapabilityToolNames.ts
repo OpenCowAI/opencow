@@ -21,6 +21,7 @@ export const NativeCapabilityTools = {
   BROWSER_SNAPSHOT:   `${MCP_SERVER_QUALIFIED_NAME}__browser_snapshot`,
   BROWSER_REF_CLICK:  `${MCP_SERVER_QUALIFIED_NAME}__browser_ref_click`,
   BROWSER_REF_TYPE:   `${MCP_SERVER_QUALIFIED_NAME}__browser_ref_type`,
+  BROWSER_UPLOAD:     `${MCP_SERVER_QUALIFIED_NAME}__browser_upload`,
 
   // ─── Issue Tools ───────────────────────────────────────────────────────────
   ISSUE_LIST:         `${MCP_SERVER_QUALIFIED_NAME}__list_issues`,

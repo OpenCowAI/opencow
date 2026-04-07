@@ -5,6 +5,7 @@ import type {
   BrowserCommand,
   BrowserError,
   BrowserExecutionContext,
+  BrowserUploadTarget,
   ExecutorState,
   KeyDescriptor,
   PageContent,
@@ -13,6 +14,7 @@ import type { BrowserActionDecorator } from './browserActionDecorator'
 import { SnapshotService } from './snapshot'
 import { SnapshotState } from './snapshot'
 import type { SnapshotOptions, SnapshotResult } from './snapshot'
+import { UploadPolicyService } from './upload'
 import { createLogger } from '../platform/logger'
 
 const log = createLogger('BrowserAction')
@@ -51,6 +53,9 @@ export class BrowserActionExecutor {
 
   /** Snapshot-Ref: Independent state container — holds refMap + staleness. */
   private readonly snapshotState = new SnapshotState()
+
+  /** Upload policy validator (filesystem/safety checks). */
+  private readonly uploadPolicy = new UploadPolicyService()
 
   constructor(
     private readonly webContents: WebContents,
@@ -118,6 +123,8 @@ export class BrowserActionExecutor {
         return this.click(command.selector, context)
       case 'type':
         return this.type(command.selector, command.text, context)
+      case 'upload':
+        return this.upload(command.target, command.files, command.strict ?? true, context)
       case 'select':
         return this.selectOption(command.selector, command.value, context)
       case 'scroll':
@@ -268,6 +275,42 @@ export class BrowserActionExecutor {
     // Small delay for focus
     await this.sleep(50, context, 'type')
     await this.typeText(text, context)
+  }
+
+  private async upload(
+    target: BrowserUploadTarget,
+    files: string[],
+    strict: boolean,
+    context: BrowserExecutionContext,
+  ): Promise<{ uploaded: number; target: string; files: string[]; mode: 'setFileInputFiles' }> {
+    const backendNodeId = await this.resolveUploadTargetBackendNodeId(target, context)
+    const targetLabel = formatUploadTargetLabel(target)
+    const metadata = await this.describeBackendNode(backendNodeId, context)
+
+    if (strict && !this.isFileInputNode(metadata)) {
+      throw this.createError({
+        code: 'UPLOAD_TARGET_INVALID',
+        target: targetLabel,
+        message: `Target "${targetLabel}" is not an input[type=file] element`,
+      })
+    }
+
+    const validated = await this.uploadPolicy.validateFiles(files, {
+      projectPath: context.projectPath,
+      startupCwd: context.startupCwd,
+    })
+
+    await this.cdp('DOM.setFileInputFiles', {
+      files: validated.files,
+      backendNodeId,
+    }, DEFAULT_CDP_TIMEOUT, context)
+
+    return {
+      uploaded: validated.files.length,
+      target: targetLabel,
+      files: validated.files,
+      mode: 'setFileInputFiles',
+    }
   }
 
   private async selectOption(selector: string, value: string, context: BrowserExecutionContext): Promise<void> {
@@ -654,6 +697,67 @@ export class BrowserActionExecutor {
     return result.nodeId
   }
 
+  private async resolveUploadTargetBackendNodeId(
+    target: BrowserUploadTarget,
+    context: BrowserExecutionContext,
+  ): Promise<number> {
+    if (target.kind === 'ref') {
+      const entry = this.snapshotState.resolveRef(target.ref)
+      if (entry.backendNodeId === undefined) {
+        throw this.createError({
+          code: 'REF_NOT_FOUND',
+          ref: target.ref.startsWith('@') ? target.ref.slice(1) : target.ref,
+          message: `Ref "${target.ref}" has no backendNodeId — cannot upload file`,
+        })
+      }
+      return entry.backendNodeId
+    }
+
+    const nodeId = await this.resolveSelector(target.selector, context)
+    const described = await this.cdp('DOM.describeNode', { nodeId }, DEFAULT_CDP_TIMEOUT, context) as {
+      node?: { backendNodeId?: number }
+    }
+    const backendNodeId = described.node?.backendNodeId
+    if (typeof backendNodeId !== 'number') {
+      const targetLabel = formatUploadTargetLabel(target)
+      throw this.createError({
+        code: 'UPLOAD_TARGET_INVALID',
+        target: targetLabel,
+        message: `Unable to resolve backend node for target "${targetLabel}"`,
+      })
+    }
+    return backendNodeId
+  }
+
+  private async describeBackendNode(
+    backendNodeId: number,
+    context: BrowserExecutionContext,
+  ): Promise<{
+    nodeName: string
+    typeAttr: string | null
+  }> {
+    const described = await this.cdp('DOM.describeNode', { backendNodeId }, DEFAULT_CDP_TIMEOUT, context) as {
+      node?: {
+        nodeName?: string
+        attributes?: string[]
+      }
+    }
+    const nodeName = (described.node?.nodeName ?? '').toUpperCase()
+    const attrs = described.node?.attributes ?? []
+    let typeAttr: string | null = null
+    for (let i = 0; i < attrs.length - 1; i += 2) {
+      if (attrs[i].toLowerCase() === 'type') {
+        typeAttr = attrs[i + 1].toLowerCase()
+        break
+      }
+    }
+    return { nodeName, typeAttr }
+  }
+
+  private isFileInputNode(node: { nodeName: string; typeAttr: string | null }): boolean {
+    return node.nodeName === 'INPUT' && node.typeAttr === 'file'
+  }
+
   private async getBoxModel(nodeId: number, context: BrowserExecutionContext): Promise<{ content: number[] }> {
     const result = await this.cdp('DOM.getBoxModel', { nodeId }, DEFAULT_CDP_TIMEOUT, context) as {
       model: { content: number[] }
@@ -867,4 +971,8 @@ export class BrowserActionExecutor {
       })
     }
   }
+}
+
+function formatUploadTargetLabel(target: BrowserUploadTarget): string {
+  return target.kind === 'css' ? target.selector : target.ref
 }

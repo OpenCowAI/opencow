@@ -56,6 +56,7 @@ import {
   ScanText,
   ScanSearch,
   Camera,
+  Upload,
   ScrollText,
   Timer,
   // Issue & Project tool icons
@@ -208,6 +209,7 @@ const TOOL_ICONS: Readonly<Record<string, LucideIcon>> = {
   browser_snapshot: ScanSearch,
   browser_ref_click: MousePointerClick,
   browser_ref_type: Keyboard,
+  browser_upload: Upload,
 
   // ── Issue Capability tools (keyed by normalised name) ──
   list_issues: CircleDot,
@@ -376,6 +378,18 @@ function getToolTargetByNormName(name: string, input: Record<string, unknown>): 
       const refTypeText = input.text as string | undefined
       if (refTypeRef && refTypeText) return `${refTypeRef} "${safeSlice(refTypeText, 0, MAX_TYPE_PREVIEW)}"`
       return refTypeRef ?? ''
+    }
+    case 'browser_upload': {
+      const target = input.target as { kind?: unknown; selector?: unknown; ref?: unknown } | undefined
+      const targetLabel = target?.kind === 'css'
+        ? (typeof target.selector === 'string' ? safeSlice(target.selector, 0, MAX_TEXT_TARGET) : '')
+        : (target?.kind === 'ref'
+            ? (typeof target.ref === 'string' ? safeSlice(target.ref, 0, MAX_TEXT_TARGET) : '')
+            : '')
+      const files = Array.isArray(input.files) ? input.files : []
+      if (files.length === 0) return targetLabel
+      const first = typeof files[0] === 'string' ? files[0].split('/').pop() ?? files[0] : ''
+      return `${targetLabel}${targetLabel ? ' · ' : ''}${files.length} file${files.length > 1 ? 's' : ''}${first ? ` (${first})` : ''}`
     }
     case 'gen_html':
       return typeof input.title === 'string' ? input.title : ''

@@ -240,6 +240,8 @@
     "taskList": "任务列表",
     "jumpToLatest": "最新",
     "jumpToLatestAria": "跳转到最新回复",
+    "browserUploadStatus_one": "已上传 {{count}} 个文件",
+    "browserUploadStatus_other": "已上传 {{count}} 个文件",
     "fileDropHint": "松手附加文件",
     "fileDropHintSub": "支持图片、PDF 和文本文件"
   },

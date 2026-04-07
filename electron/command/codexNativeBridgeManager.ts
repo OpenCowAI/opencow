@@ -59,6 +59,8 @@ export interface RegisterCodexBridgeSessionInput {
     projectId: string | null
     issueId: string | null
     originSource: string
+    projectPath?: string
+    startupCwd?: string
   }
   relay: ToolProgressRelay
   nativeToolAllowlist: StartSessionNativeToolAllowItem[]
