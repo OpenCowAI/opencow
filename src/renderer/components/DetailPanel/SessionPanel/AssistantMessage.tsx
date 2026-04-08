@@ -187,12 +187,14 @@ export const AssistantMessage = memo(function AssistantMessage({
   }, [content])
 
   // Filter out filler text blocks (e.g. "...") emitted by Claude between tool calls.
+  // Only suppress when the block is sandwiched between tool_use blocks on BOTH sides.
+  // Regex matches exactly "..." (not "." or "..") to avoid false positives.
   const filteredContent = stableContent.filter((block, i) => {
     if (block.type !== 'text') return true
-    if (!/^\s*\.{1,3}\s*$/.test(block.text)) return true
+    if (!/^\s*\.\.\.\s*$/.test(block.text)) return true
     const prev = stableContent[i - 1]
     const next = stableContent[i + 1]
-    return !(prev?.type === 'tool_use' || next?.type === 'tool_use')
+    return !(prev?.type === 'tool_use' && next?.type === 'tool_use')
   })
 
   const toolCallCount = countToolUseBlocks(filteredContent)

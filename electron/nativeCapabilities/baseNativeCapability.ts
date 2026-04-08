@@ -36,6 +36,24 @@ import type {
   NativeToolCallInput,
   NativeToolDescriptor,
 } from './types'
+import { generateId } from '../shared/identity'
+
+/**
+ * Resolves the tool use id from the invocation context.
+ * Falls back to a generated id if neither toolUseId nor invocationId is present.
+ */
+export function resolveProposalToolUseId(context: {
+  toolUseId?: string
+  invocationId?: string
+}): string {
+  if (typeof context.toolUseId === 'string' && context.toolUseId.trim().length > 0) {
+    return context.toolUseId
+  }
+  if (typeof context.invocationId === 'string' && context.invocationId.trim().length > 0) {
+    return context.invocationId
+  }
+  return `missing-tool-use-id:${generateId()}`
+}
 
 // ─── ToolConfig ──────────────────────────────────────────────────────────────
 

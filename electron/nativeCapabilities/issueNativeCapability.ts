@@ -30,12 +30,11 @@
 
 import { z } from 'zod/v4'
 import type { NativeCapabilityMeta, NativeCapabilityToolContext, NativeCapabilitySessionContext } from './types'
-import { BaseNativeCapability, type ToolConfig } from './baseNativeCapability'
+import { BaseNativeCapability, type ToolConfig, resolveProposalToolUseId } from './baseNativeCapability'
 import type { IssueService } from '../services/issueService'
 import type { IssueProviderService } from '../services/issueProviderService'
 import type { AdapterRegistry } from '../services/issue-sync/adapterRegistry'
 import type { LifecycleOperationCoordinator } from '../services/lifecycleOperations'
-import { generateId } from '../shared/identity'
 import type {
   Issue,
   IssuePriority,
@@ -80,19 +79,6 @@ function normalizeConfirmationMode(
   }
   if (normalized === 'draft') return 'required'
   return undefined
-}
-
-function resolveProposalToolUseId(context: {
-  toolUseId?: string
-  invocationId?: string
-}): string {
-  if (typeof context.toolUseId === 'string' && context.toolUseId.trim().length > 0) {
-    return context.toolUseId
-  }
-  if (typeof context.invocationId === 'string' && context.invocationId.trim().length > 0) {
-    return context.invocationId
-  }
-  return `missing-tool-use-id:${generateId()}`
 }
 
 // ─── Serialisation constants ───────────────────────────────────────────────────
@@ -419,7 +405,9 @@ export class IssueNativeCapability extends BaseNativeCapability {
     return {
       name: 'propose_issue_operation',
       description:
-        'Propose one or more issue lifecycle operations for in-session governance and execution.',
+        'Propose one or more issue lifecycle operations for in-session governance and execution. ' +
+        'Returns { operations: SessionLifecycleOperationEnvelope[], _sessionEntityHints: { entity, action, entityId, name }[] }. ' +
+        'For update/transition_status actions, normalizedPayload.id is required — use entityId from _sessionEntityHints or list_issues to retrieve it first.',
       schema: {
         userInstruction: z
           .string()

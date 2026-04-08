@@ -34,10 +34,9 @@
 
 import { z } from 'zod/v4'
 import type { NativeCapabilityMeta, NativeCapabilityToolContext, NativeCapabilitySessionContext } from './types'
-import { BaseNativeCapability, type ToolConfig } from './baseNativeCapability'
+import { BaseNativeCapability, type ToolConfig, resolveProposalToolUseId } from './baseNativeCapability'
 import type { ScheduleService } from '../services/schedule/scheduleService'
 import type { LifecycleOperationCoordinator } from '../services/lifecycleOperations'
-import { generateId } from '../shared/identity'
 import { normalizeScheduleLifecycleProposalPayload } from '../../src/shared/scheduleLifecycleCanonical'
 import type {
   Schedule,
@@ -83,19 +82,6 @@ function normalizeConfirmationMode(
   }
   if (normalized === 'draft') return 'required'
   return undefined
-}
-
-function resolveProposalToolUseId(context: {
-  toolUseId?: string
-  invocationId?: string
-}): string {
-  if (typeof context.toolUseId === 'string' && context.toolUseId.trim().length > 0) {
-    return context.toolUseId
-  }
-  if (typeof context.invocationId === 'string' && context.invocationId.trim().length > 0) {
-    return context.invocationId
-  }
-  return `missing-tool-use-id:${generateId()}`
 }
 
 function resolveScheduleOperationTargetId(
@@ -527,7 +513,9 @@ export class ScheduleNativeCapability extends BaseNativeCapability {
     return {
       name: 'propose_schedule_operation',
       description:
-        'Propose one or more schedule lifecycle operations for in-session governance and execution.',
+        'Propose one or more schedule lifecycle operations for in-session governance and execution. ' +
+        'Returns { operations: SessionLifecycleOperationEnvelope[], _sessionEntityHints: { entity, action, entityId, name }[] }. ' +
+        'For update/pause/resume/trigger_now actions, target id is required — use entityId from _sessionEntityHints or list_schedules to retrieve it first.',
       schema: {
         userInstruction: z
           .string()
