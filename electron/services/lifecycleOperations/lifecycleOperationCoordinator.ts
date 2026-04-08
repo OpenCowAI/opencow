@@ -26,15 +26,19 @@ import type {
 import { SessionLifecycleOperationStore } from '../sessionLifecycleOperationStore'
 import { OperationGovernancePolicy } from './operationGovernancePolicy'
 import { ExplicitNoConfirmDetector } from './explicitNoConfirmDetector'
+import { createLogger } from '../../platform/logger'
 import {
   normalizeScheduleLifecycleProposalPayload,
   type ScheduleLifecycleCanonicalPayload,
 } from '../../../src/shared/scheduleLifecycleCanonical'
 import type { ScheduleService } from '../schedule/scheduleService'
 
+const log = createLogger('LifecycleOperationCoordinator')
+
 export interface ProposeLifecycleOperationsInput {
   sessionId: string
   toolUseId: string
+  toolName?: string
   proposals: SessionLifecycleOperationProposalInput[]
 }
 
@@ -97,8 +101,30 @@ export interface RejectLifecycleOperationResult {
   operation: SessionLifecycleOperationEnvelope | null
 }
 
+export type MarkLifecycleOperationAppliedResultCode =
+  | 'marked_applied_externally'
+  | 'already_applied'
+  | 'entity_not_found'
+  | 'entity_mismatch'
+  | 'rejected_concurrent'
+  | 'not_found'
+  | 'invalid_state'
+
+export interface MarkLifecycleOperationAppliedResult {
+  ok: boolean
+  code: MarkLifecycleOperationAppliedResultCode
+  operation: SessionLifecycleOperationEnvelope | null
+}
+
 interface ListSessionOperationsInput {
   sessionId: string
+}
+
+export interface SessionEntityHint {
+  entity: string
+  action: string
+  entityId: string
+  name: string | null
 }
 
 interface ConfirmLifecycleOperationInput {
@@ -109,6 +135,51 @@ interface ConfirmLifecycleOperationInput {
 interface RejectLifecycleOperationInput {
   sessionId: string
   operationId: string
+}
+
+interface MarkLifecycleOperationAppliedInput {
+  sessionId: string
+  operationId: string
+  source: 'manual_form_create'
+  entityRef: {
+    entity: 'issue' | 'schedule'
+    id: string
+  }
+  note?: string
+}
+
+function sanitizeLifecycleToolSegment(value: string): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+}
+
+function buildProposalGroupKey(input: {
+  toolUseId: string
+  toolName?: string
+}): string {
+  const toolUseId = input.toolUseId.trim()
+  if (!input.toolName) return toolUseId
+  const sanitizedTool = sanitizeLifecycleToolSegment(input.toolName)
+  if (!sanitizedTool) return toolUseId
+  return `${toolUseId}#${sanitizedTool}`
+}
+
+function extractCreatedEntityId(resultSnapshot: Record<string, unknown> | null): string | null {
+  if (!resultSnapshot) return null
+  const issue = resultSnapshot.issue
+  if (issue && typeof issue === 'object' && !Array.isArray(issue)) {
+    const id = (issue as Record<string, unknown>).id
+    if (typeof id === 'string' && id.length > 0) return id
+  }
+  const schedule = resultSnapshot.schedule
+  if (schedule && typeof schedule === 'object' && !Array.isArray(schedule)) {
+    const id = (schedule as Record<string, unknown>).id
+    if (typeof id === 'string' && id.length > 0) return id
+  }
+  return null
 }
 
 function toEnvelope(operation: SessionLifecycleOperation | null): SessionLifecycleOperationEnvelope | null {
@@ -127,6 +198,7 @@ function toEnvelope(operation: SessionLifecycleOperation | null): SessionLifecyc
     updatedAt: new Date(operation.updatedAt).toISOString(),
     appliedAt: operation.appliedAt ? new Date(operation.appliedAt).toISOString() : null,
     resultSnapshot: operation.resultSnapshot,
+    createdEntityId: extractCreatedEntityId(operation.resultSnapshot),
     errorCode: operation.errorCode,
     errorMessage: operation.errorMessage,
   }
@@ -188,6 +260,10 @@ export class LifecycleOperationCoordinator {
     const proposed = await this.store.withTransaction(async (txStore) => {
       const envelopes: SessionLifecycleOperationEnvelope[] = []
       const autoApplyOperationIds: string[] = []
+      const proposalGroupKey = buildProposalGroupKey({
+        toolUseId: input.toolUseId,
+        toolName: input.toolName,
+      })
 
       for (let i = 0; i < input.proposals.length; i++) {
         const proposal = input.proposals[i]
@@ -203,9 +279,9 @@ export class LifecycleOperationCoordinator {
           }
         }
 
-        const byTuple = await txStore.findBySessionToolUseOperationIndex({
+        const byTuple = await txStore.findBySessionProposalGroupOperationIndex({
           sessionId: input.sessionId,
-          toolUseId: input.toolUseId,
+          proposalGroupKey,
           operationIndex: i,
         })
         if (byTuple) {
@@ -224,6 +300,7 @@ export class LifecycleOperationCoordinator {
           id: generateId(),
           sessionId: input.sessionId,
           toolUseId: input.toolUseId,
+          proposalGroupKey,
           operationIndex: i,
           entity: proposal.entity,
           action: proposal.action,
@@ -300,12 +377,53 @@ export class LifecycleOperationCoordinator {
     return operations.map((operation) => toEnvelope(operation)).filter((item): item is SessionLifecycleOperationEnvelope => !!item)
   }
 
+  async getSessionEntityHints(sessionId: string): Promise<SessionEntityHint[]> {
+    const operations = await this.store.listBySession(sessionId)
+    return operations
+      .filter((op) => op.state === 'applied')
+      .map((op) => {
+        const entityId = extractCreatedEntityId(op.resultSnapshot)
+        if (!entityId) return null
+        const name =
+          typeof op.summary.name === 'string' ? op.summary.name :
+          typeof op.summary.title === 'string' ? op.summary.title : null
+        return { entity: op.entity, action: op.action, entityId, name } satisfies SessionEntityHint
+      })
+      .filter((item): item is SessionEntityHint => item !== null)
+  }
+
   async confirmOperation(input: ConfirmLifecycleOperationInput): Promise<ConfirmLifecycleOperationResult> {
-    return this.applyOperation({
-      operationId: input.operationId,
+    const startedAt = Date.now()
+    log.info('Confirm lifecycle operation started', {
       sessionId: input.sessionId,
-      emitLifecycleEvents: true,
+      operationId: input.operationId,
     })
+    try {
+      const result = await this.applyOperation({
+        operationId: input.operationId,
+        sessionId: input.sessionId,
+        emitLifecycleEvents: true,
+      })
+      log.info('Confirm lifecycle operation finished', {
+        sessionId: input.sessionId,
+        operationId: input.operationId,
+        ok: result.ok,
+        code: result.code,
+        durationMs: Date.now() - startedAt,
+      })
+      return result
+    } catch (error) {
+      log.error('Confirm lifecycle operation threw', {
+        sessionId: input.sessionId,
+        operationId: input.operationId,
+        durationMs: Date.now() - startedAt,
+      }, error)
+      return {
+        ok: false,
+        code: 'invalid_state',
+        operation: null,
+      }
+    }
   }
 
   private async applyOperation(params: ApplyLifecycleOperationInput): Promise<ApplyLifecycleOperationResult> {
@@ -537,6 +655,101 @@ export class LifecycleOperationCoordinator {
     })
   }
 
+  async markOperationAppliedExternally(
+    input: MarkLifecycleOperationAppliedInput
+  ): Promise<MarkLifecycleOperationAppliedResult> {
+    return this.store.withTransaction(async (txStore) => {
+      const operation = await txStore.getById(input.operationId)
+      if (!operation || operation.sessionId !== input.sessionId) {
+        return {
+          ok: false,
+          code: 'not_found',
+          operation: null,
+        }
+      }
+
+      if (operation.state === 'applied') {
+        return {
+          ok: true,
+          code: 'already_applied',
+          operation: toEnvelope(operation),
+        }
+      }
+
+      if (operation.state !== 'pending_confirmation') {
+        return {
+          ok: false,
+          code: 'invalid_state',
+          operation: toEnvelope(operation),
+        }
+      }
+
+      if (operation.entity !== input.entityRef.entity) {
+        return {
+          ok: false,
+          code: 'entity_mismatch',
+          operation: toEnvelope(operation),
+        }
+      }
+
+      const entityExists = await this.verifyExternalAppliedEntityExists(input.entityRef)
+      if (!entityExists) {
+        return {
+          ok: false,
+          code: 'entity_not_found',
+          operation: toEnvelope(operation),
+        }
+      }
+
+      const resultSnapshot: Record<string, unknown> = {
+        source: input.source,
+        entityRef: {
+          entity: input.entityRef.entity,
+          id: input.entityRef.id,
+        },
+      }
+      const note = this.parseNullableString(input.note)
+      if (note) {
+        resultSnapshot.note = note
+      }
+
+      const transitioned = await txStore.transitionStateCompareAndSet({
+        id: operation.id,
+        fromState: 'pending_confirmation',
+        toState: 'applied',
+        updatedAt: Date.now(),
+        appliedAt: Date.now(),
+        resultSnapshot,
+        errorCode: null,
+        errorMessage: null,
+      })
+
+      if (!transitioned) {
+        const latest = await txStore.getById(operation.id)
+        if (latest?.state === 'applied') {
+          return {
+            ok: true,
+            code: 'already_applied',
+            operation: toEnvelope(latest),
+          }
+        }
+        return {
+          ok: false,
+          code: 'rejected_concurrent',
+          operation: toEnvelope(latest),
+        }
+      }
+
+      const latest = await txStore.getById(operation.id)
+      this.emitLifecycleOperationUpdated(latest)
+      return {
+        ok: true,
+        code: 'marked_applied_externally',
+        operation: toEnvelope(latest),
+      }
+    })
+  }
+
   private async executeOperation(params: {
     operation: SessionLifecycleOperation
     db: Kysely<Database>
@@ -730,8 +943,9 @@ export class LifecycleOperationCoordinator {
     }
 
     const payload = this.normalizeSchedulePayloadForExecution(operation)
-    const scheduleId = this.parseRequiredId(payload.id)
+    const scheduleId = this.resolveScheduleIdForExecution(operation, payload)
     if (!scheduleId) {
+      this.logScheduleIdMissing(operation, payload)
       return {
         state: 'failed',
         appliedAt: null,
@@ -814,8 +1028,9 @@ export class LifecycleOperationCoordinator {
     }
 
     const payload = this.normalizeSchedulePayloadForExecution(operation)
-    const scheduleId = this.parseRequiredId(payload.id)
+    const scheduleId = this.resolveScheduleIdForExecution(operation, payload)
     if (!scheduleId) {
+      this.logScheduleIdMissing(operation, payload)
       return {
         state: 'failed',
         appliedAt: null,
@@ -861,8 +1076,9 @@ export class LifecycleOperationCoordinator {
     }
 
     const payload = this.normalizeSchedulePayloadForExecution(operation)
-    const scheduleId = this.parseRequiredId(payload.id)
+    const scheduleId = this.resolveScheduleIdForExecution(operation, payload)
     if (!scheduleId) {
+      this.logScheduleIdMissing(operation, payload)
       return {
         state: 'failed',
         appliedAt: null,
@@ -908,8 +1124,9 @@ export class LifecycleOperationCoordinator {
     }
 
     const payload = this.normalizeSchedulePayloadForExecution(operation)
-    const scheduleId = this.parseRequiredId(payload.id)
+    const scheduleId = this.resolveScheduleIdForExecution(operation, payload)
     if (!scheduleId) {
+      this.logScheduleIdMissing(operation, payload)
       return {
         state: 'failed',
         appliedAt: null,
@@ -1076,6 +1293,7 @@ export class LifecycleOperationCoordinator {
       {
         sessionId: operation.sessionId,
         projectId: currentProjectId === undefined ? null : currentProjectId,
+        summary: operation.summary,
       }
     )
 
@@ -1096,6 +1314,49 @@ export class LifecycleOperationCoordinator {
     if (typeof value !== 'string') return null
     const id = value.trim()
     return id.length > 0 ? id : null
+  }
+
+  private resolveScheduleIdForExecution(
+    operation: SessionLifecycleOperation,
+    payload: ScheduleLifecycleCanonicalPayload
+  ): string | null {
+    const payloadRecord = payload as Record<string, unknown>
+    const nestedSchedule = this.asObjectRecord(payloadRecord.schedule)
+    const summary = operation.summary
+
+    return (
+      this.parseRequiredId(payload.id) ??
+      this.parseRequiredId(payloadRecord.scheduleId) ??
+      this.parseRequiredId(nestedSchedule?.id) ??
+      this.parseRequiredId(summary.id) ??
+      this.parseRequiredId(summary.scheduleId) ??
+      this.parseRequiredId(summary.targetId) ??
+      null
+    )
+  }
+
+  private logScheduleIdMissing(
+    operation: SessionLifecycleOperation,
+    payload: ScheduleLifecycleCanonicalPayload
+  ): void {
+    const payloadRecord = payload as Record<string, unknown>
+    const nestedSchedule = this.asObjectRecord(payloadRecord.schedule)
+
+    log.error('Schedule lifecycle operation missing required id', {
+      operationId: operation.id,
+      sessionId: operation.sessionId,
+      action: operation.action,
+      payloadKeys: Object.keys(payloadRecord),
+      summaryKeys: Object.keys(operation.summary),
+      candidateIds: {
+        payloadId: this.parseRequiredId(payload.id),
+        payloadScheduleId: this.parseRequiredId(payloadRecord.scheduleId),
+        nestedScheduleId: this.parseRequiredId(nestedSchedule?.id),
+        summaryId: this.parseRequiredId(operation.summary.id),
+        summaryScheduleId: this.parseRequiredId(operation.summary.scheduleId),
+        summaryTargetId: this.parseRequiredId(operation.summary.targetId),
+      },
+    })
   }
 
   private parseIssueStatus(value: unknown, allowUndefined: boolean): IssueStatus | undefined {
@@ -1123,6 +1384,10 @@ export class LifecycleOperationCoordinator {
 
   private parseNumber(value: unknown): number | undefined {
     if (typeof value === 'number' && Number.isFinite(value)) return value
+    if (typeof value === 'string' && value.trim().length > 0) {
+      const parsed = Number(value.trim())
+      if (Number.isFinite(parsed)) return parsed
+    }
     return undefined
   }
 
@@ -1296,6 +1561,21 @@ export class LifecycleOperationCoordinator {
     }
 
     return action
+  }
+
+  private async verifyExternalAppliedEntityExists(entityRef: {
+    entity: 'issue' | 'schedule'
+    id: string
+  }): Promise<boolean> {
+    if (entityRef.entity === 'schedule') {
+      if (!this.scheduleService) return false
+      const schedule = await this.scheduleService.get(entityRef.id)
+      return !!schedule
+    }
+
+    const issueStore = new IssueStore(this.executionDb)
+    const issue = await issueStore.get(entityRef.id)
+    return !!issue
   }
 
   private async createIssueWithDb(

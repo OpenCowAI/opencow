@@ -586,6 +586,14 @@ export interface IPCChannels {
     args: [sessionId: string, operationId: string]
     return: SessionLifecycleOperationRejectResult
   }
+  'command:mark-session-lifecycle-operation-applied': {
+    args: [
+      sessionId: string,
+      operationId: string,
+      input: SessionLifecycleOperationMarkAppliedInput,
+    ]
+    return: SessionLifecycleOperationMarkAppliedResult
+  }
   'command:delete-session': { args: [sessionId: string]; return: boolean }
   // Settings
   'get-settings': { args: []; return: AppSettings }
@@ -3195,6 +3203,7 @@ export interface SessionExecutionContext {
  * Not persisted in DB; produced and consumed only within active process memory.
  */
 export interface SessionContextTelemetry {
+  metricKind: 'context_occupancy'
   usedTokens: number
   limitTokens: number
   remainingTokens: number
@@ -3209,6 +3218,7 @@ export interface SessionContextTelemetry {
  * `limitTokens` can be null before an authoritative/provider limit is known.
  */
 export interface SessionContextState {
+  metricKind: 'context_occupancy'
   usedTokens: number
   limitTokens: number | null
   source: string
@@ -4185,6 +4195,7 @@ export interface ScheduleAction {
   // start_session / resume_session
   session?: {
     promptTemplate: string
+    systemPrompt?: string
     model?: string
     maxTurns?: number
     permissionMode?: 'bypassPermissions' | 'default'
@@ -4446,6 +4457,7 @@ export interface SessionLifecycleOperation {
   id: string
   sessionId: string
   toolUseId: string
+  proposalGroupKey: string
   operationIndex: number
   entity: SessionLifecycleOperationEntity
   action: SessionLifecycleOperationAction
@@ -4495,6 +4507,8 @@ export interface SessionLifecycleOperationEnvelope {
   updatedAt: string
   appliedAt: string | null
   resultSnapshot: Record<string, unknown> | null
+  /** ID of the entity created/updated by this operation, extracted from resultSnapshot. */
+  createdEntityId: string | null
   errorCode: string | null
   errorMessage: string | null
 }
@@ -4522,6 +4536,30 @@ export type SessionLifecycleOperationRejectResultCode =
 export interface SessionLifecycleOperationRejectResult {
   ok: boolean
   code: SessionLifecycleOperationRejectResultCode
+  operation: SessionLifecycleOperationEnvelope | null
+}
+
+export type SessionLifecycleOperationMarkAppliedResultCode =
+  | 'marked_applied_externally'
+  | 'already_applied'
+  | 'entity_not_found'
+  | 'entity_mismatch'
+  | 'rejected_concurrent'
+  | 'not_found'
+  | 'invalid_state'
+
+export interface SessionLifecycleOperationMarkAppliedInput {
+  source: 'manual_form_create'
+  entityRef: {
+    entity: 'issue' | 'schedule'
+    id: string
+  }
+  note?: string
+}
+
+export interface SessionLifecycleOperationMarkAppliedResult {
+  ok: boolean
+  code: SessionLifecycleOperationMarkAppliedResultCode
   operation: SessionLifecycleOperationEnvelope | null
 }
 

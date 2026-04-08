@@ -59,6 +59,8 @@ export interface IssueFormModalProps {
   onCreated?: (issue: Issue) => void
   /** Override z-index for nested modal scenarios (default: 50). */
   zIndex?: number
+  /** When true, skip calling selectIssue after creation (e.g. from draft confirmation cards). */
+  skipSelectOnCreate?: boolean
 }
 
 const STATUS_OPTIONS: { value: IssueStatus; labelKey: string }[] = [
@@ -216,6 +218,7 @@ function IssueFormContent({
   defaultValues,
   onCreated,
   zIndex,
+  skipSelectOnCreate,
   issue,
   projectId,
   setProjectId,
@@ -574,7 +577,8 @@ function IssueFormContent({
         const newIssue = await createIssue(input, {
           onCreated: (created) => {
             // Select before list reload to avoid transient row highlight flicker.
-            selectIssue(created.id)
+            // Skip when called from draft confirmation cards to avoid opening the detail panel.
+            if (!skipSelectOnCreate) selectIssue(created.id)
           },
         })
         onCreated?.(newIssue)

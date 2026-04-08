@@ -9,6 +9,7 @@ import type {
   Schedule,
   SessionLifecycleOperationConfirmResult,
   SessionLifecycleOperationEnvelope,
+  SessionLifecycleOperationMarkAppliedResult,
   SessionLifecycleOperationRejectResult,
 } from '@shared/types'
 import { useIssueStore } from '@/stores/issueStore'
@@ -22,6 +23,7 @@ import {
 } from '@/lib/lifecycleOperationDraftMapper'
 import {
   confirmSessionLifecycleOperation,
+  markSessionLifecycleOperationApplied,
   rejectSessionLifecycleOperation,
 } from '@/lib/sessionLifecycleOperationClient'
 import type { ParsedIssueOutput } from '@shared/issueOutputParser'
@@ -131,6 +133,34 @@ function asNumberArray(value: unknown): number[] | null {
   return normalized.length > 0 ? normalized : null
 }
 
+function formatScheduleTriggerPreview(timeRecord: Record<string, unknown>): string | null {
+  const triggerType = asText(timeRecord.type)
+  if (!triggerType) return null
+
+  if (triggerType === 'cron') {
+    const cron = asText(timeRecord.cronExpression) ?? asText(timeRecord.cron)
+    return cron ? `cron: ${cron}` : 'cron'
+  }
+
+  if (triggerType === 'interval') {
+    const interval = typeof timeRecord.intervalMinutes === 'number'
+      ? timeRecord.intervalMinutes
+      : null
+    return interval ? `every ${interval} min` : 'interval'
+  }
+
+  if (triggerType === 'once') {
+    const executeAt = typeof timeRecord.executeAt === 'number'
+      ? new Date(timeRecord.executeAt).toISOString()
+      : asText(timeRecord.executeAt)
+    return executeAt ? `once at ${executeAt}` : 'once'
+  }
+
+  const timeOfDay = asText(timeRecord.timeOfDay)
+  if (timeOfDay) return `${triggerType} at ${timeOfDay}`
+  return triggerType
+}
+
 function readScheduleTimezone(operation: SessionLifecycleOperationEnvelope): string | null {
   const summaryTz = asText(operation.summary.timezone)
   if (summaryTz) return summaryTz
@@ -212,12 +242,35 @@ function buildPreviewRows(
     null
   const taskText = readScheduleTaskPreview(operation, parsedSchedule)
   const timezoneText = readScheduleTimezone(operation)
+  const payload = operation.normalizedPayload
+  const scheduleRecord = asRecord(payload.schedule)
+  const triggerRecord = asRecord(payload.trigger)
+  const triggerTimeRecord = asRecord(triggerRecord?.time)
+  const scheduleTimeRecord = asRecord(scheduleRecord?.time)
+  const triggerPreview = formatScheduleTriggerPreview(triggerTimeRecord ?? scheduleTimeRecord ?? {})
+  const targetId =
+    asText(payload.id) ??
+    asText(scheduleRecord?.id) ??
+    asText(operation.summary.id) ??
+    asText(operation.summary.scheduleId)
   const rows: PreviewRow[] = []
+
+  if (operation.action === 'update' && targetId) {
+    rows.push({
+      label: t('lifecycleOperation.preview.targetId', { defaultValue: 'Target ID' }),
+      value: targetId,
+    })
+  }
 
   if (scheduleText) {
     rows.push({
       label: t('lifecycleOperation.preview.schedule', { defaultValue: 'Schedule' }),
       value: scheduleText,
+    })
+  } else if (triggerPreview) {
+    rows.push({
+      label: t('lifecycleOperation.preview.schedule', { defaultValue: 'Schedule' }),
+      value: triggerPreview,
     })
   }
   if (taskText) {
@@ -241,7 +294,6 @@ function buildPreviewRows(
 
   // Last-resort fallback so pending cards never render as empty shell.
   if (rows.length === 0) {
-    const payload = operation.normalizedPayload
     const taskRecord = asRecord(payload.task)
     const days = asNumberArray(payload.daysOfWeek)
     const roughSummary = [
@@ -460,36 +512,43 @@ function LifecycleOperationSingleCard(
     }
   }, [canEditFields, operation.entity, parsedIssueDraft, parsedScheduleDraft])
 
-  const cancelPendingAfterManualCreate = useCallback(async () => {
+  const markPendingAsAppliedAfterManualCreate = useCallback(async (entityId: string) => {
     if (!effectiveSessionId) return
     if (!isPending) return
     try {
-      const result: SessionLifecycleOperationRejectResult = await rejectSessionLifecycleOperation({
+      const result: SessionLifecycleOperationMarkAppliedResult = await markSessionLifecycleOperationApplied({
         sessionId: effectiveSessionId,
         operationId: operation.operationId,
-        timeoutMessage: t('lifecycleOperation.error.rejectTimeout', {
-          defaultValue: 'Cancellation timed out. Please retry.',
+        input: {
+          source: 'manual_form_create',
+          entityRef: {
+            entity: operation.entity,
+            id: entityId,
+          },
+        },
+        timeoutMessage: t('lifecycleOperation.error.confirmTimeout', {
+          defaultValue: 'Confirmation timed out. Please retry.',
         }),
       })
       if (result.operation) setOperation(result.operation)
     } catch {
-      // Manual create already succeeded. Keep local UX stable even if cancel races.
+      // Manual create already succeeded. Keep local UX stable even if mark-applied races.
     }
   }, [effectiveSessionId, isPending, operation.operationId, t])
 
-  const handleIssueCreatedFromEdit = useCallback((_created: Issue) => {
+  const handleIssueCreatedFromEdit = useCallback((created: Issue) => {
     setEditingIssue(null)
     setLocalError(null)
     void loadIssues()
-    void cancelPendingAfterManualCreate()
-  }, [cancelPendingAfterManualCreate, loadIssues])
+    void markPendingAsAppliedAfterManualCreate(created.id)
+  }, [loadIssues, markPendingAsAppliedAfterManualCreate])
 
-  const handleScheduleCreatedFromEdit = useCallback((_created: Schedule) => {
+  const handleScheduleCreatedFromEdit = useCallback((created: Schedule) => {
     setEditingSchedule(null)
     setLocalError(null)
     void loadSchedules()
-    void cancelPendingAfterManualCreate()
-  }, [cancelPendingAfterManualCreate, loadSchedules])
+    void markPendingAsAppliedAfterManualCreate(created.id)
+  }, [loadSchedules, markPendingAsAppliedAfterManualCreate])
 
   return (
     <CardShell maxWidth="md" className="ml-0 mt-2">
@@ -599,6 +658,7 @@ function LifecycleOperationSingleCard(
             priority: editingIssue.priority,
             labels: editingIssue.labels,
           }}
+          skipSelectOnCreate
           onCreated={handleIssueCreatedFromEdit}
           onClose={() => setEditingIssue(null)}
           zIndex={101}
@@ -607,7 +667,16 @@ function LifecycleOperationSingleCard(
 
       {editingSchedule && (
         <ScheduleFormModal
-          defaultValues={mapScheduleDraftToFormDefaults(editingSchedule, editingSchedule.projectId ?? null)}
+          defaultValues={mapScheduleDraftToFormDefaults(
+            editingSchedule,
+            editingSchedule.projectId ??
+              (
+                operation.normalizedPayload.projectId === null ||
+                typeof operation.normalizedPayload.projectId === 'string'
+                  ? operation.normalizedPayload.projectId
+                  : null
+              )
+          )}
           onCreated={handleScheduleCreatedFromEdit}
           onClose={() => setEditingSchedule(null)}
           zIndex={101}

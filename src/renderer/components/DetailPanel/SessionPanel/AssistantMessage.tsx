@@ -14,6 +14,8 @@ import { useRef, useMemo, memo } from 'react'
 import { ContentBlockRenderer } from './ContentBlockRenderer'
 import { ToolBatchCollapsible } from './ToolBatchCollapsible'
 import { useCommandStore, selectStreamingMessage } from '@/stores/commandStore'
+import { NativeCapabilityTools } from '@shared/nativeCapabilityToolNames'
+import { isEvoseToolName } from '@shared/evoseNames'
 import type { ManagedSessionMessage, ContentBlock } from '@shared/types'
 
 // ---------------------------------------------------------------------------
@@ -33,6 +35,11 @@ interface IndexedContentBlock {
 // ---------------------------------------------------------------------------
 
 const IN_MESSAGE_TOOL_COLLAPSE_THRESHOLD = 2
+const NON_BATCHABLE_TOOL_NAMES = new Set<string>([
+  NativeCapabilityTools.ISSUE_CREATE,
+  NativeCapabilityTools.ISSUE_UPDATE,
+  NativeCapabilityTools.SCHEDULE_PROPOSE_OPERATION,
+])
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -44,6 +51,15 @@ function countToolUseBlocks(blocks: ContentBlock[]): number {
     if (block.type === 'tool_use') total += 1
   }
   return total
+}
+
+function hasNonBatchableToolUse(blocks: ContentBlock[]): boolean {
+  for (const block of blocks) {
+    if (block.type !== 'tool_use') continue
+    if (NON_BATCHABLE_TOOL_NAMES.has(block.name)) return true
+    if (isEvoseToolName(block.name)) return true
+  }
+  return false
 }
 
 function splitToolAndNonToolSegments(
@@ -170,16 +186,25 @@ export const AssistantMessage = memo(function AssistantMessage({
     return stabilized
   }, [content])
 
-  const toolCallCount = countToolUseBlocks(stableContent)
+  // Filter out filler text blocks (e.g. "...") emitted by Claude between tool calls.
+  const filteredContent = stableContent.filter((block, i) => {
+    if (block.type !== 'text') return true
+    if (!/^\s*\.{1,3}\s*$/.test(block.text)) return true
+    const prev = stableContent[i - 1]
+    const next = stableContent[i + 1]
+    return !(prev?.type === 'tool_use' || next?.type === 'tool_use')
+  })
+
+  const toolCallCount = countToolUseBlocks(filteredContent)
   const shouldCollapseInMessageTools = toolCallCount >= IN_MESSAGE_TOOL_COLLAPSE_THRESHOLD
-  const lastTextBlockIndex = extractLastTextBlockIndex(stableContent)
+  const lastTextBlockIndex = extractLastTextBlockIndex(filteredContent)
   const hasToolUseInMessage = toolCallCount > 0
   const textStreaming = isStreaming && !hasToolUseInMessage
 
   if (!shouldCollapseInMessageTools) {
     return (
       <div data-msg-id={id} data-msg-role="assistant" className="py-0.5 break-words min-w-0">
-        {stableContent.map((block, index) => (
+        {filteredContent.map((block, index) => (
           <ContentBlockRenderer
             key={`${block.type}-${index}`}
             block={block}
@@ -194,7 +219,7 @@ export const AssistantMessage = memo(function AssistantMessage({
     )
   }
 
-  const segments = splitToolAndNonToolSegments(stableContent)
+  const segments = splitToolAndNonToolSegments(filteredContent)
 
   return (
     <div data-msg-id={id} data-msg-role="assistant" className="py-0.5 break-words min-w-0">
@@ -202,7 +227,10 @@ export const AssistantMessage = memo(function AssistantMessage({
         if (segment.kind === 'tool') {
           const segmentContent = segment.blocks.map(({ block }) => block)
           const segmentToolCallCount = countToolUseBlocks(segmentContent)
-          if (segmentToolCallCount < IN_MESSAGE_TOOL_COLLAPSE_THRESHOLD) {
+          const shouldKeepExpanded =
+            segmentToolCallCount < IN_MESSAGE_TOOL_COLLAPSE_THRESHOLD ||
+            hasNonBatchableToolUse(segmentContent)
+          if (shouldKeepExpanded) {
             return (
               <div key={`${id}-tool-segment-raw-${segmentIndex}-${segment.blocks[0]?.index ?? 0}`}>
                 {segment.blocks.map(({ block, index }) => (

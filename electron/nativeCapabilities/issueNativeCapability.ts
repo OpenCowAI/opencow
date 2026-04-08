@@ -35,6 +35,7 @@ import type { IssueService } from '../services/issueService'
 import type { IssueProviderService } from '../services/issueProviderService'
 import type { AdapterRegistry } from '../services/issue-sync/adapterRegistry'
 import type { LifecycleOperationCoordinator } from '../services/lifecycleOperations'
+import { generateId } from '../shared/identity'
 import type {
   Issue,
   IssuePriority,
@@ -79,6 +80,19 @@ function normalizeConfirmationMode(
   }
   if (normalized === 'draft') return 'required'
   return undefined
+}
+
+function resolveProposalToolUseId(context: {
+  toolUseId?: string
+  invocationId?: string
+}): string {
+  if (typeof context.toolUseId === 'string' && context.toolUseId.trim().length > 0) {
+    return context.toolUseId
+  }
+  if (typeof context.invocationId === 'string' && context.invocationId.trim().length > 0) {
+    return context.invocationId
+  }
+  return `missing-tool-use-id:${generateId()}`
 }
 
 // ─── Serialisation constants ───────────────────────────────────────────────────
@@ -431,8 +445,23 @@ export class IssueNativeCapability extends BaseNativeCapability {
           return this.errorResult(new Error('Lifecycle operation coordinator is not available'))
         }
 
-        const toolUseId = input.context.toolUseId ?? input.context.invocationId ?? 'missing-tool-use-id'
+        const toolUseId = resolveProposalToolUseId(input.context)
         const operationArgs = args.operations as Array<Record<string, unknown>>
+
+        // Validate: update/transition_status operations must include id
+        for (const candidate of operationArgs) {
+          const action = candidate.action as string
+          if (action === 'update' || action === 'transition_status') {
+            const payload = candidate.normalizedPayload as Record<string, unknown>
+            if (!payload.id || typeof payload.id !== 'string' || payload.id.trim().length === 0) {
+              return this.errorResult(new Error(
+                `Issue ${action} proposal requires normalizedPayload.id. ` +
+                'Use getSessionEntityHints or list_issues to retrieve the issue id first.'
+              ))
+            }
+          }
+        }
+
         const proposals: SessionLifecycleOperationProposalInput[] = operationArgs.map((candidate) => ({
           entity: 'issue',
           action: candidate.action as SessionLifecycleOperationProposalInput['action'],
@@ -453,10 +482,12 @@ export class IssueNativeCapability extends BaseNativeCapability {
         const envelopes = await this.lifecycleOperationCoordinator.proposeOperations({
           sessionId: session.sessionId,
           toolUseId,
+          toolName: 'propose_issue_operation',
           proposals,
         })
 
-        return this.textResult(JSON.stringify(envelopes, null, 2))
+        const entityHints = await this.lifecycleOperationCoordinator.getSessionEntityHints(session.sessionId)
+        return this.textResult(JSON.stringify({ operations: envelopes, _sessionEntityHints: entityHints }, null, 2))
       },
     }
   }

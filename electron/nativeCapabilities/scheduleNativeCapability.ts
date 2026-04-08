@@ -37,6 +37,7 @@ import type { NativeCapabilityMeta, NativeCapabilityToolContext, NativeCapabilit
 import { BaseNativeCapability, type ToolConfig } from './baseNativeCapability'
 import type { ScheduleService } from '../services/schedule/scheduleService'
 import type { LifecycleOperationCoordinator } from '../services/lifecycleOperations'
+import { generateId } from '../shared/identity'
 import { normalizeScheduleLifecycleProposalPayload } from '../../src/shared/scheduleLifecycleCanonical'
 import type {
   Schedule,
@@ -82,6 +83,46 @@ function normalizeConfirmationMode(
   }
   if (normalized === 'draft') return 'required'
   return undefined
+}
+
+function resolveProposalToolUseId(context: {
+  toolUseId?: string
+  invocationId?: string
+}): string {
+  if (typeof context.toolUseId === 'string' && context.toolUseId.trim().length > 0) {
+    return context.toolUseId
+  }
+  if (typeof context.invocationId === 'string' && context.invocationId.trim().length > 0) {
+    return context.invocationId
+  }
+  return `missing-tool-use-id:${generateId()}`
+}
+
+function resolveScheduleOperationTargetId(
+  payload: Record<string, unknown>,
+  summary?: Record<string, unknown>
+): string | null {
+  const read = (value: unknown): string | null =>
+    typeof value === 'string' && value.trim().length > 0 ? value.trim() : null
+  const payloadRecord = payload as Record<string, unknown>
+  const scheduleNode = payloadRecord.schedule
+  const scheduleRecord =
+    scheduleNode && typeof scheduleNode === 'object' && !Array.isArray(scheduleNode)
+      ? scheduleNode as Record<string, unknown>
+      : null
+  const summaryRecord = summary ?? {}
+
+  return (
+    read(payloadRecord.id) ??
+    read(payloadRecord.scheduleId) ??
+    read(payloadRecord.targetId) ??
+    read(scheduleRecord?.id) ??
+    read(scheduleRecord?.scheduleId) ??
+    read(summaryRecord.id) ??
+    read(summaryRecord.scheduleId) ??
+    read(summaryRecord.targetId) ??
+    null
+  )
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -512,32 +553,48 @@ export class ScheduleNativeCapability extends BaseNativeCapability {
           return this.errorResult(new Error('Lifecycle operation coordinator is not available'))
         }
 
-        const toolUseId = input.context.toolUseId ?? input.context.invocationId ?? 'missing-tool-use-id'
+        const toolUseId = resolveProposalToolUseId(input.context)
         const operationArgs = args.operations as Array<Record<string, unknown>>
-        const proposals: SessionLifecycleOperationProposalInput[] = operationArgs.map((candidate) => ({
-          entity: 'schedule',
-          action: candidate.action as SessionLifecycleOperationProposalInput['action'],
-          normalizedPayload: normalizeScheduleLifecycleProposalPayload(
+        const proposals: SessionLifecycleOperationProposalInput[] = operationArgs.map((candidate) => {
+          const summary = candidate.summary as Record<string, unknown> | undefined
+          const normalizedPayload = normalizeScheduleLifecycleProposalPayload(
             (candidate.normalizedPayload as Record<string, unknown>) ?? {},
             {
               sessionId: session.sessionId,
               projectId: session.projectId,
+              summary,
             }
-          ),
-          summary: candidate.summary as Record<string, unknown> | undefined,
-          warnings: candidate.warnings as string[] | undefined,
-          confirmationMode: normalizeConfirmationMode(candidate.confirmationMode),
-          idempotencyKey: typeof candidate.idempotencyKey === 'string' ? candidate.idempotencyKey : undefined,
-          userInstruction: typeof args.userInstruction === 'string' ? args.userInstruction : undefined,
-        }))
+          )
+          const action = candidate.action as SessionLifecycleOperationProposalInput['action']
+          const targetId = resolveScheduleOperationTargetId(normalizedPayload, summary)
+          const warnings = [...(candidate.warnings as string[] | undefined ?? [])]
+          if (action !== 'create' && !targetId) {
+            throw new Error(
+              `Schedule ${action} proposal requires target id. ` +
+              'Provide one of normalizedPayload.id/scheduleId/targetId (or summary.id/scheduleId/targetId).'
+            )
+          }
+          return {
+            entity: 'schedule',
+            action,
+            normalizedPayload,
+            summary,
+            warnings,
+            confirmationMode: normalizeConfirmationMode(candidate.confirmationMode),
+            idempotencyKey: typeof candidate.idempotencyKey === 'string' ? candidate.idempotencyKey : undefined,
+            userInstruction: typeof args.userInstruction === 'string' ? args.userInstruction : undefined,
+          }
+        })
 
         const envelopes = await this.lifecycleOperationCoordinator.proposeOperations({
           sessionId: session.sessionId,
           toolUseId,
+          toolName: 'propose_schedule_operation',
           proposals,
         })
 
-        return this.textResult(JSON.stringify(envelopes, null, 2))
+        const entityHints = await this.lifecycleOperationCoordinator.getSessionEntityHints(session.sessionId)
+        return this.textResult(JSON.stringify({ operations: envelopes, _sessionEntityHints: entityHints }, null, 2))
       },
     }
   }
