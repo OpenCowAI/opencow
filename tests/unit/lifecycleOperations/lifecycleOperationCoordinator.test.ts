@@ -12,6 +12,7 @@ function makeOperation(overrides: Partial<SessionLifecycleOperation> = {}): Sess
     id: overrides.id ?? 'lop-1',
     sessionId: overrides.sessionId ?? 'session-1',
     toolUseId: overrides.toolUseId ?? 'tool-1',
+    proposalGroupKey: overrides.proposalGroupKey ?? overrides.toolUseId ?? 'tool-1',
     operationIndex: overrides.operationIndex ?? 0,
     entity: overrides.entity ?? 'issue',
     action: overrides.action ?? 'create',
@@ -45,7 +46,7 @@ describe('LifecycleOperationCoordinator', () => {
     const store = {
       withTransaction: async <T>(fn: (store: any) => Promise<T>) => fn(store),
       findByIdempotencyKey: vi.fn().mockResolvedValue(null),
-      findBySessionToolUseOperationIndex: vi.fn().mockResolvedValue(null),
+      findBySessionProposalGroupOperationIndex: vi.fn().mockResolvedValue(null),
       upsert: vi.fn(async (op: SessionLifecycleOperation) => {
         inserted.push(op)
         return { operation: op, created: true }
@@ -79,7 +80,7 @@ describe('LifecycleOperationCoordinator', () => {
     const store = {
       withTransaction: async <T>(fn: (store: any) => Promise<T>) => fn(store),
       findByIdempotencyKey,
-      findBySessionToolUseOperationIndex: vi.fn().mockResolvedValue(null),
+      findBySessionProposalGroupOperationIndex: vi.fn().mockResolvedValue(null),
       upsert: vi.fn(),
     }
 
@@ -125,7 +126,7 @@ describe('LifecycleOperationCoordinator', () => {
     const store = {
       withTransaction: async <T>(fn: (store: any) => Promise<T>) => fn(store),
       findByIdempotencyKey,
-      findBySessionToolUseOperationIndex: vi.fn().mockResolvedValue(null),
+      findBySessionProposalGroupOperationIndex: vi.fn().mockResolvedValue(null),
       upsert: vi.fn(async (op: SessionLifecycleOperation) => {
         inserted.push(op)
         return { operation: op, created: true }
@@ -155,12 +156,78 @@ describe('LifecycleOperationCoordinator', () => {
     expect(envelopes[0].operationId).toBe(inserted[0].id)
   })
 
+  it('does not dedupe between issue/schedule proposals sharing the same toolUseId', async () => {
+    const inserted: SessionLifecycleOperation[] = []
+    const store = {
+      withTransaction: async <T>(fn: (store: any) => Promise<T>) => fn(store),
+      findByIdempotencyKey: vi.fn().mockResolvedValue(null),
+      findBySessionProposalGroupOperationIndex: vi.fn().mockResolvedValue(null),
+      upsert: vi.fn(async (op: SessionLifecycleOperation) => {
+        inserted.push(op)
+        return { operation: op, created: true }
+      }),
+    }
+
+    const coordinator = createCoordinator({ store: store as any })
+    const issueEnvelopes = await coordinator.proposeOperations({
+      sessionId: 'session-1',
+      toolUseId: 'tool-shared',
+      toolName: 'propose_issue_operation',
+      proposals: [
+        { entity: 'issue', action: 'create', normalizedPayload: { title: 'issue-1' } },
+      ],
+    })
+    const scheduleEnvelopes = await coordinator.proposeOperations({
+      sessionId: 'session-1',
+      toolUseId: 'tool-shared',
+      toolName: 'propose_schedule_operation',
+      proposals: [
+        { entity: 'schedule', action: 'create', normalizedPayload: { name: 'schedule-1' } },
+      ],
+    })
+
+    expect(issueEnvelopes).toHaveLength(1)
+    expect(scheduleEnvelopes).toHaveLength(1)
+    expect(inserted).toHaveLength(2)
+    expect(inserted[0].toolUseId).toBe('tool-shared')
+    expect(inserted[1].toolUseId).toBe('tool-shared')
+    expect(inserted[0].proposalGroupKey).toContain('#propose_issue_operation')
+    expect(inserted[1].proposalGroupKey).toContain('#propose_schedule_operation')
+  })
+
+  it('falls back to toolUseId proposalGroupKey when toolName sanitizes to empty', async () => {
+    const inserted: SessionLifecycleOperation[] = []
+    const store = {
+      withTransaction: async <T>(fn: (store: any) => Promise<T>) => fn(store),
+      findByIdempotencyKey: vi.fn().mockResolvedValue(null),
+      findBySessionProposalGroupOperationIndex: vi.fn().mockResolvedValue(null),
+      upsert: vi.fn(async (op: SessionLifecycleOperation) => {
+        inserted.push(op)
+        return { operation: op, created: true }
+      }),
+    }
+
+    const coordinator = createCoordinator({ store: store as any })
+    await coordinator.proposeOperations({
+      sessionId: 'session-1',
+      toolUseId: 'tool-shared',
+      toolName: '___',
+      proposals: [
+        { entity: 'issue', action: 'create', normalizedPayload: { title: 'issue-1' } },
+      ],
+    })
+
+    expect(inserted).toHaveLength(1)
+    expect(inserted[0].toolUseId).toBe('tool-shared')
+    expect(inserted[0].proposalGroupKey).toBe('tool-shared')
+  })
+
   it('returns existing record by (sessionId, toolUseId, operationIndex)', async () => {
     const existing = makeOperation({ id: 'lop-tuple', operationIndex: 0 })
     const store = {
       withTransaction: async <T>(fn: (store: any) => Promise<T>) => fn(store),
       findByIdempotencyKey: vi.fn().mockResolvedValue(null),
-      findBySessionToolUseOperationIndex: vi.fn().mockResolvedValue(existing),
+      findBySessionProposalGroupOperationIndex: vi.fn().mockResolvedValue(existing),
       upsert: vi.fn(),
     }
 
@@ -181,7 +248,7 @@ describe('LifecycleOperationCoordinator', () => {
     const store = {
       withTransaction: async <T>(fn: (store: any) => Promise<T>) => fn(store),
       findByIdempotencyKey: vi.fn().mockResolvedValue(null),
-      findBySessionToolUseOperationIndex: vi.fn().mockResolvedValue(null),
+      findBySessionProposalGroupOperationIndex: vi.fn().mockResolvedValue(null),
       upsert: vi.fn(async (op: SessionLifecycleOperation) => ({ operation: op, created: true })),
     }
 
@@ -215,7 +282,7 @@ describe('LifecycleOperationCoordinator', () => {
       withTransaction: async <T>(fn: (txStore: any, db: any) => Promise<T>) =>
         fn(store, { __mockDb: true }),
       findByIdempotencyKey: vi.fn().mockResolvedValue(null),
-      findBySessionToolUseOperationIndex: vi.fn().mockResolvedValue(null),
+      findBySessionProposalGroupOperationIndex: vi.fn().mockResolvedValue(null),
       upsert: vi.fn(async (op: SessionLifecycleOperation) => {
         inserted.push(op)
         stateById.set(op.id, op)
@@ -309,7 +376,7 @@ describe('LifecycleOperationCoordinator', () => {
     const store = {
       withTransaction: async <T>(fn: (store: any) => Promise<T>) => fn(store),
       findByIdempotencyKey: vi.fn().mockResolvedValue(null),
-      findBySessionToolUseOperationIndex: vi.fn().mockResolvedValue(null),
+      findBySessionProposalGroupOperationIndex: vi.fn().mockResolvedValue(null),
       upsert: vi.fn(async (_op: SessionLifecycleOperation) => ({
         operation: existing,
         created: false,
@@ -817,6 +884,375 @@ describe('LifecycleOperationCoordinator', () => {
     )
   })
 
+  it('accepts schedule update when id is provided via nested schedule.id', async () => {
+    const operation = makeOperation({
+      id: 'lop-schedule-update-nested-id-1',
+      sessionId: 'session-1',
+      entity: 'schedule',
+      action: 'update',
+      state: 'pending_confirmation',
+      normalizedPayload: {
+        sessionId: 'session-1',
+        schedule: {
+          id: 'schedule-2',
+        },
+        trigger: {
+          time: {
+            type: 'cron',
+            cronExpression: '20 9 * * *',
+            timezone: 'Asia/Shanghai',
+          },
+        },
+      },
+      summary: { sessionId: 'session-1' },
+    })
+
+    const stateById = new Map<string, SessionLifecycleOperation>([[operation.id, operation]])
+    const store = {
+      withTransaction: async <T>(fn: (txStore: any, db: any) => Promise<T>) =>
+        fn(store, { __mockDb: true }),
+      getById: vi.fn(async (id: string) => stateById.get(id) ?? null),
+      transitionStateCompareAndSet: vi.fn(async (params: {
+        id: string
+        fromState: SessionLifecycleOperation['state']
+        toState: SessionLifecycleOperation['state']
+        updatedAt: number
+        appliedAt?: number | null
+        resultSnapshot?: Record<string, unknown> | null
+        errorCode?: string | null
+        errorMessage?: string | null
+      }) => {
+        const current = stateById.get(params.id)
+        if (!current || current.state !== params.fromState) return false
+        stateById.set(params.id, {
+          ...current,
+          state: params.toState,
+          updatedAt: params.updatedAt,
+          appliedAt: params.appliedAt ?? null,
+          resultSnapshot: params.resultSnapshot ?? null,
+          errorCode: params.errorCode ?? null,
+          errorMessage: params.errorMessage ?? null,
+        })
+        return true
+      }),
+    }
+
+    const scheduleService = {
+      update: vi.fn(async () => ({
+        id: 'schedule-2',
+        name: 'Daily sync',
+        description: '',
+        trigger: {
+          time: {
+            type: 'cron',
+            workMode: 'all_days',
+            timezone: 'Asia/Shanghai',
+            cronExpression: '20 9 * * *',
+          },
+        },
+        action: {
+          type: 'start_session',
+          session: {
+            promptTemplate: 'Daily sync',
+          },
+          projectId: null,
+        },
+        priority: 'normal',
+        failurePolicy: {
+          maxRetries: 3,
+          retryBackoff: 'exponential',
+          retryDelayMs: 30_000,
+          pauseAfterConsecutiveFailures: 5,
+          notifyOnFailure: true,
+          webhookOnFailure: false,
+        },
+        missedPolicy: 'skip',
+        concurrencyPolicy: 'skip',
+        status: 'active',
+        nextRunAt: null,
+        lastRunAt: null,
+        lastRunStatus: null,
+        lastRunError: null,
+        executionCount: 0,
+        consecutiveFailures: 0,
+        projectId: null,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      })),
+      get: vi.fn(),
+    }
+
+    const coordinator = createCoordinator({
+      store: store as any,
+      scheduleService: scheduleService as any,
+    })
+
+    const result = await coordinator.confirmOperation({
+      sessionId: 'session-1',
+      operationId: operation.id,
+    })
+
+    expect(result.ok).toBe(true)
+    expect(result.code).toBe('confirmed_applied')
+    expect(scheduleService.update).toHaveBeenCalledTimes(1)
+    expect(scheduleService.update).toHaveBeenCalledWith(
+      'schedule-2',
+      expect.objectContaining({
+        trigger: expect.objectContaining({
+          time: expect.objectContaining({
+            cronExpression: '20 9 * * *',
+          }),
+        }),
+      }),
+    )
+  })
+
+  it('accepts schedule update when id is provided via payload.scheduleId', async () => {
+    const operation = makeOperation({
+      id: 'lop-schedule-update-payload-schedule-id-1',
+      sessionId: 'session-1',
+      entity: 'schedule',
+      action: 'update',
+      state: 'pending_confirmation',
+      normalizedPayload: {
+        sessionId: 'session-1',
+        scheduleId: 'schedule-3',
+        trigger: {
+          time: {
+            type: 'daily',
+            timezone: 'Asia/Shanghai',
+            timeOfDay: '10:15',
+          },
+        },
+      },
+      summary: { sessionId: 'session-1' },
+    })
+
+    const stateById = new Map<string, SessionLifecycleOperation>([[operation.id, operation]])
+    const store = {
+      withTransaction: async <T>(fn: (txStore: any, db: any) => Promise<T>) =>
+        fn(store, { __mockDb: true }),
+      getById: vi.fn(async (id: string) => stateById.get(id) ?? null),
+      transitionStateCompareAndSet: vi.fn(async (params: {
+        id: string
+        fromState: SessionLifecycleOperation['state']
+        toState: SessionLifecycleOperation['state']
+        updatedAt: number
+        appliedAt?: number | null
+        resultSnapshot?: Record<string, unknown> | null
+        errorCode?: string | null
+        errorMessage?: string | null
+      }) => {
+        const current = stateById.get(params.id)
+        if (!current || current.state !== params.fromState) return false
+        stateById.set(params.id, {
+          ...current,
+          state: params.toState,
+          updatedAt: params.updatedAt,
+          appliedAt: params.appliedAt ?? null,
+          resultSnapshot: params.resultSnapshot ?? null,
+          errorCode: params.errorCode ?? null,
+          errorMessage: params.errorMessage ?? null,
+        })
+        return true
+      }),
+    }
+
+    const scheduleService = {
+      update: vi.fn(async () => ({
+        id: 'schedule-3',
+        name: 'Daily sync',
+        description: '',
+        trigger: {
+          time: {
+            type: 'daily',
+            workMode: 'all_days',
+            timezone: 'Asia/Shanghai',
+            timeOfDay: '10:15',
+          },
+        },
+        action: {
+          type: 'start_session',
+          session: {
+            promptTemplate: 'Daily sync',
+          },
+          projectId: null,
+        },
+        priority: 'normal',
+        failurePolicy: {
+          maxRetries: 3,
+          retryBackoff: 'exponential',
+          retryDelayMs: 30_000,
+          pauseAfterConsecutiveFailures: 5,
+          notifyOnFailure: true,
+          webhookOnFailure: false,
+        },
+        missedPolicy: 'skip',
+        concurrencyPolicy: 'skip',
+        status: 'active',
+        nextRunAt: null,
+        lastRunAt: null,
+        lastRunStatus: null,
+        lastRunError: null,
+        executionCount: 0,
+        consecutiveFailures: 0,
+        projectId: null,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      })),
+      get: vi.fn(),
+    }
+
+    const coordinator = createCoordinator({
+      store: store as any,
+      scheduleService: scheduleService as any,
+    })
+
+    const result = await coordinator.confirmOperation({
+      sessionId: 'session-1',
+      operationId: operation.id,
+    })
+
+    expect(result.ok).toBe(true)
+    expect(result.code).toBe('confirmed_applied')
+    expect(scheduleService.update).toHaveBeenCalledTimes(1)
+    expect(scheduleService.update).toHaveBeenCalledWith(
+      'schedule-3',
+      expect.objectContaining({
+        trigger: expect.objectContaining({
+          time: expect.objectContaining({
+            timeOfDay: '10:15',
+          }),
+        }),
+      }),
+    )
+  })
+
+  it('accepts schedule update when id is provided via summary.scheduleId', async () => {
+    const operation = makeOperation({
+      id: 'lop-schedule-update-summary-id-1',
+      sessionId: 'session-1',
+      entity: 'schedule',
+      action: 'update',
+      state: 'pending_confirmation',
+      normalizedPayload: {
+        sessionId: 'session-1',
+        trigger: {
+          time: {
+            type: 'weekly',
+            timezone: 'Asia/Shanghai',
+            timeOfDay: '18:00',
+            daysOfWeek: [1, 3, 5],
+          },
+        },
+      },
+      summary: {
+        sessionId: 'session-1',
+        scheduleId: 'schedule-4',
+      },
+    })
+
+    const stateById = new Map<string, SessionLifecycleOperation>([[operation.id, operation]])
+    const store = {
+      withTransaction: async <T>(fn: (txStore: any, db: any) => Promise<T>) =>
+        fn(store, { __mockDb: true }),
+      getById: vi.fn(async (id: string) => stateById.get(id) ?? null),
+      transitionStateCompareAndSet: vi.fn(async (params: {
+        id: string
+        fromState: SessionLifecycleOperation['state']
+        toState: SessionLifecycleOperation['state']
+        updatedAt: number
+        appliedAt?: number | null
+        resultSnapshot?: Record<string, unknown> | null
+        errorCode?: string | null
+        errorMessage?: string | null
+      }) => {
+        const current = stateById.get(params.id)
+        if (!current || current.state !== params.fromState) return false
+        stateById.set(params.id, {
+          ...current,
+          state: params.toState,
+          updatedAt: params.updatedAt,
+          appliedAt: params.appliedAt ?? null,
+          resultSnapshot: params.resultSnapshot ?? null,
+          errorCode: params.errorCode ?? null,
+          errorMessage: params.errorMessage ?? null,
+        })
+        return true
+      }),
+    }
+
+    const scheduleService = {
+      update: vi.fn(async () => ({
+        id: 'schedule-4',
+        name: 'Weekly sync',
+        description: '',
+        trigger: {
+          time: {
+            type: 'weekly',
+            workMode: 'all_days',
+            timezone: 'Asia/Shanghai',
+            timeOfDay: '18:00',
+            daysOfWeek: [1, 3, 5],
+          },
+        },
+        action: {
+          type: 'start_session',
+          session: {
+            promptTemplate: 'Weekly sync',
+          },
+          projectId: null,
+        },
+        priority: 'normal',
+        failurePolicy: {
+          maxRetries: 3,
+          retryBackoff: 'exponential',
+          retryDelayMs: 30_000,
+          pauseAfterConsecutiveFailures: 5,
+          notifyOnFailure: true,
+          webhookOnFailure: false,
+        },
+        missedPolicy: 'skip',
+        concurrencyPolicy: 'skip',
+        status: 'active',
+        nextRunAt: null,
+        lastRunAt: null,
+        lastRunStatus: null,
+        lastRunError: null,
+        executionCount: 0,
+        consecutiveFailures: 0,
+        projectId: null,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      })),
+      get: vi.fn(),
+    }
+
+    const coordinator = createCoordinator({
+      store: store as any,
+      scheduleService: scheduleService as any,
+    })
+
+    const result = await coordinator.confirmOperation({
+      sessionId: 'session-1',
+      operationId: operation.id,
+    })
+
+    expect(result.ok).toBe(true)
+    expect(result.code).toBe('confirmed_applied')
+    expect(scheduleService.update).toHaveBeenCalledTimes(1)
+    expect(scheduleService.update).toHaveBeenCalledWith(
+      'schedule-4',
+      expect.objectContaining({
+        trigger: expect.objectContaining({
+          time: expect.objectContaining({
+            daysOfWeek: [1, 3, 5],
+          }),
+        }),
+      }),
+    )
+  })
+
   it('rejects schedule create with invalid nested trigger payload', async () => {
     const operation = makeOperation({
       id: 'lop-schedule-invalid-trigger-1',
@@ -1191,5 +1627,328 @@ describe('LifecycleOperationCoordinator', () => {
         }),
       }),
     )
+  })
+
+  it('falls back to summary.schedule + summary.task when payload trigger/action are missing', async () => {
+    const operation = makeOperation({
+      id: 'lop-schedule-summary-fallback-1',
+      sessionId: 'session-1',
+      entity: 'schedule',
+      action: 'create',
+      state: 'pending_confirmation',
+      normalizedPayload: {
+        sessionId: 'session-1',
+        name: '每日 AI Agent 热门话题查询',
+        trigger: {
+          time: {
+            type: 'cron',
+            cronExpression: '40 9 * * *',
+            timezone: 'Asia/Shanghai',
+          },
+        },
+        action: {
+          type: 'start_session',
+          session: {
+            promptTemplate: '查询 AI Agent 热门话题',
+          },
+        },
+      },
+      summary: {
+        sessionId: 'session-1',
+        schedule: '40 9 * * *',
+        timezone: 'Asia/Shanghai',
+        task: '查询 AI Agent 热门话题',
+      },
+    })
+    const stateById = new Map<string, SessionLifecycleOperation>([[operation.id, operation]])
+    const store = {
+      withTransaction: async <T>(fn: (txStore: any, db: any) => Promise<T>) =>
+        fn(store, { __mockDb: true }),
+      getById: vi.fn(async (id: string) => stateById.get(id) ?? null),
+      transitionStateCompareAndSet: vi.fn(async (params: {
+        id: string
+        fromState: SessionLifecycleOperation['state']
+        toState: SessionLifecycleOperation['state']
+        updatedAt: number
+        appliedAt?: number | null
+        resultSnapshot?: Record<string, unknown> | null
+        errorCode?: string | null
+        errorMessage?: string | null
+      }) => {
+        const current = stateById.get(params.id)
+        if (!current || current.state !== params.fromState) return false
+        stateById.set(params.id, {
+          ...current,
+          state: params.toState,
+          updatedAt: params.updatedAt,
+          appliedAt: params.appliedAt ?? null,
+          resultSnapshot: params.resultSnapshot ?? null,
+          errorCode: params.errorCode ?? null,
+          errorMessage: params.errorMessage ?? null,
+        })
+        return true
+      }),
+    }
+
+    const scheduleService = {
+      create: vi.fn(async (input: unknown) => ({
+        id: 'schedule-summary-fallback-1',
+        name: '每日 AI Agent 热门话题查询',
+        description: '',
+        trigger: (input as { trigger: unknown }).trigger,
+        action: (input as { action: unknown }).action,
+        priority: 'normal',
+        failurePolicy: {
+          maxRetries: 3,
+          retryBackoff: 'exponential',
+          retryDelayMs: 30000,
+          pauseAfterConsecutiveFailures: 5,
+          notifyOnFailure: true,
+          webhookOnFailure: false,
+        },
+        missedPolicy: 'skip',
+        concurrencyPolicy: 'skip',
+        status: 'active',
+        nextRunAt: null,
+        lastRunAt: null,
+        lastRunStatus: null,
+        lastRunError: null,
+        startDate: undefined,
+        endDate: undefined,
+        maxExecutions: undefined,
+        executionCount: 0,
+        consecutiveFailures: 0,
+        projectId: null,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      })),
+    }
+
+    const coordinator = createCoordinator({
+      store: store as any,
+      scheduleService: scheduleService as any,
+    })
+
+    const result = await coordinator.confirmOperation({
+      sessionId: 'session-1',
+      operationId: operation.id,
+    })
+
+    expect(result.ok).toBe(true)
+    expect(result.code).toBe('confirmed_applied')
+    expect(scheduleService.create).toHaveBeenCalledTimes(1)
+    expect(scheduleService.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        trigger: expect.objectContaining({
+          time: expect.objectContaining({
+            type: 'cron',
+            cronExpression: '40 9 * * *',
+            timezone: 'Asia/Shanghai',
+          }),
+        }),
+        action: expect.objectContaining({
+          type: 'start_session',
+          session: expect.objectContaining({
+            promptTemplate: '查询 AI Agent 热门话题',
+          }),
+        }),
+      }),
+    )
+  })
+
+  it('marks pending operation as applied externally', async () => {
+    const operation = makeOperation({
+      id: 'lop-mark-applied-1',
+      sessionId: 'session-1',
+      entity: 'schedule',
+      action: 'create',
+      state: 'pending_confirmation',
+      normalizedPayload: { sessionId: 'session-1', name: 'Daily sync' },
+      summary: { sessionId: 'session-1' },
+    })
+    const stateById = new Map<string, SessionLifecycleOperation>([[operation.id, operation]])
+    const store = {
+      withTransaction: async <T>(fn: (txStore: any) => Promise<T>) => fn(store),
+      getById: vi.fn(async (id: string) => stateById.get(id) ?? null),
+      transitionStateCompareAndSet: vi.fn(async (params: {
+        id: string
+        fromState: SessionLifecycleOperation['state']
+        toState: SessionLifecycleOperation['state']
+        updatedAt: number
+        appliedAt?: number | null
+        resultSnapshot?: Record<string, unknown> | null
+        errorCode?: string | null
+        errorMessage?: string | null
+      }) => {
+        const current = stateById.get(params.id)
+        if (!current || current.state !== params.fromState) return false
+        stateById.set(params.id, {
+          ...current,
+          state: params.toState,
+          updatedAt: params.updatedAt,
+          appliedAt: params.appliedAt ?? null,
+          resultSnapshot: params.resultSnapshot ?? null,
+          errorCode: params.errorCode ?? null,
+          errorMessage: params.errorMessage ?? null,
+        })
+        return true
+      }),
+    }
+
+    const dispatch = vi.fn()
+    const coordinator = createCoordinator({
+      store: store as any,
+      scheduleService: {
+        get: vi.fn(async () => ({ id: 'schedule-1' })),
+      } as any,
+      dispatch,
+    })
+
+    const result = await coordinator.markOperationAppliedExternally({
+      sessionId: 'session-1',
+      operationId: operation.id,
+      source: 'manual_form_create',
+      entityRef: {
+        entity: 'schedule',
+        id: 'schedule-1',
+      },
+    })
+
+    expect(result.ok).toBe(true)
+    expect(result.code).toBe('marked_applied_externally')
+    expect(result.operation?.state).toBe('applied')
+    expect(result.operation?.resultSnapshot).toEqual(
+      expect.objectContaining({
+        source: 'manual_form_create',
+        entityRef: {
+          entity: 'schedule',
+          id: 'schedule-1',
+        },
+      })
+    )
+    expect(dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'session:lifecycle-operation:updated',
+        payload: expect.objectContaining({
+          sessionId: 'session-1',
+          operationId: operation.id,
+          state: 'applied',
+        }),
+      }),
+    )
+  })
+
+  it('rejects external apply when entity kind mismatches operation entity', async () => {
+    const operation = makeOperation({
+      id: 'lop-mark-applied-mismatch-1',
+      sessionId: 'session-1',
+      entity: 'schedule',
+      action: 'create',
+      state: 'pending_confirmation',
+      normalizedPayload: { sessionId: 'session-1', name: 'Daily sync' },
+      summary: { sessionId: 'session-1' },
+    })
+    const stateById = new Map<string, SessionLifecycleOperation>([[operation.id, operation]])
+    const store = {
+      withTransaction: async <T>(fn: (txStore: any) => Promise<T>) => fn(store),
+      getById: vi.fn(async (id: string) => stateById.get(id) ?? null),
+      transitionStateCompareAndSet: vi.fn(async () => true),
+    }
+    const coordinator = createCoordinator({
+      store: store as any,
+      scheduleService: {
+        get: vi.fn(async () => ({ id: 'schedule-1' })),
+      } as any,
+    })
+
+    const result = await coordinator.markOperationAppliedExternally({
+      sessionId: 'session-1',
+      operationId: operation.id,
+      source: 'manual_form_create',
+      entityRef: {
+        entity: 'issue',
+        id: 'issue-1',
+      },
+    })
+
+    expect(result.ok).toBe(false)
+    expect(result.code).toBe('entity_mismatch')
+    expect(store.transitionStateCompareAndSet).not.toHaveBeenCalled()
+  })
+
+  it('rejects external apply when referenced schedule entity does not exist', async () => {
+    const operation = makeOperation({
+      id: 'lop-mark-applied-missing-1',
+      sessionId: 'session-1',
+      entity: 'schedule',
+      action: 'create',
+      state: 'pending_confirmation',
+      normalizedPayload: { sessionId: 'session-1', name: 'Daily sync' },
+      summary: { sessionId: 'session-1' },
+    })
+    const stateById = new Map<string, SessionLifecycleOperation>([[operation.id, operation]])
+    const store = {
+      withTransaction: async <T>(fn: (txStore: any) => Promise<T>) => fn(store),
+      getById: vi.fn(async (id: string) => stateById.get(id) ?? null),
+      transitionStateCompareAndSet: vi.fn(async () => true),
+    }
+    const coordinator = createCoordinator({
+      store: store as any,
+      scheduleService: {
+        get: vi.fn(async () => null),
+      } as any,
+    })
+
+    const result = await coordinator.markOperationAppliedExternally({
+      sessionId: 'session-1',
+      operationId: operation.id,
+      source: 'manual_form_create',
+      entityRef: {
+        entity: 'schedule',
+        id: 'schedule-missing',
+      },
+    })
+
+    expect(result.ok).toBe(false)
+    expect(result.code).toBe('entity_not_found')
+    expect(store.transitionStateCompareAndSet).not.toHaveBeenCalled()
+  })
+
+  it('rejects external apply when operation is not pending_confirmation', async () => {
+    const operation = makeOperation({
+      id: 'lop-mark-applied-invalid-state-1',
+      sessionId: 'session-1',
+      entity: 'schedule',
+      action: 'create',
+      state: 'applying',
+      normalizedPayload: { sessionId: 'session-1', name: 'Daily sync' },
+      summary: { sessionId: 'session-1' },
+    })
+    const stateById = new Map<string, SessionLifecycleOperation>([[operation.id, operation]])
+    const store = {
+      withTransaction: async <T>(fn: (txStore: any) => Promise<T>) => fn(store),
+      getById: vi.fn(async (id: string) => stateById.get(id) ?? null),
+      transitionStateCompareAndSet: vi.fn(async () => true),
+    }
+    const coordinator = createCoordinator({
+      store: store as any,
+      scheduleService: {
+        get: vi.fn(async () => ({ id: 'schedule-1' })),
+      } as any,
+    })
+
+    const result = await coordinator.markOperationAppliedExternally({
+      sessionId: 'session-1',
+      operationId: operation.id,
+      source: 'manual_form_create',
+      entityRef: {
+        entity: 'schedule',
+        id: 'schedule-1',
+      },
+    })
+
+    expect(result.ok).toBe(false)
+    expect(result.code).toBe('invalid_state')
+    expect(store.transitionStateCompareAndSet).not.toHaveBeenCalled()
   })
 })

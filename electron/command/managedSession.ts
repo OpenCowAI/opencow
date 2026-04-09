@@ -92,6 +92,7 @@ function normalizeUpdatedAtMs(updatedAtMs: number | undefined): number {
 }
 
 function normalizeContextState(params: {
+  metricKind?: SessionContextState['metricKind']
   usedTokens: number
   limitTokens: number | null
   source: string
@@ -99,6 +100,7 @@ function normalizeContextState(params: {
   updatedAtMs?: number
 }): SessionContextState {
   return {
+    metricKind: 'context_occupancy',
     usedTokens: normalizeUsedTokens(params.usedTokens),
     limitTokens: normalizeLimitTokens(params.limitTokens),
     source: normalizeContextSource(params.source),
@@ -112,6 +114,7 @@ function toContextTelemetry(state: SessionContextState | null): SessionContextTe
   const remainingTokens = Math.max(0, state.limitTokens - state.usedTokens)
   const remainingPct = Math.max(0, Math.min(100, (remainingTokens / state.limitTokens) * 100))
   return {
+    metricKind: 'context_occupancy',
     usedTokens: state.usedTokens,
     limitTokens: state.limitTokens,
     remainingTokens,
@@ -331,6 +334,7 @@ export class ManagedSession {
     // Downgrade to estimated confidence so the UI can distinguish stale data.
     if (prev && prev.usedTokens > 0) {
       this.contextState = {
+        metricKind: 'context_occupancy',
         usedTokens: prev.usedTokens,
         limitTokens: null, // invalidate model-scoped limit
         source: prev.source,
@@ -418,6 +422,7 @@ export class ManagedSession {
     }
 
     const next = normalizeContextState({
+      metricKind: 'context_occupancy',
       usedTokens: normalizedUsed ?? prev?.usedTokens ?? 0,
       limitTokens: normalizedLimit !== undefined ? normalizedLimit : (prev?.limitTokens ?? null),
       source: patch.source,
@@ -438,6 +443,7 @@ export class ManagedSession {
    * modelUsage.contextWindow in turn.result → setContextLimitFromModelUsage).
    */
   applyContextSnapshot(snapshot: {
+    metricKind?: SessionContextState['metricKind']
     usedTokens: number
     limitTokens: number | null
     source: string
@@ -445,6 +451,7 @@ export class ManagedSession {
     updatedAtMs: number
   }): boolean {
     const normalized = normalizeContextState({
+      metricKind: snapshot.metricKind ?? 'context_occupancy',
       usedTokens: snapshot.usedTokens,
       limitTokens: snapshot.limitTokens,
       source: snapshot.source,
@@ -932,7 +939,7 @@ export class ManagedSession {
       totalCostUsd: this.totalCostUsd,
       inputTokens: this.inputTokens,
       outputTokens: this.outputTokens,
-      lastInputTokens: contextState?.usedTokens ?? 0,
+      lastInputTokens: 0,
       contextLimitOverride: contextState?.limitTokens ?? null,
       contextState,
       contextTelemetry,
@@ -1016,6 +1023,7 @@ export class ManagedSession {
     session.outputTokens = info.outputTokens
     if (info.contextState) {
       session.contextState = normalizeContextState({
+        metricKind: info.contextState.metricKind,
         usedTokens: info.contextState.usedTokens,
         limitTokens: info.contextState.limitTokens ?? null,
         source: info.contextState.source,
@@ -1024,6 +1032,7 @@ export class ManagedSession {
       })
     } else if (info.contextTelemetry) {
       session.contextState = normalizeContextState({
+        metricKind: info.contextTelemetry.metricKind,
         usedTokens: info.contextTelemetry.usedTokens,
         limitTokens: info.contextTelemetry.limitTokens,
         source: info.contextTelemetry.source,
@@ -1031,19 +1040,7 @@ export class ManagedSession {
         updatedAtMs: info.contextTelemetry.updatedAtMs,
       })
     } else {
-      const legacyUsed = normalizeUsedTokens(info.lastInputTokens ?? 0)
-      const legacyLimit = normalizeLimitTokens(info.contextLimitOverride ?? null)
-      if (legacyUsed > 0 || legacyLimit != null) {
-        session.contextState = normalizeContextState({
-          usedTokens: legacyUsed,
-          limitTokens: legacyLimit,
-          source: 'legacy.session_info',
-          confidence: 'estimated',
-          updatedAtMs: info.lastActivity,
-        })
-      } else {
-        session.contextState = null
-      }
+      session.contextState = null
     }
     session.activity = info.activity
     session.error = info.error

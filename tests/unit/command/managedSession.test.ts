@@ -456,13 +456,13 @@ describe('ManagedSession', () => {
   it('applyContextSnapshot with estimated confidence sets usedTokens', () => {
     const session = new ManagedSession(baseConfig)
     session.applyContextSnapshot({
-      usedTokens: 123,
+      metricKind: 'context_occupancy', usedTokens: 123,
       limitTokens: null,
       source: 'claude.assistant_usage',
       confidence: 'estimated',
       updatedAtMs: Date.now(),
     })
-    expect(session.getInfo().lastInputTokens).toBe(123)
+    expect(session.getInfo().contextState?.usedTokens).toBe(123)
   })
 
   it('applyContextSnapshot with null limitTokens preserves existing limit', () => {
@@ -473,14 +473,14 @@ describe('ManagedSession', () => {
 
     // Then apply snapshot with null limitTokens — should preserve 200k
     session.applyContextSnapshot({
-      usedTokens: 50_000,
+      metricKind: 'context_occupancy', usedTokens: 50_000,
       limitTokens: null,
       source: 'claude.assistant_usage',
       confidence: 'estimated',
       updatedAtMs: Date.now(),
     })
     const info = session.getInfo()
-    expect(info.lastInputTokens).toBe(50_000)
+    expect(info.contextState?.usedTokens).toBe(50_000)
     expect(info.contextState?.limitTokens).toBe(200_000)
   })
 
@@ -496,7 +496,7 @@ describe('ManagedSession', () => {
   it('applyContextSnapshot stores authoritative telemetry and syncs compatibility fields', () => {
     const session = new ManagedSession(baseConfig)
     session.applyContextSnapshot({
-      usedTokens: 1024,
+      metricKind: 'context_occupancy', usedTokens: 1024,
       limitTokens: 272000,
       source: 'codex.token_count',
       confidence: 'authoritative',
@@ -510,14 +510,13 @@ describe('ManagedSession', () => {
     expect(info.contextTelemetry?.limitTokens).toBe(272000)
     expect(info.contextTelemetry?.remainingTokens).toBe(270976)
     expect(info.contextTelemetry?.confidence).toBe('authoritative')
-    expect(info.lastInputTokens).toBe(1024)
     expect(info.contextLimitOverride).toBe(272000)
   })
 
   it('does not downgrade authoritative context state with estimated snapshots', () => {
     const session = new ManagedSession(baseConfig)
     session.applyContextSnapshot({
-      usedTokens: 4096,
+      metricKind: 'context_occupancy', usedTokens: 4096,
       limitTokens: 272000,
       source: 'codex.token_count',
       confidence: 'authoritative',
@@ -525,14 +524,14 @@ describe('ManagedSession', () => {
     })
 
     session.applyContextSnapshot({
-      usedTokens: 12,
+      metricKind: 'context_occupancy', usedTokens: 12,
       limitTokens: null,
       source: 'codex.turn_usage',
       confidence: 'estimated',
       updatedAtMs: 2_100,
     })
     const info = session.getInfo()
-    expect(info.lastInputTokens).toBe(4096)
+    expect(info.contextState?.usedTokens).toBe(4096)
     expect(info.contextState?.confidence).toBe('authoritative')
     expect(info.contextState?.source).toBe('codex.token_count')
   })
@@ -540,7 +539,7 @@ describe('ManagedSession', () => {
   it('ignores stale authoritative context snapshots and keeps latest', () => {
     const session = new ManagedSession(baseConfig)
     session.applyContextSnapshot({
-      usedTokens: 5000,
+      metricKind: 'context_occupancy', usedTokens: 5000,
       limitTokens: 272000,
       source: 'codex.token_count',
       confidence: 'authoritative',
@@ -548,7 +547,7 @@ describe('ManagedSession', () => {
     })
 
     session.applyContextSnapshot({
-      usedTokens: 4500,
+      metricKind: 'context_occupancy', usedTokens: 4500,
       limitTokens: 272000,
       source: 'codex.token_count',
       confidence: 'authoritative',
@@ -563,7 +562,7 @@ describe('ManagedSession', () => {
   it('clearContextState resets context tracking', () => {
     const session = new ManagedSession(baseConfig)
     session.applyContextSnapshot({
-      usedTokens: 90000,
+      metricKind: 'context_occupancy', usedTokens: 90000,
       limitTokens: 200000,
       source: 'claude.assistant_usage',
       confidence: 'estimated',
@@ -588,7 +587,7 @@ describe('ManagedSession', () => {
   it('setModel downgrades contextState to estimated and clears model-scoped limit', () => {
     const session = new ManagedSession(baseConfig)
     session.applyContextSnapshot({
-      usedTokens: 2048,
+      metricKind: 'context_occupancy', usedTokens: 2048,
       limitTokens: 272000,
       source: 'codex.token_count',
       confidence: 'authoritative',
@@ -603,16 +602,15 @@ describe('ManagedSession', () => {
     expect(info.contextState!.usedTokens).toBe(2048)
     expect(info.contextState!.limitTokens).toBeNull()
     expect(info.contextState!.confidence).toBe('estimated')
+    expect(info.contextState!.metricKind).toBe('context_occupancy')
     // contextTelemetry requires non-null limitTokens to compute remaining%
     expect(info.contextTelemetry).toBeNull()
-    // lastInputTokens derived from contextState.usedTokens
-    expect(info.lastInputTokens).toBe(2048)
   })
 
   it('setModel fully clears contextState when usedTokens is 0', () => {
     const session = new ManagedSession(baseConfig)
     session.applyContextSnapshot({
-      usedTokens: 0,
+      metricKind: 'context_occupancy', usedTokens: 0,
       limitTokens: null,
       source: 'test',
       confidence: 'estimated',
@@ -624,6 +622,19 @@ describe('ManagedSession', () => {
     expect(info.lastInputTokens).toBe(0)
   })
 
+  it('normalizes unsupported metricKind to context_occupancy', () => {
+    const session = new ManagedSession(baseConfig)
+    session.applyContextSnapshot({
+      metricKind: 'token_usage_total' as any,
+      usedTokens: 2048,
+      limitTokens: 200_000,
+      source: 'test',
+      confidence: 'estimated',
+      updatedAtMs: Date.now(),
+    })
+    expect(session.getInfo().contextState?.metricKind).toBe('context_occupancy')
+  })
+
   it('switchEngine clears model overrides and context state', () => {
     const session = new ManagedSession({
       ...baseConfig,
@@ -632,7 +643,7 @@ describe('ManagedSession', () => {
     })
     session.setModel('claude-sonnet-4-6')
     session.applyContextSnapshot({
-      usedTokens: 1024,
+      metricKind: 'context_occupancy', usedTokens: 1024,
       limitTokens: 200_000,
       source: 'claude.assistant_usage',
       confidence: 'estimated',

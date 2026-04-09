@@ -13,6 +13,7 @@ function rowToOperation(row: SessionLifecycleOperationTable): SessionLifecycleOp
     id: row.id,
     sessionId: row.session_id,
     toolUseId: row.tool_use_id,
+    proposalGroupKey: row.proposal_group_key,
     operationIndex: row.operation_index,
     entity: row.entity as SessionLifecycleOperation['entity'],
     action: row.action as SessionLifecycleOperation['action'],
@@ -38,6 +39,7 @@ function operationToRow(operation: SessionLifecycleOperation): SessionLifecycleO
     id: operation.id,
     session_id: operation.sessionId,
     tool_use_id: operation.toolUseId,
+    proposal_group_key: operation.proposalGroupKey,
     operation_index: operation.operationIndex,
     entity: operation.entity,
     action: operation.action,
@@ -112,9 +114,9 @@ export class SessionLifecycleOperationStore {
         }
       }
 
-      const byTuple = await this.findBySessionToolUseOperationIndex({
+      const byTuple = await this.findBySessionProposalGroupOperationIndex({
         sessionId: operation.sessionId,
-        toolUseId: operation.toolUseId,
+        proposalGroupKey: operation.proposalGroupKey,
         operationIndex: operation.operationIndex,
       })
       if (byTuple) {
@@ -137,16 +139,16 @@ export class SessionLifecycleOperationStore {
     return row ? rowToOperation(row) : null
   }
 
-  async findBySessionToolUseOperationIndex(params: {
+  async findBySessionProposalGroupOperationIndex(params: {
     sessionId: string
-    toolUseId: string
+    proposalGroupKey: string
     operationIndex: number
   }): Promise<SessionLifecycleOperation | null> {
     const row = await this.db
       .selectFrom('session_lifecycle_operations')
       .selectAll()
       .where('session_id', '=', params.sessionId)
-      .where('tool_use_id', '=', params.toolUseId)
+      .where('proposal_group_key', '=', params.proposalGroupKey)
       .where('operation_index', '=', params.operationIndex)
       .executeTakeFirst()
     return row ? rowToOperation(row) : null
@@ -278,12 +280,12 @@ export class SessionLifecycleOperationStore {
     return Number(result?.numDeletedRows ?? 0n)
   }
 
-  async nextOperationIndex(sessionId: string, toolUseId: string): Promise<number> {
+  async nextOperationIndex(sessionId: string, proposalGroupKey: string): Promise<number> {
     const row = await this.db
       .selectFrom('session_lifecycle_operations')
       .select(sql<number>`COALESCE(MAX(operation_index), -1)`.as('maxIndex'))
       .where('session_id', '=', sessionId)
-      .where('tool_use_id', '=', toolUseId)
+      .where('proposal_group_key', '=', proposalGroupKey)
       .executeTakeFirst()
     const maxIndex = Number(row?.maxIndex ?? -1)
     return maxIndex + 1

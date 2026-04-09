@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
-import { tool } from '@anthropic-ai/claude-agent-sdk'
-import type { SdkMcpToolDefinition } from '@anthropic-ai/claude-agent-sdk'
+import { tool } from '../integrations/opencowSdkCompat'
+import type { AnyZodRawShape, SdkMcpToolDefinition } from '../integrations/opencowSdkCompat'
 import type { NativeToolDescriptor } from './types'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -59,7 +59,7 @@ export function toClaudeToolDefinition(descriptor: NativeToolDescriptor): Claude
   return tool(
     descriptor.name,
     descriptor.description,
-    descriptor.inputSchema,
+    descriptor.inputSchema as unknown as AnyZodRawShape,
     async (args, extra) => {
       const extraObj = asRecord(extra)
       const signal = isAbortSignal(extraObj.signal) ? extraObj.signal : undefined

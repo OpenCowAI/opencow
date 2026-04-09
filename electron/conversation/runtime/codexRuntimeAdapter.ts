@@ -126,23 +126,6 @@ export class CodexRuntimeEventAdapter {
           kind: 'turn.usage',
           payload: toTurnUsage(event.usage),
         })
-        // Context window tracking — Codex: inputTokens = context window occupancy.
-        // This estimated snapshot serves as a fallback when the authoritative
-        // token_count event from codexQueryLifecycle arrives late.
-        // Authoritative snapshots suppress estimated ones in ManagedSession.
-        if (event.usage.input_tokens > 0) {
-          events.push({
-            kind: 'context.snapshot',
-            payload: {
-              usedTokens: event.usage.input_tokens,
-              limitTokens: null,
-              remainingTokens: null,
-              remainingPct: null,
-              source: 'codex.turn_usage',
-              confidence: 'estimated',
-            },
-          })
-        }
         if (!this.emittedResult) {
           events.push({
             kind: 'turn.result',

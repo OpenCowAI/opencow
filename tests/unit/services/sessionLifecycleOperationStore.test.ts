@@ -6,6 +6,7 @@ import { Kysely, SqliteDialect } from 'kysely'
 import type { Database } from '../../../electron/database/types'
 import * as m053 from '../../../electron/database/migrations/053_create_session_lifecycle_operations'
 import * as m054 from '../../../electron/database/migrations/054_scope_lifecycle_idempotency_by_session'
+import * as m055 from '../../../electron/database/migrations/055_add_lifecycle_proposal_group_key'
 import { SessionLifecycleOperationStore } from '../../../electron/services/sessionLifecycleOperationStore'
 import type { SessionLifecycleOperation } from '../../../src/shared/types'
 
@@ -15,6 +16,7 @@ function makeOperation(overrides: Partial<SessionLifecycleOperation> = {}): Sess
     id: overrides.id ?? 'lop-1',
     sessionId: overrides.sessionId ?? 'session-1',
     toolUseId: overrides.toolUseId ?? 'tool-1',
+    proposalGroupKey: overrides.proposalGroupKey ?? overrides.toolUseId ?? 'tool-1',
     operationIndex: overrides.operationIndex ?? 0,
     entity: overrides.entity ?? 'schedule',
     action: overrides.action ?? 'create',
@@ -46,6 +48,7 @@ describe('SessionLifecycleOperationStore.upsert', () => {
     })
     await m053.up(db as unknown as Kysely<unknown>)
     await m054.up(db as unknown as Kysely<unknown>)
+    await m055.up(db as unknown as Kysely<unknown>)
     store = new SessionLifecycleOperationStore(db)
   })
 

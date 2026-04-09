@@ -19,7 +19,7 @@ import { existsSync } from 'node:fs'
 import path from 'node:path'
 import { spawn } from 'node:child_process'
 import { app } from 'electron'
-import type { SpawnOptions, SpawnedProcess } from '@anthropic-ai/claude-agent-sdk'
+import type { SpawnOptions, SpawnedProcess } from '@opencow-ai/opencow-agent-sdk'
 import { resolveNodeExecutableForChildProcess } from './shellPath'
 
 /**

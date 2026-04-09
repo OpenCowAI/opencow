@@ -101,6 +101,26 @@ describe('session draft output parsers', () => {
     expect(parsed?.prompt).toBe('new prompt body')
   })
 
+  it('extractLatestScheduleOutput parses optional systemPrompt from frontmatter', () => {
+    const messages: ManagedSessionMessage[] = [
+      assistantText([
+        '```schedule-output',
+        '---',
+        'name: "Daily system prompt test"',
+        'frequency: daily',
+        'timeOfDay: "09:00"',
+        'priority: normal',
+        'systemPrompt: "Always output concise bullet points."',
+        '---',
+        'do the thing',
+        '```',
+      ].join('\n')),
+    ]
+
+    const parsed = extractLatestScheduleOutput(messages)
+    expect(parsed?.systemPrompt).toBe('Always output concise bullet points.')
+  })
+
   it('resolveLatestSessionDraftType picks the latest valid draft across issue/schedule types', () => {
     const messages: ManagedSessionMessage[] = [
       assistantText([
@@ -178,5 +198,39 @@ describe('session draft output parsers', () => {
     expect(resolved?.draft.name).toBe('Weekly report')
     expect(resolved?.key).toBeTruthy()
     expect(typeof resolved?.key).toBe('string')
+  })
+
+  it('resolveLatestSessionDraft key changes when schedule systemPrompt changes', () => {
+    const withSystemPrompt = assistantText([
+      '```schedule-output',
+      '---',
+      'name: "Weekly report"',
+      'frequency: weekly',
+      'timeOfDay: "10:30"',
+      'daysOfWeek: [1, 3, 5]',
+      'priority: high',
+      'systemPrompt: "Be concise"',
+      '---',
+      'send weekly report',
+      '```',
+    ].join('\n'))
+    const withoutSystemPrompt = assistantText([
+      '```schedule-output',
+      '---',
+      'name: "Weekly report"',
+      'frequency: weekly',
+      'timeOfDay: "10:30"',
+      'daysOfWeek: [1, 3, 5]',
+      'priority: high',
+      '---',
+      'send weekly report',
+      '```',
+    ].join('\n'))
+
+    const keyA = resolveLatestSessionDraft([withSystemPrompt])?.key
+    const keyB = resolveLatestSessionDraft([withoutSystemPrompt])?.key
+    expect(keyA).toBeTruthy()
+    expect(keyB).toBeTruthy()
+    expect(keyA).not.toBe(keyB)
   })
 })

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk'
+import type { SDKMessage } from '@opencow-ai/opencow-agent-sdk'
 import { normalizeContentBlocks, ensureThinkingBlocksFirst, type SDKContentBlock } from '../../command/contentBlocks'
 import type { EngineRuntimeEvent, RuntimeModelUsage, RuntimeResultOutcome, RuntimeTurnUsage } from './events'
 import { toConversationContentBlocks } from './contentBlockMapper'
@@ -162,6 +162,7 @@ function parseAssistantBlocks(raw: Record<string, unknown>): EngineRuntimeEvent[
       events.push({
         kind: 'context.snapshot',
         payload: {
+          metricKind: 'context_occupancy',
           usedTokens: contextWindowUsed,
           limitTokens: null,       // unknown at adapter level; arrives via modelUsage.contextWindow in turn.result
           remainingTokens: null,

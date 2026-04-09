@@ -21,17 +21,20 @@ vi.mock('react-i18next', () => ({
 const apiMock = vi.hoisted(() => {
   const confirm = vi.fn()
   const reject = vi.fn()
+  const markApplied = vi.fn()
   const listLifecycleOperations = vi.fn(async () => [])
   const logWrite = vi.fn(async () => {})
   return {
     api: {
       'command:confirm-session-lifecycle-operation': confirm,
       'command:reject-session-lifecycle-operation': reject,
+      'command:mark-session-lifecycle-operation-applied': markApplied,
       'command:list-session-lifecycle-operations': listLifecycleOperations,
       'log:write': logWrite,
     },
     confirm,
     reject,
+    markApplied,
     listLifecycleOperations,
     logWrite,
   }
@@ -55,6 +58,34 @@ vi.mock('@/stores/issueStore', () => ({
 
 vi.mock('@/stores/scheduleStore', () => ({
   useScheduleStore: (selector: (s: typeof scheduleStoreMock) => unknown) => selector(scheduleStoreMock),
+}))
+
+vi.mock('@/components/IssueForm/IssueFormModal', () => ({
+  IssueFormModal: (props: { onCreated: (issue: unknown) => void; onClose: () => void }) => (
+    <div data-testid="issue-form-modal">
+      <button
+        type="button"
+        onClick={() => props.onCreated({ id: 'issue-created-from-modal' })}
+      >
+        create issue
+      </button>
+      <button type="button" onClick={props.onClose}>close issue modal</button>
+    </div>
+  ),
+}))
+
+vi.mock('@/components/ScheduleView/ScheduleFormModal', () => ({
+  ScheduleFormModal: (props: { onCreated: (schedule: unknown) => void; onClose: () => void }) => (
+    <div data-testid="schedule-form-modal">
+      <button
+        type="button"
+        onClick={() => props.onCreated({ id: 'schedule-created-from-modal' })}
+      >
+        create schedule
+      </button>
+      <button type="button" onClick={props.onClose}>close schedule modal</button>
+    </div>
+  ),
 }))
 
 function makeEnvelope(overrides: Partial<SessionLifecycleOperationEnvelope> = {}): SessionLifecycleOperationEnvelope {
@@ -88,6 +119,7 @@ describe('LifecycleOperationResultCard', () => {
   beforeEach(() => {
     apiMock.confirm.mockReset()
     apiMock.reject.mockReset()
+    apiMock.markApplied.mockReset()
     apiMock.listLifecycleOperations.mockReset()
     apiMock.listLifecycleOperations.mockResolvedValue([])
     issueStoreMock.loadIssues.mockClear()
@@ -220,6 +252,33 @@ describe('LifecycleOperationResultCard', () => {
     expect(screen.getByText('每日 AI Agent 热门话题查询')).toBeInTheDocument()
   })
 
+  it('shows target id and trigger preview for schedule update card', () => {
+    const scheduleUpdate = makeEnvelope({
+      entity: 'schedule',
+      action: 'update',
+      summary: {
+        sessionId: 'session-1',
+      },
+      normalizedPayload: {
+        sessionId: 'session-1',
+        id: 'schedule-42',
+        trigger: {
+          time: {
+            type: 'cron',
+            cronExpression: '20 9 * * *',
+            timezone: 'Asia/Shanghai',
+          },
+        },
+      },
+    })
+
+    render(<LifecycleOperationResultCard data={scheduleUpdate} />)
+
+    expect(screen.getByText('Target ID')).toBeInTheDocument()
+    expect(screen.getByText('schedule-42')).toBeInTheDocument()
+    expect(screen.getByText('cron: 20 9 * * *')).toBeInTheDocument()
+  })
+
   it('shows timeout error and exits confirming state when confirm request hangs', async () => {
     vi.useFakeTimers()
     apiMock.confirm.mockImplementation(() => new Promise(() => {}))
@@ -308,5 +367,74 @@ describe('LifecycleOperationResultCard', () => {
       expect(screen.getByText('Applied')).toBeInTheDocument()
     })
     expect(screen.queryByRole('button', { name: /confirm/i })).toBeNull()
+  })
+
+  it('marks lifecycle draft as applied (not cancelled) after schedule manual create from edit fields', async () => {
+    const operation = makeEnvelope({
+      operationId: 'lop-manual-schedule-1',
+      entity: 'schedule',
+      action: 'create',
+      state: 'pending_confirmation',
+      normalizedPayload: {
+        sessionId: 'session-1',
+        name: '每日 AI Agent 热门话题查询',
+        trigger: {
+          time: {
+            type: 'cron',
+            cronExpression: '40 9 * * *',
+            timezone: 'Asia/Shanghai',
+          },
+        },
+        action: {
+          type: 'start_session',
+          session: {
+            promptTemplate: '查询 AI Agent 热门话题',
+          },
+        },
+      },
+      summary: {
+        sessionId: 'session-1',
+        name: '每日 AI Agent 热门话题查询',
+      },
+    })
+
+    apiMock.markApplied.mockResolvedValue({
+      ok: true,
+      code: 'marked_applied_externally',
+      operation: makeEnvelope({
+        ...operation,
+        state: 'applied',
+        updatedAt: new Date(Date.now() + 1_000).toISOString(),
+        appliedAt: new Date().toISOString(),
+        resultSnapshot: {
+          source: 'manual_form_create',
+        },
+      }),
+    })
+
+    render(<LifecycleOperationResultCard data={operation} currentSessionId="session-1" />)
+
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('button', { name: /edit fields/i }))
+    await user.click(screen.getByRole('button', { name: /create schedule/i }))
+
+    await waitFor(() => {
+      expect(apiMock.markApplied).toHaveBeenCalledTimes(1)
+    })
+    expect(apiMock.markApplied).toHaveBeenCalledWith(
+      'session-1',
+      'lop-manual-schedule-1',
+      expect.objectContaining({
+        source: 'manual_form_create',
+        entityRef: {
+          entity: 'schedule',
+          id: 'schedule-created-from-modal',
+        },
+      }),
+    )
+    await waitFor(() => {
+      expect(screen.getByText('Applied')).toBeInTheDocument()
+    })
+    expect(screen.queryByText('Cancelled')).toBeNull()
   })
 })

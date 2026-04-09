@@ -71,6 +71,8 @@ export interface ParsedScheduleOutput {
   executeAt?: string
   /** Prompt template — the body content (core of the schedule). */
   prompt: string
+  /** Optional system prompt for scheduled session behavior guidance. */
+  systemPrompt?: string
   /** Schedule priority. */
   priority: SchedulePriorityType
   /** Optional project ID. */
@@ -194,6 +196,10 @@ function mapToScheduleOutput(
     cronExpression: parseOptionalString(attributes.cronExpression ?? attributes['cron-expression']) ?? undefined,
     executeAt: parseOptionalString(attributes.executeAt ?? attributes['execute-at']) ?? undefined,
     prompt,
+    systemPrompt:
+      parseOptionalString(attributes.systemPrompt) ??
+      parseOptionalString(attributes['system-prompt']) ??
+      undefined,
     priority: parsePriority(attributes.priority),
     projectId: parseOptionalString(attributes.projectId) ?? parseOptionalString(attributes['project-id']),
   }

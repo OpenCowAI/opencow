@@ -62,8 +62,10 @@ describe('Lifecycle operation confirmationMode normalization', () => {
 
     expect(proposeOperations).toHaveBeenCalledTimes(1)
     const firstCall = proposeOperations.mock.calls[0][0] as {
+      toolName: string
       proposals: SessionLifecycleOperationProposalInput[]
     }
+    expect(firstCall.toolName).toBe('propose_issue_operation')
     expect(firstCall.proposals[0].confirmationMode).toBe('required')
   })
 
@@ -86,8 +88,10 @@ describe('Lifecycle operation confirmationMode normalization', () => {
 
     expect(proposeOperations).toHaveBeenCalledTimes(1)
     const firstCall = proposeOperations.mock.calls[0][0] as {
+      toolName: string
       proposals: SessionLifecycleOperationProposalInput[]
     }
+    expect(firstCall.toolName).toBe('propose_schedule_operation')
     expect(firstCall.proposals[0].confirmationMode).toBe('auto_if_user_explicit')
   })
 
@@ -141,5 +145,31 @@ describe('Lifecycle operation confirmationMode normalization', () => {
         }),
       }),
     )
+  })
+
+  it('generates unique fallback toolUseId when both toolUseId/invocationId are missing', async () => {
+    const proposeOperations = vi.fn().mockResolvedValue([])
+    const capability = new IssueNativeCapability({
+      issueService: {} as never,
+      lifecycleOperationCoordinator: { proposeOperations } as never,
+    })
+    const tool = getToolOrThrow(capability.getToolDescriptors(createContext()), 'propose_issue_operation')
+
+    const args = parseToolArgs(tool, {
+      operations: [{
+        action: 'create',
+        normalizedPayload: { title: 'Issue A' },
+      }],
+    })
+
+    await tool.execute({ args, context: {} })
+    await tool.execute({ args, context: {} })
+
+    expect(proposeOperations).toHaveBeenCalledTimes(2)
+    const first = proposeOperations.mock.calls[0][0] as { toolUseId: string }
+    const second = proposeOperations.mock.calls[1][0] as { toolUseId: string }
+    expect(first.toolUseId).toMatch(/^missing-tool-use-id:/)
+    expect(second.toolUseId).toMatch(/^missing-tool-use-id:/)
+    expect(first.toolUseId).not.toBe(second.toolUseId)
   })
 })

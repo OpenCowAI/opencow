@@ -45,6 +45,9 @@ yarn-error.log*
 .opencow/
 .opencow-dev/
 .claude/
+.cursor/
+.mcp.json
+.opencode.json
 plans/
 docs/
 PLAN.md

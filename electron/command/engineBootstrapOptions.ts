@@ -137,7 +137,7 @@ function toAsarUnpackedPath(filePath: string): string {
  */
 export function resolveClaudeCliPath(): string | undefined {
   try {
-    return require.resolve('@anthropic-ai/claude-agent-sdk/cli.js')
+    return require.resolve('@opencow-ai/opencow-agent-sdk/dist/cli.mjs')
   } catch {
     return undefined
   }

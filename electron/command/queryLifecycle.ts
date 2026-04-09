@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-import { query as sdkQuery } from '@anthropic-ai/claude-agent-sdk'
-import type { Query, SDKMessage } from '@anthropic-ai/claude-agent-sdk'
+import { pathToFileURL } from 'node:url'
 import { MessageQueue } from './messageQueue'
 import type { UserMessageContent } from '../../src/shared/types'
 import type { SessionLifecycle, SessionLifecycleStartInput } from './sessionLifecycle'
@@ -22,6 +21,33 @@ const log = createLogger('QueryLifecycle')
 /** Safety timeout (ms) for stop() — last resort if SDK hangs. */
 const STOP_SAFETY_TIMEOUT_MS = 30_000
 
+type SdkQuery = {
+  [Symbol.asyncIterator](): AsyncIterator<unknown>
+  close(): Promise<void> | void
+}
+type OpenCowAgentModule = {
+  query: (params: { prompt: AsyncIterable<unknown>; options?: Record<string, unknown> }) => SdkQuery
+}
+
+let _modulePromise: Promise<OpenCowAgentModule> | null = null
+
+async function loadSdkModule(): Promise<OpenCowAgentModule> {
+  if (!_modulePromise) {
+    _modulePromise = (async () => {
+      const entryPath = require.resolve('@opencow-ai/opencow-agent-sdk/dist/sdk.js')
+      return import(pathToFileURL(entryPath).href) as Promise<OpenCowAgentModule>
+    })()
+  }
+  return _modulePromise
+}
+
+/** Test seam: inject a mock loader without touching ESM module resolution. */
+export function __setOpenClaudeModuleLoaderForTest(
+  loader: (() => Promise<OpenCowAgentModule>) | null,
+): void {
+  _modulePromise = loader ? loader() : null
+}
+
 /**
  * Encapsulates the lifecycle of a single SDK query (child process).
  *
@@ -29,7 +55,8 @@ const STOP_SAFETY_TIMEOUT_MS = 30_000
  * Once stopped, the instance is discarded — never reused.
  */
 export class QueryLifecycle implements SessionLifecycle {
-  private _query: Query | null = null
+  private _query: SdkQuery | null = null
+  private _started = false
   private readonly queue: MessageQueue
   private doneResolve: (() => void) | null = null
   private readonly donePromise: Promise<void>
@@ -58,8 +85,9 @@ export class QueryLifecycle implements SessionLifecycle {
    * @returns AsyncIterable of SDK messages
    */
   start(input: SessionLifecycleStartInput): AsyncIterable<EngineRuntimeEventEnvelope> {
-    if (this._query) throw new Error('QueryLifecycle already started')
+    if (this._started) throw new Error('QueryLifecycle already started')
     if (this._stopped) throw new Error('QueryLifecycle already stopped')
+    this._started = true
     const initialPrompt: UserMessageContent = input.initialPrompt
     if (input.launchOptions.engineKind !== 'claude') {
       throw new Error(`QueryLifecycle requires claude launch options, got ${input.launchOptions.engineKind}`)
@@ -81,16 +109,8 @@ export class QueryLifecycle implements SessionLifecycle {
     this.queue.push(initialPrompt)
     this.pendingTurnSeqs.push(this.nextTurnSeq++)
 
-    const q = sdkQuery({ prompt: this.queue, options: toSdkOptions(options) })
-    this._query = q
-
     const cleanup = () => {
       this._stopped = true
-      // Close the SDK child process if stop() hasn't already done so.
-      // When the stream ends naturally (idle/completed), stop() is never called,
-      // so we MUST close here to prevent file descriptor leaks (spawn EBADF).
-      // When stop() was called first, it sets _query = null before this runs,
-      // so the guard prevents double-close.
       if (this._query) {
         this._query.close()
       }
@@ -101,9 +121,18 @@ export class QueryLifecycle implements SessionLifecycle {
     }
     const resolveTurnRef = (event: EngineRuntimeEvent): RuntimeTurnRef | undefined =>
       this.resolveTurnRef(event)
+    const lifecycle = this
     const stream = (async function* () {
       try {
-        for await (const message of q as AsyncIterable<SDKMessage>) {
+        const { query } = await loadSdkModule()
+        const q = query({ prompt: lifecycle.queue, options: toSdkOptions(options) })
+        lifecycle._query = q
+        if (lifecycle._stopped) {
+          q.close()
+          lifecycle._query = null
+          return
+        }
+        for await (const message of q) {
           const events = adaptClaudeSdkMessage(message)
           for (const event of events) {
             yield createRuntimeEventEnvelope({

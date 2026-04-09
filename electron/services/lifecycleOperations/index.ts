@@ -12,6 +12,8 @@ export { LifecycleOperationCoordinator } from './lifecycleOperationCoordinator'
 export type {
   ConfirmLifecycleOperationResult,
   ConfirmLifecycleOperationResultCode,
+  MarkLifecycleOperationAppliedResult,
+  MarkLifecycleOperationAppliedResultCode,
   RejectLifecycleOperationResult,
   RejectLifecycleOperationResultCode,
   LifecycleOperationCoordinatorDeps,

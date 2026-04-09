@@ -79,6 +79,7 @@ describe('mapScheduleOperationToParsedDraft', () => {
           type: 'start_session',
           session: {
             promptTemplate: 'Query AI agent hot topics',
+            systemPrompt: 'Always prioritize safety checks.',
           },
           projectId: 'project-1',
         },
@@ -94,9 +95,40 @@ describe('mapScheduleOperationToParsedDraft', () => {
         frequency: 'daily',
         timeOfDay: '09:40',
         prompt: 'Query AI agent hot topics',
+        systemPrompt: 'Always prioritize safety checks.',
         priority: 'high',
         projectId: 'project-1',
       })
     )
+  })
+
+  it('prefers summary projectId when payload omits projectId', () => {
+    const operation = makeScheduleOperation(
+      {
+        sessionId: 'session-1',
+        name: 'Daily agent topics',
+        trigger: {
+          time: {
+            type: 'daily',
+            timezone: 'Asia/Shanghai',
+            workMode: 'all_days',
+            timeOfDay: '09:40',
+          },
+        },
+        action: {
+          type: 'start_session',
+          session: {
+            promptTemplate: 'Query AI agent hot topics',
+          },
+        },
+      },
+      {
+        sessionId: 'session-1',
+        projectId: 'project-summary-1',
+      }
+    )
+
+    const parsed = mapScheduleOperationToParsedDraft(operation)
+    expect(parsed?.projectId).toBe('project-summary-1')
   })
 })

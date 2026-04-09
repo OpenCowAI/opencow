@@ -28,7 +28,7 @@ import type { GitCommandExecutor } from '../services/git/gitCommandExecutor'
 import type { NativeCapabilityRegistry } from '../nativeCapabilities/registry'
 import type { NativeCapabilityToolContext, NativeToolDescriptor } from '../nativeCapabilities/types'
 import { toClaudeToolDefinitions } from '../nativeCapabilities/claudeToolAdapter'
-import { createSdkMcpServer } from '@anthropic-ai/claude-agent-sdk'
+import { createSdkMcpServer } from '../integrations/opencowSdkCompat'
 import type { BrowserService } from '../browser/browserService'
 import type { PendingQuestionRegistry } from '../nativeCapabilities/interaction/pendingQuestionRegistry'
 import type { CapabilityCenter } from '../services/capabilityCenter'
@@ -53,6 +53,7 @@ import {
 import {
   SessionWorkspaceResolver,
 } from './sessionWorkspaceResolver'
+import { mapManagedMessagesToSdkInitialMessages } from './sdkHistoryMapper'
 import {
   applyClaudeSessionPolicy,
 } from './enginePolicy'
@@ -782,6 +783,20 @@ export class SessionOrchestrator {
     const customTools = this.runtimes.get(sessionId)?.customTools
 
     if (options.engineKind === 'claude') {
+      // Full-restart path (new SDK query instance):
+      // seed SDK mutableMessages with persisted history so context is preserved
+      // across query() calls in the in-process runtime.
+      //
+      // `extra.resume` covers standard resume by engine session ref.
+      // `extra.skipAddMessage` covers restart variants where the current user
+      // message has already been appended to session history before runSession().
+      if (extra?.resume || extra?.skipAddMessage) {
+        const initialMessages = mapManagedMessagesToSdkInitialMessages(session.getMessages())
+        if (initialMessages.length > 0) {
+          options.initialMessages = initialMessages
+        }
+      }
+
       // Per-session custom MCP servers (marketplace analysis tools, etc.)
       // Applied after capability servers so custom servers take precedence.
       if (config.customMcpServers && Object.keys(config.customMcpServers).length > 0) {

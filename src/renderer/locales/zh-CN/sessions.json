@@ -257,6 +257,7 @@
     "confirming": "确认中...",
     "applying": "执行中...",
     "preview": {
+      "targetId": "目标 ID",
       "schedule": "计划",
       "task": "任务",
       "timezone": "时区",

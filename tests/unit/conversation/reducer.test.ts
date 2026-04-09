@@ -138,6 +138,7 @@ describe('conversation domain reducer', () => {
         {
           kind: 'context.snapshot',
           payload: {
+            metricKind: 'context_occupancy',
             usedTokens: 1234,
             limitTokens: 272000,
             remainingTokens: 270766,
@@ -381,6 +382,7 @@ describe('conversation domain reducer', () => {
         {
           kind: 'context.snapshot',
           payload: {
+            metricKind: 'context_occupancy',
             usedTokens: 500,
             limitTokens: 200000,
             remainingTokens: 199500,
@@ -473,6 +475,7 @@ describe('conversation domain reducer', () => {
         {
           kind: 'context.snapshot',
           payload: {
+            metricKind: 'context_occupancy',
             usedTokens: 2345,
             limitTokens: 272000,
             remainingTokens: 269655,

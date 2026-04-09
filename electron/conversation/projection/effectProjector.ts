@@ -7,6 +7,7 @@ import type { ConversationDomainEffect } from '../domain/effects'
 import { toManagedContentBlocks } from './contentBlockMapper'
 import { resolveContextLimitOverride } from './contextUsage'
 import { registerEvoseRelayForProjection } from './evoseRelay'
+import { normalizeContextSnapshot } from './contextSignalNormalizer'
 import { terminalizeSession } from './terminalization'
 
 const log = createLogger('ConversationEffectProjector')
@@ -300,13 +301,12 @@ export function applyConversationDomainEffects(params: {
       }
 
       case 'apply_context_snapshot': {
-        const changed = ctx.session.applyContextSnapshot({
-          usedTokens: effect.payload.usedTokens,
-          limitTokens: effect.payload.limitTokens,
-          source: effect.payload.source,
-          confidence: effect.payload.confidence,
-          updatedAtMs: effect.payload.updatedAtMs ?? Date.now(),
+        const normalized = normalizeContextSnapshot({
+          snapshot: effect.payload,
+          occurredAtMs: Date.now(),
         })
+        if (!normalized) break
+        const changed = ctx.session.applyContextSnapshot(normalized)
         if (changed) {
           ctx.throttle.scheduleSession()   // throttled: coalesce O(n) getInfo()
         }

@@ -46,6 +46,7 @@ export interface FormState {
   action: {
     type: ActionType
     promptTemplate: string
+    systemPrompt: string
     contextInjections: ContextInjectionType[]
   }
 
@@ -73,6 +74,7 @@ export type FormAction =
   | { type: 'SET_EVENT_MATCHER';    payload: string }
   | { type: 'SET_ACTION_TYPE';      payload: ActionType }
   | { type: 'SET_PROMPT';           payload: string }
+  | { type: 'SET_SYSTEM_PROMPT';    payload: string }
   | { type: 'TOGGLE_INJECTION';     payload: ContextInjectionType }
   | { type: 'SET_ERROR';            payload: string | null }
   | { type: 'SET_SAVING';           payload: boolean }
@@ -82,12 +84,12 @@ export type FormAction =
 // ---------------------------------------------------------------------------
 
 const INITIAL_TIME_TRIGGER: TimeFreqState = {
-  freqType: 'interval',
+  freqType: 'daily',
   intervalMinutes: 60,
   timeOfDay: '09:00',
   daysOfWeek: [1, 2, 3, 4, 5],
   cronExpression: '0 9 * * 1-5',
-  selectedPresetLabel: '1 hour',
+  selectedPresetLabel: 'Daily',
   executeAt: '',
 }
 
@@ -101,6 +103,7 @@ const INITIAL_STATE: FormState = {
   action: {
     type: 'start_session',
     promptTemplate: DEFAULT_PROMPT_TEMPLATE,
+    systemPrompt: '',
     contextInjections: [],
   },
   error: null,
@@ -120,6 +123,7 @@ export interface ScheduleFormDefaultValues {
   action?: {
     type?: ActionType
     promptTemplate?: string
+    systemPrompt?: string
     contextInjections?: ContextInjectionType[]
   }
 }
@@ -139,6 +143,7 @@ function applyDefaultValues(base: FormState, dv: ScheduleFormDefaultValues): For
           ...base.action,
           type:              dv.action.type              ?? base.action.type,
           promptTemplate:    dv.action.promptTemplate    ?? base.action.promptTemplate,
+          systemPrompt:      dv.action.systemPrompt      ?? base.action.systemPrompt,
           contextInjections: dv.action.contextInjections ?? base.action.contextInjections,
         }
       : base.action,
@@ -163,7 +168,7 @@ export function scheduleToFormState(schedule: Schedule): FormState {
     : ''
 
   const timeTrigger: TimeFreqState = {
-    freqType:           t.time?.type            ?? 'interval',
+    freqType:           t.time?.type            ?? 'daily',
     intervalMinutes:    t.time?.intervalMinutes  ?? 60,
     timeOfDay:          t.time?.timeOfDay        ?? '09:00',
     daysOfWeek:         t.time?.daysOfWeek       ?? [1, 2, 3, 4, 5],
@@ -182,6 +187,7 @@ export function scheduleToFormState(schedule: Schedule): FormState {
     action: {
       type:              schedule.action.type,
       promptTemplate:    schedule.action.session?.promptTemplate ?? DEFAULT_PROMPT_TEMPLATE,
+      systemPrompt:      schedule.action.session?.systemPrompt ?? '',
       contextInjections: schedule.action.contextInjections ?? [],
     },
     error:  null,
@@ -250,6 +256,9 @@ function reducer(state: FormState, action: FormAction): FormState {
 
     case 'SET_PROMPT':
       return { ...state, action: { ...state.action, promptTemplate: action.payload } }
+
+    case 'SET_SYSTEM_PROMPT':
+      return { ...state, action: { ...state.action, systemPrompt: action.payload } }
 
     case 'TOGGLE_INJECTION': {
       const inj  = action.payload
@@ -330,7 +339,11 @@ function buildAction(state: FormState): ScheduleAction {
     contextInjections: action.contextInjections.length > 0 ? action.contextInjections : undefined,
   }
   if (action.type === 'start_session' || action.type === 'resume_session') {
-    base.session = { promptTemplate: action.promptTemplate, permissionMode: 'default' }
+    base.session = {
+      promptTemplate: action.promptTemplate,
+      systemPrompt: action.systemPrompt.trim() || undefined,
+      permissionMode: 'default',
+    }
   }
   return base
 }

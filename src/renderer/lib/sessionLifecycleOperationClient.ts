@@ -3,6 +3,8 @@
 import { getAppAPI } from '@/windowAPI'
 import type {
   SessionLifecycleOperationConfirmResult,
+  SessionLifecycleOperationMarkAppliedInput,
+  SessionLifecycleOperationMarkAppliedResult,
   SessionLifecycleOperationRejectResult,
 } from '@shared/types'
 
@@ -57,6 +59,24 @@ export async function rejectSessionLifecycleOperation(
 ): Promise<SessionLifecycleOperationRejectResult> {
   return withTimeout(
     getAppAPI()['command:reject-session-lifecycle-operation'](input.sessionId, input.operationId),
+    input.timeoutMs ?? DEFAULT_LIFECYCLE_OPERATION_TIMEOUT_MS,
+    input.timeoutMessage
+  )
+}
+
+interface MarkAppliedLifecycleOperationInput extends LifecycleOperationActionInput {
+  input: SessionLifecycleOperationMarkAppliedInput
+}
+
+export async function markSessionLifecycleOperationApplied(
+  input: MarkAppliedLifecycleOperationInput
+): Promise<SessionLifecycleOperationMarkAppliedResult> {
+  return withTimeout(
+    getAppAPI()['command:mark-session-lifecycle-operation-applied'](
+      input.sessionId,
+      input.operationId,
+      input.input
+    ),
     input.timeoutMs ?? DEFAULT_LIFECYCLE_OPERATION_TIMEOUT_MS,
     input.timeoutMessage
   )

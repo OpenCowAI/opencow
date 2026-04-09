@@ -112,4 +112,120 @@ describe('normalizeScheduleLifecycleProposalPayload', () => {
       })
     )
   })
+
+  it('derives trigger/action from summary when payload is weak-structured', () => {
+    const payload = normalizeScheduleLifecycleProposalPayload(
+      {
+        name: '每日 AI Agent 热门话题查询',
+      },
+      {
+        sessionId: 'session-1',
+        projectId: 'project-1',
+        summary: {
+          schedule: '40 9 * * *',
+          timezone: 'Asia/Shanghai',
+          task: '查询 AI Agent 热门话题',
+        },
+      }
+    )
+
+    expect(payload.trigger).toEqual(
+      expect.objectContaining({
+        time: expect.objectContaining({
+          type: 'cron',
+          cronExpression: '40 9 * * *',
+          timezone: 'Asia/Shanghai',
+        }),
+      })
+    )
+    expect(payload.action).toEqual(
+      expect.objectContaining({
+        type: 'start_session',
+        session: expect.objectContaining({
+          promptTemplate: '查询 AI Agent 热门话题',
+        }),
+        projectId: 'project-1',
+      })
+    )
+  })
+
+  it('prefers friendly daily time over cron when summary contains both time text and cron text', () => {
+    const payload = normalizeScheduleLifecycleProposalPayload(
+      {
+        name: '每日 AI Agent 热门话题查询',
+      },
+      {
+        sessionId: 'session-1',
+        projectId: 'project-1',
+        summary: {
+          schedule: '每天 09:40 (Asia/Shanghai)',
+          runAt: '每天 09:40 (Asia/Shanghai)',
+          frequency: 'daily',
+          task: '查询 AI Agent 热门话题',
+        },
+      }
+    )
+
+    expect(payload.trigger).toEqual(
+      expect.objectContaining({
+        time: expect.objectContaining({
+          type: 'daily',
+          timeOfDay: '09:40',
+        }),
+      })
+    )
+  })
+
+  it('backfills id from nested schedule and summary when top-level id is missing', () => {
+    const fromSchedule = normalizeScheduleLifecycleProposalPayload(
+      {
+        schedule: {
+          id: 'schedule-1',
+          type: 'daily',
+          timeOfDay: '09:40',
+        },
+      },
+      {
+        sessionId: 'session-1',
+        projectId: null,
+      }
+    )
+    expect(fromSchedule.id).toBe('schedule-1')
+
+    const fromSummary = normalizeScheduleLifecycleProposalPayload(
+      {
+        trigger: {
+          time: {
+            type: 'daily',
+            timeOfDay: '09:40',
+          },
+        },
+      },
+      {
+        sessionId: 'session-1',
+        projectId: null,
+        summary: {
+          scheduleId: 'schedule-2',
+        },
+      }
+    )
+    expect(fromSummary.id).toBe('schedule-2')
+
+    const fromPayloadScheduleId = normalizeScheduleLifecycleProposalPayload(
+      {
+        scheduleId: 'schedule-3',
+        trigger: {
+          time: {
+            type: 'daily',
+            timeOfDay: '10:10',
+          },
+        },
+      },
+      {
+        sessionId: 'session-1',
+        projectId: null,
+      }
+    )
+    expect(fromPayloadScheduleId.id).toBe('schedule-3')
+  })
 })

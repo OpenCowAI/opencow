@@ -76,6 +76,7 @@ function buildScheduleDraftKey(draft: ParsedScheduleOutput): string {
     draft.executeAt ?? '',
     draft.description,
     draft.prompt,
+    draft.systemPrompt ?? '',
   ].join('\u0000')
 }
 

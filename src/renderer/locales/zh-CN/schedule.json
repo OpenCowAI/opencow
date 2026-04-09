@@ -35,6 +35,8 @@
     "anyProject": "任意项目",
     "selectProject": "选择项目",
     "promptTemplate": "提示词模板",
+    "systemPrompt": "系统提示词",
+    "systemPromptPlaceholder": "可选：为定时会话提供系统行为指引。",
     "variableHint": "支持 {{date}} {{project}} 变量",
     "types": {
       "startSession": "启动会话",
@@ -57,6 +59,7 @@
     "minutes": "分钟",
     "at": "于",
     "cronHelp": "分钟 · 小时 · 日 · 月 · 星期",
+    "cronAdvancedHint": "Cron 为高级模式。除非必要，优先使用常规定时配置。",
     "nextExecution": "下次执行：",
     "eventType": "事件类型",
     "events": {

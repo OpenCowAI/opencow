@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { QueryLifecycle } from '../../../electron/command/queryLifecycle'
+import { QueryLifecycle, __setOpenClaudeModuleLoaderForTest } from '../../../electron/command/queryLifecycle'
 import { createProviderNativeSystemPrompt } from '../../../electron/command/systemPromptTransport'
 
 // Mock SDK query — returns an async generator that we can control
@@ -61,14 +61,49 @@ function createMockQuery() {
   return generator
 }
 
-vi.mock('@anthropic-ai/claude-agent-sdk', () => ({
-  query: vi.fn(() => createMockQuery())
+vi.mock('../../../electron/conversation/runtime/claudeRuntimeAdapter', () => ({
+  adaptClaudeSdkMessage: vi.fn((message: unknown) => {
+    const raw = message as Record<string, unknown>
+    if (raw.type === 'system' && raw.subtype === 'init') {
+      return [{
+        kind: 'session.initialized',
+        payload: {
+          sessionRef: typeof raw.session_id === 'string' ? raw.session_id : undefined,
+        },
+      }]
+    }
+    if (raw.type === 'result') {
+      return [{
+        kind: 'turn.result',
+        payload: {
+          outcome: raw.subtype === 'success' ? 'success' : 'execution_error',
+        },
+      }]
+    }
+    return []
+  }),
 }))
+
+beforeEach(() => {
+  __setOpenClaudeModuleLoaderForTest(async () => ({
+    query: vi.fn(() => createMockQuery()),
+  }))
+})
 
 function emitMessage(msg: unknown) {
   const pending = yieldQueue.shift()
   if (pending) {
     pending.resolve({ value: msg, done: false })
+  }
+}
+
+async function waitForQueryPull(timeoutMs = 1000): Promise<void> {
+  const started = Date.now()
+  while (yieldQueue.length === 0) {
+    if (Date.now() - started > timeoutMs) {
+      throw new Error('mock query did not request next() in time')
+    }
+    await new Promise((resolve) => setTimeout(resolve, 0))
   }
 }
 
@@ -104,6 +139,7 @@ describe('QueryLifecycle', () => {
 
     // Call next() first (starts generator, blocks on mock), then emit to resolve
     const p1 = iter.next()
+    await waitForQueryPull()
     emitMessage({ type: 'system', subtype: 'init', session_id: 'abc' })
     const r1 = await p1
     expect(r1.done).toBe(false)
@@ -112,6 +148,7 @@ describe('QueryLifecycle', () => {
     expect(event1.event?.payload?.sessionRef).toBe('abc')
 
     const p2 = iter.next()
+    await waitForQueryPull()
     emitMessage({ type: 'result', subtype: 'success' })
     const r2 = await p2
     expect(r2.done).toBe(false)
@@ -161,6 +198,7 @@ describe('QueryLifecycle', () => {
       }
     })()
 
+    await waitForQueryPull()
     endStream()
     await consuming
 

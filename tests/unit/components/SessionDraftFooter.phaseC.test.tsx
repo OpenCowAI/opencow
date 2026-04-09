@@ -128,6 +128,7 @@ describe('SessionDraftFooter — Phase C', () => {
       timeOfDay: '10:30',
       daysOfWeek: [1, 3, 5],
       prompt: 'Run schedule A',
+      systemPrompt: 'Use strict style A',
       priority: 'high',
       projectId: 'project-1',
     }
@@ -137,6 +138,7 @@ describe('SessionDraftFooter — Phase C', () => {
       frequency: 'daily',
       timeOfDay: '09:00',
       prompt: 'Run schedule B',
+      systemPrompt: 'Use strict style B',
       priority: 'normal',
       projectId: 'project-1',
     }

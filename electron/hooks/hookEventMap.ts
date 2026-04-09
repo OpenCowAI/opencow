@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import type { HookEvent, HookEventType } from '@shared/types'
-import type { HookEvent as SDKHookEventName } from '@anthropic-ai/claude-agent-sdk'
+import type { HookEvent as SDKHookEventName } from '@opencow-ai/opencow-agent-sdk'
 
 /**
  * Canonical SDK/CLI hook name -> domain HookEventType map.

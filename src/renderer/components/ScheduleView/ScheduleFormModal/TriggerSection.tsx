@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-import { useState, useRef, useCallback } from 'react'
+import { useEffect, useState, useRef, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Clock, Zap, ChevronDown, ChevronUp } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -83,6 +83,11 @@ function TimeTriggerConfig({
 }): React.JSX.Element {
   const { t } = useTranslation('schedule')
   const [showCron, setShowCron] = useState(timeTrigger.freqType === 'cron')
+  useEffect(() => {
+    if (timeTrigger.freqType !== 'cron') {
+      setShowCron(false)
+    }
+  }, [timeTrigger.freqType])
 
   const nextRun = computeNextRunPreview(timeTrigger, t)
 
@@ -201,6 +206,11 @@ function TimeTriggerConfig({
       {/* Cron expression (P1: no native select) */}
       {(timeTrigger.freqType === 'cron' || showCron) && (
         <div className="space-y-1">
+          {timeTrigger.freqType !== 'cron' && (
+            <p className="text-[10px] text-[hsl(var(--muted-foreground))]">
+              {t('trigger.cronAdvancedHint')}
+            </p>
+          )}
           <input
             type="text"
             value={timeTrigger.cronExpression}

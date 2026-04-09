@@ -24,6 +24,7 @@ const apiMock = vi.hoisted(() => {
       'command:list-session-lifecycle-operations': list,
       'command:confirm-session-lifecycle-operation': confirm,
       'command:reject-session-lifecycle-operation': reject,
+      'log:write': vi.fn(async () => undefined),
       'on:opencow:event': onEvent,
     },
     list,
@@ -104,5 +105,29 @@ describe('useSessionLifecycleOperations', () => {
     })
 
     expect(apiMock.list).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not keep confirm promise pending when post-confirm refresh fails', async () => {
+    apiMock.confirm.mockResolvedValueOnce({
+      ok: true,
+      code: 'confirmed_applied',
+      operation: null,
+    })
+    apiMock.list
+      .mockResolvedValueOnce([])
+      .mockRejectedValueOnce(new Error('refresh failed'))
+
+    const { result } = renderHook(() => useSessionLifecycleOperations('session-1'))
+
+    await waitFor(() => {
+      expect(apiMock.list).toHaveBeenCalledTimes(1)
+    })
+
+    await act(async () => {
+      const outcome = await result.current.confirm('lop-1')
+      expect(outcome.ok).toBe(true)
+    })
+
+    expect(apiMock.confirm).toHaveBeenCalledTimes(1)
   })
 })

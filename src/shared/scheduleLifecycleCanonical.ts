@@ -21,11 +21,23 @@ export interface ScheduleLifecycleCanonicalPayload extends Record<string, unknow
   projectId?: string | null
   trigger?: ScheduleTrigger
   action?: ScheduleAction
+  task?: ScheduleLifecycleCanonicalPayloadTask
+}
+
+interface ScheduleLifecycleCanonicalPayloadTask extends Record<string, unknown> {
+  instruction?: string
+  locale?: string
+  systemPrompt?: string
+}
+
+interface ParsedScheduleOutputWithSystemPrompt extends ParsedScheduleOutput {
+  systemPrompt?: string
 }
 
 interface NormalizeScheduleLifecyclePayloadContext {
   sessionId: string
   projectId: string | null
+  summary?: Record<string, unknown>
 }
 
 const VALID_SCHEDULE_PRIORITIES = new Set<SchedulePriority>(['critical', 'high', 'normal', 'low'])
@@ -72,6 +84,23 @@ function asNullableString(value: unknown): string | null | undefined {
   return asNonEmptyString(value)
 }
 
+function resolveScheduleIdentifier(
+  payloadRecord: Record<string, unknown>,
+  scheduleRecord: Record<string, unknown> | null,
+  summaryRecord: Record<string, unknown>
+): string | undefined {
+  return (
+    asNonEmptyString(payloadRecord.id) ??
+    asNonEmptyString(payloadRecord.scheduleId) ??
+    asNonEmptyString(payloadRecord.targetId) ??
+    asNonEmptyString(scheduleRecord?.id) ??
+    asNonEmptyString(scheduleRecord?.scheduleId) ??
+    asNonEmptyString(summaryRecord.id) ??
+    asNonEmptyString(summaryRecord.scheduleId) ??
+    asNonEmptyString(summaryRecord.targetId)
+  )
+}
+
 function asNumber(value: unknown): number | undefined {
   if (typeof value === 'number' && Number.isFinite(value)) return value
   if (typeof value === 'string' && value.trim().length > 0) {
@@ -87,6 +116,13 @@ function asNumberArray(value: unknown): number[] | undefined {
     .map((item) => asNumber(item))
     .filter((item): item is number => item !== undefined)
   return out.length > 0 ? out : undefined
+}
+
+function normalizeTimeOfDay(value: string | undefined): string | undefined {
+  if (!value) return undefined
+  const match = value.match(/^([01]?\d|2[0-3]):([0-5]\d)$/)
+  if (!match) return undefined
+  return `${match[1].padStart(2, '0')}:${match[2]}`
 }
 
 function parseSchedulePriority(value: unknown): SchedulePriority | undefined {
@@ -205,6 +241,8 @@ function parseScheduleActionCandidate(
   payloadRecord: Record<string, unknown>
 ): ScheduleAction | undefined {
   const actionRecord = asRecord(value) ?? {}
+  const actionSessionRecord = asRecord(actionRecord.session)
+  const taskRecord = asRecord(payloadRecord.task)
   const actionType = parseActionType(actionRecord.type ?? actionRecord.actionType ?? payloadRecord.type ?? payloadRecord.actionType)
   const promptText = resolvePromptText(actionRecord, payloadRecord)
 
@@ -217,6 +255,10 @@ function parseScheduleActionCandidate(
   if (promptText) {
     out.session = {
       promptTemplate: promptText,
+      systemPrompt:
+        asNonEmptyString(actionSessionRecord?.systemPrompt) ??
+        asNonEmptyString(actionRecord.systemPrompt) ??
+        asNonEmptyString(taskRecord?.systemPrompt),
       model: asNonEmptyString(actionRecord.model ?? payloadRecord.model),
       maxTurns: asNumber(actionRecord.maxTurns ?? payloadRecord.maxTurns),
     }
@@ -252,17 +294,145 @@ function resolveScheduleName(payloadRecord: Record<string, unknown>): string | u
   )
 }
 
+function isLikelyCronExpression(value: string | undefined): boolean {
+  if (!value) return false
+  const cronPattern = /^([*/,\d\-]+)\s+([*/,\d\-]+)\s+([*/,\d\-]+)\s+([*/,\d\-]+)\s+([*/,\d\-]+)$/
+  return cronPattern.test(value.trim())
+}
+
+function extractTimeOfDay(value: string | undefined): string | undefined {
+  if (!value) return undefined
+  const match = value.match(/\b([01]?\d|2[0-3]):([0-5]\d)\b/)
+  if (!match) return undefined
+  return `${match[1].padStart(2, '0')}:${match[2]}`
+}
+
+function extractTimezone(value: string | undefined): string | undefined {
+  if (!value) return undefined
+  const normalized = value.replace(/（/g, '(').replace(/）/g, ')')
+  const match =
+    normalized.match(/\(([A-Za-z]+\/[A-Za-z_]+)\)/) ??
+    normalized.match(/\b([A-Za-z]+\/[A-Za-z_]+)\b/)
+  return match?.[1]
+}
+
+function deriveTriggerCandidateFromSummary(
+  payloadRecord: Record<string, unknown>,
+  scheduleRecord: Record<string, unknown> | null,
+  summaryRecord: Record<string, unknown>
+): Record<string, unknown> | null {
+  const scheduleSummary = asNonEmptyString(summaryRecord.schedule)
+  const runAtSummary = asNonEmptyString(summaryRecord.runAt)
+  const frequencySummary = asNonEmptyString(summaryRecord.frequency)
+  const timezoneSummary = asNonEmptyString(summaryRecord.timezone)
+
+  const summaryTimeOfDay = extractTimeOfDay(runAtSummary) ?? extractTimeOfDay(scheduleSummary)
+  const summaryTimezone =
+    timezoneSummary ??
+    extractTimezone(runAtSummary) ??
+    extractTimezone(scheduleSummary)
+  const summaryCronExpression = isLikelyCronExpression(scheduleSummary) ? scheduleSummary : undefined
+
+  const candidateType =
+    parseFrequencyType(payloadRecord.frequency) ??
+    parseFrequencyType(scheduleRecord?.type ?? scheduleRecord?.frequency) ??
+    parseFrequencyType(frequencySummary) ??
+    parseFrequencyType(payloadRecord.type) ??
+    parseFrequencyType(payloadRecord.triggerType)
+
+  const candidateCronExpression =
+    asNonEmptyString(payloadRecord.cronExpression) ??
+    asNonEmptyString(payloadRecord.cron) ??
+    asNonEmptyString(payloadRecord.expression) ??
+    asNonEmptyString(scheduleRecord?.cronExpression) ??
+    asNonEmptyString(scheduleRecord?.cron) ??
+    asNonEmptyString(scheduleRecord?.expression) ??
+    summaryCronExpression
+
+  const candidateTimeOfDay =
+    asNonEmptyString(payloadRecord.timeOfDay) ??
+    asNonEmptyString(scheduleRecord?.timeOfDay) ??
+    summaryTimeOfDay
+
+  const normalizedTimeOfDay = normalizeTimeOfDay(candidateTimeOfDay)
+  const prefersFriendlyDaily =
+    candidateType === undefined &&
+    !!normalizedTimeOfDay
+
+  const resolvedType =
+    candidateType ??
+    (prefersFriendlyDaily ? 'daily' : undefined) ??
+    (candidateCronExpression ? 'cron' : undefined) ??
+    (normalizedTimeOfDay ? 'daily' : undefined)
+
+  if (!resolvedType) return null
+
+  return {
+    time: {
+      type: resolvedType,
+      timezone:
+        asNonEmptyString(payloadRecord.timezone) ??
+        asNonEmptyString(scheduleRecord?.timezone) ??
+        summaryTimezone,
+      timeOfDay: normalizedTimeOfDay,
+      cronExpression: candidateCronExpression,
+      daysOfWeek:
+        asNumberArray(payloadRecord.daysOfWeek) ??
+        asNumberArray(scheduleRecord?.daysOfWeek),
+      dayOfMonth:
+        asNumber(payloadRecord.dayOfMonth) ??
+        asNumber(scheduleRecord?.dayOfMonth),
+      intervalMinutes:
+        asNumber(payloadRecord.intervalMinutes) ??
+        asNumber(scheduleRecord?.intervalMinutes),
+      executeAt:
+        asNumber(payloadRecord.executeAt) ??
+        asNumber(scheduleRecord?.executeAt),
+    },
+  }
+}
+
+function deriveActionCandidateFromSummary(
+  payloadRecord: Record<string, unknown>,
+  summaryRecord: Record<string, unknown>
+): Record<string, unknown> | null {
+  const taskRecord = asRecord(payloadRecord.task)
+  const promptTemplate =
+    asNonEmptyString(taskRecord?.instruction) ??
+    asNonEmptyString(taskRecord?.promptTemplate) ??
+    asNonEmptyString(taskRecord?.prompt) ??
+    asNonEmptyString(taskRecord?.description) ??
+    asNonEmptyString(payloadRecord.promptTemplate) ??
+    asNonEmptyString(payloadRecord.prompt) ??
+    asNonEmptyString(summaryRecord.prompt) ??
+    asNonEmptyString(summaryRecord.task)
+
+  const parsedType = parseActionType(payloadRecord.actionType ?? payloadRecord.type)
+  if (!promptTemplate && !parsedType) return null
+
+  return {
+    type: parsedType ?? 'start_session',
+    session: promptTemplate
+      ? {
+          promptTemplate,
+        }
+      : undefined,
+    projectId: asNullableString(payloadRecord.projectId) ?? undefined,
+  }
+}
+
 export function normalizeScheduleLifecycleProposalPayload(
   payload: Record<string, unknown>,
   context: NormalizeScheduleLifecyclePayloadContext
 ): ScheduleLifecycleCanonicalPayload {
   const scheduleRecord = asRecord(payload.schedule)
+  const summaryRecord = context.summary ?? {}
 
   const out: ScheduleLifecycleCanonicalPayload = {
     sessionId: asNonEmptyString(payload.sessionId) ?? context.sessionId,
   }
 
-  const id = asNonEmptyString(payload.id)
+  const id = resolveScheduleIdentifier(payload, scheduleRecord, summaryRecord)
   if (id) out.id = id
 
   const name = resolveScheduleName(payload)
@@ -279,16 +449,32 @@ export function normalizeScheduleLifecycleProposalPayload(
     out.projectId = explicitProjectId
   }
 
+  const taskRecord = asRecord(payload.task)
+  const taskSystemPrompt = asNonEmptyString(taskRecord?.systemPrompt)
+  if (taskSystemPrompt) {
+    out.task = {
+      ...(taskRecord ?? {}),
+      systemPrompt: taskSystemPrompt,
+    } as ScheduleLifecycleCanonicalPayloadTask
+  }
+
   const trigger =
     parseScheduleTriggerCandidate(payload.trigger) ??
     parseScheduleTriggerCandidate(scheduleRecord) ??
-    parseScheduleTriggerCandidate(payload)
+    parseScheduleTriggerCandidate(payload) ??
+    parseScheduleTriggerCandidate(
+      deriveTriggerCandidateFromSummary(payload, scheduleRecord, summaryRecord)
+    )
   if (trigger) out.trigger = trigger
 
   const action =
     parseScheduleActionCandidate(payload.action, payload) ??
     parseScheduleActionCandidate(payload.task, payload) ??
-    parseScheduleActionCandidate(payload, payload)
+    parseScheduleActionCandidate(payload, payload) ??
+    parseScheduleActionCandidate(
+      deriveActionCandidateFromSummary(payload, summaryRecord),
+      payload
+    )
 
   if (action) {
     if (action.projectId === undefined) {
@@ -328,7 +514,7 @@ function resolveDraftPriority(value: unknown): ParsedScheduleOutput['priority'] 
  */
 export function mapScheduleLifecycleOperationToParsedDraft(
   operation: SessionLifecycleOperationEnvelope
-): ParsedScheduleOutput | null {
+): ParsedScheduleOutputWithSystemPrompt | null {
   if (operation.entity !== 'schedule') return null
 
   const payload = operation.normalizedPayload
@@ -345,6 +531,7 @@ export function mapScheduleLifecycleOperationToParsedDraft(
   const canonical = normalizeScheduleLifecycleProposalPayload(payload, {
     sessionId: operationSessionId,
     projectId: contextProjectId,
+    summary,
   })
   const triggerTime = canonical.trigger?.time
 
@@ -390,6 +577,10 @@ export function mapScheduleLifecycleOperationToParsedDraft(
     cronExpression: triggerTime?.cronExpression,
     executeAt: parsedExecuteAt,
     prompt,
+    systemPrompt:
+      canonical.action?.session?.systemPrompt ??
+      asNonEmptyString((canonical.task as Record<string, unknown> | undefined)?.systemPrompt) ??
+      asNonEmptyString(summary.systemPrompt),
     priority: resolveDraftPriority(canonical.priority ?? summary.priority),
     projectId: parsedProjectId,
   }

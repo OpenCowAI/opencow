@@ -83,6 +83,7 @@ export class ActionExecutor implements PipelineMiddleware {
             workspace: action.projectId
               ? { scope: 'project', projectId: action.projectId }
               : { scope: 'global' },
+            systemPrompt: action.session?.systemPrompt,
             model: action.session?.model,
             maxTurns: action.session?.maxTurns,
           }

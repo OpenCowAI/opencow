@@ -34,6 +34,7 @@ export function mapScheduleDraftToFormDefaults(
     action: {
       type: 'start_session',
       promptTemplate: parsed.prompt,
+      systemPrompt: parsed.systemPrompt,
     },
   }
 }
@@ -60,10 +61,12 @@ export function mapScheduleDraftToCreateInput(
     },
     action: {
       type: 'start_session',
-      session: { promptTemplate: parsed.prompt },
+      session: {
+        promptTemplate: parsed.prompt,
+        systemPrompt: parsed.systemPrompt,
+      },
       projectId: projectId ?? undefined,
     },
     priority: parsed.priority || 'normal',
   }
 }
-

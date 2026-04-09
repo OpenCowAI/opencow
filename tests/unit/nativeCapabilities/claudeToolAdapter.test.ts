@@ -5,7 +5,7 @@ import { z } from 'zod/v4'
 import { toClaudeToolDefinition } from '../../../electron/nativeCapabilities/claudeToolAdapter'
 import type { NativeToolDescriptor } from '../../../electron/nativeCapabilities/types'
 
-vi.mock('@anthropic-ai/claude-agent-sdk', () => ({
+vi.mock('../../../electron/integrations/opencowSdkCompat', () => ({
   tool: (name: string, description: string, inputSchema: unknown, handler: unknown) => ({
     name,
     description,

@@ -104,6 +104,7 @@ describe('applyConversationDomainEffects', () => {
       {
         type: 'apply_context_snapshot',
         payload: {
+          metricKind: 'context_occupancy',
           usedTokens: 1024,
           limitTokens: 272000,
           remainingTokens: 270976,
@@ -118,6 +119,7 @@ describe('applyConversationDomainEffects', () => {
     applyConversationDomainEffects({ effects, ctx })
 
     expect(ctx.session.applyContextSnapshot).toHaveBeenCalledWith({
+      metricKind: 'context_occupancy',
       usedTokens: 1024,
       limitTokens: 272000,
       source: 'codex.token_count',
@@ -132,6 +134,7 @@ describe('applyConversationDomainEffects', () => {
       {
         type: 'apply_context_snapshot',
         payload: {
+          metricKind: 'context_occupancy',
           usedTokens: 90000,
           limitTokens: null,
           remainingTokens: null,
@@ -145,6 +148,7 @@ describe('applyConversationDomainEffects', () => {
     applyConversationDomainEffects({ effects, ctx })
 
     expect(ctx.session.applyContextSnapshot).toHaveBeenCalledWith({
+      metricKind: 'context_occupancy',
       usedTokens: 90000,
       limitTokens: null,
       source: 'claude.assistant_usage',

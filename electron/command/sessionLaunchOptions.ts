@@ -21,7 +21,7 @@
  * launch-option ownership explicit at each mutation stage.
  */
 
-import type { SpawnOptions, SpawnedProcess } from '@anthropic-ai/claude-agent-sdk'
+import type { SpawnOptions, SpawnedProcess } from '@opencow-ai/opencow-agent-sdk'
 import type { RuntimeCanUseTool } from './enginePolicy'
 import type { SDKHookMap } from '../services/capabilityCenter/claudeCodeAdapter'
 import type { CodexConfigObject } from './codexMcpConfigBuilder'
@@ -51,6 +51,7 @@ export interface ClaudeSessionLaunchOptions extends SessionLaunchOptionsBase {
   engineKind: 'claude'
   systemPromptPayload: ProviderNativeSystemPrompt
   // ── Claude-specific ─────────────────────────────────────────────────────
+  initialMessages?: unknown[]
   pathToClaudeCodeExecutable?: string
   spawnClaudeCodeProcess?: (opts: SpawnOptions) => SpawnedProcess
   tools?: unknown[]

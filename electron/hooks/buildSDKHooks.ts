@@ -6,7 +6,7 @@ import type {
   HookEvent as SDKHookEventName,
   HookInput,
   SyncHookJSONOutput,
-} from '@anthropic-ai/claude-agent-sdk'
+} from '@opencow-ai/opencow-agent-sdk'
 import type { DataBusEvent, HookEvent } from '@shared/types'
 import { createLogger } from '../platform/logger'
 import { mapHookEventType, SDK_SIGNAL_HOOK_EVENTS } from './hookEventMap'

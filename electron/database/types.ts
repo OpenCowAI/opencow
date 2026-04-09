@@ -434,6 +434,7 @@ export interface SessionLifecycleOperationTable {
   id: string
   session_id: string
   tool_use_id: string
+  proposal_group_key: string
   operation_index: number
   entity: string
   action: string

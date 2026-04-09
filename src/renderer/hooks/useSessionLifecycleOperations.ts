@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { getAppAPI } from '@/windowAPI'
+import { createLogger } from '@/lib/logger'
 import {
   confirmSessionLifecycleOperation,
   rejectSessionLifecycleOperation,
@@ -23,6 +24,8 @@ interface UseSessionLifecycleOperationsResult {
   confirm: (operationId: string) => Promise<SessionLifecycleOperationConfirmResult>
   reject: (operationId: string) => Promise<SessionLifecycleOperationRejectResult>
 }
+
+const log = createLogger('SessionLifecycleOperations')
 
 function isOperationMessageEventForSession(event: DataBusEvent, sessionId: string): boolean {
   if (event.type !== 'command:session:message') return false
@@ -96,7 +99,13 @@ export function useSessionLifecycleOperations(sessionId: string | null): UseSess
         timeoutMessage: 'Confirmation timed out. Please retry.',
       })
     } finally {
-      await fetchOperations(false)
+      void fetchOperations(false).catch((error: unknown) => {
+        log.error('Failed to refresh lifecycle operations after confirm', {
+          sessionId,
+          operationId,
+          error: error instanceof Error ? error.message : String(error),
+        })
+      })
     }
   }, [sessionId, fetchOperations])
 
@@ -111,7 +120,13 @@ export function useSessionLifecycleOperations(sessionId: string | null): UseSess
         timeoutMessage: 'Cancellation timed out. Please retry.',
       })
     } finally {
-      await fetchOperations(false)
+      void fetchOperations(false).catch((error: unknown) => {
+        log.error('Failed to refresh lifecycle operations after reject', {
+          sessionId,
+          operationId,
+          error: error instanceof Error ? error.message : String(error),
+        })
+      })
     }
   }, [sessionId, fetchOperations])
 

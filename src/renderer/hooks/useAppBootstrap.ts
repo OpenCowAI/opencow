@@ -533,10 +533,23 @@ export function useAppBootstrap(): void {
             profileBindingReason: string
           }
           const bs = useBrowserOverlayStore.getState()
-          bs.setBrowserOverlayViewId(p.viewId)
-          bs.setBrowserOverlayActiveProfileId(p.profileId)
-          bs.setBrowserOverlayStatePolicy(p.statePolicy)
-          bs.setBrowserOverlayProfileBindingReason(p.profileBindingReason)
+
+          // Guard against cross-session/source bleed:
+          // browser:view:opened is global and can be emitted by any session's view switch.
+          // Only sync the visible overlay when the incoming source matches the currently
+          // opened overlay source; otherwise a background session can overwrite the right
+          // panel binding and make BrowserSheet chat point to the wrong session.
+          const overlay = bs.browserOverlay
+          const shouldSyncOverlay =
+            !!overlay && deriveSourceKey(overlay.source) === deriveSourceKey(p.source)
+
+          if (shouldSyncOverlay) {
+            bs.setBrowserOverlayViewId(p.viewId)
+            bs.setBrowserOverlayActiveProfileId(p.profileId)
+            bs.setBrowserOverlayStatePolicy(p.statePolicy)
+            bs.setBrowserOverlayProfileBindingReason(p.profileBindingReason)
+          }
+
           bs.addActiveBrowserSource({
             source: p.source,
             viewId: p.viewId,

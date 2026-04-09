@@ -13,8 +13,8 @@
  * causes "Already connected to a transport" errors.
  */
 
-import { createSdkMcpServer } from '@anthropic-ai/claude-agent-sdk'
-import type { McpServerConfig } from '@anthropic-ai/claude-agent-sdk'
+import { createSdkMcpServer } from '../integrations/opencowSdkCompat'
+import type { McpServerConfig } from '../integrations/opencowSdkCompat'
 import type {
   NativeCapability,
   NativeCapabilityCategory,

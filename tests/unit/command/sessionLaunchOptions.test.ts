@@ -30,6 +30,23 @@ describe('sessionLaunchOptions.toSdkOptions', () => {
     expect((sdk as Record<string, unknown>).systemPromptPayload).toBeUndefined()
   })
 
+  it('preserves claude initialMessages for SDK runtime seeding', () => {
+    const initialMessages = [{ type: 'user', message: { role: 'user', content: 'history' } }]
+    const options: SessionLaunchOptions = {
+      engineKind: 'claude',
+      maxTurns: 6,
+      includePartialMessages: true,
+      permissionMode: 'default',
+      allowDangerouslySkipPermissions: true,
+      env: {},
+      systemPromptPayload: createProviderNativeSystemPrompt('CLAUDE SYSTEM PROMPT'),
+      initialMessages,
+    }
+
+    const sdk = toSdkOptions(options)
+    expect((sdk as { initialMessages?: unknown[] }).initialMessages).toEqual(initialMessages)
+  })
+
   it('serializes codex synthetic payload to codexSystemPrompt + transport', () => {
     const options: SessionLaunchOptions = {
       engineKind: 'codex',

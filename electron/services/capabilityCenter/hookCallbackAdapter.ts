@@ -18,7 +18,7 @@ import type {
   HookEvent as SDKHookEventName,
   HookInput,
   SyncHookJSONOutput,
-} from '@anthropic-ai/claude-agent-sdk'
+} from '@opencow-ai/opencow-agent-sdk'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { createLogger } from '../../platform/logger'

@@ -9,6 +9,7 @@ import { createTestDb } from '../../helpers/testDb'
 import { SessionOrchestrator } from '../../../electron/command/sessionOrchestrator'
 import type { OrchestratorDeps } from '../../../electron/command/sessionOrchestrator'
 import { ManagedSessionStore } from '../../../electron/services/managedSessionStore'
+import { __setOpenClaudeModuleLoaderForTest } from '../../../electron/command/queryLifecycle'
 import {
   __resetCodexSdkLoaderForTest,
   __setCodexSdkLoaderForTest,
@@ -27,7 +28,60 @@ vi.mock('electron', () => ({
 const mockClose = vi.fn()
 let pendingNextResolvers: Array<(v: IteratorResult<unknown>) => void> = []
 
-vi.mock('@anthropic-ai/claude-agent-sdk', () => ({
+function installClaudeQueryMock(): void {
+  mockClose.mockReset()
+  pendingNextResolvers = []
+
+  __setOpenClaudeModuleLoaderForTest(async () => ({
+    query: vi.fn(() => {
+      pendingNextResolvers = []
+
+      const generator = {
+        next: () =>
+          new Promise<IteratorResult<unknown>>((resolve) => {
+            pendingNextResolvers.push(resolve)
+          }),
+        return: () => {
+          for (const resolve of pendingNextResolvers) {
+            resolve({ value: undefined, done: true })
+          }
+          pendingNextResolvers = []
+          return Promise.resolve({ value: undefined, done: true as const })
+        },
+        throw: (e: unknown) => Promise.reject(e),
+        [Symbol.asyncIterator]: () => generator,
+        close: () => {
+          mockClose()
+          // Resolve all pending next() calls to unblock the for-await loop
+          for (const resolve of pendingNextResolvers) {
+            resolve({ value: undefined, done: true })
+          }
+          pendingNextResolvers = []
+        },
+        interrupt: () => Promise.resolve(),
+        setPermissionMode: () => Promise.resolve(),
+        setModel: () => Promise.resolve(),
+        setMaxThinkingTokens: () => Promise.resolve(),
+        initializationResult: () => Promise.resolve({}),
+        supportedCommands: () => Promise.resolve([]),
+        supportedModels: () => Promise.resolve([]),
+        mcpServerStatus: () => Promise.resolve([]),
+        accountInfo: () => Promise.resolve({}),
+        rewindFiles: () => Promise.resolve({ canRewind: false }),
+        reconnectMcpServer: () => Promise.resolve(),
+        toggleMcpServer: () => Promise.resolve(),
+        setMcpServers: () => Promise.resolve({}),
+        streamInput: () => Promise.resolve(),
+        stopTask: () => Promise.resolve(),
+      }
+
+      return generator
+    }),
+  }))
+}
+
+/*
+vi.mock('../../../electron/integrations/opencowSdkCompat', () => ({
   query: vi.fn(() => {
     pendingNextResolvers = []
 
@@ -73,6 +127,7 @@ vi.mock('@anthropic-ai/claude-agent-sdk', () => ({
     return generator
   })
 }))
+*/
 
 
 const codexMocks = vi.hoisted(() => {
@@ -201,8 +256,7 @@ describe('SessionOrchestrator.startSession — idempotency', () => {
     __setCodexSdkLoaderForTest(
       async () => ({ Codex: codexMocks.mockCodexCtor as unknown as typeof import('@openai/codex-sdk').Codex }),
     )
-    mockClose.mockReset()
-    pendingNextResolvers = []
+    installClaudeQueryMock()
     codexMocks.state.turnPlans = []
     codexMocks.mockCodexRunStreamed.mockClear()
     codexMocks.mockCodexStartThread.mockClear()
@@ -211,6 +265,7 @@ describe('SessionOrchestrator.startSession — idempotency', () => {
   })
 
   afterEach(async () => {
+    __setOpenClaudeModuleLoaderForTest(null)
     __resetCodexSdkLoaderForTest()
     await closeDb()
     await rm(tmpDir, { recursive: true, force: true })
@@ -916,8 +971,7 @@ describe('SessionOrchestrator.stopSession — deterministic cleanup', () => {
     __setCodexSdkLoaderForTest(
       async () => ({ Codex: codexMocks.mockCodexCtor as unknown as typeof import('@openai/codex-sdk').Codex }),
     )
-    mockClose.mockReset()
-    pendingNextResolvers = []
+    installClaudeQueryMock()
     codexMocks.state.turnPlans = []
     codexMocks.mockCodexRunStreamed.mockClear()
     codexMocks.mockCodexStartThread.mockClear()
@@ -926,25 +980,47 @@ describe('SessionOrchestrator.stopSession — deterministic cleanup', () => {
   })
 
   afterEach(async () => {
+    __setOpenClaudeModuleLoaderForTest(null)
     __resetCodexSdkLoaderForTest()
     await closeDb()
     await rm(tmpDir, { recursive: true, force: true })
   })
 
   it('calls lifecycle.stop() which invokes query.close()', async () => {
+    let queryCreated = false
+    let closeCalled = 0
+    __setOpenClaudeModuleLoaderForTest(async () => ({
+      query: vi.fn(() => {
+        queryCreated = true
+        let pendingNextResolve: ((v: IteratorResult<unknown>) => void) | null = null
+        const generator = {
+          next: () =>
+            new Promise<IteratorResult<unknown>>((resolve) => {
+              pendingNextResolve = resolve
+            }),
+          return: () => Promise.resolve({ value: undefined, done: true as const }),
+          throw: (e: unknown) => Promise.reject(e),
+          [Symbol.asyncIterator]: () => generator,
+          close: () => {
+            closeCalled += 1
+            pendingNextResolve?.({ value: undefined, done: true })
+            pendingNextResolve = null
+          },
+        }
+        return generator
+      }),
+    }))
+
     const id = await orchestrator.startSession({ prompt: 'test' })
 
-    // Wait until QueryLifecycle has started and issued at least one next() pull.
-    // Without this, stopSession may race before lifecycle.start() is reached,
-    // making close() legitimately unnecessary for this particular timing.
-    for (let i = 0; i < 500 && pendingNextResolvers.length === 0; i++) {
+    for (let i = 0; i < 200 && !queryCreated; i++) {
       await new Promise((resolve) => setTimeout(resolve, 1))
     }
-    expect(pendingNextResolvers.length).toBeGreaterThan(0)
+    expect(queryCreated).toBe(true)
 
     await orchestrator.stopSession(id)
 
-    expect(mockClose).toHaveBeenCalledTimes(1)
+    expect(closeCalled).toBe(1)
   })
 
   it('removes session from active map after stop', async () => {
@@ -1073,7 +1149,7 @@ describe('SessionOrchestrator.handleSessionError — transient spawn errors', ()
     __setCodexSdkLoaderForTest(
       async () => ({ Codex: codexMocks.mockCodexCtor as unknown as typeof import('@openai/codex-sdk').Codex }),
     )
-    mockClose.mockReset()
+    installClaudeQueryMock()
     codexMocks.state.turnPlans = []
     codexMocks.mockCodexRunStreamed.mockClear()
     codexMocks.mockCodexStartThread.mockClear()
@@ -1083,6 +1159,7 @@ describe('SessionOrchestrator.handleSessionError — transient spawn errors', ()
 
   afterEach(async () => {
     await orchestrator.shutdown()
+    __setOpenClaudeModuleLoaderForTest(null)
     __resetCodexSdkLoaderForTest()
     await closeDb()
     await rm(tmpDir, { recursive: true, force: true })
@@ -1129,7 +1206,7 @@ describe('SessionOrchestrator.sendMessage — provider mode drift detection', ()
     __setCodexSdkLoaderForTest(
       async () => ({ Codex: codexMocks.mockCodexCtor as unknown as typeof import('@openai/codex-sdk').Codex }),
     )
-    mockClose.mockReset()
+    installClaudeQueryMock()
     codexMocks.state.turnPlans = []
     codexMocks.mockCodexRunStreamed.mockClear()
     codexMocks.mockCodexStartThread.mockClear()
@@ -1138,6 +1215,7 @@ describe('SessionOrchestrator.sendMessage — provider mode drift detection', ()
   })
 
   afterEach(async () => {
+    __setOpenClaudeModuleLoaderForTest(null)
     await orchestrator.shutdown()
     __resetCodexSdkLoaderForTest()
     await closeDb()
@@ -1184,6 +1262,7 @@ describe('SessionOrchestrator.sendMessage — provider mode drift detection', ()
     // At least 1 creating event from the sendMessage restart path
     // (initial startSession uses session:created, not session:updated)
     expect(creatingEvents.length).toBeGreaterThanOrEqual(1)
+
   })
 
   it('does not restart when provider mode has not changed', async () => {
@@ -1222,5 +1301,118 @@ describe('SessionOrchestrator.sendMessage — provider mode drift detection', ()
       .filter((event) => event.payload.state === 'creating')
 
     expect(creatingEventsAfter).toHaveLength(0)
+  })
+
+  it('injects initialMessages when forced resume restart has engine session ref', async () => {
+    const now = Date.now()
+    const persistedSession = makePersistedSession({
+      id: 'ccb-persisted-history-seed',
+      state: 'idle',
+      engineKind: 'claude',
+      engineSessionRef: 'claude-history-ref',
+      messages: [
+        {
+          id: 'u-1',
+          role: 'user',
+          timestamp: now - 2_000,
+          content: [{ type: 'text', text: 'previous user' }],
+        },
+        {
+          id: 'a-1',
+          role: 'assistant',
+          timestamp: now - 1_000,
+          content: [{ type: 'text', text: 'previous assistant' }],
+        },
+      ],
+    })
+    await deps.store.save(persistedSession)
+
+    let capturedOptions: Record<string, unknown> | undefined
+    __setOpenClaudeModuleLoaderForTest(async () => ({
+      query: vi.fn((params: { options?: Record<string, unknown> }) => {
+        capturedOptions = params.options
+        return {
+          async *[Symbol.asyncIterator]() {
+            // no-op stream
+          },
+          close() {
+            // no-op
+          },
+        }
+      }),
+    }))
+
+    const resumed = await orchestrator.sendMessage(persistedSession.id, 'resume with history')
+    expect(resumed).toBe(true)
+
+    for (let i = 0; i < 20 && !capturedOptions; i++) {
+      await new Promise((resolve) => setTimeout(resolve, 10))
+    }
+
+    const initialMessages = capturedOptions?.initialMessages as unknown[] | undefined
+    expect(Array.isArray(initialMessages)).toBe(true)
+    expect((initialMessages ?? []).length).toBeGreaterThan(1)
+
+    __setOpenClaudeModuleLoaderForTest(null)
+  })
+
+  it('injects initialMessages when restart uses skipAddMessage path (no resume ref)', async () => {
+    const now = Date.now()
+    const persistedSession = makePersistedSession({
+      id: 'ccb-persisted-history-seed-skip-add',
+      state: 'idle',
+      engineKind: 'claude',
+      engineSessionRef: null,
+      messages: [
+        {
+          id: 'u-1',
+          role: 'user',
+          timestamp: now - 2_000,
+          content: [{ type: 'text', text: 'old user' }],
+        },
+        {
+          id: 'a-1',
+          role: 'assistant',
+          timestamp: now - 1_000,
+          content: [{ type: 'text', text: 'old assistant' }],
+        },
+      ],
+    })
+    await deps.store.save(persistedSession)
+
+    let capturedOptions: Record<string, unknown> | undefined
+    __setOpenClaudeModuleLoaderForTest(async () => ({
+      query: vi.fn((params: { options?: Record<string, unknown> }) => {
+        capturedOptions = params.options
+        return {
+          async *[Symbol.asyncIterator]() {
+            // no-op stream
+          },
+          close() {
+            // no-op
+          },
+        }
+      }),
+    }))
+
+    const resumed = await (orchestrator as unknown as {
+      resumeSessionInternal: (
+        sessionId: string,
+        message: string,
+        options: { forceRestart: boolean },
+      ) => Promise<boolean>
+    }).resumeSessionInternal(persistedSession.id, 'restart without resume ref', { forceRestart: true })
+
+    expect(resumed).toBe(true)
+
+    for (let i = 0; i < 20 && !capturedOptions; i++) {
+      await new Promise((resolve) => setTimeout(resolve, 10))
+    }
+
+    const initialMessages = capturedOptions?.initialMessages as unknown[] | undefined
+    expect(Array.isArray(initialMessages)).toBe(true)
+    expect((initialMessages ?? []).length).toBeGreaterThan(1)
+
+    __setOpenClaudeModuleLoaderForTest(null)
   })
 })

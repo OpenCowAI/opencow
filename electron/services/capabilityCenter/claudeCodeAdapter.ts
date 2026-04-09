@@ -16,7 +16,7 @@
  * should remain SDK-agnostic.
  */
 
-import type { HookCallbackMatcher, HookEvent as SDKHookEventName } from '@anthropic-ai/claude-agent-sdk'
+import type { HookCallbackMatcher, HookEvent as SDKHookEventName } from '@opencow-ai/opencow-agent-sdk'
 import type { CapabilityPlan, McpServerConfig } from './sessionInjector'
 import { adaptDeclarativeHooks } from './hookCallbackAdapter'
 import { createLogger } from '../../platform/logger'

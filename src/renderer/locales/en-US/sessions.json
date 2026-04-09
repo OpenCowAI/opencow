@@ -257,6 +257,7 @@
     "confirming": "Confirming...",
     "applying": "Applying...",
     "preview": {
+      "targetId": "Target ID",
       "schedule": "Schedule",
       "task": "Task",
       "timezone": "Timezone",

@@ -1065,14 +1065,25 @@ export function registerIPCHandlers(deps: IPCDeps): void {
       return deps.lifecycleOperationCoordinator.listSessionOperations({ sessionId })
     })
     registerHandler('command:confirm-session-lifecycle-operation', async (sessionId, operationId) => {
+      const startedAt = Date.now()
+      log.info('IPC lifecycle confirm requested', { sessionId, operationId })
       if (!deps.lifecycleOperationCoordinator) {
+        log.warn('IPC lifecycle confirm failed: coordinator unavailable', { sessionId, operationId })
         return {
           ok: false,
           code: 'invalid_state',
           operation: null,
         }
       }
-      return deps.lifecycleOperationCoordinator.confirmOperation({ sessionId, operationId })
+      const result = await deps.lifecycleOperationCoordinator.confirmOperation({ sessionId, operationId })
+      log.info('IPC lifecycle confirm completed', {
+        sessionId,
+        operationId,
+        ok: result.ok,
+        code: result.code,
+        durationMs: Date.now() - startedAt,
+      })
+      return result
     })
     registerHandler('command:reject-session-lifecycle-operation', async (sessionId, operationId) => {
       if (!deps.lifecycleOperationCoordinator) {
@@ -1083,6 +1094,22 @@ export function registerIPCHandlers(deps: IPCDeps): void {
         }
       }
       return deps.lifecycleOperationCoordinator.rejectOperation({ sessionId, operationId })
+    })
+    registerHandler('command:mark-session-lifecycle-operation-applied', async (sessionId, operationId, input) => {
+      if (!deps.lifecycleOperationCoordinator) {
+        return {
+          ok: false,
+          code: 'invalid_state',
+          operation: null,
+        }
+      }
+      return deps.lifecycleOperationCoordinator.markOperationAppliedExternally({
+        sessionId,
+        operationId,
+        source: input.source,
+        entityRef: input.entityRef,
+        note: input.note,
+      })
     })
     registerHandler('command:delete-session', (sessionId) =>
       orchestrator.deleteSession(sessionId)

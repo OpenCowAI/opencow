@@ -556,6 +556,12 @@ function parseCodexTokenCountSnapshot(value: unknown): CodexTokenCountParseResul
 
   const usedTokens = Math.max(0, Math.trunc(usedTokensRaw))
   const limitTokens = Math.max(1, Math.trunc(limitTokensRaw))
+  if (usedTokens > limitTokens) {
+    return {
+      kind: 'malformed',
+      reason: 'token_count contains invalid occupancy: last_token_usage.input_tokens exceeds model_context_window',
+    }
+  }
   const remainingTokens = Math.max(0, limitTokens - usedTokens)
   const remainingPct = Math.max(0, Math.min(100, (remainingTokens / limitTokens) * 100))
 
@@ -564,6 +570,7 @@ function parseCodexTokenCountSnapshot(value: unknown): CodexTokenCountParseResul
     snapshotEvent: {
       kind: 'context.snapshot',
       payload: {
+        metricKind: 'context_occupancy',
         usedTokens,
         limitTokens,
         remainingTokens,

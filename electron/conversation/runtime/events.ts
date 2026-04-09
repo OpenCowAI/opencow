@@ -53,8 +53,17 @@ export interface RuntimeResultPayload {
 }
 
 export type RuntimeContextSnapshotConfidence = 'authoritative' | 'estimated'
+export type RuntimeContextMetricKind = 'context_occupancy' | 'token_usage_total'
 
 export interface RuntimeContextSnapshotPayload {
+  /**
+   * Semantic meaning of `usedTokens`.
+   *
+   * - `context_occupancy`: current context-window occupancy (UI-displayable).
+   * - `token_usage_total`: cumulative/per-turn token accounting (NOT displayable
+   *   as context-window occupancy without additional normalization).
+   */
+  readonly metricKind: RuntimeContextMetricKind
   readonly usedTokens: number
   /**
    * Context window limit in tokens.
