@@ -107,9 +107,7 @@ const PRIORITY_ORDER: Record<IssuePriority, number> = {
 export class IssueNativeCapability extends BaseNativeCapability {
   readonly meta: NativeCapabilityMeta = {
     category: 'issues',
-    name: 'Issues',
     description: 'OpenCow Issue management — list, read, create and update issues',
-    version: '3.0.0',
   }
 
   private readonly issueService: IssueService
@@ -125,8 +123,8 @@ export class IssueNativeCapability extends BaseNativeCapability {
     this.lifecycleOperationCoordinator = deps.lifecycleOperationCoordinator ?? null
   }
 
-  protected toolConfigs(context: NativeCapabilityToolContext): ToolConfig[] {
-    const session = context.session
+  protected override nativeToolConfigs(ctx: NativeCapabilityToolContext): ToolConfig[] {
+    const session = ctx.sessionContext
     const configs: ToolConfig[] = [
       this.listIssuesConfig(session),
       this.getIssueConfig(),

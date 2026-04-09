@@ -13,6 +13,9 @@ import {
 import { ToolProgressRelay } from '../../../electron/utils/toolProgressRelay'
 import { MCP_SERVER_BASE_NAME } from '../../../src/shared/appIdentity'
 
+// Phase 1B.11: tools now match the SDK ToolDescriptor shape with structured
+// `execute({args, sessionContext, toolUseId, abortSignal})`. The legacy
+// positional `(args, input)` signature is gone.
 function makeTool(name: string, description: string, inputSchema: Record<string, unknown> = {}) {
   return {
     name,
@@ -24,13 +27,17 @@ function makeTool(name: string, description: string, inputSchema: Record<string,
   }
 }
 
+// The CodexNativeBridgeManager calls `registry.getDescriptorsForSession({...})`
+// with a CapabilityAllowlistEntry[]-shaped allowlist (the SDK shape, post
+// `toCapabilityAllowlist` conversion). Stubs match that shape: each entry has
+// `category` (not `capability`).
 function makeRegistryStub() {
   const projectTool = makeTool('list_projects', 'List projects')
   const issueTool = makeTool('list_issues', 'List issues')
   return {
     getAllToolDescriptors: () => [projectTool, issueTool],
-    getToolDescriptorsByAllowlist: (allowlist: Array<{ capability: string }>) => {
-      if (allowlist.some((item) => item.capability === 'projects')) return [projectTool]
+    getDescriptorsForSession: (input: { allowlist: Array<{ category: string }> }) => {
+      if (input.allowlist.some((item) => item.category === 'projects')) return [projectTool]
       return []
     },
   }
@@ -40,8 +47,8 @@ function makeHtmlRegistryStub() {
   const htmlTool = makeTool('gen_html', 'Generate HTML preview')
   return {
     getAllToolDescriptors: () => [htmlTool],
-    getToolDescriptorsByAllowlist: (allowlist: Array<{ capability: string }>) => {
-      if (allowlist.some((item) => item.capability === 'html')) return [htmlTool]
+    getDescriptorsForSession: (input: { allowlist: Array<{ category: string }> }) => {
+      if (input.allowlist.some((item) => item.category === 'html')) return [htmlTool]
       return []
     },
   }
@@ -271,7 +278,7 @@ describe('CodexNativeBridgeManager', () => {
     ]
     const constrainedRegistry = {
       getAllToolDescriptors: () => constrainedTools,
-      getToolDescriptorsByAllowlist: () => constrainedTools,
+      getDescriptorsForSession: () => constrainedTools,
     }
     const manager = new CodexNativeBridgeManager(constrainedRegistry as never)
     managers.push(manager)
@@ -328,7 +335,7 @@ describe('CodexNativeBridgeManager', () => {
     ]
     const duplicateRegistry = {
       getAllToolDescriptors: () => duplicateTools,
-      getToolDescriptorsByAllowlist: () => duplicateTools,
+      getDescriptorsForSession: () => duplicateTools,
     }
 
     const manager = new CodexNativeBridgeManager(duplicateRegistry as never)
@@ -547,7 +554,7 @@ describe('CodexNativeBridgeManager', () => {
     ]
     const typedRegistry = {
       getAllToolDescriptors: () => typedTools,
-      getToolDescriptorsByAllowlist: () => typedTools,
+      getDescriptorsForSession: () => typedTools,
     }
 
     const manager = new CodexNativeBridgeManager(typedRegistry as never)
@@ -605,7 +612,7 @@ describe('CodexNativeBridgeManager', () => {
     ]
     const echoRegistry = {
       getAllToolDescriptors: () => echoTools,
-      getToolDescriptorsByAllowlist: () => echoTools,
+      getDescriptorsForSession: () => echoTools,
     }
 
     const manager = new CodexNativeBridgeManager(echoRegistry as never)
@@ -659,7 +666,7 @@ describe('CodexNativeBridgeManager', () => {
     ]
     const metadataRegistry = {
       getAllToolDescriptors: () => metadataTools,
-      getToolDescriptorsByAllowlist: () => metadataTools,
+      getDescriptorsForSession: () => metadataTools,
     }
 
     const manager = new CodexNativeBridgeManager(metadataRegistry as never)
@@ -694,18 +701,22 @@ describe('CodexNativeBridgeManager', () => {
       handleRequest: (req: IncomingMessage, res: ServerResponse) => Promise<void>
     }).handleRequest(req, res)
 
+    // Phase 1B.11: SDK ToolDescriptor.execute receives the new shape:
+    // { args, sessionContext, toolUseId, abortSignal }. The legacy
+    // `context: { engine, invocationId, ... }` envelope is gone — engine
+    // labelling and invocationId were OpenCow-private fields with no
+    // SDK-side analogue. The Codex bridge still extracts both `toolUseId`
+    // and `invocationId` from the inbound JSON (for backwards compat with
+    // existing client payloads), but only `toolUseId` is forwarded to the
+    // tool. invocationId is silently dropped.
     expect(res.statusCode).toBe(200)
     expect(receivedInput).toMatchObject({
       args: {},
-      context: {
-        engine: 'codex',
-        toolUseId: 'tool-use-123',
-        invocationId: 'invocation-123',
-      },
+      toolUseId: 'tool-use-123',
     })
   })
 
-  it('falls back invocationId to toolUseId when invocationId is absent', async () => {
+  it('forwards toolUseId to tool execute regardless of invocationId presence', async () => {
     let receivedInput: Record<string, unknown> | null = null
     const metadataTools = [
       {
@@ -720,7 +731,7 @@ describe('CodexNativeBridgeManager', () => {
     ]
     const metadataRegistry = {
       getAllToolDescriptors: () => metadataTools,
-      getToolDescriptorsByAllowlist: () => metadataTools,
+      getDescriptorsForSession: () => metadataTools,
     }
 
     const manager = new CodexNativeBridgeManager(metadataRegistry as never)
@@ -756,11 +767,7 @@ describe('CodexNativeBridgeManager', () => {
 
     expect(res.statusCode).toBe(200)
     expect(receivedInput).toMatchObject({
-      context: {
-        engine: 'codex',
-        toolUseId: 'tool-use-456',
-        invocationId: 'tool-use-456',
-      },
+      toolUseId: 'tool-use-456',
     })
   })
 
@@ -772,9 +779,11 @@ describe('CodexNativeBridgeManager', () => {
         name: 'slow_tool',
         description: 'Never resolves',
         inputSchema: {},
-        execute: async (input: { context: { signal?: AbortSignal } }) =>
+        // Phase 1B.11: SDK ToolDescriptor execute receives `abortSignal`
+        // directly, not `context.signal`.
+        execute: async (input: { abortSignal: AbortSignal }) =>
           new Promise((_, reject) => {
-            input.context.signal?.addEventListener(
+            input.abortSignal.addEventListener(
               'abort',
               () => {
                 abortedBySignal = true
@@ -786,7 +795,7 @@ describe('CodexNativeBridgeManager', () => {
       }
       const timeoutRegistry = {
         getAllToolDescriptors: () => [slowTool],
-        getToolDescriptorsByAllowlist: () => [slowTool],
+        getDescriptorsForSession: () => [slowTool],
       }
 
       const manager = new CodexNativeBridgeManager(timeoutRegistry as never)

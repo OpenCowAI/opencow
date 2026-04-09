@@ -8,28 +8,65 @@ import type {
   NativeCapabilityToolContext,
   NativeToolDescriptor,
 } from '../../../electron/nativeCapabilities/types'
+import type { OpenCowSessionContext } from '../../../electron/nativeCapabilities/openCowSessionContext'
+import type { ToolProgressRelay } from '../../../electron/utils/toolProgressRelay'
 import type { SessionLifecycleOperationProposalInput } from '../../../src/shared/types'
 
-function createContext(): NativeCapabilityToolContext {
+function makeRelay(): ToolProgressRelay {
   return {
-    session: {
-      sessionId: 'session-lifecycle-1',
-      projectId: 'project-1',
-      issueId: null,
-      originSource: 'agent',
-    },
-    relay: {
-      register: vi.fn(),
-      unregister: vi.fn(),
-      emit: vi.fn(),
-    } as unknown as NativeCapabilityToolContext['relay'],
+    register: vi.fn(),
+    unregister: vi.fn(),
+    emit: vi.fn(),
+    flush: vi.fn(),
+  } as unknown as ToolProgressRelay
+}
+
+function createSessionContext(): OpenCowSessionContext {
+  return {
+    sessionId: 'session-lifecycle-1',
+    cwd: '/tmp',
+    abortSignal: new AbortController().signal,
+    projectId: 'project-1',
+    issueId: null,
+    originSource: 'agent',
+    relay: makeRelay(),
   }
 }
 
-function getToolOrThrow(tools: NativeToolDescriptor[], name: string): NativeToolDescriptor {
+function createContext(sessionContext = createSessionContext()): NativeCapabilityToolContext {
+  return {
+    sessionContext,
+    hostEnvironment: { activeMcpServerNames: [] },
+  }
+}
+
+function getToolOrThrow(
+  tools: readonly NativeToolDescriptor[],
+  name: string,
+): NativeToolDescriptor {
   const tool = tools.find((item) => item.name === name)
   if (!tool) throw new Error(`Missing tool: ${name}`)
   return tool
+}
+
+/**
+ * Phase 1B.11 helper: invoke a descriptor's execute with the new SDK shape
+ * (`args + sessionContext + toolUseId + abortSignal`). The legacy
+ * `tool.execute({args, context})` shape no longer exists.
+ */
+async function callTool(
+  tool: NativeToolDescriptor,
+  args: Record<string, unknown>,
+  options: { sessionContext: OpenCowSessionContext; toolUseId?: string } = {
+    sessionContext: createSessionContext(),
+  },
+) {
+  return tool.execute({
+    args,
+    sessionContext: options.sessionContext,
+    toolUseId: options.toolUseId ?? `tool-use-${Math.random().toString(36).slice(2, 10)}`,
+    abortSignal: new AbortController().signal,
+  })
 }
 
 function parseToolArgs(
@@ -49,7 +86,11 @@ describe('Lifecycle operation confirmationMode normalization', () => {
       issueService: {} as never,
       lifecycleOperationCoordinator: { proposeOperations } as never,
     })
-    const tool = getToolOrThrow(capability.getToolDescriptors(createContext()), 'propose_issue_operation')
+    const sessionContext = createSessionContext()
+    const tool = getToolOrThrow(
+      capability.getToolDescriptors(createContext(sessionContext)),
+      'propose_issue_operation',
+    )
 
     const args = parseToolArgs(tool, {
       operations: [{
@@ -58,7 +99,7 @@ describe('Lifecycle operation confirmationMode normalization', () => {
         confirmationMode: 'draft',
       }],
     })
-    await tool.execute({ args, context: { toolUseId: 'tool-use-issue-1' } })
+    await callTool(tool, args, { sessionContext, toolUseId: 'tool-use-issue-1' })
 
     expect(proposeOperations).toHaveBeenCalledTimes(1)
     const firstCall = proposeOperations.mock.calls[0][0] as {
@@ -75,7 +116,11 @@ describe('Lifecycle operation confirmationMode normalization', () => {
       scheduleService: {} as never,
       lifecycleOperationCoordinator: { proposeOperations } as never,
     })
-    const tool = getToolOrThrow(capability.getToolDescriptors(createContext()), 'propose_schedule_operation')
+    const sessionContext = createSessionContext()
+    const tool = getToolOrThrow(
+      capability.getToolDescriptors(createContext(sessionContext)),
+      'propose_schedule_operation',
+    )
 
     const args = parseToolArgs(tool, {
       operations: [{
@@ -84,7 +129,7 @@ describe('Lifecycle operation confirmationMode normalization', () => {
         confirmationMode: 'auto-if-user-explicit',
       }],
     })
-    await tool.execute({ args, context: { toolUseId: 'tool-use-schedule-1' } })
+    await callTool(tool, args, { sessionContext, toolUseId: 'tool-use-schedule-1' })
 
     expect(proposeOperations).toHaveBeenCalledTimes(1)
     const firstCall = proposeOperations.mock.calls[0][0] as {
@@ -101,7 +146,11 @@ describe('Lifecycle operation confirmationMode normalization', () => {
       scheduleService: {} as never,
       lifecycleOperationCoordinator: { proposeOperations } as never,
     })
-    const tool = getToolOrThrow(capability.getToolDescriptors(createContext()), 'propose_schedule_operation')
+    const sessionContext = createSessionContext()
+    const tool = getToolOrThrow(
+      capability.getToolDescriptors(createContext(sessionContext)),
+      'propose_schedule_operation',
+    )
 
     const args = parseToolArgs(tool, {
       operations: [{
@@ -119,7 +168,7 @@ describe('Lifecycle operation confirmationMode normalization', () => {
         },
       }],
     })
-    await tool.execute({ args, context: { toolUseId: 'tool-use-schedule-2' } })
+    await callTool(tool, args, { sessionContext, toolUseId: 'tool-use-schedule-2' })
 
     expect(proposeOperations).toHaveBeenCalledTimes(1)
     const firstCall = proposeOperations.mock.calls[0][0] as {
@@ -153,7 +202,11 @@ describe('Lifecycle operation confirmationMode normalization', () => {
       issueService: {} as never,
       lifecycleOperationCoordinator: { proposeOperations } as never,
     })
-    const tool = getToolOrThrow(capability.getToolDescriptors(createContext()), 'propose_issue_operation')
+    const sessionContext = createSessionContext()
+    const tool = getToolOrThrow(
+      capability.getToolDescriptors(createContext(sessionContext)),
+      'propose_issue_operation',
+    )
 
     const args = parseToolArgs(tool, {
       operations: [{
@@ -162,8 +215,10 @@ describe('Lifecycle operation confirmationMode normalization', () => {
       }],
     })
 
-    await tool.execute({ args, context: {} })
-    await tool.execute({ args, context: {} })
+    // Empty-string toolUseId triggers the resolveProposalToolUseId fallback
+    // path that generates a unique missing-tool-use-id:* identifier per call.
+    await callTool(tool, args, { sessionContext, toolUseId: '' })
+    await callTool(tool, args, { sessionContext, toolUseId: '' })
 
     expect(proposeOperations).toHaveBeenCalledTimes(2)
     const first = proposeOperations.mock.calls[0][0] as { toolUseId: string }

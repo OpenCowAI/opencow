@@ -3,206 +3,113 @@
 /**
  * NativeCapabilities — OpenCow's built-in tool provider framework.
  *
- * NativeCapabilities vs Capabilities:
- * - NativeCapabilities = OpenCow's **internal** tool providers (Browser, Issues, Projects, Artifacts)
- *                        Compiled-in, registered programmatically.
- * - Capabilities       = Claude Code **ecosystem** items (commands, skills, hooks, MCP servers)
- *                        Managed by CapabilityCenter, discovered from the filesystem.
+ * Phase 1B.11 migration: this file used to host 208 lines of OpenCow-private
+ * type definitions (NativeCapability, NativeCapabilityMeta,
+ * NativeCapabilitySessionContext, NativeToolDescriptor, NativeToolCallInput,
+ * NATIVE_CAPABILITY_CATEGORIES, etc.). It is now a thin re-export layer that
+ * aliases OpenCow's traditional names to the SDK Capability Provider
+ * framework types, parameterised on `OpenCowSessionContext`.
  *
- * Each NativeCapability exposes a set of MCP tools that are injected into the SDK session
- * via an in-process MCP server (zero extra processes).
+ * The OpenCow-specific session domain fields (projectId / issueId /
+ * originSource / projectPath / startupCwd / relay) live on
+ * `OpenCowSessionContext` (./openCowSessionContext.ts), which extends the
+ * SDK's base `SessionContext`. The SDK framework's generic
+ * `<TSessionCtx extends SessionContext>` is the extension point.
+ *
+ * Why aliases instead of direct SDK imports in capability subclasses:
+ *   - Keeps the existing `import type { NativeCapabilityToolContext } from
+ *     './types'` path stable across the 8 capability files (single line
+ *     import in each, no rename churn).
+ *   - The 8 capability subclasses' diff is then limited to: the meta strip
+ *     (drop `name` and `version` from the meta literal — required by the
+ *     SDK CapabilityMeta v2 shape), the `toolConfigs` → `nativeToolConfigs`
+ *     rename (one line per file), and field path adjustments
+ *     (`context.session` → `ctx.sessionContext` etc.).
+ *
+ * NATIVE_CAPABILITY_CATEGORIES / NativeCapabilityCategory /
+ * isNativeCapabilityCategory live in
+ * `./openCowCapabilityRegistry.ts` instead of here, because they
+ * conceptually belong to the registry (and that's where the SDK
+ * CapabilityRegistry consumes them via its `categories` constructor option).
  */
 
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js'
-import type { z } from 'zod/v4'
+
+import type {
+  CapabilityMeta,
+  CapabilityProvider,
+  CapabilityToolContext,
+  ToolDescriptor,
+} from '@opencow-ai/opencow-agent-sdk'
+
+import type { OpenCowSessionContext } from './openCowSessionContext'
 
 // ─── Re-exports ─────────────────────────────────────────────────────────
 
 /** Re-export the real CallToolResult from the MCP SDK for use in tool handlers. */
 export type { CallToolResult }
 
-// ─── Tool Descriptor ────────────────────────────────────────────────────
+// ─── Capability primitive aliases ──────────────────────────────────────
 
 /**
- * Engine-agnostic tool descriptor used by NativeCapabilities.
- *
- * This is the canonical domain model for built-in tools. Engine-specific
- * adapters (Claude/Codex) are responsible for translating this descriptor
- * to runtime-specific tool definitions.
+ * OpenCow's name for the SDK `CapabilityMeta`. Note: SDK v2 stripped `name`
+ * and `version` from the meta shape — only `category` and `description`
+ * remain. The 8 capability subclasses must drop those two fields from
+ * their meta literals as part of the Phase 1B.11 migration.
  */
-export interface NativeToolDescriptor {
-  name: string
-  description: string
-  inputSchema: Record<string, z.ZodType>
-  execute: (input: NativeToolCallInput) => Promise<CallToolResult>
-}
-
-export interface NativeToolExecutionContext {
-  /** Cooperative cancellation signal for timeout/abort propagation. */
-  readonly signal?: AbortSignal
-  /** Epoch timestamp in ms after which the call should be considered expired. */
-  readonly deadlineAt?: number
-  /** Engine runtime that issued this tool call. */
-  readonly engine?: 'claude' | 'codex'
-  /**
-   * Stable tool-use identifier emitted by the engine runtime when available.
-   * Preferred key for projection/relay binding because it is unique per invocation.
-   */
-  readonly toolUseId?: string
-  /**
-   * Invocation identifier for runtimes that expose a separate request/call id.
-   * Falls back to toolUseId when both refer to the same underlying call.
-   */
-  readonly invocationId?: string
-}
+export type NativeCapabilityMeta = CapabilityMeta
 
 /**
- * Structured invocation payload passed into NativeToolDescriptor.execute().
- *
- * Keeping invocation metadata in a structured object avoids growing positional
- * parameters as execution controls evolve (timeout/cancellation/tracing).
+ * OpenCow's name for the SDK `ToolDescriptor`, parameterised on
+ * `OpenCowSessionContext`. This is what `BaseNativeCapability.getToolDescriptors`
+ * returns and what `OpenCowCapabilityRegistry.getDescriptorsForSession`
+ * exposes to the Codex bridge.
  */
-export interface NativeToolCallInput {
-  readonly args: Record<string, unknown>
-  readonly context: NativeToolExecutionContext
-}
-
-// ─── Category ────────────────────────────────────────────────────────────
+export type NativeToolDescriptor = ToolDescriptor<OpenCowSessionContext>
 
 /**
- * Authoritative native capability categories.
- *
- * This is intentionally a closed set so category typos are caught at compile time.
- * Adding a new built-in native capability requires updating this constant.
+ * OpenCow's name for the SDK `CapabilityProvider`, parameterised on
+ * `OpenCowSessionContext`. The 8 capability subclasses do not implement this
+ * interface directly — they `extends BaseNativeCapability`, which itself
+ * implements `CapabilityProvider<OpenCowSessionContext>` via the SDK's
+ * `BaseCapabilityProvider`.
  */
-export const NATIVE_CAPABILITY_CATEGORIES = [
-  'browser',
-  'issues',
-  'projects',
-  'html',
-  'interaction',
-  'schedules',
-  'evose',
-  'repo-analyzer',
-] as const
-
-export type NativeCapabilityCategory = (typeof NATIVE_CAPABILITY_CATEGORIES)[number]
-
-const NATIVE_CAPABILITY_CATEGORY_SET: ReadonlySet<string> = new Set(NATIVE_CAPABILITY_CATEGORIES)
-
-export function isNativeCapabilityCategory(value: string): value is NativeCapabilityCategory {
-  return NATIVE_CAPABILITY_CATEGORY_SET.has(value)
-}
-
-// ─── Meta ────────────────────────────────────────────────────────────────
-
-export interface NativeCapabilityMeta {
-  /** Unique category key */
-  category: NativeCapabilityCategory
-  /** Human-readable name shown in UI / logs */
-  name: string
-  /** One-line description of what this native capability does */
-  description: string
-  /** Semantic version for future compatibility tracking */
-  version: string
-}
-
-// ─── Session Context ─────────────────────────────────────────────────────
+export type NativeCapability = CapabilityProvider<OpenCowSessionContext>
 
 /**
- * Session-scoped domain context available to all native capability tools.
+ * OpenCow's name for the SDK `CapabilityToolContext<OpenCowSessionContext>`.
  *
- * Structured as a dedicated interface (not flat fields on NativeCapabilityToolContext)
- * to maintain separation between domain context (session) and infrastructure
- * concerns (relay). New session-scoped fields are added here, not on the parent.
+ * Field migration from the pre-1B.11 shape:
+ *   `{ session, relay, activeMcpServerNames? }`
+ *     → `{ sessionContext, hostEnvironment }`
+ *
+ * Subclasses must adjust their field accesses accordingly:
+ *   `context.session.projectId`        → `ctx.sessionContext.projectId`
+ *   `context.relay.emit(...)`          → `ctx.sessionContext.relay.emit(...)`
+ *   `context.activeMcpServerNames?.has(name)`
+ *     → `ctx.hostEnvironment.activeMcpServerNames.includes(name)`
+ *
+ * Note: `relay` lives on `OpenCowSessionContext` (not `HostEnvironment`)
+ * per spike 3 finding — it is OpenCow-internal infrastructure with a single
+ * consumer (Evose). See ./openCowSessionContext.ts for the rationale.
  */
-export interface NativeCapabilitySessionContext {
-  /** The OpenCow session ID (ccb-XXXXXXXXXXXX) that owns these tools. */
-  readonly sessionId: string
-  /** Resolved Project ID, or null if session is not scoped to a project. */
-  readonly projectId: string | null
-  /** Issue ID when the session is issue-scoped; otherwise null. */
-  readonly issueId: string | null
-  /**
-   * The `source` field from the session's `SessionOrigin`.
-   *
-   * Capabilities use this to self-adapt based on the client environment.
-   * For example, InteractionNativeCapability suppresses interactive-card
-   * tools when the session originates from an IM platform that cannot
-   * render them.
-   */
-  readonly originSource: string
-  /** Resolved workspace root for the session (when project-scoped). */
-  readonly projectPath?: string
-  /** Session startup cwd used by the runtime before any cwd changes. */
-  readonly startupCwd?: string
-}
+export type NativeCapabilityToolContext = CapabilityToolContext<OpenCowSessionContext>
 
-// ─── Tool Context ────────────────────────────────────────────────────────
+// ─── Backwards-compat alias for legacy import paths ────────────────────
 
 /**
- * Contextual information injected into each NativeCapability when building
- * tools for a specific session.
- *
- * - `session` — domain context (identity, scoping)
- * - `relay`   — infrastructure (progress routing)
- *
- * Passing session identity at tool-creation time (rather than at invocation
- * time) lets each native capability produce closures that are bound to the
- * owning session — enabling per-session resource isolation (e.g. a dedicated
- * WebContentsView per session in BrowserNativeCapability).
+ * Pre-1B.11 OpenCow defined a separate `NativeCapabilitySessionContext`
+ * type with the 5 domain fields. Post-1B.11 those fields live on
+ * `OpenCowSessionContext`. This alias preserves the legacy import name so
+ * subclasses that imported `NativeCapabilitySessionContext` continue to
+ * compile without renaming.
  */
-export interface NativeCapabilityToolContext {
-  /** Structured session context — domain-level identity and scoping. */
-  readonly session: NativeCapabilitySessionContext
-  /**
-   * Per-session ToolProgressRelay instance.
-   * NativeCapability tools use this to emit progress chunks instead of the old global singleton.
-   * This enables multi-session progress isolation — chunks never leak across sessions.
-   */
-  readonly relay: import('../utils/toolProgressRelay').ToolProgressRelay
-  /**
-   * Names of external MCP servers that will be active in this session.
-   *
-   * Populated from the Capability Center injection plan before built-in tools
-   * are created. NativeCapabilities use this to implement mutual exclusion — e.g.
-   * BrowserNativeCapability suppresses overlapping tools when a browser-automation
-   * MCP server (like `chrome-devtools`) is active.
-   */
-  readonly activeMcpServerNames?: ReadonlySet<string>
-}
+export type NativeCapabilitySessionContext = OpenCowSessionContext
 
-// ─── NativeCapability Interface ──────────────────────────────────────────
+// ─── Category re-exports (live in openCowCapabilityRegistry) ───────────
 
-/**
- * Every built-in native capability implements this interface.
- *
- * getToolDescriptors() returns engine-agnostic tool descriptors.
- * NativeCapabilityRegistry aggregates descriptors from all capabilities and
- * adapts them at engine integration boundaries.
- */
-export interface NativeCapability {
-  /** Metadata describing this native capability */
-  readonly meta: NativeCapabilityMeta
-
-  /**
-   * Returns engine-agnostic tool descriptors for this session.
-   *
-   * Accepting a `NativeCapabilityToolContext` at the factory level (rather than
-   * reading session identity at invocation time) ensures that each tool closure
-   * captures the correct session identity and resources.
-   */
-  getToolDescriptors(context: NativeCapabilityToolContext): NativeToolDescriptor[]
-
-  /**
-   * Optional async initialisation (e.g. warm caches, open connections).
-   * Called by NativeCapabilityRegistry.startAll().
-   */
-  start?(): Promise<void>
-
-  /**
-   * Optional cleanup on shutdown.
-   * Called by NativeCapabilityRegistry.disposeAll().
-   */
-  dispose?(): Promise<void>
-}
+export {
+  isNativeCapabilityCategory,
+  NATIVE_CAPABILITY_CATEGORIES,
+  type NativeCapabilityCategory,
+} from './openCowCapabilityRegistry'

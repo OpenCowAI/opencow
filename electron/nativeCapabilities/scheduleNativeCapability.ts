@@ -294,9 +294,7 @@ const actionSchema = z.object({
 export class ScheduleNativeCapability extends BaseNativeCapability {
   readonly meta: NativeCapabilityMeta = {
     category: 'schedules',
-    name: 'Schedules',
     description: 'OpenCow Schedule management — list, create, update, pause and resume schedules',
-    version: '1.0.0',
   }
 
   private readonly scheduleService: ScheduleService
@@ -308,8 +306,8 @@ export class ScheduleNativeCapability extends BaseNativeCapability {
     this.lifecycleOperationCoordinator = deps.lifecycleOperationCoordinator ?? null
   }
 
-  protected toolConfigs(context: NativeCapabilityToolContext): ToolConfig[] {
-    const session = context.session
+  protected override nativeToolConfigs(ctx: NativeCapabilityToolContext): ToolConfig[] {
+    const session = ctx.sessionContext
     return [
       this.listSchedulesConfig(session),
       this.getScheduleConfig(),

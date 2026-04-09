@@ -34,9 +34,7 @@ export interface ProjectNativeCapabilityDeps {
 export class ProjectNativeCapability extends BaseNativeCapability {
   readonly meta: NativeCapabilityMeta = {
     category: 'projects',
-    name: 'Projects',
     description: 'OpenCow Project queries — list and inspect projects',
-    version: '1.0.0',
   }
 
   private readonly projectService: ProjectService
@@ -48,8 +46,8 @@ export class ProjectNativeCapability extends BaseNativeCapability {
     this.issueService = deps.issueService
   }
 
-  protected toolConfigs(context: NativeCapabilityToolContext): ToolConfig[] {
-    const currentProjectId = context.session.projectId
+  protected override nativeToolConfigs(ctx: NativeCapabilityToolContext): ToolConfig[] {
+    const currentProjectId = ctx.sessionContext.projectId
     return [
       this.listProjectsConfig(currentProjectId),
       this.getProjectConfig(),

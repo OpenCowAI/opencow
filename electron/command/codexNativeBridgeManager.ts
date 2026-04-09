@@ -6,8 +6,10 @@ import os from 'node:os'
 import fs from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
 import { createLogger } from '../platform/logger'
-import type { NativeCapabilityRegistry } from '../nativeCapabilities/registry'
-import type { NativeCapabilityToolContext, NativeToolDescriptor } from '../nativeCapabilities/types'
+import type { OpenCowCapabilityRegistry } from '../nativeCapabilities/openCowCapabilityRegistry'
+import { toCapabilityAllowlist } from '../nativeCapabilities/openCowCapabilityRegistry'
+import type { NativeToolDescriptor } from '../nativeCapabilities/types'
+import type { OpenCowSessionContext } from '../nativeCapabilities/openCowSessionContext'
 import type { ToolProgressRelay } from '../utils/toolProgressRelay'
 import { MCP_SERVER_BASE_NAME } from '@shared/appIdentity'
 import { z } from 'zod/v4'
@@ -36,6 +38,15 @@ const ZOD_V4_MODULE_SPECIFIER = 'zod/v4'
 interface BridgeSessionEntry {
   token: string
   tools: Map<string, NativeToolDescriptor>
+  /**
+   * Phase 1B.11: per-session OpenCowSessionContext stored at registerSession
+   * time so the call-tool handler can pass it back to the SDK
+   * `ToolDescriptor.execute({sessionContext, ...})` shape. Pre-migration the
+   * NativeToolDescriptor.execute(input) signature embedded the context in
+   * `input.context`; post-migration the SDK contract requires sessionContext
+   * to be threaded through every call.
+   */
+  sessionContext: OpenCowSessionContext
 }
 
 interface BridgeErrorPayload {
@@ -102,7 +113,7 @@ export class CodexNativeBridgeManager {
   private readonly resolveBridgeCommand: () => string
 
   constructor(
-    private readonly nativeCapabilityRegistry: NativeCapabilityRegistry,
+    private readonly nativeCapabilityRegistry: OpenCowCapabilityRegistry,
     options: CodexNativeBridgeManagerOptions = {},
   ) {
     this.resolveBridgeCommand = options.resolveBridgeCommand ?? resolveBridgeCommandDefault
@@ -118,16 +129,34 @@ export class CodexNativeBridgeManager {
       return undefined
     }
 
-    const toolContext: NativeCapabilityToolContext = {
-      session: input.session,
+    // Phase 1B.11: build OpenCowSessionContext for the SDK
+    // CapabilityToolContext shape. The session-wide abort signal placeholder
+    // mirrors the sessionOrchestrator pattern — per-call abort still flows
+    // via the bridge's withTimeout helper through the per-call abortSignal.
+    const sessionContext: OpenCowSessionContext = {
+      sessionId,
+      cwd: input.session.startupCwd ?? input.session.projectPath ?? process.cwd(),
+      abortSignal: new AbortController().signal,
+      projectId: input.session.projectId,
+      issueId: input.session.issueId,
+      originSource: input.session.originSource,
+      ...(input.session.projectPath !== undefined && { projectPath: input.session.projectPath }),
+      ...(input.session.startupCwd !== undefined && { startupCwd: input.session.startupCwd }),
       relay: input.relay,
-      activeMcpServerNames: input.activeMcpServerNames,
     }
 
-    const registryTools = this.nativeCapabilityRegistry.getToolDescriptorsByAllowlist(input.nativeToolAllowlist, toolContext)
-    const tools = input.additionalTools
+    const registryTools = this.nativeCapabilityRegistry.getDescriptorsForSession({
+      allowlist: toCapabilityAllowlist(input.nativeToolAllowlist),
+      sessionContext,
+      hostEnvironment: {
+        activeMcpServerNames: input.activeMcpServerNames
+          ? [...input.activeMcpServerNames]
+          : [],
+      },
+    })
+    const tools: NativeToolDescriptor[] = input.additionalTools
       ? [...registryTools, ...input.additionalTools]
-      : registryTools
+      : [...registryTools]
 
     if (tools.length === 0) {
       this.sessions.delete(sessionId)
@@ -142,6 +171,7 @@ export class CodexNativeBridgeManager {
       this.sessions.set(sessionId, {
         token,
         tools: toolMap,
+        sessionContext,
       })
 
       const env = buildAsarAwareEnv({
@@ -279,7 +309,11 @@ export class CodexNativeBridgeManager {
         const name = typeof payload.name === 'string' ? payload.name : null
         const args = payload.args
         const toolUseId = optionalNonEmptyString(payload.toolUseId)
-        const invocationId = optionalNonEmptyString(payload.invocationId) ?? toolUseId
+        // Phase 1B.11: invocationId is no longer used — the SDK ToolDescriptor
+        // execute signature accepts only `toolUseId`. The legacy invocationId
+        // payload field is silently ignored for backwards compatibility with
+        // older bridge clients.
+        void payload.invocationId
         if (!sessionId || !name) {
           this.sendError(res, 400, { code: 'invalid_request', message: 'Missing sessionId or tool name' })
           return
@@ -297,16 +331,17 @@ export class CodexNativeBridgeManager {
         const validatedArgs = validateToolArgs(tool, args)
 
         const result = await withTimeout(
-          (signal, deadlineAt) =>
+          (signal, _deadlineAt) =>
+            // Phase 1B.11: tool is now an SDK ToolDescriptor with structured
+            // execute({args, sessionContext, toolUseId, abortSignal}). The
+            // legacy `context` envelope (signal/deadlineAt/engine/invocationId)
+            // is gone — per-call cancellation flows via abortSignal, the
+            // OpenCow domain context flows via the stored sessionContext.
             tool.execute({
               args: validatedArgs,
-              context: {
-                signal,
-                deadlineAt,
-                engine: 'codex',
-                toolUseId,
-                invocationId,
-              },
+              sessionContext: entry.sessionContext,
+              toolUseId: toolUseId ?? randomUUID(),
+              abortSignal: signal,
             }),
           BRIDGE_TOOL_TIMEOUT_MS,
           `Tool execution timed out after ${Math.floor(BRIDGE_TOOL_TIMEOUT_MS / 1000)}s: ${name}`,

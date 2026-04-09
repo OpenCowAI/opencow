@@ -61,9 +61,7 @@ const questionSchema = z.object({
 export class InteractionNativeCapability extends BaseNativeCapability {
   readonly meta: NativeCapabilityMeta = {
     category: 'interaction',
-    name: 'User Interaction',
     description: 'Interactive tools that pause execution and wait for user input',
-    version: '1.0.0',
   }
 
   private readonly deps: InteractionNativeCapabilityDeps
@@ -73,8 +71,8 @@ export class InteractionNativeCapability extends BaseNativeCapability {
     this.deps = deps
   }
 
-  protected toolConfigs(context: NativeCapabilityToolContext): ToolConfig[] {
-    const { sessionId, originSource } = context.session
+  protected override nativeToolConfigs(ctx: NativeCapabilityToolContext): ToolConfig[] {
+    const { sessionId, originSource } = ctx.sessionContext
 
     // IM clients (Telegram, Discord, Feishu, WeChat) cannot render interactive
     // cards — suppress all interaction tools so they never appear in Claude's

@@ -18,12 +18,10 @@ import { parseGenHtmlInput } from '@shared/genHtmlInput'
 export class HtmlNativeCapability extends BaseNativeCapability {
   readonly meta: NativeCapabilityMeta = {
     category: 'html',
-    name: 'HTML Preview',
     description: 'Generate HTML content for browser-style preview in session console',
-    version: '1.0.0',
   }
 
-  protected toolConfigs(_context: NativeCapabilityToolContext): ToolConfig[] {
+  protected override nativeToolConfigs(_ctx: NativeCapabilityToolContext): ToolConfig[] {
     return [
       {
         name: 'gen_html',

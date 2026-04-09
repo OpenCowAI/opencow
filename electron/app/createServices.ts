@@ -106,7 +106,7 @@ import { createLogger } from '../platform/logger'
 import { buildEventSubscriptionPolicy } from '../events/eventSubscriptionPolicy'
 import type { DataBus } from '../core/dataBus'
 import type { SettingsService } from '../services/settingsService'
-import type { NativeCapabilityRegistry } from '../nativeCapabilities/registry'
+import type { OpenCowCapabilityRegistry } from '../nativeCapabilities/openCowCapabilityRegistry'
 import type { PendingQuestionRegistry } from '../nativeCapabilities/interaction/pendingQuestionRegistry'
 import type { ProxyFetchFactory } from '../network'
 import type { DataPaths } from '../platform/dataPaths'
@@ -123,7 +123,7 @@ export interface ServiceFactoryDeps {
   proxyFetchFactory: ProxyFetchFactory
   dataPaths: DataPaths
   appSettings: AppSettings
-  nativeCapabilityRegistry: NativeCapabilityRegistry
+  nativeCapabilityRegistry: OpenCowCapabilityRegistry
   pendingQuestionRegistry: PendingQuestionRegistry
 }
 

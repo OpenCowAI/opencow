@@ -26,9 +26,8 @@ import type {
   NativeCapabilityToolContext,
   CallToolResult,
   NativeToolDescriptor,
-  NativeToolCallInput,
 } from '../types'
-import { BaseNativeCapability } from '../baseNativeCapability'
+import { BaseNativeCapability, type NativeToolCallInput } from '../baseNativeCapability'
 import type { DataBus } from '../../core/dataBus'
 import type { BrowserService } from '../../browser/browserService'
 import type { BrowserCommand, BrowserCommandResult } from '../../browser/types'
@@ -140,9 +139,7 @@ interface BrowserToolConfig {
 export class BrowserNativeCapability extends BaseNativeCapability {
   readonly meta: NativeCapabilityMeta = {
     category: 'browser',
-    name: 'Browser',
     description: 'Embedded browser control — navigate, interact, and extract web content',
-    version: '1.0.0',
   }
 
   private readonly browserService: BrowserService
@@ -164,8 +161,8 @@ export class BrowserNativeCapability extends BaseNativeCapability {
    * are suppressed to prevent LLM confusion. Only non-overlapping tools
    * (e.g. browser_scroll) are retained alongside DevTools' 38 tools.
    */
-  getToolDescriptors(context: NativeCapabilityToolContext): NativeToolDescriptor[] {
-    const hasDevTools = context.activeMcpServerNames?.has(CHROME_DEVTOOLS_MCP_NAME) ?? false
+  override getToolDescriptors(ctx: NativeCapabilityToolContext): readonly NativeToolDescriptor[] {
+    const hasDevTools = ctx.hostEnvironment.activeMcpServerNames.includes(CHROME_DEVTOOLS_MCP_NAME)
 
     let configs = this.browserToolConfigs()
 
@@ -178,7 +175,7 @@ export class BrowserNativeCapability extends BaseNativeCapability {
       )
     }
 
-    return configs.map((config) => this.createBrowserToolDescriptor(config, context.session))
+    return configs.map((config) => this.createBrowserToolDescriptor(config, ctx.sessionContext))
   }
 
   // ── Lifecycle ──────────────────────────────────────────────────────

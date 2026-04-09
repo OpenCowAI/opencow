@@ -25,10 +25,12 @@ import { ManagedSessionStore } from '../services/managedSessionStore'
 import { buildSDKHooks } from '../hooks/buildSDKHooks'
 import { ExecutionContextCoordinator } from './executionContextCoordinator'
 import type { GitCommandExecutor } from '../services/git/gitCommandExecutor'
-import type { NativeCapabilityRegistry } from '../nativeCapabilities/registry'
-import type { NativeCapabilityToolContext, NativeToolDescriptor } from '../nativeCapabilities/types'
-import { toClaudeToolDefinitions } from '../nativeCapabilities/claudeToolAdapter'
-import { createSdkMcpServer } from '../integrations/opencowSdkCompat'
+import type { OpenCowCapabilityRegistry } from '../nativeCapabilities/openCowCapabilityRegistry'
+import { toCapabilityAllowlist } from '../nativeCapabilities/openCowCapabilityRegistry'
+import type { NativeToolDescriptor } from '../nativeCapabilities/types'
+import type { OpenCowSessionContext } from '../nativeCapabilities/openCowSessionContext'
+import { toMcpServer } from '@opencow-ai/opencow-agent-sdk'
+import { MCP_SERVER_BASE_NAME } from '@shared/appIdentity'
 import type { BrowserService } from '../browser/browserService'
 import type { PendingQuestionRegistry } from '../nativeCapabilities/interaction/pendingQuestionRegistry'
 import type { CapabilityCenter } from '../services/capabilityCenter'
@@ -84,8 +86,8 @@ export interface OrchestratorDeps {
   getActiveProviderMode: (engineKind: AIEngineKind) => ApiProvider | null
   getCommandDefaults: () => CommandDefaults
   store: ManagedSessionStore
-  /** Optional NativeCapabilityRegistry — injects OpenCow built-in native capability tools into sessions. */
-  nativeCapabilityRegistry?: NativeCapabilityRegistry
+  /** Optional OpenCowCapabilityRegistry — injects OpenCow built-in native capability tools into sessions. */
+  nativeCapabilityRegistry?: OpenCowCapabilityRegistry
   /**
    * Optional BrowserService reference — used to release per-session browser
    * views when a session finishes, freeing WebContentsView resources.
@@ -803,13 +805,33 @@ export class SessionOrchestrator {
         options.mcpServers = { ...(options.mcpServers ?? {}), ...config.customMcpServers }
       }
 
-      // Per-session custom tool descriptors → in-process MCP server
+      // Phase 1B.11: build the OpenCowSessionContext once and reuse it for
+      // both the per-session custom tools path and the native capability path
+      // below. The relay reference and OpenCow domain fields are session-scoped
+      // — capabilities access them via `ctx.sessionContext.relay` /
+      // `ctx.sessionContext.projectId` etc. through the SDK CapabilityToolContext.
+      const claudeOpenCowSessionContext: OpenCowSessionContext = {
+        sessionId,
+        cwd: config.startupCwd ?? config.projectPath ?? process.cwd(),
+        // Session-wide abort signal placeholder — per-call abort still flows
+        // via MCP `extra.signal` (wired by the SDK toMcpServer adapter, Phase
+        // 1B.7). Session-wide abort wiring is a follow-up cleanup item.
+        abortSignal: new AbortController().signal,
+        projectId: config.projectId ?? null,
+        issueId: getOriginIssueId(config.origin),
+        originSource: config.origin.source,
+        ...(config.projectPath !== undefined && { projectPath: config.projectPath }),
+        ...(config.startupCwd !== undefined && { startupCwd: config.startupCwd }),
+        relay,
+      }
+
+      // Per-session custom tool descriptors → in-process MCP server (Phase 1B.11:
+      // direct SDK toMcpServer, no compat shim).
       if (customTools && customTools.tools.length > 0) {
-        const claudeTools = toClaudeToolDefinitions(customTools.tools)
-        const mcpServerConfig = createSdkMcpServer({
+        const mcpServerConfig = toMcpServer({
           name: customTools.name,
-          version: '1.0.0',
-          tools: claudeTools,
+          descriptors: customTools.tools,
+          sessionContext: claudeOpenCowSessionContext,
         })
         options.mcpServers = { ...(options.mcpServers ?? {}), [customTools.name]: mcpServerConfig }
       }
@@ -819,24 +841,19 @@ export class SessionOrchestrator {
 
       // Built-in native capability tools (after injection plan + allowlist merge).
       if (this.deps.nativeCapabilityRegistry) {
-        const toolContext: NativeCapabilityToolContext = {
-          session: {
-            sessionId,
-            projectId: config.projectId ?? null,
-            issueId: getOriginIssueId(config.origin),
-            originSource: config.origin.source,
-            projectPath: config.projectPath,
-            startupCwd: config.startupCwd,
-          },
-          relay,
-          activeMcpServerNames,
-        }
         const nativeToolPolicy = sessionPolicy.tools.native
-        const serverConfig = nativeToolPolicy.mode === 'allowlist'
-          ? this.deps.nativeCapabilityRegistry.createMcpServerConfigForAllowlist(nativeToolPolicy.allow, toolContext)
-          : undefined
-        if (serverConfig) {
-          options.mcpServers = { ...(options.mcpServers ?? {}), ...serverConfig.mcpServers }
+        if (nativeToolPolicy.mode === 'allowlist') {
+          const cfg = this.deps.nativeCapabilityRegistry.buildMcpServerForSession({
+            name: MCP_SERVER_BASE_NAME,
+            allowlist: toCapabilityAllowlist(nativeToolPolicy.allow),
+            sessionContext: claudeOpenCowSessionContext,
+            hostEnvironment: {
+              activeMcpServerNames: activeMcpServerNames
+                ? [...activeMcpServerNames]
+                : [],
+            },
+          })
+          options.mcpServers = { ...(options.mcpServers ?? {}), [MCP_SERVER_BASE_NAME]: cfg }
         }
       }
 

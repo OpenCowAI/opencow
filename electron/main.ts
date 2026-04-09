@@ -25,7 +25,7 @@ import { WeixinBotManager } from './services/weixinBot/weixinBotManager'
 import { WeixinAdapter } from './services/weixinBot/weixinAdapter'
 import { IMBridgeManager } from './services/messaging'
 import { setMainWindow, getMainWindow } from './window/windowManager'
-import { NativeCapabilityRegistry } from './nativeCapabilities/registry'
+import { OpenCowCapabilityRegistry } from './nativeCapabilities/openCowCapabilityRegistry'
 import { PendingQuestionRegistry } from './nativeCapabilities/interaction/pendingQuestionRegistry'
 import { initShellEnvironment } from './platform/shellPath'
 import { dataPaths, isDev, ensureCapabilityDirs } from './platform/dataPaths'
@@ -133,7 +133,7 @@ const settingsService = new SettingsService(dataPaths.settings)
 let svc: AppServices | null = null
 
 // Non-database services (available before whenReady)
-const nativeCapabilityRegistry = new NativeCapabilityRegistry()
+const nativeCapabilityRegistry = new OpenCowCapabilityRegistry()
 const pendingQuestionRegistry = new PendingQuestionRegistry()
 
 // Sources — hookSource uses lazy `shouldSkip` predicate (orchestrator isn't created yet).

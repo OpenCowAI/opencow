@@ -50,9 +50,7 @@ const MAX_BATCH_FILES = 10
 export class RepoAnalyzerCapability extends BaseNativeCapability {
   readonly meta: NativeCapabilityMeta = {
     category: 'repo-analyzer',
-    name: 'Repo Analyzer',
     description: 'Sandboxed filesystem tools for the repo analysis Agent',
-    version: '1.0.0',
   }
 
   /** Absolute path to the repository root — all paths are resolved relative to this. */
@@ -78,7 +76,7 @@ export class RepoAnalyzerCapability extends BaseNativeCapability {
 
   // ── Declarative tool definitions ────────────────────────────────────────────
 
-  protected toolConfigs(_context: NativeCapabilityToolContext): ToolConfig[] {
+  protected override nativeToolConfigs(_ctx: NativeCapabilityToolContext): ToolConfig[] {
     return [
       this.listDirectoryConfig(),
       this.readFileConfig(),

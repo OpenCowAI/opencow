@@ -19,6 +19,7 @@ import * as path from 'node:path'
 import { ToolProgressRelay } from '../../../utils/toolProgressRelay'
 import { createLogger } from '../../../platform/logger'
 import type { NativeCapabilityToolContext, NativeToolDescriptor } from '../../../nativeCapabilities/types'
+import type { OpenCowSessionContext } from '../../../nativeCapabilities/openCowSessionContext'
 import { RepoAnalyzerCapability } from './repoAnalyzerCapability'
 import { ManifestValidator } from './manifestValidator'
 import { ManifestCache } from './manifestCache'
@@ -91,17 +92,30 @@ export class RepoAnalyzer {
     // 1. Create per-analysis capability with sandboxed filesystem tools
     const capability = new RepoAnalyzerCapability(params.repoDir)
 
-    // 2. Build tool context for tool descriptor extraction
-    const toolContext: NativeCapabilityToolContext = {
-      session: { sessionId: `analysis-${Date.now()}`, projectId: null, issueId: null, originSource: 'market-analyzer' },
+    // 2. Build tool context for tool descriptor extraction. Phase 1B.11:
+    // capabilities consume the SDK CapabilityToolContext shape (sessionContext
+    // + hostEnvironment), parameterised on OpenCowSessionContext. This is a
+    // synthetic per-analysis session — no real session abort, no project/issue
+    // scoping, no active MCP servers.
+    const sessionContext: OpenCowSessionContext = {
+      sessionId: `analysis-${Date.now()}`,
+      cwd: params.repoDir,
+      abortSignal: new AbortController().signal,
+      projectId: null,
+      issueId: null,
+      originSource: 'market-analyzer',
       relay: new ToolProgressRelay(),
+    }
+    const toolContext: NativeCapabilityToolContext = {
+      sessionContext,
+      hostEnvironment: { activeMcpServerNames: [] },
     }
 
     // 3. Get engine-agnostic tool descriptors (NativeToolDescriptor[])
     // SessionOrchestrator handles engine-specific injection:
-    // - Claude: toClaudeToolDefinitions() → createSdkMcpServer() → in-process MCP
+    // - Claude: SDK toMcpServer adapter → in-process MCP
     // - Codex:  CodexNativeBridgeManager → HTTP bridge → stdio MCP
-    const tools = capability.getToolDescriptors(toolContext)
+    const tools = [...capability.getToolDescriptors(toolContext)]
 
     // 4. Pre-scan repo tree for inclusion in the initial prompt
     const repoTree = await RepoAnalyzer.generateRepoTree(params.repoDir)

@@ -35,9 +35,7 @@ const log = createLogger('EvoseNativeCapability')
 export class EvoseNativeCapability extends BaseNativeCapability {
   readonly meta: NativeCapabilityMeta = {
     category: 'evose',
-    name: 'Evose Integration',
     description: 'Run Evose Agents & Workflows as MCP tools',
-    version: '1.0.0',
   }
 
   constructor(
@@ -52,14 +50,14 @@ export class EvoseNativeCapability extends BaseNativeCapability {
    *
    * Returns [] when credentials are missing — session proceeds normally.
    */
-  getToolDescriptors(context: NativeCapabilityToolContext): NativeToolDescriptor[] {
+  override getToolDescriptors(ctx: NativeCapabilityToolContext): readonly NativeToolDescriptor[] {
     const { evose } = this.settingsService.getSettings()
     if (!evose.apiKey || evose.workspaceIds.length === 0) return []
     const enabledCount = evose.apps.filter((app) => app.enabled).length
     log.info(`Building Evose gateway MCP tools (enabled apps=${enabledCount})`)
 
     return [
-      this.createToolDescriptor(this.buildRunAgentConfig(context)),
+      this.createToolDescriptor(this.buildRunAgentConfig(ctx)),
       this.createToolDescriptor(this.buildRunWorkflowConfig()),
       this.createToolDescriptor(this.buildListAppsConfig()),
     ]
@@ -67,7 +65,7 @@ export class EvoseNativeCapability extends BaseNativeCapability {
 
   // ── Gateway: Run Agent ────────────────────────────────────────────────────
 
-  private buildRunAgentConfig(context: NativeCapabilityToolContext): ToolConfig {
+  private buildRunAgentConfig(ctx: NativeCapabilityToolContext): ToolConfig {
     return {
       name: EVOSE_RUN_AGENT_LOCAL_NAME,
       description: '[Evose Gateway] Run an enabled Evose Agent by app_id',
@@ -92,12 +90,12 @@ export class EvoseNativeCapability extends BaseNativeCapability {
               switch (event.type) {
                 case 'output':
                   // Agent text output -> EvoseRelayEvent.text
-                  context.relay.emit(relayKey, { type: 'text', text: event.text } satisfies EvoseRelayEvent)
+                  ctx.sessionContext.relay.emit(relayKey, { type: 'text', text: event.text } satisfies EvoseRelayEvent)
                   break
 
                 case 'tool_call_started':
                   // Sub-tool started -> EvoseRelayEvent.tool_call_started (includes all fields)
-                  context.relay.emit(relayKey, {
+                  ctx.sessionContext.relay.emit(relayKey, {
                     type: 'tool_call_started',
                     toolCallId: event.toolCallId,
                     toolName: event.toolName,
@@ -109,7 +107,7 @@ export class EvoseNativeCapability extends BaseNativeCapability {
 
                 case 'tool_call_completed':
                   // Sub-tool completed -> EvoseRelayEvent.tool_call_completed (emitted for both success and failure)
-                  context.relay.emit(relayKey, {
+                  ctx.sessionContext.relay.emit(relayKey, {
                     type: 'tool_call_completed',
                     toolCallId: event.toolCallId,
                     toolName: event.toolName,
@@ -132,7 +130,7 @@ export class EvoseNativeCapability extends BaseNativeCapability {
           log.error(`Evose Agent tool error [${app.appId}/${app.name}]:`, err)
           return this.errorResult(err)
         } finally {
-          context.relay.unregister(relayKey)
+          ctx.sessionContext.relay.unregister(relayKey)
         }
       },
     }

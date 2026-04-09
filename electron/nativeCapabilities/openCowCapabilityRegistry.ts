@@ -30,6 +30,8 @@ import {
   type ToolDescriptor,
 } from '@opencow-ai/opencow-agent-sdk'
 
+import type { StartSessionNativeToolAllowItem } from '@shared/types'
+
 import { createLogger } from '../platform/logger'
 
 import type { OpenCowSessionContext } from './openCowSessionContext'
@@ -136,6 +138,33 @@ export class OpenCowCapabilityRegistry extends CapabilityRegistry<OpenCowSession
     assertNoDuplicateToolNames(result)
     return result
   }
+}
+
+/**
+ * Convert OpenCow's `StartSessionNativeToolAllowItem[]` (the policy shape
+ * persisted in session config) to SDK `CapabilityAllowlistEntry[]`. The
+ * shapes diverge on field names:
+ *
+ *   OpenCow: { capability: string, tool?: string }
+ *   SDK:     { category: string, tools?: readonly string[] }
+ *
+ * The conversion is one-to-one: each OpenCow entry becomes one SDK entry.
+ * Multiple OpenCow entries with the same `capability` (one for "all tools",
+ * others for specific tool names) coexist as separate SDK entries — the
+ * SDK registry's per-tool filter applies independently per entry.
+ *
+ * Both `OpenCowCapabilityRegistry.buildMcpServerForSession` and
+ * `getDescriptorsForSession` accept the SDK shape, so callers in
+ * `sessionOrchestrator` and `codexNativeBridgeManager` should call this
+ * helper to bridge from the persisted policy shape to the framework input.
+ */
+export function toCapabilityAllowlist(
+  items: readonly StartSessionNativeToolAllowItem[],
+): readonly CapabilityAllowlistEntry[] {
+  return items.map((item) => ({
+    category: item.capability,
+    ...(item.tool ? { tools: [item.tool] as const } : {}),
+  }))
 }
 
 function assertNoDuplicateToolNames(
