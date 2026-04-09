@@ -160,9 +160,11 @@ function buildKeywords(app: EvoseAppConfig): string[] {
 
 function buildSkillBody(app: EvoseAppConfig): string {
   const escapedName = app.name.replace(/"/g, '\\"')
-  // Use MCP-qualified tool names — these are the exact names Claude sees in its
-  // tool list. Using local names (e.g. "evose_run_agent") forces the LLM to infer
-  // the MCP prefix, which is fragile and can cause tool-call failures.
+  // Phase 1B.11b: tool names are now BARE (no MCP prefix) because OpenCow
+  // uses the SDK's inline tool exit (`Options.tools?: SdkTool[]`) instead of
+  // the MCP exit (`Options.mcpServers`). The model sees the descriptor name
+  // verbatim — no `mcp__opencow-capabilities__` transport-layer prefix.
+  // NativeCapabilityTools.EVOSE_RUN_AGENT now resolves to `'evose_run_agent'`.
   const toolName = app.type === 'agent'
     ? NativeCapabilityTools.EVOSE_RUN_AGENT
     : NativeCapabilityTools.EVOSE_RUN_WORKFLOW

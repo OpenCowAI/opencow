@@ -29,8 +29,7 @@ import type { OpenCowCapabilityRegistry } from '../nativeCapabilities/openCowCap
 import { toCapabilityAllowlist } from '../nativeCapabilities/openCowCapabilityRegistry'
 import type { NativeToolDescriptor } from '../nativeCapabilities/types'
 import type { OpenCowSessionContext } from '../nativeCapabilities/openCowSessionContext'
-import { toMcpServer } from '@opencow-ai/opencow-agent-sdk'
-import { MCP_SERVER_BASE_NAME } from '@shared/appIdentity'
+import { toInlineTool, type SdkTool } from '@opencow-ai/opencow-agent-sdk'
 import type { BrowserService } from '../browser/browserService'
 import type { PendingQuestionRegistry } from '../nativeCapabilities/interaction/pendingQuestionRegistry'
 import type { CapabilityCenter } from '../services/capabilityCenter'
@@ -825,15 +824,25 @@ export class SessionOrchestrator {
         relay,
       }
 
-      // Per-session custom tool descriptors → in-process MCP server (Phase 1B.11:
-      // direct SDK toMcpServer, no compat shim).
+      // Phase 1B.11b: collect SDK inline tools from BOTH per-session custom
+      // tools AND the native capability allowlist into a single SdkTool[].
+      // The model sees these as bare descriptor names (no `mcp__server__`
+      // transport-layer prefix). This avoids the dual MCP SDK module instance
+      // class-identity bug that bit the Phase 1B.11 MCP exit path: SdkTool is
+      // a plain data shape (`{name, description, inputSchema, execute}`),
+      // not an instance of any SDK-internal class, so cross-bundle / cross-
+      // module-cache transit cannot break it.
+      const inlineNativeTools: SdkTool[] = []
+
       if (customTools && customTools.tools.length > 0) {
-        const mcpServerConfig = toMcpServer({
-          name: customTools.name,
-          descriptors: customTools.tools,
-          sessionContext: claudeOpenCowSessionContext,
-        })
-        options.mcpServers = { ...(options.mcpServers ?? {}), [customTools.name]: mcpServerConfig }
+        for (const descriptor of customTools.tools) {
+          inlineNativeTools.push(
+            toInlineTool({
+              descriptor,
+              sessionContext: claudeOpenCowSessionContext,
+            }),
+          )
+        }
       }
 
       // Compose final system prompt after all layer adjustments.
@@ -843,8 +852,7 @@ export class SessionOrchestrator {
       if (this.deps.nativeCapabilityRegistry) {
         const nativeToolPolicy = sessionPolicy.tools.native
         if (nativeToolPolicy.mode === 'allowlist') {
-          const cfg = this.deps.nativeCapabilityRegistry.buildMcpServerForSession({
-            name: MCP_SERVER_BASE_NAME,
+          const inlineTools = this.deps.nativeCapabilityRegistry.getInlineToolsForSession({
             allowlist: toCapabilityAllowlist(nativeToolPolicy.allow),
             sessionContext: claudeOpenCowSessionContext,
             hostEnvironment: {
@@ -853,8 +861,15 @@ export class SessionOrchestrator {
                 : [],
             },
           })
-          options.mcpServers = { ...(options.mcpServers ?? {}), [MCP_SERVER_BASE_NAME]: cfg }
+          inlineNativeTools.push(...inlineTools)
         }
+      }
+
+      if (inlineNativeTools.length > 0) {
+        options.tools = [
+          ...(Array.isArray(options.tools) ? options.tools : []),
+          ...inlineNativeTools,
+        ]
       }
 
       if (hooks) {
@@ -929,6 +944,12 @@ export class SessionOrchestrator {
       messageCount: session.getMessages().length,
       mcpServerCount: options.engineKind === 'claude'
         ? Object.keys(options.mcpServers ?? {}).length
+        : 0,
+      // Phase 1B.11b: native + custom capabilities now flow via inline tools
+      // (Options.tools?: SdkTool[]) instead of an MCP server. Track the count
+      // here so the pre-flight log captures it for diagnostics.
+      inlineToolCount: options.engineKind === 'claude'
+        ? (Array.isArray(options.tools) ? options.tools.length : 0)
         : 0,
       hasHooks: options.engineKind === 'claude' && !!options.hooks,
       maxTurns: options.maxTurns,
