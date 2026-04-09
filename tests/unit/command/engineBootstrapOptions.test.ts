@@ -85,7 +85,14 @@ describe('EngineBootstrapRegistry', () => {
       deps: createDeps(),
     })
 
-    expect(options.pathToClaudeCodeExecutable).toBe('/tmp/claude-cli.js')
+    // Phase 1B.12b: pathToClaudeCodeExecutable / spawnClaudeCodeProcess are
+    // dead options in the opencow-agent-sdk fork (the runtime is in-process,
+    // no child process is spawned). The ClaudeEngineBootstrapper no longer
+    // writes them — the resolveCliPath constructor parameter is kept for
+    // factory-shape symmetry with CodexEngineBootstrapper but its value is
+    // intentionally ignored.
+    expect(options.pathToClaudeCodeExecutable).toBeUndefined()
+    expect(options.spawnClaudeCodeProcess).toBeUndefined()
     expect(options.model).toBe('claude-session-model')
     expect(options.cwd).toBe('/tmp/project')
     expect(options.resume).toBe('resume-id')

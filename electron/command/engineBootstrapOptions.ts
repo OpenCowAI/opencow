@@ -6,7 +6,6 @@ import type { AIEngineKind, CodexReasoningEffort } from '../../src/shared/types'
 import type { ManagedSessionRuntimeConfig } from './managedSession'
 import type { ClaudeSessionLaunchOptions, CodexSessionLaunchOptions } from './sessionLaunchOptions'
 import { createLogger } from '../platform/logger'
-import { createAsarAwareSpawnFn } from '../platform/electronSpawn'
 
 const log = createLogger('EngineBootstrapOptions')
 
@@ -235,17 +234,31 @@ class ClaudeEngineBootstrapper implements EngineBootstrapper {
     if (ctx.options.engineKind !== 'claude') {
       throw new Error(`ClaudeEngineBootstrapper received mismatched options engineKind=${ctx.options.engineKind}`)
     }
-    const cliPath = this.resolveCliPath()
-    if (cliPath) ctx.options.pathToClaudeCodeExecutable = cliPath
 
-    // Spawn the SDK child process using the Electron binary with
-    // ELECTRON_RUN_AS_NODE=1. This gives the child process native asar
-    // support, eliminating the need to unpack JS dependencies from app.asar.
-    ctx.options.spawnClaudeCodeProcess = createAsarAwareSpawnFn({
-      onStderr: (line) => {
-        log.warn(`[sdk:stderr] ${line}`)
-      },
-    })
+    // Phase 1B.11 cleanup (AC #11): the historical
+    // `pathToClaudeCodeExecutable` and `spawnClaudeCodeProcess` writes
+    // were no-ops against the opencow-agent-sdk fork. Spike 3 in
+    // 2026-04-09-phase-1B-discovery-data.md §6.4 v2 confirmed that:
+    //
+    //   1. OpenCow loads the SDK via dynamic ESM import('dist/sdk.js') in
+    //      electron/command/queryLifecycle.ts:34-42 — no child_process.spawn.
+    //   2. The fork's runSdkQueryRuntime (src/core/sdkRuntime.ts) runs the
+    //      query engine in-process via direct ask() invocation.
+    //   3. `pathToClaudeCodeExecutable` and `spawnClaudeCodeProcess` are
+    //      declared in the SDK's Options type but have ZERO consumers in
+    //      src/. They're upstream Anthropic SDK leftovers.
+    //
+    // The pre-1B.11 ClaudeEngineBootstrapper wrote both fields anyway;
+    // the writes never had any runtime effect. Both fields are now marked
+    // @deprecated in the SDK (added in commit 225a161). The bootstrapper
+    // doesn't need to write them at all.
+    //
+    // The `resolveCliPath` constructor parameter is kept for now because
+    // the CodexEngineBootstrapper below uses it via the SAME factory
+    // function shape (codexPathOverride is a separate, real Codex option).
+    // Future cleanup: simplify ClaudeEngineBootstrapper.apply to a no-op
+    // body, then remove the resolveCliPath constructor param entirely.
+    void this.resolveCliPath
   }
 }
 
