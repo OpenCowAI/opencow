@@ -5,7 +5,6 @@ import {
   isIMPlatformSource,
   type AIEngineKind,
   type ApiProvider,
-  type CodexReasoningEffort,
   type CommandDefaults,
   type ContentBlock,
   type DataBusEvent,
@@ -44,14 +43,12 @@ import { SessionContext } from './sessionContext'
 import { getBaseSystemPrompt } from './baseSystemPrompt'
 import { getIdentityPrompt } from './identityPrompt'
 import { composeSystemPrompt, type SystemPromptLayers } from './systemPromptComposer'
-import { createCodexSyntheticSystemPrompt, createProviderNativeSystemPrompt } from './systemPromptTransport'
+import { createProviderNativeSystemPrompt } from './systemPromptTransport'
 import { EngineCapabilityRuntime } from './engineCapabilityRuntime'
-import type { CodexNativeBridgeManager } from './codexNativeBridgeManager'
-import { mergeCodexMcpServers } from './codexMcpConfigBuilder'
+// Phase 1B.11d: Codex imports removed (engine deleted)
 import { ConversationEventPipeline } from '../conversation/pipeline'
 import {
   EngineBootstrapRegistry,
-  type CodexAuthConfig,
 } from './engineBootstrapOptions'
 import {
   SessionWorkspaceResolver,
@@ -63,8 +60,6 @@ import {
 import {
   applySessionLaunchOptionPatch,
   type SessionLaunchOptions,
-  type ClaudeSessionLaunchOptions,
-  type CodexSessionLaunchOptions,
 } from './sessionLaunchOptions'
 import type { SessionRuntime, SessionCompletionCallback, SessionCompletionResult } from './sessionRuntime'
 import { planSessionPolicy } from './policy/sessionPolicyPlanner'
@@ -80,9 +75,7 @@ export interface OrchestratorDeps {
   dispatch: Dispatch
   getProxyEnv: () => Record<string, string>
   getProviderEnv: (engineKind: AIEngineKind) => Promise<Record<string, string>>
-  getCodexAuthConfig: (engineKind: AIEngineKind) => Promise<CodexAuthConfig | null>
   getProviderDefaultModel: (engineKind: AIEngineKind) => string | undefined
-  getProviderDefaultReasoningEffort: (engineKind: AIEngineKind) => CodexReasoningEffort | undefined
   /** Returns the current active provider mode for the given engine (synchronous in-memory read). */
   getActiveProviderMode: (engineKind: AIEngineKind) => ApiProvider | null
   getCommandDefaults: () => CommandDefaults
@@ -112,11 +105,6 @@ export interface OrchestratorDeps {
    * When absent, execution context is created with gitBranch=null.
    */
   gitCommandExecutor?: GitCommandExecutor
-  /**
-   * Optional CodexNativeBridgeManager — bridges OpenCow native capabilities
-   * into Codex via a stdio MCP command process.
-   */
-  codexNativeBridgeManager?: CodexNativeBridgeManager
   /** Optional EngineBootstrapRegistry — engine-specific lifecycle option policy. */
   engineBootstrapRegistry?: EngineBootstrapRegistry
   /** Optional memory context provider — injects persistent memories into system prompt. */
@@ -209,9 +197,7 @@ export interface SessionStartOptions extends StartSessionInput {
    *
    * Unlike `customMcpServers` (which requires engine-specific MCP server config),
    * this accepts raw NativeToolDescriptor[] and lets SessionOrchestrator handle
-   * engine-appropriate injection:
-   * - Claude: creates an in-process MCP server via createSdkMcpServer()
-   * - Codex:  registers tools with CodexNativeBridgeManager's HTTP bridge
+   * engine-appropriate injection (creates in-process inline tools via toInlineTool).
    *
    * Used by RepoAnalyzer for per-analysis sandboxed tools.
    */
@@ -517,7 +503,6 @@ export class SessionOrchestrator {
 
     const config = session.getConfig()
     const engineKind: AIEngineKind = config.engineKind ?? 'claude'
-    const isClaudeEngine = engineKind === 'claude'
     const policyPlan = planSessionPolicy({
       engineKind,
       origin: config.origin,
@@ -579,17 +564,11 @@ export class SessionOrchestrator {
       allowDangerouslySkipPermissions: true,
       env: sessionEnv,
     }
-    const options: ClaudeSessionLaunchOptions | CodexSessionLaunchOptions = isClaudeEngine
-      ? {
-          engineKind: 'claude',
-          ...baseOptions,
-          systemPromptPayload: createProviderNativeSystemPrompt(''),
-        } satisfies ClaudeSessionLaunchOptions
-      : {
-          engineKind: 'codex',
-          ...baseOptions,
-          systemPromptPayload: createCodexSyntheticSystemPrompt(''),
-        } satisfies CodexSessionLaunchOptions
+    const options: SessionLaunchOptions = {
+      engineKind: 'claude',
+      ...baseOptions,
+      systemPromptPayload: createProviderNativeSystemPrompt(''),
+    }
 
     const executionContextCoordinator = new ExecutionContextCoordinator({
       sessionId,
@@ -623,8 +602,6 @@ export class SessionOrchestrator {
       options,
       deps: {
         getProviderDefaultModel: this.deps.getProviderDefaultModel,
-        getProviderDefaultReasoningEffort: this.deps.getProviderDefaultReasoningEffort,
-        getCodexAuthConfig: this.deps.getCodexAuthConfig,
       },
       logger: log,
     })
@@ -652,14 +629,12 @@ export class SessionOrchestrator {
       session: config.systemPrompt,
     }
 
-    if (options.engineKind === 'claude') {
-      // Claude-specific runtime policy lives in enginePolicy.ts.
-      applyClaudeSessionPolicy({
-        options,
-        builtinToolsEnabled: sessionPolicy.tools.builtin.enabled,
-        logger: log,
-      })
-    }
+    // Claude-specific runtime policy lives in enginePolicy.ts.
+    applyClaudeSessionPolicy({
+      options,
+      builtinToolsEnabled: sessionPolicy.tools.builtin.enabled,
+      logger: log,
+    })
 
     // ── Per-session infrastructure (replaces closure variables) ──
     const timers = new SessionTimerScope()
@@ -721,15 +696,12 @@ export class SessionOrchestrator {
     let hookCleanup: (() => void) | undefined
     let activeMcpServerNames: ReadonlySet<string> | undefined
 
-    // Built-in observational hooks (Claude only). Capability hooks are merged later by runtime.
-    let hooks: ReturnType<typeof buildSDKHooks> | undefined
-    if (options.engineKind === 'claude') {
-      hooks = buildSDKHooks(
-        (e) => this.deps.dispatch(e),
-        sessionId,
-        (signal) => notifyExecutionContextCwd(signal),
-      )
-    }
+    // Built-in observational hooks. Capability hooks are merged later by runtime.
+    let hooks: ReturnType<typeof buildSDKHooks> | undefined = buildSDKHooks(
+      (e) => this.deps.dispatch(e),
+      sessionId,
+      (signal) => notifyExecutionContextCwd(signal),
+    )
 
     const capabilityOutput = await this.capabilityRuntime.apply({
       engineKind,
@@ -785,165 +757,121 @@ export class SessionOrchestrator {
     // Injected as in-process MCP server (Claude) or via HTTP bridge (Codex).
     const customTools = this.runtimes.get(sessionId)?.customTools
 
-    if (options.engineKind === 'claude') {
-      // Full-restart path (new SDK query instance):
-      // seed SDK mutableMessages with persisted history so context is preserved
-      // across query() calls in the in-process runtime.
-      //
-      // `extra.resume` covers standard resume by engine session ref.
-      // `extra.skipAddMessage` covers restart variants where the current user
-      // message has already been appended to session history before runSession().
-      if (extra?.resume || extra?.skipAddMessage) {
-        const initialMessages = mapManagedMessagesToSdkInitialMessages(session.getMessages())
-        if (initialMessages.length > 0) {
-          options.initialMessages = initialMessages
-        }
+    // Full-restart path (new SDK query instance):
+    // seed SDK mutableMessages with persisted history so context is preserved
+    // across query() calls in the in-process runtime.
+    //
+    // `extra.resume` covers standard resume by engine session ref.
+    // `extra.skipAddMessage` covers restart variants where the current user
+    // message has already been appended to session history before runSession().
+    if (extra?.resume || extra?.skipAddMessage) {
+      const initialMessages = mapManagedMessagesToSdkInitialMessages(session.getMessages())
+      if (initialMessages.length > 0) {
+        options.initialMessages = initialMessages
       }
+    }
 
-      // Per-session custom MCP servers (marketplace analysis tools, etc.)
-      // Applied after capability servers so custom servers take precedence.
-      if (config.customMcpServers && Object.keys(config.customMcpServers).length > 0) {
-        options.mcpServers = { ...(options.mcpServers ?? {}), ...config.customMcpServers }
-      }
+    // Per-session custom MCP servers (marketplace analysis tools, etc.)
+    // Applied after capability servers so custom servers take precedence.
+    if (config.customMcpServers && Object.keys(config.customMcpServers).length > 0) {
+      options.mcpServers = { ...(options.mcpServers ?? {}), ...config.customMcpServers }
+    }
 
-      // Phase 1B.11: build the OpenCowSessionContext once and reuse it for
-      // both the per-session custom tools path and the native capability path
-      // below. The relay reference and OpenCow domain fields are session-scoped
-      // — capabilities access them via `ctx.sessionContext.relay` /
-      // `ctx.sessionContext.projectId` etc. through the SDK CapabilityToolContext.
-      const claudeOpenCowSessionContext: OpenCowSessionContext = {
-        sessionId,
-        cwd: config.startupCwd ?? config.projectPath ?? process.cwd(),
-        // Session-wide abort signal placeholder — per-call abort still flows
-        // via MCP `extra.signal` (wired by the SDK toMcpServer adapter, Phase
-        // 1B.7). Session-wide abort wiring is a follow-up cleanup item.
-        abortSignal: new AbortController().signal,
-        projectId: config.projectId ?? null,
-        issueId: getOriginIssueId(config.origin),
-        originSource: config.origin.source,
-        ...(config.projectPath !== undefined && { projectPath: config.projectPath }),
-        ...(config.startupCwd !== undefined && { startupCwd: config.startupCwd }),
-        relay,
-      }
+    // Phase 1B.11: build the OpenCowSessionContext once and reuse it for
+    // both the per-session custom tools path and the native capability path
+    // below. The relay reference and OpenCow domain fields are session-scoped
+    // — capabilities access them via `ctx.sessionContext.relay` /
+    // `ctx.sessionContext.projectId` etc. through the SDK CapabilityToolContext.
+    const claudeOpenCowSessionContext: OpenCowSessionContext = {
+      sessionId,
+      cwd: config.startupCwd ?? config.projectPath ?? process.cwd(),
+      // Session-wide abort signal placeholder — per-call abort still flows
+      // via MCP `extra.signal` (wired by the SDK toMcpServer adapter, Phase
+      // 1B.7). Session-wide abort wiring is a follow-up cleanup item.
+      abortSignal: new AbortController().signal,
+      projectId: config.projectId ?? null,
+      issueId: getOriginIssueId(config.origin),
+      originSource: config.origin.source,
+      ...(config.projectPath !== undefined && { projectPath: config.projectPath }),
+      ...(config.startupCwd !== undefined && { startupCwd: config.startupCwd }),
+      relay,
+    }
 
-      // Phase 1B.11b: collect SDK inline tools from BOTH per-session custom
-      // tools AND the native capability allowlist into a single SdkTool[].
-      // The model sees these as bare descriptor names (no `mcp__server__`
-      // transport-layer prefix). This avoids the dual MCP SDK module instance
-      // class-identity bug that bit the Phase 1B.11 MCP exit path: SdkTool is
-      // a plain data shape (`{name, description, inputSchema, execute}`),
-      // not an instance of any SDK-internal class, so cross-bundle / cross-
-      // module-cache transit cannot break it.
-      const inlineNativeTools: SdkTool[] = []
+    // Phase 1B.11b: collect SDK inline tools from BOTH per-session custom
+    // tools AND the native capability allowlist into a single SdkTool[].
+    // The model sees these as bare descriptor names (no `mcp__server__`
+    // transport-layer prefix). This avoids the dual MCP SDK module instance
+    // class-identity bug that bit the Phase 1B.11 MCP exit path: SdkTool is
+    // a plain data shape (`{name, description, inputSchema, execute}`),
+    // not an instance of any SDK-internal class, so cross-bundle / cross-
+    // module-cache transit cannot break it.
+    const inlineNativeTools: SdkTool[] = []
 
-      if (customTools && customTools.tools.length > 0) {
-        for (const descriptor of customTools.tools) {
-          inlineNativeTools.push(
-            toInlineTool({
-              descriptor,
-              sessionContext: claudeOpenCowSessionContext,
-            }),
-          )
-        }
-      }
-
-      // Compose final system prompt after all layer adjustments.
-      options.systemPromptPayload = createProviderNativeSystemPrompt(composeSystemPrompt(promptLayers))
-
-      // Built-in native capability tools (after injection plan + allowlist merge).
-      if (this.deps.nativeCapabilityRegistry) {
-        const nativeToolPolicy = sessionPolicy.tools.native
-        if (nativeToolPolicy.mode === 'allowlist') {
-          const inlineTools = this.deps.nativeCapabilityRegistry.getInlineToolsForSession({
-            allowlist: toCapabilityAllowlist(nativeToolPolicy.allow),
+    if (customTools && customTools.tools.length > 0) {
+      for (const descriptor of customTools.tools) {
+        inlineNativeTools.push(
+          toInlineTool({
+            descriptor,
             sessionContext: claudeOpenCowSessionContext,
-            hostEnvironment: {
-              activeMcpServerNames: activeMcpServerNames
-                ? [...activeMcpServerNames]
-                : [],
-            },
-          })
-          inlineNativeTools.push(...inlineTools)
-        }
+          }),
+        )
       }
+    }
 
-      if (inlineNativeTools.length > 0) {
-        options.tools = [
-          ...(Array.isArray(options.tools) ? options.tools : []),
-          ...inlineNativeTools,
-        ]
-      }
+    // Compose final system prompt after all layer adjustments.
+    options.systemPromptPayload = createProviderNativeSystemPrompt(composeSystemPrompt(promptLayers))
 
-      // Phase 1B.11d: convert OpenCow's marketplace/project/global skills
-      // into SDK Command shapes and pass them via Options.commands so the
-      // SDK's built-in SkillTool can catalog, delta-emit, and dispatch them.
-      // This replaces the old system-prompt-injection path where skills were
-      // pasted as static <skill> XML segments via promptSegmentBuilder.ts.
-      if (this.deps.capabilityCenter) {
-        try {
-          const snapshot = await this.deps.capabilityCenter.getSnapshot(config.projectId)
-          const eligibleSkills = snapshot.skills.filter(
-            (s) => s.enabled && s.eligibility.eligible,
-          )
-          if (eligibleSkills.length > 0) {
-            options.commands = eligibleSkills.map(toSdkCommand)
-          }
-          const eligibleAgents = snapshot.agents.filter(
-            (a) => a.enabled && a.eligibility.eligible,
-          )
-          if (eligibleAgents.length > 0) {
-            options.agents = eligibleAgents.map(toSdkAgentDefinition)
-          }
-        } catch (err) {
-          log.warn('Failed to convert marketplace skills/agents to SDK commands', err)
-        }
-      }
-
-      if (hooks) {
-        options.hooks = hooks
-      }
-    } else {
-      const mergedWithCustom = mergeCodexMcpServers({
-        baseConfig: options.codexConfig,
-        overlays: [config.customMcpServers],
-      })
-
-      // Built-in native capability tools via Codex stdio bridge.
-      let finalCodexConfig = mergedWithCustom.config
-      if (this.deps.codexNativeBridgeManager) {
-        const bridgeServer = await this.deps.codexNativeBridgeManager.registerSession({
-          session: {
-            sessionId,
-            projectId: config.projectId ?? null,
-            issueId: getOriginIssueId(config.origin),
-            originSource: config.origin.source,
-            projectPath: config.projectPath,
-            startupCwd: config.startupCwd,
+    // Built-in native capability tools (after injection plan + allowlist merge).
+    if (this.deps.nativeCapabilityRegistry) {
+      const nativeToolPolicy = sessionPolicy.tools.native
+      if (nativeToolPolicy.mode === 'allowlist') {
+        const inlineTools = this.deps.nativeCapabilityRegistry.getInlineToolsForSession({
+          allowlist: toCapabilityAllowlist(nativeToolPolicy.allow),
+          sessionContext: claudeOpenCowSessionContext,
+          hostEnvironment: {
+            activeMcpServerNames: activeMcpServerNames
+              ? [...activeMcpServerNames]
+              : [],
           },
-          relay,
-          nativeToolAllowlist: sessionPolicy.tools.native.mode === 'allowlist'
-            ? sessionPolicy.tools.native.allow
-            : [],
-          activeMcpServerNames: mergedWithCustom.activeServerNames.size > 0
-            ? mergedWithCustom.activeServerNames
-            : activeMcpServerNames,
-          additionalTools: customTools?.tools,
         })
-        if (bridgeServer) {
-          finalCodexConfig = mergeCodexMcpServers({
-            baseConfig: mergedWithCustom.config,
-            overlays: [bridgeServer],
-          }).config
+        inlineNativeTools.push(...inlineTools)
+      }
+    }
+
+    if (inlineNativeTools.length > 0) {
+      options.tools = [
+        ...(Array.isArray(options.tools) ? options.tools : []),
+        ...inlineNativeTools,
+      ]
+    }
+
+    // Phase 1B.11d: convert OpenCow's marketplace/project/global skills
+    // into SDK Command shapes and pass them via Options.commands so the
+    // SDK's built-in SkillTool can catalog, delta-emit, and dispatch them.
+    // This replaces the old system-prompt-injection path where skills were
+    // pasted as static <skill> XML segments via promptSegmentBuilder.ts.
+    if (this.deps.capabilityCenter) {
+      try {
+        const snapshot = await this.deps.capabilityCenter.getSnapshot(config.projectId)
+        const eligibleSkills = snapshot.skills.filter(
+          (s) => s.enabled && s.eligibility.eligible,
+        )
+        if (eligibleSkills.length > 0) {
+          options.commands = eligibleSkills.map(toSdkCommand)
         }
+        const eligibleAgents = snapshot.agents.filter(
+          (a) => a.enabled && a.eligibility.eligible,
+        )
+        if (eligibleAgents.length > 0) {
+          options.agents = eligibleAgents.map(toSdkAgentDefinition)
+        }
+      } catch (err) {
+        log.warn('Failed to convert marketplace skills/agents to SDK commands', err)
       }
+    }
 
-      if (finalCodexConfig) {
-        options.codexConfig = finalCodexConfig
-      }
-
-      // Codex SDK currently has no direct equivalent to Claude's systemPrompt/tool hooks,
-      // so we pass a composed prompt that the Codex lifecycle prepends on first turn.
-      options.systemPromptPayload = createCodexSyntheticSystemPrompt(composeSystemPrompt(promptLayers))
+    if (hooks) {
+      options.hooks = hooks
     }
 
     // Conversation V3 pipeline state (runtime -> domain -> projection)
@@ -969,16 +897,12 @@ export class SessionOrchestrator {
       systemPromptTransport: options.systemPromptPayload.transport,
       systemPromptLength: options.systemPromptPayload.text.length,
       messageCount: session.getMessages().length,
-      mcpServerCount: options.engineKind === 'claude'
-        ? Object.keys(options.mcpServers ?? {}).length
-        : 0,
+      mcpServerCount: Object.keys(options.mcpServers ?? {}).length,
       // Phase 1B.11b: native + custom capabilities now flow via inline tools
       // (Options.tools?: SdkTool[]) instead of an MCP server. Track the count
       // here so the pre-flight log captures it for diagnostics.
-      inlineToolCount: options.engineKind === 'claude'
-        ? (Array.isArray(options.tools) ? options.tools.length : 0)
-        : 0,
-      hasHooks: options.engineKind === 'claude' && !!options.hooks,
+      inlineToolCount: Array.isArray(options.tools) ? options.tools.length : 0,
+      hasHooks: !!options.hooks,
       maxTurns: options.maxTurns,
     })
 
@@ -1034,11 +958,6 @@ export class SessionOrchestrator {
         durationMs: Date.now() - startTime,
       })
     } finally {
-      if (options.engineKind === 'codex' && this.deps.codexNativeBridgeManager) {
-        await this.deps.codexNativeBridgeManager.unregisterSession(sessionId).catch((err) => {
-          log.warn(`Failed to unregister Codex native bridge session ${sessionId}`, err)
-        })
-      }
       const rtCleanup = this.runtimes.get(sessionId)
       if (rtCleanup) {
         rtCleanup.pipeline = null
@@ -1885,12 +1804,6 @@ export class SessionOrchestrator {
         rt.lifecycle.stop().catch(() => {})
       )
     )
-
-    if (this.deps.codexNativeBridgeManager) {
-      await this.deps.codexNativeBridgeManager.dispose().catch((err) => {
-        log.warn('Failed to dispose Codex native bridge manager during shutdown', err)
-      })
-    }
 
     this.runtimes.clear()
     log.info('SessionOrchestrator shutdown completed', {

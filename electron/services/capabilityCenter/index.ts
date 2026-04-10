@@ -435,8 +435,9 @@ export class CapabilityCenter {
 
   /** Detect drifted distributions (source modified since last publish) */
   async detectDrift(params?: { engineKind?: AIEngineKind }): Promise<CapabilityDriftReport[]> {
+    const effectiveEngine = params?.engineKind === 'claude' ? 'claude' as const : undefined
     const drifts = await this.distributionPipeline.detectDrift({
-      engineKind: params?.engineKind,
+      engineKind: effectiveEngine,
     })
     return drifts.map((d) => ({
       category: d.category,
@@ -450,8 +451,9 @@ export class CapabilityCenter {
 
   /** Sync all drifted distributions */
   async syncAll(params?: { engineKind?: AIEngineKind }): Promise<{ synced: string[]; errors: string[] }> {
+    const effectiveEngine = params?.engineKind === 'claude' ? 'claude' as const : undefined
     const result = await this.distributionPipeline.syncAll({
-      engineKind: params?.engineKind,
+      engineKind: effectiveEngine,
     })
     if (result.synced.length > 0) {
       this.notifyChange()

@@ -27,7 +27,6 @@ import { IssueStore } from '../services/issueStore'
 import { IssueViewService } from '../services/issueViewService'
 import { IssueViewStore } from '../services/issueViewStore'
 import { SessionOrchestrator } from '../command/sessionOrchestrator'
-import { CodexNativeBridgeManager } from '../command/codexNativeBridgeManager'
 import { ManagedSessionStore } from '../services/managedSessionStore'
 import { CredentialStore } from '../services/provider/credentialStore'
 import { ProviderService } from '../services/provider/providerService'
@@ -413,24 +412,17 @@ export async function createAppServices(deps: ServiceFactoryDeps): Promise<AppSe
     })
     .catch((err) => log.warn('Toggle migration skipped due to error', err))
 
-  // nativeCapabilityRegistry is created at module level, so it's available here.
-  // No lazy getter needed — the registry instance exists before orchestrator creation.
-  const codexNativeBridgeManager = new CodexNativeBridgeManager(nativeCapabilityRegistry)
   orchestrator = new SessionOrchestrator({
     dispatch: (e) => bus.dispatch(e),
     getProxyEnv: () => settingsService.getProxyEnv(),
     getProviderEnv: (engineKind) => providerService.getProviderEnv(engineKind),
-    getCodexAuthConfig: (engineKind) => providerService.getCodexAuthConfig(engineKind),
     getProviderDefaultModel: (engineKind) =>
       settingsService.getProviderSettings().byEngine[engineKind]?.defaultModel,
-    getProviderDefaultReasoningEffort: (engineKind) =>
-      settingsService.getProviderSettings().byEngine[engineKind]?.defaultReasoningEffort,
     getActiveProviderMode: (engineKind) =>
       settingsService.getProviderSettings().byEngine[engineKind]?.activeMode ?? null,
     getCommandDefaults: () => settingsService.getCommandDefaults(),
     store: managedSessionStore,
     nativeCapabilityRegistry,
-    codexNativeBridgeManager,
     browserService,
     pendingQuestionRegistry,
     capabilityCenter,

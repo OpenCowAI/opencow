@@ -21,7 +21,9 @@
  */
 
 import { z } from 'zod/v4'
-import type { ToolInputSchemaShape } from '@opencow-ai/opencow-agent-sdk'
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- matches SDK's ToolInputSchemaShape
+type ToolInputSchemaShape = Readonly<Record<string, any>>
 import type {
   NativeCapabilityMeta,
   NativeCapabilityToolContext,

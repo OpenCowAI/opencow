@@ -2,9 +2,8 @@
 
 import type { UserMessageContent, AIEngineKind } from '../../src/shared/types'
 import type { EngineRuntimeEventEnvelope } from '../conversation/runtime/events'
-import type { ClaudeSessionLaunchOptions, CodexSessionLaunchOptions } from './sessionLaunchOptions'
+import type { SessionLaunchOptions } from './sessionLaunchOptions'
 import { QueryLifecycle } from './queryLifecycle'
-import { CodexQueryLifecycle } from './codexQueryLifecycle'
 
 export interface SessionLifecycleCallbacks {
   onExecutionContextSignal?: (signal: SessionExecutionContextSignal) => void
@@ -24,7 +23,7 @@ export interface SessionExecutionContextSignal {
 
 export interface SessionLifecycleStartInput {
   initialPrompt: UserMessageContent
-  launchOptions: ClaudeSessionLaunchOptions | CodexSessionLaunchOptions
+  launchOptions: SessionLaunchOptions
   callbacks?: SessionLifecycleCallbacks
 }
 
@@ -43,6 +42,6 @@ export interface SessionLifecycle {
   stop(): Promise<void>
 }
 
-export function createSessionLifecycle(engineKind: AIEngineKind): SessionLifecycle {
-  return engineKind === 'codex' ? new CodexQueryLifecycle() : new QueryLifecycle()
+export function createSessionLifecycle(_engineKind: AIEngineKind): SessionLifecycle {
+  return new QueryLifecycle()
 }

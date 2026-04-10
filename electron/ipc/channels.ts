@@ -746,9 +746,9 @@ export function registerIPCHandlers(deps: IPCDeps): void {
       const cc = deps.capabilityCenter!
       const projectPath = await cc.resolveProjectPathFromId(params.projectId)
       if (!projectPath) throw new Error(`Project not found: ${params.projectId}`)
-      return { type: params.target as 'claude-code-project' | 'codex-project', projectPath }
+      return { type: params.target as 'claude-code-project', projectPath }
     }
-    return { type: params.target as 'claude-code-global' | 'codex-global' }
+    return { type: params.target as 'claude-code-global' }
   }
 
   if (deps.capabilityCenter) {

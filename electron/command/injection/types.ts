@@ -5,8 +5,7 @@ import type { CapabilityPlan } from '../../services/capabilityCenter'
 import type { SDKHookMap } from '../../services/capabilityCenter/claudeCodeAdapter'
 import type { SystemPromptLayers } from '../systemPromptComposer'
 import type {
-  ClaudeSessionLaunchOptions,
-  CodexSessionLaunchOptions,
+  SessionLaunchOptions,
   SessionLaunchOptionPatch,
 } from '../sessionLaunchOptions'
 
@@ -14,19 +13,11 @@ export interface ClaudeEngineInjectionRequest {
   engineKind: 'claude'
   plan: CapabilityPlan
   promptLayers: SystemPromptLayers
-  options: ClaudeSessionLaunchOptions
+  options: SessionLaunchOptions
   builtInHooks?: SDKHookMap
 }
 
-export interface CodexEngineInjectionRequest {
-  engineKind: 'codex'
-  plan: CapabilityPlan
-  promptLayers: SystemPromptLayers
-  options: CodexSessionLaunchOptions
-  builtInHooks?: SDKHookMap
-}
-
-export type EngineInjectionRequest = ClaudeEngineInjectionRequest | CodexEngineInjectionRequest
+export type EngineInjectionRequest = ClaudeEngineInjectionRequest
 
 export interface EngineInjectionResult {
   promptLayers: SystemPromptLayers
@@ -43,8 +34,4 @@ export interface EngineInjectionAdapter<TRequest extends EngineInjectionRequest 
 
 export interface ClaudeEngineInjectionAdapter extends EngineInjectionAdapter<ClaudeEngineInjectionRequest> {
   readonly engineKind: 'claude'
-}
-
-export interface CodexEngineInjectionAdapter extends EngineInjectionAdapter<CodexEngineInjectionRequest> {
-  readonly engineKind: 'codex'
 }
