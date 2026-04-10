@@ -78,12 +78,14 @@ export function resolveSkillActivationPolicy(
 export function resolveSkillActivationDecisions(
   skills: DocumentCapabilityEntry[],
   input: SkillActivationInput,
-  policy: SkillActivationPolicy,
+  _policy: SkillActivationPolicy,
 ): SkillActivationDecision[] {
-  const implicitMatches =
-    input.explicitSkillNames.size === 0 && policy.implicit.enabled
-      ? resolveImplicitMatches(skills, input.implicitQuery, policy.implicit)
-      : new Map<string, ImplicitSkillMatch>()
+  // Phase 1B.11d: implicit keyword matching removed. Skill discovery and
+  // activation is now handled by the SDK's built-in SkillTool (model-driven,
+  // not framework-driven). The implicit matching functions below are retained
+  // temporarily for the resolveImplicitNativeRequirements path but will be
+  // removed once that path is also migrated.
+  const implicitMatches = new Map<string, ImplicitSkillMatch>()
 
   return skills.map((skill) => {
     if (skill.metadata?.['always'] === true) {
@@ -120,7 +122,7 @@ export function resolveSkillActivationDecisions(
         mode: 'full',
         source: 'implicit',
         score: implicit.score,
-        threshold: policy.implicit.scoreThreshold,
+        threshold: _policy.implicit.scoreThreshold,
         reason: implicit.reason,
       }
     }

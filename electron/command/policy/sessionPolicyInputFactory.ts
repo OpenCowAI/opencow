@@ -41,7 +41,11 @@ function derivePromptPolicy(prompt: UserMessageContent | undefined): PromptPolic
   const explicitSkillNames = resolveActivatedSkillNames(prompt)
   return {
     explicitSkillNames,
-    implicitQuery: resolveImplicitSkillActivationQuery(prompt),
+    // Phase 1B.11d: implicit keyword matching removed. Skill discovery is
+    // now model-driven via the SDK's built-in SkillTool. The model reads
+    // the SkillTool catalog and calls Skill('name') when it decides to
+    // activate a skill — no framework-side keyword scoring needed.
+    implicitQuery: undefined,
     requiredNativeAllow: extractNativeRequirementsFromContent(prompt),
   }
 }

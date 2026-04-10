@@ -31,6 +31,7 @@ import type { NativeToolDescriptor } from '../nativeCapabilities/types'
 import type { OpenCowSessionContext } from '../nativeCapabilities/openCowSessionContext'
 import { toInlineTool, type SdkTool } from '@opencow-ai/opencow-agent-sdk'
 import { toSdkCommand } from '../services/capabilityCenter/sdkCommandAdapter'
+import { toSdkAgentDefinition } from '../services/capabilityCenter/sdkAgentAdapter'
 import type { BrowserService } from '../browser/browserService'
 import type { PendingQuestionRegistry } from '../nativeCapabilities/interaction/pendingQuestionRegistry'
 import type { CapabilityCenter } from '../services/capabilityCenter'
@@ -887,8 +888,14 @@ export class SessionOrchestrator {
           if (eligibleSkills.length > 0) {
             options.commands = eligibleSkills.map(toSdkCommand)
           }
+          const eligibleAgents = snapshot.agents.filter(
+            (a) => a.enabled && a.eligibility.eligible,
+          )
+          if (eligibleAgents.length > 0) {
+            options.agents = eligibleAgents.map(toSdkAgentDefinition)
+          }
         } catch (err) {
-          log.warn('Failed to convert marketplace skills to SDK commands', err)
+          log.warn('Failed to convert marketplace skills/agents to SDK commands', err)
         }
       }
 
