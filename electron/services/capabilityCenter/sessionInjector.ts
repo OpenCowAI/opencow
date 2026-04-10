@@ -29,10 +29,8 @@ import {
 } from './skillActivationEngine'
 import {
   buildRulePromptSegment,
-  buildSkillPromptSegment,
-  type SkillPromptSegment,
 } from './promptSegmentBuilder'
-import { allocateWithinBudget, type BudgetCandidate } from './promptBudgetAllocator'
+// Phase 1B.11d: budget allocator import removed (skill prompt segments no longer built here)
 
 const log = createLogger('SessionInjector')
 
@@ -158,39 +156,18 @@ export async function buildCapabilityPlan(params: {
     activationDecisions.map((decision) => [decision.skillName, decision]),
   )
 
-  const skillSegments = skills.map((skill) => {
-    const decision = decisionsBySkillName.get(skill.name)
-    if (!decision) {
-      throw new Error(`Missing activation decision for skill "${skill.name}"`)
-    }
-    return buildSkillPromptSegment(skill, decision)
-  })
-
-  const budgetCandidates: Array<BudgetCandidate<SkillPromptSegment>> = skillSegments.map((segment, index) => ({
-    id: segment.id,
-    order: index,
-    priority: toSkillSegmentPriority(segment.source, segment.mode),
-    charCost: segment.charCost,
-    payload: segment,
-  }))
-
-  const budgetResult = allocateWithinBudget(budgetCandidates, maxSkillChars)
-  const selectedSkillSegments = budgetResult.selected.map((candidate) => candidate.payload)
-  const skippedByBudget = budgetResult.dropped.map((candidate) => candidate.payload.skillName)
-
-  if (skippedByBudget.length > 0) {
-    log.info(
-      `Skill prompt budget reached (${budgetResult.usedChars}/${budgetResult.maxChars} chars); skipped=[${skippedByBudget.join(', ')}]`,
-    )
-  }
+  // Phase 1B.11d: skill prompt segments removed from capabilityPrompt.
+  // Skills are now surfaced via SDK's built-in SkillTool (Options.commands)
+  // which handles catalog, delta-emit, and activation. Injecting skill
+  // body into the static system prompt was the old "山寨" path — it
+  // double-injected content (once here, once via SkillTool) and wasted
+  // tokens. Only rules remain in capabilityPrompt.
+  const skippedByBudget: string[] = []
 
   const rules = snapshot.rules.filter((entry) => entry.enabled && entry.eligibility.eligible)
   const ruleSegments = rules.map((rule) => buildRulePromptSegment(rule))
 
-  const capabilityPrompt = [
-    ...selectedSkillSegments.map((segment) => segment.content),
-    ...ruleSegments.map((segment) => segment.content),
-  ].join('\n\n')
+  const capabilityPrompt = ruleSegments.map((segment) => segment.content).join('\n\n')
 
   const agentPrompt = agent?.body ?? null
 
@@ -229,14 +206,11 @@ export async function buildCapabilityPlan(params: {
     mcpServers[mcp.name] = sdkConfig
   }
 
-  const selectedSkillNameSet = new Set(selectedSkillSegments.map((segment) => segment.skillName))
-
-  // Collect native tool requirements ONLY from budget-selected skills.
-  // A skill that was dropped by the budget allocator has no prompt in the
-  // system message — Claude cannot see or invoke it, so registering its
-  // native tools would be a resource waste and a logical inconsistency.
-  const selectedSkills = skills.filter((s) => selectedSkillNameSet.has(s.name))
-  const nativeRequirements = collectNativeRequirementsFromSkills(selectedSkills, decisionsBySkillName)
+  // Phase 1B.11d: nativeRequirements collected from ALL eligible skills (no
+  // budget filtering — skills are no longer prompt-injected, so budget doesn't
+  // control visibility). This preserves the EvoseSkillProvider bridge: Evose
+  // skills declare nativeRequirements that add evose tools to the allowlist.
+  const nativeRequirements = collectNativeRequirementsFromSkills(skills, decisionsBySkillName)
 
   return {
     capabilityPrompt,
@@ -246,7 +220,7 @@ export async function buildCapabilityPlan(params: {
     nativeRequirements,
     totalChars: capabilityPrompt.length + (agentPrompt?.length ?? 0),
     summary: {
-      skills: selectedSkillSegments.map((segment) => segment.skillName),
+      skills: skills.map((s) => s.name),
       agent: agent?.name ?? null,
       rules: rules.map((rule) => rule.name),
       hooks: enabledHooks.map((hook) => hook.name),
@@ -257,7 +231,7 @@ export async function buildCapabilityPlan(params: {
         skillName: decision.skillName,
         mode: decision.mode,
         source: decision.source,
-        selected: selectedSkillNameSet.has(decision.skillName),
+        selected: decision.mode === 'full',
         reason: decision.reason,
         score: decision.score,
         threshold: decision.threshold,
@@ -306,25 +280,7 @@ function resolveAgentSkillNames(agent: DocumentCapabilityEntry | null): Set<stri
   return new Set(values)
 }
 
-function toSkillSegmentPriority(
-  source: SkillActivationSource,
-  mode: SkillPromptSegment['mode'],
-): number {
-  const base = (() => {
-    switch (source) {
-      case 'always':
-        return 100
-      case 'agent':
-        return 90
-      case 'explicit':
-        return 80
-      default:
-        return 10
-    }
-  })()
-
-  return mode === 'full' ? base + 5 : base
-}
+// Phase 1B.11d: toSkillSegmentPriority deleted (skill prompt segments removed)
 
 function mapScopeToTarget(scope: 'global' | 'project', _engineKind: AIEngineKind): string {
   return resolveDistributionTargetType({ scope, engineKind: 'claude' })
