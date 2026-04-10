@@ -11,7 +11,7 @@ import {
   policySatisfiesRequiredNativeAllowlist,
   type SessionPromptActivation,
 } from './sessionPolicyPlanner'
-import { resolveImplicitNativeRequirements } from '../../services/capabilityCenter/sessionInjector'
+// Phase 1B.11d: resolveImplicitNativeRequirements import removed (keyword matcher deleted)
 
 // ── Input ────────────────────────────────────────────────────────────────
 
@@ -99,21 +99,10 @@ export function decideSessionReconfiguration(
     )
   }
 
-  // ── Phase 2: Implicit native requirements ────────────────────────────
-  if (activation.implicitQuery && input.capabilitySnapshot) {
-    const implicitReqs = resolveImplicitNativeRequirements({
-      snapshot: input.capabilitySnapshot,
-      implicitQuery: activation.implicitQuery,
-    })
-    if (implicitReqs.length > 0) {
-      return evaluateNativeRequirements(
-        input.currentPolicy,
-        implicitReqs,
-        activation,
-        /* implicit */ true,
-      )
-    }
-  }
+  // Phase 1B.11d: implicit native requirements phase removed.
+  // All native capabilities are now exposed by default (commit d03bac05),
+  // so there is no need to restart the session when implicit skill matches
+  // would have required additional native tools.
 
   return { action: 'reuse', reason: 'no_native_requirements', activation }
 }

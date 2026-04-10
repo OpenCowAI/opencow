@@ -24,7 +24,6 @@ import { resolveDistributionTargetType } from './distributionTargets'
 import {
   resolveSkillActivationDecisions,
   resolveSkillActivationPolicy,
-  type ImplicitSkillMatchPolicy,
   type SkillActivationDecision,
   type SkillActivationSource,
 } from './skillActivationEngine'
@@ -106,7 +105,7 @@ export interface CapabilityPlanRequest {
   }
   policy?: {
     maxSkillChars?: number
-    implicit?: Partial<ImplicitSkillMatchPolicy>
+    implicit?: Partial<{ enabled: boolean }>
   }
 }
 
@@ -320,8 +319,6 @@ function toSkillSegmentPriority(
         return 90
       case 'explicit':
         return 80
-      case 'implicit':
-        return 70
       default:
         return 10
     }
@@ -381,63 +378,8 @@ function collectNativeRequirementsFromSkills(
   return out
 }
 
-/**
- * Lightweight check: resolve native requirements from skills that would be
- * implicitly activated by the given plain-text query.
- *
- * This is the reconfiguration counterpart to the full `buildCapabilityPlan`
- * pipeline. It runs only the implicit skill matching portion against skills
- * that declare `metadata.nativeRequirements`, then returns the aggregated
- * requirements.
- *
- * Use case: when `sendMessage()` pushes a follow-up message to a reused IM
- * session (WeChat, Telegram, etc.), the explicit reconfiguration check
- * (`decideSessionReconfiguration`) only catches slash-command requirements.
- * This function catches plain-text references to skills like Evose apps,
- * enabling the orchestrator to restart the lifecycle when the current session
- * lacks the required native tools.
- *
- * Excludes `always`-on skills since their requirements are guaranteed to be
- * present from session creation.
- */
-export function resolveImplicitNativeRequirements(params: {
-  snapshot: CapabilitySnapshot
-  implicitQuery: string
-}): StartSessionNativeToolAllowItem[] {
-  const { snapshot, implicitQuery } = params
-
-  // Filter for enabled, eligible skills that declare native requirements
-  // and are NOT always-on (those are already active from session creation).
-  const candidates = snapshot.skills.filter((entry) => {
-    if (!entry.enabled || !entry.eligibility.eligible) return false
-    if (entry.metadata?.['always'] === true) return false
-    const reqs = entry.metadata?.['nativeRequirements']
-    return Array.isArray(reqs) && reqs.length > 0
-  })
-
-  if (candidates.length === 0) return []
-
-  const policy = resolveSkillActivationPolicy()
-  const decisions = resolveSkillActivationDecisions(
-    candidates,
-    {
-      explicitSkillNames: new Set(),
-      agentSkillNames: new Set(),
-      implicitQuery,
-    },
-    policy,
-  )
-
-  // Only consider skills activated via implicit matching — explicit and agent
-  // activations are already handled by the existing reconfiguration paths.
-  const implicitFullDecisions = new Map<string, SkillActivationDecision>()
-  for (const d of decisions) {
-    if (d.mode === 'full' && d.source === 'implicit') {
-      implicitFullDecisions.set(d.skillName, d)
-    }
-  }
-
-  if (implicitFullDecisions.size === 0) return []
-
-  return collectNativeRequirementsFromSkills(candidates, implicitFullDecisions)
-}
+// Phase 1B.11d: resolveImplicitNativeRequirements deleted.
+// Implicit keyword matching has been removed — skill activation is now
+// model-driven via the SDK's built-in SkillTool. All native capabilities
+// are exposed by default (commit d03bac05), so the nativeRequirements
+// bridge is no longer needed to "unlock" tools from implicit skill matches.
