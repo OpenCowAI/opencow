@@ -33,7 +33,6 @@ describe('SettingsService', () => {
     expect(settings.eventSubscriptions.onError).toBe(true)
     expect(settings.eventSubscriptions.onComplete).toBe(true)
     expect(settings.eventSubscriptions.onStatusChange).toBe(true)
-    expect(settings.provider.byEngine.codex.defaultReasoningEffort).toBe('high')
   })
 
   it('normalizes blank evose baseUrl to default endpoint', async () => {
@@ -106,11 +105,11 @@ describe('SettingsService', () => {
   it('getCommandDefaults returns current command settings', async () => {
     const settings = await service.load()
     settings.command.maxTurns = 30
-    settings.command.defaultEngine = 'codex'
+    settings.command.defaultEngine = 'claude'
     await service.update(settings)
     const defaults = service.getCommandDefaults()
     expect(defaults.maxTurns).toBe(30)
-    expect(defaults.defaultEngine).toBe('codex')
+    expect(defaults.defaultEngine).toBe('claude')
   })
 
   it('falls back to bypassPermissions when persisted command.permissionMode is invalid', async () => {
@@ -137,7 +136,6 @@ describe('SettingsService', () => {
     const fresh = new SettingsService(join(tempDir, 'settings.json'))
     const settings = await fresh.load()
     expect(settings.provider.byEngine.claude.defaultModel).toBe('claude-opus-4-6')
-    expect(settings.provider.byEngine.codex.activeMode).toBeNull()
   })
 
   it('migrates legacy provider.activeMode into provider.byEngine.claude.activeMode', async () => {
@@ -149,54 +147,14 @@ describe('SettingsService', () => {
     const fresh = new SettingsService(join(tempDir, 'settings.json'))
     const settings = await fresh.load()
     expect(settings.provider.byEngine.claude.activeMode).toBe('api_key')
-    expect(settings.provider.byEngine.codex.activeMode).toBeNull()
-    expect(settings.provider.byEngine.codex.defaultReasoningEffort).toBe('high')
   })
 
   it('provider.byEngine default model is preserved via getProviderSettings', async () => {
     const settings = await service.load()
     settings.provider.byEngine.claude.defaultModel = 'claude-opus-4-6'
-    settings.provider.byEngine.codex.activeMode = 'openrouter'
-    settings.provider.byEngine.codex.defaultReasoningEffort = 'high'
     await service.update(settings)
     const provider = service.getProviderSettings()
     expect(provider.byEngine.claude.defaultModel).toBe('claude-opus-4-6')
-    expect(provider.byEngine.codex.activeMode).toBe('openrouter')
-    expect(provider.byEngine.codex.defaultReasoningEffort).toBe('high')
-  })
-
-  it('drops invalid codex defaultReasoningEffort while keeping valid values', async () => {
-    await writeFile(
-      join(tempDir, 'settings.json'),
-      JSON.stringify({
-        provider: {
-          byEngine: {
-            claude: { activeMode: null },
-            codex: { activeMode: 'custom', defaultReasoningEffort: 'ultra' }
-          }
-        }
-      }),
-      'utf-8'
-    )
-    let fresh = new SettingsService(join(tempDir, 'settings.json'))
-    let settings = await fresh.load()
-    expect(settings.provider.byEngine.codex.defaultReasoningEffort).toBeUndefined()
-
-    await writeFile(
-      join(tempDir, 'settings.json'),
-      JSON.stringify({
-        provider: {
-          byEngine: {
-            claude: { activeMode: null },
-            codex: { activeMode: 'custom', defaultReasoningEffort: 'xhigh' }
-          }
-        }
-      }),
-      'utf-8'
-    )
-    fresh = new SettingsService(join(tempDir, 'settings.json'))
-    settings = await fresh.load()
-    expect(settings.provider.byEngine.codex.defaultReasoningEffort).toBe('xhigh')
   })
 
   it('getEventSubscriptionSettings returns current event subscription settings', async () => {

@@ -8,8 +8,6 @@ import type { AIEngineKind } from './types'
  *
  * Notes:
  * - Matching is by prefix/contains because providers may append build suffixes.
- * - For Codex models, limits are conservative defaults until the runtime surfaces
- *   authoritative per-model context metadata.
  */
 const MODEL_CONTEXT_LIMITS: Record<AIEngineKind, Array<[prefix: string, limit: number]>> = {
   claude: [
@@ -24,20 +22,11 @@ const MODEL_CONTEXT_LIMITS: Record<AIEngineKind, Array<[prefix: string, limit: n
     ['claude-3-sonnet', 200_000],
     ['claude-3-haiku', 200_000],
   ],
-  codex: [
-    // Conservative explicit mapping for common Codex model aliases.
-    ['gpt-5.3-codex', 200_000],
-    ['gpt-5.2-codex', 200_000],
-    ['gpt-5.1-codex-max', 200_000],
-    ['gpt-5-codex', 200_000],
-    ['codex-mini-latest', 200_000],
-  ],
 }
 
 /** Default context window size per engine when model is unknown. */
 export const DEFAULT_CONTEXT_LIMIT_BY_ENGINE: Record<AIEngineKind, number> = {
   claude: 200_000,
-  codex: 200_000,
 }
 
 /**

@@ -38,7 +38,6 @@ const log = createLogger('SessionInjector')
 
 const DEFAULT_MAX_SKILL_CHARS_BY_ENGINE: Readonly<Record<AIEngineKind, number>> = {
   claude: 80_000,
-  codex: 24_000,
 }
 
 /**
@@ -327,11 +326,8 @@ function toSkillSegmentPriority(
   return mode === 'full' ? base + 5 : base
 }
 
-function mapScopeToTarget(scope: 'global' | 'project', engineKind: AIEngineKind): string {
-  if (engineKind === 'claude') {
-    return resolveDistributionTargetType({ scope, engineKind: 'claude' })
-  }
-  return resolveDistributionTargetType({ scope, engineKind: 'codex' })
+function mapScopeToTarget(scope: 'global' | 'project', _engineKind: AIEngineKind): string {
+  return resolveDistributionTargetType({ scope, engineKind: 'claude' })
 }
 
 /**

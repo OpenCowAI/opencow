@@ -733,8 +733,6 @@ export function registerIPCHandlers(deps: IPCDeps): void {
     const validTargets = new Set([
       'claude-code-global',
       'claude-code-project',
-      'codex-global',
-      'codex-project',
     ])
     if (!validTargets.has(params.target)) {
       throw new Error(`Unsupported capability target: ${params.target}`)

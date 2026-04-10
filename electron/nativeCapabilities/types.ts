@@ -63,7 +63,7 @@ export type NativeCapabilityMeta = CapabilityMeta
  * OpenCow's name for the SDK `ToolDescriptor`, parameterised on
  * `OpenCowSessionContext`. This is what `BaseNativeCapability.getToolDescriptors`
  * returns and what `OpenCowCapabilityRegistry.getDescriptorsForSession`
- * exposes to the Codex bridge.
+ * exposes to session runtimes.
  */
 export type NativeToolDescriptor = ToolDescriptor<OpenCowSessionContext>
 

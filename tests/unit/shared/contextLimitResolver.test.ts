@@ -22,13 +22,13 @@ describe('resolveContextLimit', () => {
     })
 
     const result = resolveContextLimit({
-      engineKind: 'codex',
-      model: 'gpt-5.3-codex',
+      engineKind: 'claude',
+      model: 'claude-sonnet-4-6',
       contextState: {
         metricKind: 'context_occupancy',
         usedTokens: 10_000,
         limitTokens: 320_123,
-        source: 'codex.token_count',
+        source: 'claude.token_count',
         confidence: 'authoritative',
         updatedAtMs: Date.now(),
       },
@@ -80,8 +80,8 @@ describe('resolveContextLimit', () => {
     })
 
     const result = resolveContextLimit({
-      engineKind: 'codex',
-      model: 'gpt-5.3-codex',
+      engineKind: 'claude',
+      model: 'claude-sonnet-4-6',
       contextState: null,
       contextLimitOverride: null,
     })
@@ -108,7 +108,7 @@ describe('resolveContextLimit', () => {
     })
 
     const result = resolveContextLimit({
-      engineKind: 'codex',
+      engineKind: 'claude',
       model: 'mystery-model',
       contextState: null,
       contextLimitOverride: null,
@@ -135,7 +135,7 @@ describe('resolveContextLimit', () => {
         metricKind: 'context_occupancy',
         usedTokens: 10_000,
         limitTokens: -1,
-        source: 'codex.token_count',
+        source: 'claude.token_count',
         confidence: 'authoritative',
         updatedAtMs: Date.now(),
       },

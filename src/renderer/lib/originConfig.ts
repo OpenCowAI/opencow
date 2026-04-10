@@ -50,11 +50,6 @@ export const ORIGIN_REGISTRY: Record<SourceOrigin, OriginConfig> = {
     badgeClass: 'bg-amber-600/10 text-amber-700 dark:text-amber-400',
     filterActiveClass: 'text-amber-600 dark:text-amber-400',
   },
-  codex: {
-    label: 'Codex',
-    badgeClass: 'bg-cyan-500/10 text-cyan-600 dark:text-cyan-400',
-    filterActiveClass: 'text-cyan-600 dark:text-cyan-400',
-  },
   plugin: {
     label: 'Plugin',
     badgeClass: 'bg-pink-500/10 text-pink-600 dark:text-pink-400',

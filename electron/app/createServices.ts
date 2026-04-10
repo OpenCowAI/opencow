@@ -16,9 +16,8 @@
  *     caller (main.ts) needs for IPC, event wiring, startup, and shutdown.
  */
 
-import { dirname, join } from 'path'
-import { existsSync } from 'fs'
-import { copyFile, mkdir } from 'fs/promises'
+import { dirname } from 'path'
+import { mkdir } from 'fs/promises'
 import { InboxService } from '../services/inboxService'
 import { InboxStore } from '../services/inboxStore'
 import { IssueService } from '../services/issueService'
@@ -291,21 +290,10 @@ export async function createAppServices(deps: ServiceFactoryDeps): Promise<AppSe
   issueService.setChangeQueueService(changeQueueService)
 
   const claudeCredentialStore = new CredentialStore(dataPaths.credentials)
-  const codexCredentialsPath = join(dataPaths.root, 'credentials-codex.enc')
-  if (!existsSync(codexCredentialsPath) && existsSync(dataPaths.credentials)) {
-    try {
-      await copyFile(dataPaths.credentials, codexCredentialsPath)
-      log.info('Seeded codex credential store from legacy shared credential file')
-    } catch (err) {
-      log.warn('Failed to seed codex credential store from legacy file', err)
-    }
-  }
-  const codexCredentialStore = new CredentialStore(codexCredentialsPath)
   const providerService = new ProviderService({
     dispatch: (e) => bus.dispatch(e),
     credentialStoreByEngine: {
       claude: claudeCredentialStore,
-      codex: codexCredentialStore,
     },
     getProviderSettings: () => settingsService.getProviderSettings(),
     focusApp: focusMainWindow,

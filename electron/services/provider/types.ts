@@ -86,12 +86,6 @@ export interface ProviderAdapterStatus {
   error?: string
 }
 
-/** Normalized Codex auth config resolved from a provider adapter. */
-export interface CodexAuthConfig {
-  apiKey: string
-  baseUrl?: string
-}
-
 /**
  * Common interface for all provider adapters.
  *
@@ -132,19 +126,10 @@ export interface ProviderAdapter {
   getCredential?(): Promise<import('@shared/types').ProviderCredentialInfo | null>
 
   /**
-   * Return Codex SDK auth options (`apiKey/baseUrl`) when this provider can
-   * be represented as an OpenAI-compatible endpoint.
-   *
-   * Return null for unsupported provider modes (e.g. Claude subscription / Anthropic API key).
-   */
-  getCodexAuthConfig?(): Promise<CodexAuthConfig | null>
-
-  /**
    * Return structured HTTP auth credentials for direct API calls.
    *
-   * Unlike `getEnv()` (env vars for SDK subprocess) or `getCodexAuthConfig()`
-   * (Codex SDK init), this method returns structured auth suitable for
-   * constructing HTTP headers in direct fetch() calls.
+   * Unlike `getEnv()` (env vars for SDK subprocess), this method returns
+   * structured auth suitable for constructing HTTP headers in direct fetch() calls.
    *
    * Returns null if no valid credentials are stored.
    */

@@ -40,7 +40,7 @@ const GLOBAL_SCOPE_ID = ''
 const HOME_TOKEN = '~'
 
 const VALID_STRATEGIES = new Set(['copy', 'symlink'])
-const VALID_ORIGINS = new Set(['claude-code', 'codex', 'plugin', 'marketplace', 'template', 'file', 'unknown'])
+const VALID_ORIGINS = new Set(['claude-code', 'plugin', 'marketplace', 'template', 'file', 'unknown'])
 const ALL_MANAGED_CATEGORIES = ['skill', 'agent', 'command', 'rule', 'hook', 'mcp-server'] as const
 
 // ─── Domain Types ───────────────────────────────────────────────────────
@@ -65,7 +65,7 @@ export interface ImportRecord {
   category: ManagedCapabilityCategory
   name: string
   sourcePath: string
-  sourceOrigin: 'claude-code' | 'codex' | 'plugin' | 'marketplace' | 'template' | 'file' | 'unknown'
+  sourceOrigin: 'claude-code' | 'plugin' | 'marketplace' | 'template' | 'file' | 'unknown'
   sourceHash: string | null
   importedAt: number
   /** Marketplace provenance metadata (only present for marketplace imports) */
@@ -576,8 +576,7 @@ function resolveProjectId(projectId?: string): string {
 
 function distributionTargetTypeRank(targetType: string): number {
   if (targetType.startsWith('claude-code-')) return 0
-  if (targetType.startsWith('codex-')) return 1
-  return 2
+  return 1
 }
 
 // ─── Row Mappers (validate at the DB boundary) ─────────────────────────

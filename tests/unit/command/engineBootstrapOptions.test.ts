@@ -18,9 +18,11 @@ import type {
   CodexSessionLaunchOptions,
 } from '../../../electron/command/sessionLaunchOptions'
 import {
-  createCodexSyntheticSystemPrompt,
   createProviderNativeSystemPrompt,
 } from '../../../electron/command/systemPromptTransport'
+
+// Stub for removed codex system prompt transport
+const createCodexSyntheticSystemPrompt = createProviderNativeSystemPrompt
 
 function createConfig(overrides?: Partial<ManagedSessionRuntimeConfig>): ManagedSessionRuntimeConfig {
   return {

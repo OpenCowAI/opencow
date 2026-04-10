@@ -9,12 +9,8 @@
 //
 // We add ONE OpenCow-private method here: `getDescriptorsForSession`, which
 // returns the flat list of `ToolDescriptor` for a given session+allowlist.
-// This is what `CodexNativeBridgeManager` needs (it can't use
-// `buildMcpServerForSession` because Codex bridge serves descriptors via an
-// HTTP loopback, not via in-process MCP). The SDK's equivalent
-// `collectDescriptors` is private — duplicating ~10 lines here keeps the
-// SDK API minimal while letting OpenCow's Codex bridge keep its existing
-// shape.
+// The SDK's equivalent `collectDescriptors` is private — duplicating ~10
+// lines here keeps the SDK API minimal.
 //
 // Why `OpenCowCapabilityRegistry` and not just a free function: subclassing
 // gives us automatic access to all the SDK methods + lets the type system
@@ -79,8 +75,7 @@ export interface GetDescriptorsForSessionInput {
 
 /**
  * OpenCow's thin wrapper around the SDK CapabilityRegistry. Inherits all
- * standard methods unchanged; adds `getDescriptorsForSession` for the
- * Codex bridge.
+ * standard methods unchanged; adds `getDescriptorsForSession`.
  */
 export class OpenCowCapabilityRegistry extends CapabilityRegistry<OpenCowSessionContext> {
   constructor() {
@@ -88,10 +83,8 @@ export class OpenCowCapabilityRegistry extends CapabilityRegistry<OpenCowSession
   }
 
   /**
-   * Codex-bridge access path. Resolves the host allowlist into a flat
-   * `ToolDescriptor[]`. Mirrors the SDK's private `collectDescriptors`
-   * logic so the Codex bridge can serve descriptors via its HTTP loopback
-   * without going through the MCP server packaging step.
+   * Resolves the host allowlist into a flat `ToolDescriptor[]`.
+   * Mirrors the SDK's private `collectDescriptors` logic.
    *
    * Behaviour:
    *   - Walks the allowlist in order (preserves caller intent for
@@ -155,7 +148,7 @@ export class OpenCowCapabilityRegistry extends CapabilityRegistry<OpenCowSession
  *
  * Both `OpenCowCapabilityRegistry.buildMcpServerForSession` and
  * `getDescriptorsForSession` accept the SDK shape, so callers in
- * `sessionOrchestrator` and `codexNativeBridgeManager` should call this
+ * `sessionOrchestrator` should call this
  * helper to bridge from the persisted policy shape to the framework input.
  */
 export function toCapabilityAllowlist(

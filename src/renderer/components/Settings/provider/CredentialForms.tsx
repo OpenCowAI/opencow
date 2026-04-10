@@ -220,7 +220,7 @@ export function CustomCredentialForm({
       <div>
         <label className="block text-sm font-medium mb-1.5">{t('provider.customAuthStyle')}</label>
         {forceBearer ? (
-          <p className="text-xs text-[hsl(var(--muted-foreground))]">{t('provider.customAuthStyleCodexFixed')}</p>
+          <p className="text-xs text-[hsl(var(--muted-foreground))]">{t('provider.customAuthStyleBearerFixed')}</p>
         ) : (
           <>
             <div className="flex gap-2">

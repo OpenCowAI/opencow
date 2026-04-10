@@ -15,13 +15,8 @@ import type { ProviderSettings, AIEngineKind } from '@shared/types'
  * @param defaultEngine - from settingsService.getCommandDefaults().defaultEngine
  */
 export function resolveActiveEngine(
-  providerSettings: ProviderSettings,
-  defaultEngine: AIEngineKind,
+  _providerSettings: ProviderSettings,
+  _defaultEngine: AIEngineKind,
 ): AIEngineKind {
-  const claudeActive = providerSettings.byEngine.claude?.activeMode != null
-  const codexActive = providerSettings.byEngine.codex?.activeMode != null
-
-  if (claudeActive && codexActive) return defaultEngine
-  if (codexActive) return 'codex'
   return 'claude'
 }

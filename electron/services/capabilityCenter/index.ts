@@ -115,7 +115,7 @@ export class CapabilityCenter {
 
   /**
    * Session-local dedup: tracks scopes already auto-imported in this process lifetime.
-   * Key: `'global:claude'`, `'global:codex'`, `'project:<id>:claude'`, `'project:<id>:codex'`
+   * Key: `'global:claude'`, `'project:<id>:claude'`
    * Prevents redundant re-import on every getSnapshot() call.
    */
   private readonly autoImportedScopes = new Set<string>()
@@ -471,7 +471,7 @@ export class CapabilityCenter {
   ): Promise<CapabilityImportableItem[]> {
     const projectPath = await this.resolveProjectPathFromId(projectId)
     const items = await this.importPipeline.discoverImportable(
-      sourceType as 'claude-code' | 'codex' | 'plugin' | 'marketplace' | 'template' | 'file',
+      sourceType as 'claude-code' | 'plugin' | 'marketplace' | 'template' | 'file',
       projectPath,
       filePaths,
     )
@@ -497,7 +497,7 @@ export class CapabilityCenter {
     const result = await this.importPipeline.importItems(
       items.map((item) => ({
         ...item,
-        sourceType: item.sourceType as 'claude-code' | 'codex' | 'plugin' | 'marketplace' | 'template' | 'file',
+        sourceType: item.sourceType as 'claude-code' | 'plugin' | 'marketplace' | 'template' | 'file',
       })),
       { scope, projectPath },
     )
@@ -687,23 +687,19 @@ export class CapabilityCenter {
    *
    * Sources:
    * - Claude Code: `~/.claude/`, `{project}/.claude/`
-   * - Codex: `~/.agents/skills`, `~/.codex/config.toml`,
-   *          `{project}/.agents/skills`, `{project}/.codex/config.toml`
    */
   async autoImport(projectId?: string): Promise<void> {
     const projectPath = await this.resolveProjectPathFromId(projectId)
     await this.autoImportFromSource('claude-code', projectId, projectPath)
-    await this.autoImportFromSource('codex', projectId, projectPath)
   }
 
   private async autoImportFromSource(
-    sourceType: 'claude-code' | 'codex',
+    sourceType: 'claude-code',
     projectId?: string,
     projectPath?: string,
   ): Promise<void> {
     const scopePrefix = projectId ? `project:${projectId}` : 'global'
-    const engineKey = sourceType === 'codex' ? 'codex' : 'claude'
-    const scopeKey = `${scopePrefix}:${engineKey}`
+    const scopeKey = `${scopePrefix}:claude`
     if (this.autoImportedScopes.has(scopeKey)) return
 
     try {

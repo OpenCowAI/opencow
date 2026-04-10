@@ -4,12 +4,12 @@ import { describe, it, expect } from 'vitest'
 import {
   extractMcpServersFromToml,
   parseTomlConfig,
-  removeManagedCodexMcpServer,
-  upsertManagedCodexMcpServer,
+  removeManagedMcpServer,
+  upsertManagedMcpServer,
 } from '../../../electron/services/capabilityCenter/governance/tomlPatch'
 
 describe('tomlPatch', () => {
-  it('extracts mcp servers from codex config', () => {
+  it('extracts mcp servers from TOML config', () => {
     const content = `
 [mcp_servers.alpha]
 command = "node"
@@ -26,7 +26,7 @@ command = "uvx"
   })
 
   it('upserts managed mcp server with marker', () => {
-    const content = upsertManagedCodexMcpServer({
+    const content = upsertManagedMcpServer({
       existingContent: '',
       name: 'alpha',
       serverConfig: {
@@ -50,7 +50,7 @@ command = "uvx"
 command = "python"
 `
 
-    expect(() => upsertManagedCodexMcpServer({
+    expect(() => upsertManagedMcpServer({
       existingContent: existing,
       name: 'alpha',
       serverConfig: { command: 'node' },
@@ -69,7 +69,7 @@ command = "python"
 alpha = "opencow:alpha"
 `
 
-    const result = removeManagedCodexMcpServer({ existingContent: existing, name: 'alpha' })
+    const result = removeManagedMcpServer({ existingContent: existing, name: 'alpha' })
     expect(result.removed).toBe(true)
 
     const parsed = parseTomlConfig(result.content)

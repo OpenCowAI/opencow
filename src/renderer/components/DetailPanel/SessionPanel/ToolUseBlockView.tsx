@@ -586,7 +586,6 @@ function getPrimaryViewerContent(
 
 /**
  * Fallback file viewer target when a file tool has no inline content payload.
- * This is common on Codex `file_change` projections where only `file_path` is available.
  */
 function getFallbackViewerPath(
   name: string,

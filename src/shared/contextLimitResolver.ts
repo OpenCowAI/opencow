@@ -8,7 +8,7 @@ import {
 } from './contextWindowCatalog'
 
 export interface ContextLimitResolverInput {
-  readonly engineKind: 'claude' | 'codex'
+  readonly engineKind: 'claude'
   readonly model: string | null
   readonly contextState: SessionContextState | null
   readonly contextLimitOverride: number | null | undefined

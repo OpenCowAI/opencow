@@ -27,7 +27,7 @@ export interface RuntimeTurnRef {
 export type RuntimeDiagnosticSeverity = 'info' | 'warning' | 'error'
 
 export interface RuntimeDiagnosticPayload {
-  /** Engine-specific machine-readable code, e.g. "codex.long_thread_compaction_advisory". */
+  /** Engine-specific machine-readable code. */
   readonly code: string
   readonly severity: RuntimeDiagnosticSeverity
   readonly message: string
@@ -76,7 +76,7 @@ export interface RuntimeContextSnapshotPayload {
   readonly remainingTokens: number | null
   /** Remaining percentage. Null when limitTokens is unknown. */
   readonly remainingPct: number | null
-  /** Same-source token telemetry origin, e.g. "codex.token_count". */
+  /** Same-source token telemetry origin. */
   readonly source: string
   readonly confidence: RuntimeContextSnapshotConfidence
   /** Optional provider timestamp; defaults to envelope occurredAtMs when omitted. */

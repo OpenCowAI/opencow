@@ -22,7 +22,6 @@ import { safeReadFile, safeReadJson } from './shared/fsUtils'
 import {
   type CapabilityDistributionTargetType,
   isClaudeCodeTargetType,
-  isCodexTargetType,
 } from './distributionTargets'
 import { ClaudeGovernanceDriver } from './governance/claudeGovernanceDriver'
 import type { EngineGovernanceDriver } from './governance/engineGovernanceDriver'
@@ -117,7 +116,7 @@ export class DistributionPipeline {
       isClaudeCodeTargetType(d.targetType) && (!options?.engineKind || options.engineKind === 'claude'),
     )
     const unknownDistributions = distributions.filter(
-      (d) => !isClaudeCodeTargetType(d.targetType) && !isCodexTargetType(d.targetType),
+      (d) => !isClaudeCodeTargetType(d.targetType),
     )
 
     const [claudeDrifts, unknownDrifts] = await Promise.all([
@@ -504,7 +503,7 @@ export class DistributionPipeline {
     await this.stateRepo.removeDistribution('hook', name, target.type)
   }
 
-  // ── MCP Server distribution (Claude JSON + Codex TOML) ───────────
+  // ── MCP Server distribution (Claude JSON) ───────────
 
   private async publishMcpServerClaude(name: string, target: DistributionTarget): Promise<void> {
     const mcpPath = this.store.resolvePath('global', 'mcp-server', name)
@@ -607,8 +606,6 @@ function isEnoent(err: unknown): boolean {
  *   /some/project/.claude/skills/foo/SKILL.md
  *   /some/project/.claude/settings.json
  *   /some/project/.mcp.json
- *   /some/project/.agents/skills/foo/SKILL.md
- *   /some/project/.codex/config.toml
  *
  * We look for the `.claude` directory or `.mcp.json` suffix to find the boundary.
  */
@@ -618,10 +615,6 @@ function extractProjectPath(targetPath: string): string {
 
   const agentsIdx = targetPath.indexOf(`${path.sep}.agents${path.sep}`)
   if (agentsIdx !== -1) return targetPath.slice(0, agentsIdx)
-
-  const codexConfigSuffix = `${path.sep}.codex${path.sep}config.toml`
-  const codexIdx = targetPath.indexOf(codexConfigSuffix)
-  if (codexIdx !== -1) return targetPath.slice(0, codexIdx)
 
   // .mcp.json sits directly in the project root
   if (targetPath.endsWith('.mcp.json')) return path.dirname(targetPath)

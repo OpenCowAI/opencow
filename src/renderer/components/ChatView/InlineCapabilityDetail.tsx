@@ -130,7 +130,6 @@ function BundleFileSelector({ files, selected, onSelect }: {
 
 const ORIGIN_LABELS: Record<string, string> = {
   'claude-code': 'Claude Code',
-  'codex': 'Codex',
   'plugin': 'Plugin',
   'marketplace': 'Marketplace',
   'template': 'Template',
@@ -140,7 +139,6 @@ const ORIGIN_LABELS: Record<string, string> = {
 
 const ORIGIN_ICONS: Record<string, typeof Terminal> = {
   'claude-code': Terminal,
-  'codex': Terminal,
   'plugin': Package,
   'marketplace': Store,
   'template': LayoutTemplate,

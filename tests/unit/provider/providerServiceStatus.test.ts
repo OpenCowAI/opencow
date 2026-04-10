@@ -13,7 +13,6 @@ function createProviderServiceForStatusTest(params: {
   const settings: ProviderSettings = {
     byEngine: {
       claude: { activeMode: null },
-      codex: { activeMode: null },
     },
   }
   settings.byEngine[params.engineKind].activeMode = params.mode
@@ -29,65 +28,46 @@ function createProviderServiceForStatusTest(params: {
   }
   service.providersByEngine = new Map<AIEngineKind, Map<ApiProvider, ProviderAdapter>>([
     ['claude', new Map(params.mode ? [[params.mode, params.adapter]] : [])],
-    ['codex', new Map(params.mode ? [[params.mode, params.adapter]] : [])],
   ])
   return service as ProviderService
 }
 
 describe('ProviderService.getStatus', () => {
-  it('marks codex mode unauthenticated when adapter has no codex auth mapping', async () => {
+  it('returns authenticated when claude adapter confirms auth', async () => {
     const adapter: ProviderAdapter = {
       checkStatus: async () => ({ authenticated: true }),
       getEnv: async () => ({}),
       authenticate: async () => ({ authenticated: true }),
+      getHTTPAuth: async () => null,
       logout: async () => {},
     }
     const service = createProviderServiceForStatusTest({
-      engineKind: 'codex',
-      mode: 'custom',
+      engineKind: 'claude',
+      mode: 'api_key',
       adapter,
     })
 
-    const status = await service.getStatus('codex')
-    expect(status.state).toBe('unauthenticated')
-    expect(status.mode).toBe('custom')
-  })
-
-  it('marks codex mode unauthenticated when codex auth mapping has no apiKey', async () => {
-    const adapter: ProviderAdapter = {
-      checkStatus: async () => ({ authenticated: true }),
-      getEnv: async () => ({}),
-      authenticate: async () => ({ authenticated: true }),
-      getCodexAuthConfig: async () => null,
-      logout: async () => {},
-    }
-    const service = createProviderServiceForStatusTest({
-      engineKind: 'codex',
-      mode: 'openrouter',
-      adapter,
-    })
-
-    const status = await service.getStatus('codex')
-    expect(status.state).toBe('unauthenticated')
-    expect(status.mode).toBe('openrouter')
-  })
-
-  it('keeps codex mode authenticated when codex auth mapping is available', async () => {
-    const adapter: ProviderAdapter = {
-      checkStatus: async () => ({ authenticated: true }),
-      getEnv: async () => ({}),
-      authenticate: async () => ({ authenticated: true }),
-      getCodexAuthConfig: async () => ({ apiKey: 'sk-test', baseUrl: 'https://example.com/v1' }),
-      logout: async () => {},
-    }
-    const service = createProviderServiceForStatusTest({
-      engineKind: 'codex',
-      mode: 'custom',
-      adapter,
-    })
-
-    const status = await service.getStatus('codex')
+    const status = await service.getStatus('claude')
     expect(status.state).toBe('authenticated')
-    expect(status.mode).toBe('custom')
+    expect(status.mode).toBe('api_key')
+  })
+
+  it('returns unauthenticated when no mode is configured', async () => {
+    const adapter: ProviderAdapter = {
+      checkStatus: async () => ({ authenticated: false }),
+      getEnv: async () => ({}),
+      authenticate: async () => ({ authenticated: false }),
+      getHTTPAuth: async () => null,
+      logout: async () => {},
+    }
+    const service = createProviderServiceForStatusTest({
+      engineKind: 'claude',
+      mode: null,
+      adapter,
+    })
+
+    const status = await service.getStatus('claude')
+    expect(status.state).toBe('unauthenticated')
+    expect(status.mode).toBeNull()
   })
 })

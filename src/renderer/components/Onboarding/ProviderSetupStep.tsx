@@ -283,7 +283,7 @@ function CredentialFormForMode({
     <CustomCredentialForm
       initialValues={initialValues}
       loading={loading}
-      forceBearer={engineKind === 'codex'}
+      forceBearer={false}
       onSubmit={(params) => onLogin('custom', params)}
     />
   )

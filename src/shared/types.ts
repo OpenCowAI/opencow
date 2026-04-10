@@ -1254,7 +1254,7 @@ export interface CapabilityMountInfo {
 /** Import provenance record */
 export interface CapabilityImportRecord {
   sourcePath: string
-  sourceOrigin: 'claude-code' | 'codex' | 'plugin' | 'marketplace' | 'template' | 'file' | 'unknown'
+  sourceOrigin: 'claude-code' | 'plugin' | 'marketplace' | 'template' | 'file' | 'unknown'
   sourceHash: string | null
   importedAt: number
 }
@@ -1285,7 +1285,7 @@ export interface DocumentCapabilityEntry {
   metadata: Record<string, unknown>
   importInfo?: CapabilityImportRecord | null
   distributionInfo?: CapabilityDistributionInfo | null
-  /** All published target types for this capability (e.g. claude+codex). */
+  /** All published target types for this capability. */
   distributionTargets?: string[]
   /** Mount provenance — only set for entries from external mounts (plugins, packages) */
   mountInfo?: CapabilityMountInfo | null
@@ -1307,7 +1307,7 @@ export interface ConfigCapabilityEntry {
   metadata: Record<string, unknown>
   importInfo?: CapabilityImportRecord | null
   distributionInfo?: CapabilityDistributionInfo | null
-  /** All published target types for this capability (e.g. claude+codex). */
+  /** All published target types for this capability. */
   distributionTargets?: string[]
   /** Mount provenance — only set for entries from external mounts (plugins, packages) */
   mountInfo?: CapabilityMountInfo | null
@@ -1572,7 +1572,6 @@ export interface MarketSkillInfo {
 /** Import source types for Capability Center IPC */
 export type CapabilityImportSourceType =
   | 'claude-code'
-  | 'codex'
   | 'plugin'
   | 'marketplace'
   | 'template'
@@ -1581,7 +1580,6 @@ export type CapabilityImportSourceType =
 /** Discriminated union — each sourceType carries only its own required params */
 export type CapabilityDiscoverParams =
   | { sourceType: 'claude-code'; projectId?: string }
-  | { sourceType: 'codex'; projectId?: string }
   | { sourceType: 'plugin' }
   | { sourceType: 'template' }
   | { sourceType: 'marketplace'; query?: string; marketplaceId?: string }
@@ -1647,7 +1645,7 @@ export interface CapabilityToggleParams {
 export interface CapabilityPublishParams {
   category: ManagedCapabilityCategory
   name: string
-  target: 'claude-code-global' | 'claude-code-project' | 'codex-global' | 'codex-project'
+  target: 'claude-code-global' | 'claude-code-project'
   projectId?: string
 }
 
@@ -2986,7 +2984,7 @@ export type SessionStopReason =
   | 'structured_output_error' // structured output validation failed (result.subtype === 'error_max_structured_output_retries')
 
 /** Conversation engine kind for managed sessions. */
-export type AIEngineKind = 'claude' | 'codex'
+export type AIEngineKind = 'claude'
 
 // ─── Session Origin (discriminated union) ─────────────────────────────────
 //
@@ -3280,7 +3278,7 @@ export interface SessionSnapshot {
   contextLimitOverride?: number | null
   /** Canonical runtime context state (single source of truth). */
   contextState?: SessionContextState | null
-  /** Runtime-only context telemetry from same-source token counters (e.g. codex token_count). */
+  /** Runtime-only context telemetry from same-source token counters. */
   contextTelemetry?: SessionContextTelemetry | null
   activity: string | null
   error: string | null
@@ -3637,8 +3635,6 @@ export interface IMOrchestratorDeps {
 // === Provider ===
 
 export type ApiProvider = 'subscription' | 'api_key' | 'openrouter' | 'custom'
-export type CodexReasoningEffort = 'minimal' | 'low' | 'medium' | 'high' | 'xhigh'
-
 /** Non-sensitive credential fields returned for pre-filling the edit form. API key is included (masked in UI). */
 export interface ProviderCredentialInfo {
   apiKey?: string
@@ -3664,8 +3660,6 @@ export interface ProviderEngineSettings {
   activeMode: ApiProvider | null
   /** Optional per-engine default model hint. */
   defaultModel?: string
-  /** Optional default reasoning effort for Codex model calls. */
-  defaultReasoningEffort?: CodexReasoningEffort
 }
 
 /** Engine-scoped provider configuration. */

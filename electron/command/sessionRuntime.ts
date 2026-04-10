@@ -51,7 +51,7 @@ export interface SessionRuntime {
    *
    * Owned by SessionOrchestrator.runSession() and wired into the per-session
    * ExecutionContextCoordinator. Exposed on runtime so external signal sources
-   * (e.g. hookSource events for Codex) can feed cwd updates into the same
+   * (e.g. hookSource events) can feed cwd updates into the same
    * monotonic update pipeline.
    */
   executionContextSignalHandler?: (signal: SessionExecutionContextSignal) => void

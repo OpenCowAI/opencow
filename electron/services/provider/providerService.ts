@@ -11,7 +11,7 @@
  *
  * Architecture:
  *   - Strategy pattern: each ApiProvider maps to a ProviderAdapter implementation
- *   - Engine-scoped active provider (`provider.byEngine.{claude|codex}.activeMode`)
+ *   - Engine-scoped active provider (`provider.byEngine.claude.activeMode`)
  *   - Sensitive credentials in CredentialStore (encrypted)
  *   - Non-sensitive config in SettingsService (plaintext JSON)
  */
@@ -24,11 +24,11 @@ import type {
   ProviderCredentialInfo,
   DataBusEvent,
 } from '@shared/types'
-import type { CodexAuthConfig, ProviderAdapter } from './types'
+import type { ProviderAdapter } from './types'
 import type { LLMAuthConfig } from '../../llm/types'
 import { CredentialStore } from './credentialStore'
 import { SubscriptionProvider } from './providers/subscription'
-import { AnthropicApiKeyProvider, OpenAIApiKeyProvider } from './providers/apiKey'
+import { AnthropicApiKeyProvider } from './providers/apiKey'
 import { OpenRouterProvider } from './providers/openRouter'
 import { CustomProvider } from './providers/custom'
 import { createLogger } from '../../platform/logger'
@@ -51,17 +51,14 @@ export class ProviderService {
   constructor(deps: ProviderServiceDeps) {
     this.deps = deps
     this.providersByEngine = new Map<AIEngineKind, Map<ApiProvider, ProviderAdapter>>([
-      ['claude', this.createProviders('claude', deps.credentialStoreByEngine.claude)],
-      ['codex', this.createProviders('codex', deps.credentialStoreByEngine.codex)],
+      ['claude', this.createProviders(deps.credentialStoreByEngine.claude)],
     ])
   }
 
-  private createProviders(engineKind: AIEngineKind, store: CredentialStore): Map<ApiProvider, ProviderAdapter> {
+  private createProviders(store: CredentialStore): Map<ApiProvider, ProviderAdapter> {
     return new Map<ApiProvider, ProviderAdapter>([
       ['subscription', new SubscriptionProvider(store)],
-      ['api_key', engineKind === 'codex'
-        ? new OpenAIApiKeyProvider(store)
-        : new AnthropicApiKeyProvider(store)],
+      ['api_key', new AnthropicApiKeyProvider(store)],
       ['openrouter', new OpenRouterProvider(store)],
       ['custom', new CustomProvider(store)],
     ])
@@ -94,27 +91,6 @@ export class ProviderService {
     }
 
     const adapterStatus = await provider.checkStatus()
-
-    // Codex readiness is stricter than generic credential existence:
-    // we must be able to resolve OpenAI-compatible auth options (apiKey/baseUrl).
-    // Otherwise UI can show "configured" while runtime cannot start Codex turns.
-    if (engineKind === 'codex' && adapterStatus.authenticated) {
-      if (!provider.getCodexAuthConfig) {
-        return {
-          state: 'unauthenticated',
-          mode,
-          error: `Provider mode "${mode}" does not expose Codex-compatible auth mapping`,
-        }
-      }
-      const codexAuth = await provider.getCodexAuthConfig()
-      if (!codexAuth?.apiKey) {
-        return {
-          state: 'unauthenticated',
-          mode,
-          error: `Provider mode "${mode}" has no usable Codex API key mapping`,
-        }
-      }
-    }
 
     return {
       state: adapterStatus.authenticated ? 'authenticated' : 'unauthenticated',
@@ -168,31 +144,6 @@ export class ProviderService {
     } catch (err) {
       log.error(`getProviderEnv(${engineKind}): failed for mode "${mode}"`, err)
       return {}
-    }
-  }
-
-  /**
-   * Resolve Codex SDK auth options from the current active provider mode.
-   *
-   * Returns null when:
-   * - no active mode is configured
-   * - the active provider does not expose Codex-compatible credentials
-   * - credential lookup fails
-   */
-  async getCodexAuthConfig(engineKind: AIEngineKind): Promise<CodexAuthConfig | null> {
-    const mode = this.getEngineProviderSettings(engineKind).activeMode
-    if (!mode) return null
-
-    const provider = this.getEngineProviders(engineKind).get(mode)
-    if (!provider?.getCodexAuthConfig) return null
-
-    try {
-      const resolved = await provider.getCodexAuthConfig()
-      if (!resolved?.apiKey) return null
-      return resolved
-    } catch (err) {
-      log.error(`getCodexAuthConfig(${engineKind}): failed for mode "${mode}"`, err)
-      return null
     }
   }
 
@@ -288,10 +239,6 @@ export class ProviderService {
    * (protocol, model) to produce a complete auth config suitable
    * for constructing HTTP headers in direct fetch() calls.
    *
-   * Resolution strategy per engine:
-   * - Claude: adapter.getHTTPAuth() — all adapters support Anthropic protocol
-   * - Codex:  adapter.getCodexAuthConfig() — only compatible adapters support OpenAI protocol
-   *
    * @throws When no active provider, adapter not found, or credentials unavailable
    */
   async resolveHTTPAuth(engineKind: AIEngineKind): Promise<LLMAuthConfig> {
@@ -307,27 +254,6 @@ export class ProviderService {
       throw new Error(`No adapter found for provider mode "${mode}"`)
     }
 
-    // Codex engine: use getCodexAuthConfig() which already encodes
-    // "is this adapter compatible with OpenAI protocol?" semantics.
-    // Not all adapters support OpenAI — ApiKeyProvider (sk-ant-*) and
-    // SubscriptionProvider (OAuth) return null.
-    if (engineKind === 'codex') {
-      const codexAuth = provider.getCodexAuthConfig
-        ? await provider.getCodexAuthConfig()
-        : null
-      if (!codexAuth?.apiKey) {
-        throw new Error(`Provider mode "${mode}" is not compatible with Codex/OpenAI protocol`)
-      }
-      return {
-        protocol: 'openai',
-        apiKey: codexAuth.apiKey,
-        baseUrl: codexAuth.baseUrl ?? 'https://api.openai.com',
-        authStyle: 'bearer',
-        model: engineSettings.defaultModel ?? 'gpt-4o-mini',
-      }
-    }
-
-    // Claude engine: use getHTTPAuth() for structured Anthropic-protocol auth
     const httpAuth = await provider.getHTTPAuth()
     if (!httpAuth) {
       throw new Error(`Provider mode "${mode}" returned no HTTP auth credentials`)

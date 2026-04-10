@@ -236,7 +236,7 @@ function renderCredentialForm(
     <CustomCredentialForm
       initialValues={state.initialValues}
       loading={state.isAuthenticating}
-      forceBearer={engineKind === 'codex'}
+      forceBearer={false}
       onSubmit={(params) => actions.onLogin('custom', params)}
     />
   )

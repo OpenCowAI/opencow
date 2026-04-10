@@ -7,9 +7,8 @@ import { cn } from '@/lib/utils'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/Tabs'
 import { useSettingsStore } from '@/stores/settingsStore'
 import { getAppAPI } from '@/windowAPI'
-import type { AIEngineKind, ApiProvider, CodexReasoningEffort, ProviderCredentialInfo, ProviderStatus } from '@shared/types'
+import type { AIEngineKind, ApiProvider, ProviderCredentialInfo, ProviderStatus } from '@shared/types'
 import {
-  CODEX_REASONING_EFFORT_OPTIONS,
   ENGINE_TABS,
   getModeLabelKey,
   MODEL_SUGGESTIONS_BY_ENGINE,
@@ -63,9 +62,7 @@ function resolveInitialOpenEngine(
   settings: ReturnType<typeof useSettingsStore.getState>['settings'],
 ): AIEngineKind {
   const claudeMode = settings?.provider.byEngine.claude?.activeMode
-  const codexMode = settings?.provider.byEngine.codex?.activeMode
   if (claudeMode) return 'claude'
-  if (codexMode) return 'codex'
   return 'claude'
 }
 
@@ -127,7 +124,7 @@ export function ProviderSection(): React.JSX.Element {
 
   const defaultEngine = settings.command.defaultEngine
   const providerByEngine = settings.provider.byEngine
-  const activeEngineConfig = providerByEngine[activeEngine] ?? { activeMode: null, defaultModel: undefined, defaultReasoningEffort: 'high' }
+  const activeEngineConfig = providerByEngine[activeEngine] ?? { activeMode: null, defaultModel: undefined }
   const activeMode = activeEngineConfig.activeMode
   const providerModes = PROVIDER_MODES_BY_ENGINE[activeEngine]
   const activeEngineStatus = providerStatusByEngine[activeEngine]
@@ -326,23 +323,6 @@ export function ProviderSection(): React.JSX.Element {
     }
   }, [])
 
-  const handleDefaultReasoningEffortChange = useCallback((nextValue: CodexReasoningEffort) => {
-    if (activeEngine !== 'codex') return
-    updateSettings({
-      ...settings,
-      provider: {
-        ...settings.provider,
-        byEngine: {
-          ...settings.provider.byEngine,
-          codex: {
-            ...(settings.provider.byEngine.codex ?? { activeMode: null }),
-            defaultReasoningEffort: nextValue,
-          },
-        },
-      },
-    })
-  }, [activeEngine, settings, updateSettings])
-
   return (
     <div className="space-y-6">
       <div>
@@ -457,33 +437,6 @@ export function ProviderSection(): React.JSX.Element {
                 {effectiveActiveMode ? t('provider.defaultModelHint') : t('provider.steps.model.empty')}
               </p>
 
-              {activeEngine === 'codex' && (
-                <div className="mt-4">
-                  <label className="block text-sm font-medium mb-1">
-                    {t('provider.defaultReasoningEffort')}
-                  </label>
-                  <select
-                    disabled={!effectiveActiveMode}
-                    value={activeEngineConfig.defaultReasoningEffort ?? 'high'}
-                    onChange={(event) => handleDefaultReasoningEffortChange(event.target.value as CodexReasoningEffort)}
-                    className={cn(
-                      'w-full rounded-md border bg-[hsl(var(--background))] px-3 py-1.5 text-sm outline-none',
-                      'focus:ring-2 focus:ring-[hsl(var(--ring))]',
-                      'border-[hsl(var(--border))]',
-                      !effectiveActiveMode && 'opacity-60 cursor-not-allowed',
-                    )}
-                  >
-                    {CODEX_REASONING_EFFORT_OPTIONS.map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {t(option.labelKey)}
-                      </option>
-                    ))}
-                  </select>
-                  <p className="mt-1.5 text-xs text-[hsl(var(--muted-foreground))]">
-                    {effectiveActiveMode ? t('provider.defaultReasoningEffortHint') : t('provider.steps.model.empty')}
-                  </p>
-                </div>
-              )}
             </section>
 
             {checkingStatus && (

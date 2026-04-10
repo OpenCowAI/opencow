@@ -79,7 +79,7 @@ export interface InboxMessageTable {
 export interface ManagedSessionTable {
   id: string
   sdk_session_id: string | null
-  /** Engine kind for this session row — 'claude' by default; 'codex' for Codex sessions. */
+  /** Engine kind for this session row — 'claude'. Legacy rows may contain other values. */
   engine_kind: string
   /** Engine-specific serialized checkpoint/thread state. */
   engine_state_json: string | null
@@ -294,7 +294,7 @@ export interface CapabilityStateTable {
 export interface CapabilityDistributionTable {
   category: string
   name: string
-  target_type: string    // 'claude-code-global' | 'claude-code-project' | 'codex-global' | 'codex-project'
+  target_type: string    // 'claude-code-global' | 'claude-code-project'
   target_path: string
   strategy: string       // 'copy' | 'symlink'
   content_hash: string
@@ -305,7 +305,7 @@ export interface CapabilityImportTable {
   category: string
   name: string
   source_path: string
-  source_origin: string  // 'claude-code' | 'codex' | 'plugin' | 'marketplace' | 'template' | 'file' | 'unknown'
+  source_origin: string  // 'claude-code' | 'plugin' | 'marketplace' | 'template' | 'file' | 'unknown'
   source_hash: string | null
   imported_at: number
   /** Marketplace provenance — added by migration 025 */

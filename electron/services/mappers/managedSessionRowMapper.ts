@@ -11,8 +11,9 @@ import type {
 
 const DEFAULT_ENGINE_KIND: AIEngineKind = 'claude'
 
-function normalizeEngineKind(raw: string): AIEngineKind {
-  return raw === 'codex' ? 'codex' : DEFAULT_ENGINE_KIND
+function normalizeEngineKind(_raw: string): AIEngineKind {
+  // Legacy rows may contain non-claude values; always normalize to 'claude'.
+  return DEFAULT_ENGINE_KIND
 }
 
 function parseEngineState(raw: string | null): Record<string, unknown> | null {

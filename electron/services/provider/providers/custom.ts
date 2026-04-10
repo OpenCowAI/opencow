@@ -17,7 +17,6 @@
  */
 
 import type {
-  CodexAuthConfig,
   HTTPAuthResult,
   ProviderAdapter,
   ProviderAdapterStatus,
@@ -114,23 +113,6 @@ export class CustomProvider implements ProviderAdapter {
       apiKey: credential.apiKey,
       baseUrl: credential.baseUrl,
       authStyle: credential.authStyle === 'bearer' ? 'bearer' : 'x-api-key',
-    }
-  }
-
-  async getCodexAuthConfig(): Promise<CodexAuthConfig | null> {
-    const credential = await this.store.get('custom')
-    if (!credential?.apiKey || !credential?.baseUrl) return null
-    // Compatibility: historical credentials may carry `authStyle: api_key` from
-    // older UI flows. Codex auth only needs apiKey/baseUrl and sends bearer auth
-    // internally, so we don't hard-fail on that legacy field.
-    if (credential.authStyle && credential.authStyle !== 'bearer') {
-      log.warn(
-        `Custom credential authStyle="${credential.authStyle}" is legacy for Codex; proceeding with apiKey/baseUrl mapping`,
-      )
-    }
-    return {
-      apiKey: credential.apiKey,
-      baseUrl: credential.baseUrl,
     }
   }
 

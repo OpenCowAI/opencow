@@ -221,8 +221,7 @@ export function applyConversationDomainEffects(params: {
           ctx.session.setActivity(activity)
         }
 
-        // Codex emits MCP tool_call items as partial updates while the tool is
-        // running. Register Evose relay at partial time so SSE chunks can be
+        // Register Evose relay at partial time so SSE chunks can be
         // consumed immediately, instead of waiting for assistant.final (which
         // may arrive only after tool completion).
         if (streamingMessageId) {

@@ -9,7 +9,6 @@ import type {
 
 const DEFAULT_SKILL_MAX_CHARS_BY_ENGINE: Readonly<Record<AIEngineKind, number>> = {
   claude: 80_000,
-  codex: 24_000,
 }
 
 export interface ResolveStartSessionPolicyInput {

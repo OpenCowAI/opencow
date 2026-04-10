@@ -10,10 +10,9 @@ import { SessionOrchestrator } from '../../../electron/command/sessionOrchestrat
 import type { OrchestratorDeps } from '../../../electron/command/sessionOrchestrator'
 import { ManagedSessionStore } from '../../../electron/services/managedSessionStore'
 import { __setOpenClaudeModuleLoaderForTest } from '../../../electron/command/queryLifecycle'
-import {
-  __resetCodexSdkLoaderForTest,
-  __setCodexSdkLoaderForTest,
-} from '../../../electron/command/codexQueryLifecycle'
+// Codex engine removed — stub test helpers
+const __resetCodexSdkLoaderForTest = (): void => {}
+const __setCodexSdkLoaderForTest = (_loader: unknown): void => {}
 import type { StartSessionInput, DataBusEvent, ManagedSessionInfo } from '../../../src/shared/types'
 import type { Database } from '../../../electron/database/types'
 import type { CapabilityCenter } from '../../../electron/services/capabilityCenter'

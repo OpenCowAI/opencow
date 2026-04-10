@@ -94,7 +94,7 @@ export class QueryLifecycle implements SessionLifecycle {
     }
     const options: ClaudeSessionLaunchOptions = input.launchOptions
 
-    // Log initial prompt preview (Codex-style: first 200 + last 100 chars)
+    // Log initial prompt preview (first 200 + last 100 chars for long text)
     const promptPreview = summarizePrompt(initialPrompt)
     const optionKeys = Object.keys(options).sort()
     const systemPromptText = options.systemPromptPayload.text
@@ -231,7 +231,7 @@ export class QueryLifecycle implements SessionLifecycle {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-/** Build a compact prompt preview string (Codex-style: first 200 + last 100 for long text). */
+/** Build a compact prompt preview string (first 200 + last 100 for long text). */
 function summarizePrompt(content: UserMessageContent): string {
   const text = typeof content === 'string'
     ? content

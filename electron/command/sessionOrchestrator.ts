@@ -45,7 +45,6 @@ import { getIdentityPrompt } from './identityPrompt'
 import { composeSystemPrompt, type SystemPromptLayers } from './systemPromptComposer'
 import { createProviderNativeSystemPrompt } from './systemPromptTransport'
 import { EngineCapabilityRuntime } from './engineCapabilityRuntime'
-// Phase 1B.11d: Codex imports removed (engine deleted)
 import { ConversationEventPipeline } from '../conversation/pipeline'
 import {
   EngineBootstrapRegistry,
@@ -531,7 +530,7 @@ export class SessionOrchestrator {
     // Electron injects runtime-internal env vars (ELECTRON_*, NODE_OPTIONS with
     // --require for asar support, NODE_PATH pointing to Electron modules, etc.)
     // that must NOT leak into child processes — they can cause native binaries
-    // (Codex) and their Node.js subprocesses (MCP servers) to crash silently.
+    // and their Node.js subprocesses (MCP servers) to crash silently.
     const removedEnvKeys = sanitizeChildProcessEnv(sessionEnv)
     if (removedEnvKeys.length > 0) {
       log.info(`Sanitized ${removedEnvKeys.length} Electron-specific env vars from session env: ${removedEnvKeys.join(', ')}`)
@@ -754,7 +753,7 @@ export class SessionOrchestrator {
     }
 
     // Per-session custom tools (engine-agnostic NativeToolDescriptor[]).
-    // Injected as in-process MCP server (Claude) or via HTTP bridge (Codex).
+    // Injected as in-process MCP server.
     const customTools = this.runtimes.get(sessionId)?.customTools
 
     // Full-restart path (new SDK query instance):
@@ -1727,9 +1726,8 @@ export class SessionOrchestrator {
   /**
    * HookSource skip policy for managed sessions.
    *
-   * Only Claude managed sessions should be skipped because Claude emits
-   * authoritative SDK hooks directly into DataBus. Codex does not provide
-   * equivalent SDK hooks, so its hook-log events must continue flowing.
+   * Managed sessions emit authoritative SDK hooks directly into DataBus,
+   * so we skip hook-log events for them to avoid duplicates.
    */
   shouldSkipHookSourceEvent(sessionId: string): boolean {
     const rt = this.findActiveRuntime(sessionId)
@@ -1846,7 +1844,7 @@ function mergeNativeAllowlists(
 // ── Electron env sanitization ─────────────────────────────────────────
 //
 // Electron injects runtime-internal env vars that can silently break child
-// processes — especially native binaries (Codex) and their Node.js
+// processes — especially native binaries and their Node.js
 // subprocesses (MCP servers).
 //
 // Known problematic categories:

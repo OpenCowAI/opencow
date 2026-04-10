@@ -18,7 +18,6 @@ import {
   type EventSubscriptionSettings,
   type ProviderEngineSettings,
   type ProviderSettings,
-  type CodexReasoningEffort,
   type UserConfigurableWorkspaceInput,
   type TelegramBotEntry,
   type TelegramBotSettings,
@@ -61,10 +60,6 @@ const DEFAULT_SETTINGS: AppSettings = {
     byEngine: {
       claude: {
         activeMode: null,
-      },
-      codex: {
-        activeMode: null,
-        defaultReasoningEffort: 'high',
       },
     },
   },
@@ -418,19 +413,9 @@ function legacyBotEntryToTelegramConnection(entry: TelegramBotEntry): TelegramCo
 // ── Provider settings migration ───────────────────────────────────────────────
 
 const VALID_PROVIDER_MODES = new Set(['subscription', 'api_key', 'openrouter', 'custom'])
-const VALID_CODEX_REASONING_EFFORTS: ReadonlySet<CodexReasoningEffort> =
-  new Set(['minimal', 'low', 'medium', 'high', 'xhigh'])
-
 function normalizeProviderMode(raw: unknown): ProviderSettings['byEngine']['claude']['activeMode'] {
   if (typeof raw !== 'string') return null
   return VALID_PROVIDER_MODES.has(raw) ? raw as ProviderSettings['byEngine']['claude']['activeMode'] : null
-}
-
-function normalizeCodexReasoningEffort(raw: unknown): CodexReasoningEffort | undefined {
-  if (typeof raw !== 'string') return undefined
-  return VALID_CODEX_REASONING_EFFORTS.has(raw as CodexReasoningEffort)
-    ? raw as CodexReasoningEffort
-    : undefined
 }
 
 function pickLegacyDefaultModel(raw: Record<string, unknown> | undefined, legacyCommandModel?: string): string | undefined {
@@ -450,18 +435,13 @@ function normalizeEngineProviderSettings(
   const r = (raw ?? {}) as Record<string, unknown>
   const hasActiveMode = Object.prototype.hasOwnProperty.call(r, 'activeMode')
   const hasDefaultModel = Object.prototype.hasOwnProperty.call(r, 'defaultModel')
-  const hasDefaultReasoningEffort = Object.prototype.hasOwnProperty.call(r, 'defaultReasoningEffort')
   const activeMode = normalizeProviderMode(r.activeMode)
   const defaultModel = typeof r.defaultModel === 'string' && r.defaultModel ? r.defaultModel : undefined
-  const defaultReasoningEffort = normalizeCodexReasoningEffort(r.defaultReasoningEffort)
   return {
     activeMode: hasActiveMode ? activeMode : fallback.activeMode,
     ...(hasDefaultModel
       ? (defaultModel ? { defaultModel } : {})
       : (fallback.defaultModel ? { defaultModel: fallback.defaultModel } : {})),
-    ...(hasDefaultReasoningEffort
-      ? (defaultReasoningEffort ? { defaultReasoningEffort } : {})
-      : (fallback.defaultReasoningEffort ? { defaultReasoningEffort: fallback.defaultReasoningEffort } : {})),
   }
 }
 
@@ -470,11 +450,9 @@ function normalizeEngineProviderSettings(
  *
  * New shape:
  *   provider.byEngine.claude.activeMode/defaultModel
- *   provider.byEngine.codex.activeMode/defaultModel/defaultReasoningEffort
  *
  * Legacy fallback:
  *   - provider.activeMode/defaultModel (or auth.*) is migrated into `byEngine.claude`
- *   - `byEngine.codex` starts empty (no implicit credentials)
  */
 function migrateProviderSettings(
   raw: (Partial<ProviderSettings> & Record<string, unknown>) | undefined,
@@ -496,10 +474,6 @@ function migrateProviderSettings(
       claude: normalizeEngineProviderSettings(
         byEngineRaw?.claude,
         legacyClaude,
-      ),
-      codex: normalizeEngineProviderSettings(
-        byEngineRaw?.codex,
-        { activeMode: null, defaultReasoningEffort: 'high' },
       ),
     },
   }
@@ -570,8 +544,8 @@ function mergeUpdateSettings(raw: unknown): UpdateSettings {
   }
 }
 
-function normalizeEngine(raw: unknown): AIEngineKind {
-  return raw === 'codex' ? 'codex' : 'claude'
+function normalizeEngine(_raw: unknown): AIEngineKind {
+  return 'claude'
 }
 
 function normalizePermissionMode(raw: unknown): AppSettings['command']['permissionMode'] {

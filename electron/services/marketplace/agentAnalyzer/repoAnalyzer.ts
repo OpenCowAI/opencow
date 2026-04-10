@@ -112,9 +112,7 @@ export class RepoAnalyzer {
     }
 
     // 3. Get engine-agnostic tool descriptors (NativeToolDescriptor[])
-    // SessionOrchestrator handles engine-specific injection:
-    // - Claude: SDK toMcpServer adapter → in-process MCP
-    // - Codex:  CodexNativeBridgeManager → HTTP bridge → stdio MCP
+    // SessionOrchestrator handles injection via in-process MCP server
     const tools = [...capability.getToolDescriptors(toolContext)]
 
     // 4. Pre-scan repo tree for inclusion in the initial prompt

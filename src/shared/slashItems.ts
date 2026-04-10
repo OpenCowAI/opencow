@@ -65,17 +65,9 @@ const CLAUDE_BUILTIN_SLASH_COMMANDS: SlashItem[] = [
   { id: 'builtin:plan', name: 'plan', description: 'Enter plan mode', category: 'builtin', order: 6 },
 ]
 
-/** Codex-oriented pass-through built-in commands (curated safe subset). */
-const CODEX_BUILTIN_SLASH_COMMANDS: SlashItem[] = [
-  { id: 'builtin:compact', name: 'compact', description: 'Compress conversation context', category: 'builtin', order: 1 },
-  { id: 'builtin:status', name: 'status', description: 'Show Codex session status', category: 'builtin', order: 2 },
-  { id: 'builtin:plan', name: 'plan', description: 'Enter plan mode', category: 'builtin', order: 3 },
-]
-
 /** Engine-scoped pass-through built-in manifest. */
 export const BUILTIN_SLASH_COMMANDS_BY_ENGINE: Record<AIEngineKind, SlashItem[]> = {
   claude: CLAUDE_BUILTIN_SLASH_COMMANDS,
-  codex: CODEX_BUILTIN_SLASH_COMMANDS,
 }
 
 /**

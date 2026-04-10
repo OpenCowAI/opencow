@@ -28,7 +28,6 @@ export interface ContextWindowCatalog {
 
 const ENGINE_TO_PROVIDER_HINT: Partial<Record<AIEngineKind, string>> = {
   claude: 'anthropic',
-  codex: 'openai',
 }
 
 function normalizeContextWindow(value: number | null | undefined): number | null {

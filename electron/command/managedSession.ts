@@ -435,8 +435,7 @@ export class ManagedSession {
   /**
    * Apply a context snapshot from engine runtime events.
    *
-   * Handles both authoritative (e.g. Codex token_count) and estimated
-   * (e.g. Claude assistant_usage) snapshots.
+   * Handles both authoritative and estimated snapshots.
    *
    * When `limitTokens` is null the adapter doesn't know the limit —
    * the previously known limit is preserved (it arrives separately via

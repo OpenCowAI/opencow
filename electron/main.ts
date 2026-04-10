@@ -141,8 +141,7 @@ const pendingQuestionRegistry = new PendingQuestionRegistry()
 // because hookSource.start() runs after orchestrator creation (Phase 2).
 const hookSource = new HookSource((e) => bus.dispatch(e), {
   eventsLog: dataPaths.eventsLog,
-  // Skip only managed sessions that already emit SDK hooks (Claude).
-  // Codex managed sessions still rely on hook-log ingestion for Inbox/Webhook flows.
+  // Skip managed sessions that already emit SDK hooks directly into DataBus.
   shouldSkip: (event) => svc?.orchestrator?.shouldSkipHookSourceEvent(event.sessionId) ?? false,
 })
 const statsSource = new StatsSource((e) => bus.dispatch(e))

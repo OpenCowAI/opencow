@@ -122,7 +122,6 @@ export function inferCapabilityCategory(context: {
 
 export type ImportSourceType =
   | 'claude-code'
-  | 'codex'
   | 'plugin'
   | 'marketplace'
   | 'template'
@@ -189,10 +188,6 @@ export class ImportPipeline {
       switch (sourceType) {
         case 'claude-code':
           items = await this.discoverFromEngineSource('claude', projectPath)
-          break
-        case 'codex':
-          // Codex engine removed — return empty for backward compatibility
-          items = []
           break
         case 'plugin':
           items = await this.discoverFromPlugins()

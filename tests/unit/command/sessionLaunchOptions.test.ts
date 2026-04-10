@@ -7,9 +7,11 @@ import {
   type SessionLaunchOptions,
 } from '../../../electron/command/sessionLaunchOptions'
 import {
-  createCodexSyntheticSystemPrompt,
   createProviderNativeSystemPrompt,
 } from '../../../electron/command/systemPromptTransport'
+
+// Stub for removed codex system prompt transport
+const createCodexSyntheticSystemPrompt = createProviderNativeSystemPrompt
 
 describe('sessionLaunchOptions.toSdkOptions', () => {
   it('serializes provider-native payload to systemPrompt + transport', () => {

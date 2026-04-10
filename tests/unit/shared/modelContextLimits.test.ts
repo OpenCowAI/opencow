@@ -9,16 +9,8 @@ describe('modelContextLimits', () => {
     expect(limit).toBe(200_000)
   })
 
-  it('matches known Codex model prefixes', () => {
-    const limit = getContextLimit({ engineKind: 'codex', model: 'gpt-5-codex' })
-    expect(limit).toBe(200_000)
-  })
-
   it('falls back to engine default when model is unknown', () => {
     const claudeFallback = getContextLimit({ engineKind: 'claude', model: 'mystery-model' })
-    const codexFallback = getContextLimit({ engineKind: 'codex', model: 'mystery-model' })
-
     expect(claudeFallback).toBe(DEFAULT_CONTEXT_LIMIT_BY_ENGINE.claude)
-    expect(codexFallback).toBe(DEFAULT_CONTEXT_LIMIT_BY_ENGINE.codex)
   })
 })

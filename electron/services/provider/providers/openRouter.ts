@@ -20,7 +20,6 @@
  */
 
 import type {
-  CodexAuthConfig,
   HTTPAuthResult,
   ProviderAdapter,
   ProviderAdapterStatus,
@@ -95,17 +94,6 @@ export class OpenRouterProvider implements ProviderAdapter {
       apiKey: credential.apiKey,
       baseUrl: credential.baseUrl?.trim() || OPENROUTER_BASE_URL,
       authStyle: 'bearer',
-    }
-  }
-
-  async getCodexAuthConfig(): Promise<CodexAuthConfig | null> {
-    const credential = await this.store.get('openrouter')
-    if (!credential?.apiKey) return null
-    return {
-      apiKey: credential.apiKey,
-      // Keep the same OpenRouter default base URL used by this adapter.
-      // Codex SDK will pass it as `openai_base_url` at runtime.
-      baseUrl: credential.baseUrl?.trim() || OPENROUTER_BASE_URL,
     }
   }
 

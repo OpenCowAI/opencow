@@ -127,7 +127,6 @@ const initialState = {
   providerStatus: null as ProviderStatus | null,
   providerStatusByEngine: {
     claude: null,
-    codex: null,
   } as Record<AIEngineKind, ProviderStatus | null>,
 }
 
