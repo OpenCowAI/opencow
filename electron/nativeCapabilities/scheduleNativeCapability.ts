@@ -33,8 +33,10 @@
  */
 
 import { z } from 'zod/v4'
+import type { ToolDescriptor } from '@opencow-ai/opencow-agent-sdk'
 import type { NativeCapabilityMeta, NativeCapabilityToolContext, NativeCapabilitySessionContext } from './types'
-import { BaseNativeCapability, type ToolConfig, resolveProposalToolUseId } from './baseNativeCapability'
+import { BaseNativeCapability } from './baseNativeCapability'
+import type { OpenCowSessionContext } from './openCowSessionContext'
 import type { ScheduleService } from '../services/schedule/scheduleService'
 import type { LifecycleOperationCoordinator } from '../services/lifecycleOperations'
 import { normalizeScheduleLifecycleProposalPayload } from '../../src/shared/scheduleLifecycleCanonical'
@@ -306,7 +308,7 @@ export class ScheduleNativeCapability extends BaseNativeCapability {
     this.lifecycleOperationCoordinator = deps.lifecycleOperationCoordinator ?? null
   }
 
-  protected override nativeToolConfigs(ctx: NativeCapabilityToolContext): ToolConfig[] {
+  override getToolDescriptors(ctx: NativeCapabilityToolContext): readonly ToolDescriptor<OpenCowSessionContext>[] {
     const session = ctx.sessionContext
     return [
       this.listSchedulesConfig(session),
@@ -322,12 +324,12 @@ export class ScheduleNativeCapability extends BaseNativeCapability {
 
   // ── list_schedules ──────────────────────────────────────────────────────────
 
-  private listSchedulesConfig(session: NativeCapabilitySessionContext): ToolConfig {
+  private listSchedulesConfig(session: NativeCapabilitySessionContext): ToolDescriptor<OpenCowSessionContext> {
     const projectHint = session.projectId
       ? ` Your current project ID is "${session.projectId}" — use projectId to scope results.`
       : ''
 
-    return {
+    return this.tool({
       name: 'list_schedules',
       description:
         'List scheduled tasks with optional filtering and pagination. ' +
@@ -361,15 +363,14 @@ export class ScheduleNativeCapability extends BaseNativeCapability {
           .default(0)
           .describe('Number of schedules to skip (for pagination). Use with limit.'),
       },
-      execute: async (args) => {
+      execute: async ({ args }) => {
         const filter: ScheduleFilter = {}
-        if (args.statuses) filter.statuses = args.statuses as ScheduleFilter['statuses']
-        if (args.projectId) filter.projectId = args.projectId as string
-        if (args.search) filter.search = args.search as string
+        if (args.statuses) filter.statuses = args.statuses
+        if (args.projectId) filter.projectId = args.projectId
+        if (args.search) filter.search = args.search
 
         const all = await this.scheduleService.list(filter)
-        const limit = (args.limit as number) ?? LIST_DEFAULT
-        const offset = (args.offset as number) ?? 0
+        const { limit, offset } = args
         const page = all.slice(offset, offset + limit)
 
         return this.textResult(JSON.stringify({
@@ -380,13 +381,13 @@ export class ScheduleNativeCapability extends BaseNativeCapability {
           schedules: page.map((s) => this.toSummary(s)),
         }, null, 2))
       },
-    }
+    })
   }
 
   // ── get_schedule ────────────────────────────────────────────────────────────
 
-  private getScheduleConfig(): ToolConfig {
-    return {
+  private getScheduleConfig(): ToolDescriptor<OpenCowSessionContext> {
+    return this.tool({
       name: 'get_schedule',
       description:
         'Retrieve full details of a schedule by its ID, including trigger config, ' +
@@ -394,11 +395,10 @@ export class ScheduleNativeCapability extends BaseNativeCapability {
       schema: {
         id: z.string().describe('The schedule ID to retrieve'),
       },
-      execute: async (args) => {
-        const id = args.id as string
-        const schedule = await this.scheduleService.get(id)
+      execute: async ({ args }) => {
+        const schedule = await this.scheduleService.get(args.id)
         if (!schedule) {
-          return this.errorResult(new Error(`Schedule not found: ${id}`))
+          return this.errorResult(new Error(`Schedule not found: ${args.id}`))
         }
 
         // Preview next 5 runs alongside full details
@@ -411,7 +411,7 @@ export class ScheduleNativeCapability extends BaseNativeCapability {
           nextRunsPreview: nextRuns,
         }, null, 2))
       },
-    }
+    })
   }
 
   // ── create_schedule ─────────────────────────────────────────────────────────
@@ -425,13 +425,13 @@ export class ScheduleNativeCapability extends BaseNativeCapability {
    *   - null (explicitly null)   → create without any project association
    *   - "proj-xxx" (explicit ID) → link to the specified project
    */
-  private createScheduleConfig(session: NativeCapabilitySessionContext): ToolConfig {
+  private createScheduleConfig(session: NativeCapabilitySessionContext): ToolDescriptor<OpenCowSessionContext> {
     const projectHint = session.projectId
       ? ' When called from a project context, the schedule is automatically linked ' +
         'to the current project unless you explicitly set projectId to null or a different ID.'
       : ''
 
-    return {
+    return this.tool({
       name: 'create_schedule',
       description:
         'Create a new scheduled task that automatically runs at specified times. ' +
@@ -465,50 +465,47 @@ export class ScheduleNativeCapability extends BaseNativeCapability {
           .default('normal')
           .describe('Schedule priority: critical | high | normal (default) | low'),
       },
-      execute: async (args) => {
-        const triggerInput = args.trigger as TriggerInput
-        const actionInput = args.action as ActionInput
-
+      execute: async ({ args }) => {
         // 1. Validate trigger completeness
-        const validationError = validateTriggerInput(triggerInput)
+        const validationError = validateTriggerInput(args.trigger as TriggerInput)
         if (validationError) return this.errorResult(validationError)
 
         // 2. Three-value projectId semantics
         const resolvedProjectId = args.projectId === undefined
           ? session.projectId
-          : args.projectId as string | null
+          : args.projectId
 
         // 3. Map MCP input → domain model
-        const trigger = toScheduleTrigger(triggerInput)
-        const action = toScheduleAction(actionInput)
+        const trigger = toScheduleTrigger(args.trigger as TriggerInput)
+        const action = toScheduleAction(args.action as ActionInput)
 
         // 4. Ownership injection — explicitly set on action (not in toScheduleAction)
         // Service uses action.projectId as canonical source for Schedule.projectId.
         action.projectId = resolvedProjectId ?? undefined
         if (args.issueId) {
-          action.issueId = args.issueId as string
+          action.issueId = args.issueId
         }
 
         // 5. Delegate to service
         // Note: NOT passing top-level projectId — service reads from action.projectId
         // (canonical source). Passing both would be dead code and create confusion.
         const schedule = await this.scheduleService.create({
-          name:        normaliseLlmText(args.name as string),
-          description: typeof args.description === 'string' ? normaliseLlmText(args.description) : undefined,
+          name:        normaliseLlmText(args.name),
+          description: args.description !== undefined ? normaliseLlmText(args.description) : undefined,
           trigger,
           action,
-          priority:    args.priority    as SchedulePriority | undefined,
+          priority:    args.priority,
         })
 
         return this.textResult(JSON.stringify(this.toDetail(schedule), null, 2))
       },
-    }
+    })
   }
 
   // ── propose_schedule_operation ─────────────────────────────────────────────
 
-  private proposeScheduleOperationConfig(session: NativeCapabilitySessionContext): ToolConfig {
-    return {
+  private proposeScheduleOperationConfig(session: NativeCapabilitySessionContext): ToolDescriptor<OpenCowSessionContext> {
+    return this.tool({
       name: 'propose_schedule_operation',
       description:
         'Propose one or more schedule lifecycle operations for in-session governance and execution. ' +
@@ -534,41 +531,36 @@ export class ScheduleNativeCapability extends BaseNativeCapability {
           .min(1)
           .describe('Structured schedule lifecycle proposals'),
       },
-      execute: async (args, input) => {
+      execute: async ({ args, toolUseId }) => {
         if (!this.lifecycleOperationCoordinator) {
           return this.errorResult(new Error('Lifecycle operation coordinator is not available'))
         }
 
-        const toolUseId = resolveProposalToolUseId(input.context)
-        const operationArgs = args.operations as Array<Record<string, unknown>>
-        const proposals: SessionLifecycleOperationProposalInput[] = operationArgs.map((candidate) => {
-          const summary = candidate.summary as Record<string, unknown> | undefined
+        const proposals: SessionLifecycleOperationProposalInput[] = args.operations.map((candidate) => {
           const normalizedPayload = normalizeScheduleLifecycleProposalPayload(
-            (candidate.normalizedPayload as Record<string, unknown>) ?? {},
+            candidate.normalizedPayload,
             {
               sessionId: session.sessionId,
               projectId: session.projectId,
-              summary,
+              summary: candidate.summary,
             }
           )
-          const action = candidate.action as SessionLifecycleOperationProposalInput['action']
-          const targetId = resolveScheduleOperationTargetId(normalizedPayload, summary)
-          const warnings = [...(candidate.warnings as string[] | undefined ?? [])]
-          if (action !== 'create' && !targetId) {
+          const targetId = resolveScheduleOperationTargetId(normalizedPayload, candidate.summary)
+          if (candidate.action !== 'create' && !targetId) {
             throw new Error(
-              `Schedule ${action} proposal requires target id. ` +
+              `Schedule ${candidate.action} proposal requires target id. ` +
               'Provide one of normalizedPayload.id/scheduleId/targetId (or summary.id/scheduleId/targetId).'
             )
           }
           return {
             entity: 'schedule',
-            action,
+            action: candidate.action,
             normalizedPayload,
-            summary,
-            warnings,
+            summary: candidate.summary,
+            warnings: [...(candidate.warnings ?? [])],
             confirmationMode: normalizeConfirmationMode(candidate.confirmationMode),
-            idempotencyKey: typeof candidate.idempotencyKey === 'string' ? candidate.idempotencyKey : undefined,
-            userInstruction: typeof args.userInstruction === 'string' ? args.userInstruction : undefined,
+            idempotencyKey: candidate.idempotencyKey,
+            userInstruction: args.userInstruction,
           }
         })
 
@@ -582,13 +574,13 @@ export class ScheduleNativeCapability extends BaseNativeCapability {
         const entityHints = await this.lifecycleOperationCoordinator.getSessionEntityHints(session.sessionId)
         return this.textResult(JSON.stringify({ operations: envelopes, _sessionEntityHints: entityHints }, null, 2))
       },
-    }
+    })
   }
 
   // ── update_schedule ─────────────────────────────────────────────────────────
 
-  private updateScheduleConfig(): ToolConfig {
-    return {
+  private updateScheduleConfig(): ToolDescriptor<OpenCowSessionContext> {
+    return this.tool({
       name: 'update_schedule',
       description:
         'Update one or more fields of an existing schedule. Only provided fields are changed. ' +
@@ -623,13 +615,12 @@ export class ScheduleNativeCapability extends BaseNativeCapability {
           .optional()
           .describe('Move schedule to a different project. Pass null to detach from any project.'),
       },
-      execute: async (args) => {
-        const id = args.id as string
+      execute: async ({ args }) => {
         const patch: UpdateScheduleInput = {}
 
-        if (args.name        !== undefined) patch.name        = normaliseLlmText(args.name as string)
-        if (args.description !== undefined) patch.description = normaliseLlmText(args.description as string)
-        if (args.priority    !== undefined) patch.priority    = args.priority    as SchedulePriority
+        if (args.name        !== undefined) patch.name        = normaliseLlmText(args.name)
+        if (args.description !== undefined) patch.description = normaliseLlmText(args.description)
+        if (args.priority    !== undefined) patch.priority    = args.priority as SchedulePriority
 
         // Structured trigger: if provided, validate and replace entirely
         if (args.trigger !== undefined) {
@@ -647,18 +638,18 @@ export class ScheduleNativeCapability extends BaseNativeCapability {
 
           if (args.projectId !== undefined) {
             // Explicit projectId provided alongside action — use it directly (no pre-fetch)
-            patch.action.projectId = (args.projectId as string | null) ?? undefined
+            patch.action.projectId = args.projectId ?? undefined
           } else {
             // No explicit projectId — carry over from existing schedule to avoid
             // silently nulling out the project association. This single read is
             // unavoidable given the service's action.projectId-as-canonical design.
-            const existing = await this.scheduleService.get(id)
-            if (!existing) return this.errorResult(new Error(`Schedule not found: ${id}`))
+            const existing = await this.scheduleService.get(args.id)
+            if (!existing) return this.errorResult(new Error(`Schedule not found: ${args.id}`))
             patch.action.projectId = existing.projectId ?? undefined
           }
         } else if (args.projectId !== undefined) {
           // Only projectId changes (no action change) — use top-level UpdateScheduleInput.projectId
-          patch.projectId = args.projectId as string | null
+          patch.projectId = args.projectId
         }
 
         if (Object.keys(patch).length === 0) {
@@ -669,18 +660,18 @@ export class ScheduleNativeCapability extends BaseNativeCapability {
 
         // Single update operation — no TOCTOU pre-check for the update itself.
         // updateSchedule returns null if the schedule does not exist.
-        const updated = await this.scheduleService.update(id, patch)
-        if (!updated) return this.errorResult(new Error(`Schedule not found: ${id}`))
+        const updated = await this.scheduleService.update(args.id, patch)
+        if (!updated) return this.errorResult(new Error(`Schedule not found: ${args.id}`))
 
         return this.textResult(JSON.stringify(this.toDetail(updated), null, 2))
       },
-    }
+    })
   }
 
   // ── pause_schedule ──────────────────────────────────────────────────────────
 
-  private pauseScheduleConfig(): ToolConfig {
-    return {
+  private pauseScheduleConfig(): ToolDescriptor<OpenCowSessionContext> {
+    return this.tool({
       name: 'pause_schedule',
       description:
         'Pause an active schedule. It stops executing until resumed. ' +
@@ -688,19 +679,18 @@ export class ScheduleNativeCapability extends BaseNativeCapability {
       schema: {
         id: z.string().describe('Schedule ID to pause'),
       },
-      execute: async (args) => {
-        const id = args.id as string
-        const updated = await this.scheduleService.pause(id)
-        if (!updated) return this.errorResult(new Error(`Schedule not found: ${id}`))
+      execute: async ({ args }) => {
+        const updated = await this.scheduleService.pause(args.id)
+        if (!updated) return this.errorResult(new Error(`Schedule not found: ${args.id}`))
         return this.textResult(JSON.stringify(this.toSummary(updated), null, 2))
       },
-    }
+    })
   }
 
   // ── resume_schedule ─────────────────────────────────────────────────────────
 
-  private resumeScheduleConfig(): ToolConfig {
-    return {
+  private resumeScheduleConfig(): ToolDescriptor<OpenCowSessionContext> {
+    return this.tool({
       name: 'resume_schedule',
       description:
         'Resume a paused schedule. Resets consecutive failure count and recalculates next run. ' +
@@ -708,19 +698,18 @@ export class ScheduleNativeCapability extends BaseNativeCapability {
       schema: {
         id: z.string().describe('Schedule ID to resume'),
       },
-      execute: async (args) => {
-        const id = args.id as string
-        const updated = await this.scheduleService.resume(id)
-        if (!updated) return this.errorResult(new Error(`Schedule not found: ${id}`))
+      execute: async ({ args }) => {
+        const updated = await this.scheduleService.resume(args.id)
+        if (!updated) return this.errorResult(new Error(`Schedule not found: ${args.id}`))
         return this.textResult(JSON.stringify(this.toSummary(updated), null, 2))
       },
-    }
+    })
   }
 
   // ── preview_next_runs ───────────────────────────────────────────────────────
 
-  private previewNextRunsConfig(): ToolConfig {
-    return {
+  private previewNextRunsConfig(): ToolDescriptor<OpenCowSessionContext> {
+    return this.tool({
       name: 'preview_next_runs',
       description:
         'Preview the next N execution times. Two modes: ' +
@@ -742,14 +731,13 @@ export class ScheduleNativeCapability extends BaseNativeCapability {
           .default(5)
           .describe('Number of runs to preview (1-20, default 5)'),
       },
-      execute: async (args) => {
-        const count = (args.count as number) ?? 5
+      execute: async ({ args }) => {
         let trigger: ScheduleTrigger
         let label: string
 
         if (args.id) {
           // Mode 1: preview existing schedule
-          const schedule = await this.scheduleService.get(args.id as string)
+          const schedule = await this.scheduleService.get(args.id)
           if (!schedule) return this.errorResult(new Error(`Schedule not found: ${args.id}`))
           trigger = schedule.trigger
           label = schedule.name
@@ -767,7 +755,7 @@ export class ScheduleNativeCapability extends BaseNativeCapability {
         }
 
         const nextRuns = this.scheduleService
-          .previewNextRuns(trigger, count)
+          .previewNextRuns(trigger, args.count)
           .map((ts) => new Date(ts).toISOString())
 
         return this.textResult(JSON.stringify({
@@ -776,7 +764,7 @@ export class ScheduleNativeCapability extends BaseNativeCapability {
           nextRuns,
         }, null, 2))
       },
-    }
+    })
   }
 
   // ── Serialisation helpers ───────────────────────────────────────────────────

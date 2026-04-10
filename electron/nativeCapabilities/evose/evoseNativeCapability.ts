@@ -13,12 +13,13 @@
  */
 
 import { z } from 'zod/v4'
+import type { ToolDescriptor } from '@opencow-ai/opencow-agent-sdk'
 import type {
   NativeCapabilityMeta,
   NativeCapabilityToolContext,
-  NativeToolDescriptor,
 } from '../types'
-import { BaseNativeCapability, type ToolConfig } from '../baseNativeCapability'
+import { BaseNativeCapability } from '../baseNativeCapability'
+import type { OpenCowSessionContext } from '../openCowSessionContext'
 import type { EvoseService, AgentRunEvent } from '../../services/evoseService'
 import type { SettingsService } from '../../services/settingsService'
 import type { EvoseAppConfig, EvoseRelayEvent, EvoseSettings } from '../../../src/shared/types'
@@ -50,23 +51,25 @@ export class EvoseNativeCapability extends BaseNativeCapability {
    *
    * Returns [] when credentials are missing — session proceeds normally.
    */
-  override getToolDescriptors(ctx: NativeCapabilityToolContext): readonly NativeToolDescriptor[] {
+  override getToolDescriptors(
+    ctx: NativeCapabilityToolContext,
+  ): readonly ToolDescriptor<OpenCowSessionContext>[] {
     const { evose } = this.settingsService.getSettings()
     if (!evose.apiKey || evose.workspaceIds.length === 0) return []
     const enabledCount = evose.apps.filter((app) => app.enabled).length
     log.info(`Building Evose gateway MCP tools (enabled apps=${enabledCount})`)
 
     return [
-      this.createToolDescriptor(this.buildRunAgentConfig(ctx)),
-      this.createToolDescriptor(this.buildRunWorkflowConfig()),
-      this.createToolDescriptor(this.buildListAppsConfig()),
+      this.buildRunAgentTool(ctx),
+      this.buildRunWorkflowTool(),
+      this.buildListAppsTool(),
     ]
   }
 
   // ── Gateway: Run Agent ────────────────────────────────────────────────────
 
-  private buildRunAgentConfig(ctx: NativeCapabilityToolContext): ToolConfig {
-    return {
+  private buildRunAgentTool(ctx: NativeCapabilityToolContext): ToolDescriptor<OpenCowSessionContext> {
+    return this.tool({
       name: EVOSE_RUN_AGENT_LOCAL_NAME,
       description: '[Evose Gateway] Run an enabled Evose Agent by app_id',
       schema: {
@@ -74,18 +77,17 @@ export class EvoseNativeCapability extends BaseNativeCapability {
         input:      z.string().describe('Input content to send to the Agent'),
         session_id: z.string().optional().describe('(Optional) Session ID for multi-turn conversations'),
       },
-      execute: async (args, toolInput) => {
+      execute: async ({ args, abortSignal }) => {
         const { evose } = this.settingsService.getSettings()
-        const appId = String(args.app_id ?? '')
-        const app = this.resolveEnabledApp(evose, appId, 'agent')
-        const relayKey = deriveEvoseRelayKey(EVOSE_RUN_AGENT_LOCAL_NAME, appId)
+        const app = this.resolveEnabledApp(evose, args.app_id, 'agent')
+        const relayKey = deriveEvoseRelayKey(EVOSE_RUN_AGENT_LOCAL_NAME, args.app_id)
 
         try {
           const result = await this.evoseService.runAgent({
             appId:     app.appId,
-            input:     args.input as string,
-            sessionId: args.session_id as string | undefined,
-            signal:    toolInput.context.signal,
+            input:     args.input,
+            sessionId: args.session_id,
+            signal:    abortSignal,
             onEvent:   (event: AgentRunEvent) => {
               switch (event.type) {
                 case 'output':
@@ -133,29 +135,28 @@ export class EvoseNativeCapability extends BaseNativeCapability {
           ctx.sessionContext.relay.unregister(relayKey)
         }
       },
-    }
+    })
   }
 
   // ── Gateway: Run Workflow ─────────────────────────────────────────────────
 
-  private buildRunWorkflowConfig(): ToolConfig {
-    return {
+  private buildRunWorkflowTool(): ToolDescriptor<OpenCowSessionContext> {
+    return this.tool({
       name: EVOSE_RUN_WORKFLOW_LOCAL_NAME,
       description: '[Evose Gateway] Run an enabled Evose Workflow by app_id',
       schema: {
         app_id: z.string().describe('Evose Workflow app_id (must be enabled in Settings)'),
         inputs: z.record(z.string(), z.unknown()).describe('Input parameters required by the Workflow (key-value pairs)'),
       },
-      execute: async (args, input) => {
+      execute: async ({ args, abortSignal }) => {
         const { evose } = this.settingsService.getSettings()
-        const appId = String(args.app_id ?? '')
-        const app = this.resolveEnabledApp(evose, appId, 'workflow')
+        const app = this.resolveEnabledApp(evose, args.app_id, 'workflow')
 
         try {
           const result = await this.evoseService.runWorkflow({
             appId:  app.appId,
-            inputs: args.inputs as Record<string, unknown>,
-            signal: input.context.signal,
+            inputs: args.inputs,
+            signal: abortSignal,
           })
           return this.textResult(result)
         } catch (err) {
@@ -163,27 +164,26 @@ export class EvoseNativeCapability extends BaseNativeCapability {
           return this.errorResult(err)
         }
       },
-    }
+    })
   }
 
   // ── Gateway: List Apps ────────────────────────────────────────────────────
 
-  private buildListAppsConfig(): ToolConfig {
-    return {
+  private buildListAppsTool(): ToolDescriptor<OpenCowSessionContext> {
+    return this.tool({
       name: EVOSE_LIST_APPS_LOCAL_NAME,
       description: '[Evose Gateway] List Evose apps configured in Settings',
       schema: {
         type: z.enum(['agent', 'workflow']).optional().describe('Optional filter by app type'),
         include_disabled: z.boolean().optional().describe('Include disabled apps (default: false)'),
       },
-      execute: async (args) => {
+      execute: async ({ args }) => {
         const { evose } = this.settingsService.getSettings()
-        const type = args.type === 'agent' || args.type === 'workflow' ? args.type : undefined
         const includeDisabled = args.include_disabled === true
 
         const apps = evose.apps
           .filter((app) => includeDisabled || app.enabled)
-          .filter((app) => !type || app.type === type)
+          .filter((app) => !args.type || app.type === args.type)
           .map((app) => ({
             app_id: app.appId,
             name: app.name,
@@ -194,7 +194,7 @@ export class EvoseNativeCapability extends BaseNativeCapability {
 
         return this.textResult(JSON.stringify({ total: apps.length, apps }, null, 2))
       },
-    }
+    })
   }
 
   // ── Helpers ───────────────────────────────────────────────────────────────

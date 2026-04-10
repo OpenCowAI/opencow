@@ -21,8 +21,10 @@
 import { z } from 'zod/v4'
 import * as path from 'node:path'
 import * as fs from 'node:fs/promises'
+import type { ToolDescriptor } from '@opencow-ai/opencow-agent-sdk'
 import type { NativeCapabilityMeta, NativeCapabilityToolContext } from '../../../nativeCapabilities/types'
-import { BaseNativeCapability, type ToolConfig } from '../../../nativeCapabilities/baseNativeCapability'
+import { BaseNativeCapability } from '../../../nativeCapabilities/baseNativeCapability'
+import type { OpenCowSessionContext } from '../../../nativeCapabilities/openCowSessionContext'
 import { createLogger } from '../../../platform/logger'
 import type { AgentManifest } from './types'
 
@@ -76,111 +78,90 @@ export class RepoAnalyzerCapability extends BaseNativeCapability {
 
   // ── Declarative tool definitions ────────────────────────────────────────────
 
-  protected override nativeToolConfigs(_ctx: NativeCapabilityToolContext): ToolConfig[] {
+  override getToolDescriptors(
+    _ctx: NativeCapabilityToolContext,
+  ): readonly ToolDescriptor<OpenCowSessionContext>[] {
     return [
-      this.listDirectoryConfig(),
-      this.readFileConfig(),
-      this.readFilesConfig(),
-      this.submitManifestConfig(),
-    ]
-  }
+      this.tool({
+        name: 'list_directory',
+        description:
+          'Recursively list directory contents within the repository. '
+          + 'Returns entries with name, type (file/dir), and size. '
+          + `Default depth is ${DEFAULT_DEPTH}; maximum depth is ${MAX_DEPTH}. `
+          + 'All paths are relative to the repository root.',
+        schema: {
+          path: z
+            .string()
+            .describe('Relative path within the repository to list (use "." for root)'),
+          depth: z
+            .number()
+            .int()
+            .min(1)
+            .max(MAX_DEPTH)
+            .optional()
+            .describe(`Recursion depth (1–${MAX_DEPTH}, default ${DEFAULT_DEPTH})`),
+        },
+        execute: async ({ args }) => {
+          const depth = args.depth ?? DEFAULT_DEPTH
+          const resolved = this.resolveSandboxed(args.path)
+          const output = await this.listRecursive(resolved, depth, 0)
+          return this.textResult(output)
+        },
+      }),
 
-  // ── list_directory ──────────────────────────────────────────────────────────
+      this.tool({
+        name: 'read_file',
+        description:
+          'Read a single file from the repository as UTF-8 text. '
+          + `Files larger than ${MAX_FILE_SIZE / 1024} KB are truncated with a [truncated] marker. `
+          + 'Binary files (detected by null bytes in the first 1024 chars) are rejected. '
+          + 'Path is relative to the repository root.',
+        schema: {
+          path: z
+            .string()
+            .describe('Relative path to the file within the repository'),
+        },
+        execute: async ({ args }) => {
+          const resolved = this.resolveSandboxed(args.path)
+          const content = await fs.readFile(resolved, 'utf-8')
 
-  private listDirectoryConfig(): ToolConfig {
-    return {
-      name: 'list_directory',
-      description:
-        'Recursively list directory contents within the repository. '
-        + 'Returns entries with name, type (file/dir), and size. '
-        + `Default depth is ${DEFAULT_DEPTH}; maximum depth is ${MAX_DEPTH}. `
-        + 'All paths are relative to the repository root.',
-      schema: {
-        path: z
-          .string()
-          .describe('Relative path within the repository to list (use "." for root)'),
-        depth: z
-          .number()
-          .int()
-          .min(1)
-          .max(MAX_DEPTH)
-          .optional()
-          .describe(`Recursion depth (1–${MAX_DEPTH}, default ${DEFAULT_DEPTH})`),
-      },
-      execute: async (args) => {
-        const relPath = args.path as string
-        const depth = (args.depth as number | undefined) ?? DEFAULT_DEPTH
+          // Binary detection: check for null bytes in the leading portion
+          const checkSlice = content.slice(0, BINARY_CHECK_LENGTH)
+          if (checkSlice.includes('\0')) {
+            return this.errorResult(
+              new Error(`File appears to be binary (null bytes detected): ${args.path}`),
+            )
+          }
 
-        const resolved = this.resolveSandboxed(relPath)
-        const output = await this.listRecursive(resolved, depth, 0)
-        return this.textResult(output)
-      },
-    }
-  }
+          // Truncate if too large
+          if (Buffer.byteLength(content, 'utf-8') > MAX_FILE_SIZE) {
+            const truncated = Buffer.from(content, 'utf-8').subarray(0, MAX_FILE_SIZE).toString('utf-8')
+            return this.textResult(truncated + '\n[truncated]')
+          }
 
-  // ── read_file ───────────────────────────────────────────────────────────────
+          return this.textResult(content)
+        },
+      }),
 
-  private readFileConfig(): ToolConfig {
-    return {
-      name: 'read_file',
-      description:
-        'Read a single file from the repository as UTF-8 text. '
-        + `Files larger than ${MAX_FILE_SIZE / 1024} KB are truncated with a [truncated] marker. `
-        + 'Binary files (detected by null bytes in the first 1024 chars) are rejected. '
-        + 'Path is relative to the repository root.',
-      schema: {
-        path: z
-          .string()
-          .describe('Relative path to the file within the repository'),
-      },
-      execute: async (args) => {
-        const relPath = args.path as string
-        const resolved = this.resolveSandboxed(relPath)
+      this.tool({
+        name: 'read_files',
+        description:
+          `Batch-read up to ${MAX_BATCH_FILES} files from the repository in a single call. `
+          + 'Each file is returned with a header separator. '
+          + 'Same truncation and binary detection rules as read_file. '
+          + 'Paths are relative to the repository root. '
+          + 'Use this instead of read_file when reading multiple files for efficiency.',
+        schema: {
+          paths: z
+            .array(z.string())
+            .min(1)
+            .max(MAX_BATCH_FILES)
+            .describe(`Array of relative file paths (1–${MAX_BATCH_FILES})`),
+        },
+        execute: async ({ args }) => {
+          const sections: string[] = []
 
-        const content = await fs.readFile(resolved, 'utf-8')
-
-        // Binary detection: check for null bytes in the leading portion
-        const checkSlice = content.slice(0, BINARY_CHECK_LENGTH)
-        if (checkSlice.includes('\0')) {
-          return this.errorResult(
-            new Error(`File appears to be binary (null bytes detected): ${relPath}`),
-          )
-        }
-
-        // Truncate if too large
-        if (Buffer.byteLength(content, 'utf-8') > MAX_FILE_SIZE) {
-          const truncated = Buffer.from(content, 'utf-8').subarray(0, MAX_FILE_SIZE).toString('utf-8')
-          return this.textResult(truncated + '\n[truncated]')
-        }
-
-        return this.textResult(content)
-      },
-    }
-  }
-
-  // ── read_files (batch) ──────────────────────────────────────────────────────
-
-  private readFilesConfig(): ToolConfig {
-    return {
-      name: 'read_files',
-      description:
-        `Batch-read up to ${MAX_BATCH_FILES} files from the repository in a single call. `
-        + 'Each file is returned with a header separator. '
-        + 'Same truncation and binary detection rules as read_file. '
-        + 'Paths are relative to the repository root. '
-        + 'Use this instead of read_file when reading multiple files for efficiency.',
-      schema: {
-        paths: z
-          .array(z.string())
-          .min(1)
-          .max(MAX_BATCH_FILES)
-          .describe(`Array of relative file paths (1–${MAX_BATCH_FILES})`),
-      },
-      execute: async (args) => {
-        const paths = args.paths as string[]
-        const sections: string[] = []
-
-        for (const relPath of paths) {
+          for (const relPath of args.paths) {
           try {
             const resolved = this.resolveSandboxed(relPath)
             const content = await fs.readFile(resolved, 'utf-8')
@@ -207,94 +188,81 @@ export class RepoAnalyzerCapability extends BaseNativeCapability {
           }
         }
 
-        return this.textResult(sections.join('\n\n'))
-      },
-    }
-  }
+          return this.textResult(sections.join('\n\n'))
+        },
+      }),
 
-  // ── submit_manifest ─────────────────────────────────────────────────────────
-
-  private submitManifestConfig(): ToolConfig {
-    return {
-      name: 'submit_manifest',
-      description:
-        'Submit the final analysis manifest describing the capabilities discovered in the repository. '
-        + 'Every sourcePath must point to an existing file within the repository. '
-        + 'Call this tool exactly once when analysis is complete.',
-      schema: {
-        packageName: z
-          .string()
-          .describe('Suggested namespace prefix for the package (e.g. "my-toolkit")'),
-        capabilities: z
-          .array(
-            z.object({
-              name: z
-                .string()
-                .describe('Capability name in kebab-case (e.g. "spec-driven-development")'),
-              category: z
-                .enum(['skill', 'agent', 'command', 'rule', 'hook', 'mcp-server'])
-                .describe('Capability category'),
-              sourcePath: z
-                .string()
-                .describe('Relative path to the source file within the repository'),
-              description: z
-                .string()
-                .describe('One-line description of what this capability does'),
-              confidence: z
-                .enum(['high', 'medium', 'low'])
-                .describe('Confidence in this classification'),
-            }),
-          )
-          .describe('Array of discovered capabilities'),
-        reasoning: z
-          .string()
-          .describe('Explanation of the analysis decisions and methodology'),
-      },
-      execute: async (args) => {
-        const packageName = args.packageName as string
-        const capabilities = args.capabilities as Array<{
-          name: string
-          category: 'skill' | 'agent' | 'command' | 'rule' | 'hook' | 'mcp-server'
-          sourcePath: string
-          description: string
-          confidence: 'high' | 'medium' | 'low'
-        }>
-        const reasoning = args.reasoning as string
-
-        // Validate that every sourcePath exists within the repo
-        const missingPaths: string[] = []
-        for (const cap of capabilities) {
-          const resolved = this.resolveSandboxed(cap.sourcePath)
-          try {
-            await fs.access(resolved)
-          } catch {
-            missingPaths.push(cap.sourcePath)
+      this.tool({
+        name: 'submit_manifest',
+        description:
+          'Submit the final analysis manifest describing the capabilities discovered in the repository. '
+          + 'Every sourcePath must point to an existing file within the repository. '
+          + 'Call this tool exactly once when analysis is complete.',
+        schema: {
+          packageName: z
+            .string()
+            .describe('Suggested namespace prefix for the package (e.g. "my-toolkit")'),
+          capabilities: z
+            .array(
+              z.object({
+                name: z
+                  .string()
+                  .describe('Capability name in kebab-case (e.g. "spec-driven-development")'),
+                category: z
+                  .enum(['skill', 'agent', 'command', 'rule', 'hook', 'mcp-server'])
+                  .describe('Capability category'),
+                sourcePath: z
+                  .string()
+                  .describe('Relative path to the source file within the repository'),
+                description: z
+                  .string()
+                  .describe('One-line description of what this capability does'),
+                confidence: z
+                  .enum(['high', 'medium', 'low'])
+                  .describe('Confidence in this classification'),
+              }),
+            )
+            .describe('Array of discovered capabilities'),
+          reasoning: z
+            .string()
+            .describe('Explanation of the analysis decisions and methodology'),
+        },
+        execute: async ({ args }) => {
+          // Validate that every sourcePath exists within the repo
+          const missingPaths: string[] = []
+          for (const cap of args.capabilities) {
+            const resolved = this.resolveSandboxed(cap.sourcePath)
+            try {
+              await fs.access(resolved)
+            } catch {
+              missingPaths.push(cap.sourcePath)
+            }
           }
-        }
 
-        if (missingPaths.length > 0) {
-          const errorMsg = `Source path validation failed. The following paths do not exist:\n`
-            + missingPaths.map((p) => `  - ${p}`).join('\n')
-            + `\n\nrepoDir: ${this.repoDir}\nPlease verify the paths and resubmit.`
-          log.warn('submit_manifest path validation failed', { missingPaths, repoDir: this.repoDir })
-          return this.errorResult(new Error(errorMsg))
-        }
+          if (missingPaths.length > 0) {
+            const errorMsg = `Source path validation failed. The following paths do not exist:\n`
+              + missingPaths.map((p) => `  - ${p}`).join('\n')
+              + `\n\nrepoDir: ${this.repoDir}\nPlease verify the paths and resubmit.`
+            log.warn('submit_manifest path validation failed', { missingPaths, repoDir: this.repoDir })
+            return this.errorResult(new Error(errorMsg))
+          }
 
-        // Store the validated manifest
-        const manifest: AgentManifest = {
-          packageName,
-          capabilities,
-          reasoning,
-        }
-        this.submittedManifest = manifest
+          // Store the validated manifest
+          const manifest: AgentManifest = {
+            packageName: args.packageName,
+            capabilities: args.capabilities,
+            reasoning: args.reasoning,
+          }
+          this.submittedManifest = manifest
 
-        return this.textResult(
-          `Manifest submitted successfully. `
-          + `Package: "${packageName}", `
-          + `${capabilities.length} capability(ies) registered.`,
-        )
-      },
-    }
+          return this.textResult(
+            `Manifest submitted successfully. `
+            + `Package: "${args.packageName}", `
+            + `${args.capabilities.length} capability(ies) registered.`,
+          )
+        },
+      }),
+    ]
   }
 
   // ── Sandbox helpers ─────────────────────────────────────────────────────────

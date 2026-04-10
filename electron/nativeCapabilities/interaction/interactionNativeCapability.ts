@@ -20,8 +20,10 @@
 
 import { z } from 'zod/v4'
 import { randomUUID } from 'node:crypto'
+import type { ToolDescriptor } from '@opencow-ai/opencow-agent-sdk'
 import type { NativeCapabilityMeta, NativeCapabilityToolContext, CallToolResult } from '../types'
-import { BaseNativeCapability, type ToolConfig } from '../baseNativeCapability'
+import { BaseNativeCapability } from '../baseNativeCapability'
+import type { OpenCowSessionContext } from '../openCowSessionContext'
 import type { PendingQuestionRegistry } from './pendingQuestionRegistry'
 import type { DataBusEvent } from '../../../src/shared/types'
 import { isIMPlatformSource } from '../../../src/shared/types'
@@ -71,7 +73,9 @@ export class InteractionNativeCapability extends BaseNativeCapability {
     this.deps = deps
   }
 
-  protected override nativeToolConfigs(ctx: NativeCapabilityToolContext): ToolConfig[] {
+  override getToolDescriptors(
+    ctx: NativeCapabilityToolContext,
+  ): readonly ToolDescriptor<OpenCowSessionContext>[] {
     const { sessionId, originSource } = ctx.sessionContext
 
     // IM clients (Telegram, Discord, Feishu, WeChat) cannot render interactive
@@ -86,7 +90,7 @@ export class InteractionNativeCapability extends BaseNativeCapability {
     const { registry, dispatch, enterQuestionState, exitQuestionState } = this.deps
 
     return [
-      {
+      this.tool({
         name: 'ask_user_question',
         description:
           'Ask the user questions with selectable options and wait for their response. '
@@ -97,7 +101,7 @@ export class InteractionNativeCapability extends BaseNativeCapability {
             .min(1).max(4)
             .describe('Questions to ask (1-4 questions)'),
         },
-        execute: async (args): Promise<CallToolResult> => {
+        execute: async ({ args }): Promise<CallToolResult> => {
           const requestId = randomUUID()
           const questions = args.questions
 
@@ -145,7 +149,7 @@ export class InteractionNativeCapability extends BaseNativeCapability {
             content: [{ type: 'text' as const, text: response.answer }],
           }
         },
-      },
+      }),
     ]
   }
 }

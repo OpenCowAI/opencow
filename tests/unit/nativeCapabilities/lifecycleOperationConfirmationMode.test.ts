@@ -196,7 +196,7 @@ describe('Lifecycle operation confirmationMode normalization', () => {
     )
   })
 
-  it('generates unique fallback toolUseId when both toolUseId/invocationId are missing', async () => {
+  it('forwards the framework-supplied toolUseId verbatim into the lifecycle proposal', async () => {
     const proposeOperations = vi.fn().mockResolvedValue([])
     const capability = new IssueNativeCapability({
       issueService: {} as never,
@@ -215,16 +215,16 @@ describe('Lifecycle operation confirmationMode normalization', () => {
       }],
     })
 
-    // Empty-string toolUseId triggers the resolveProposalToolUseId fallback
-    // path that generates a unique missing-tool-use-id:* identifier per call.
-    await callTool(tool, args, { sessionContext, toolUseId: '' })
-    await callTool(tool, args, { sessionContext, toolUseId: '' })
+    // The SDK adapter layer guarantees a non-empty toolUseId in production
+    // (it generates a UUID when none is supplied), so the OpenCow native
+    // capability just forwards whatever it receives.
+    await callTool(tool, args, { sessionContext, toolUseId: 'tool-use-aaa' })
+    await callTool(tool, args, { sessionContext, toolUseId: 'tool-use-bbb' })
 
     expect(proposeOperations).toHaveBeenCalledTimes(2)
     const first = proposeOperations.mock.calls[0][0] as { toolUseId: string }
     const second = proposeOperations.mock.calls[1][0] as { toolUseId: string }
-    expect(first.toolUseId).toMatch(/^missing-tool-use-id:/)
-    expect(second.toolUseId).toMatch(/^missing-tool-use-id:/)
-    expect(first.toolUseId).not.toBe(second.toolUseId)
+    expect(first.toolUseId).toBe('tool-use-aaa')
+    expect(second.toolUseId).toBe('tool-use-bbb')
   })
 })

@@ -11,9 +11,11 @@
  */
 
 import { z } from 'zod/v4'
+import type { ToolDescriptor } from '@opencow-ai/opencow-agent-sdk'
 import type { NativeCapabilityMeta, NativeCapabilityToolContext } from './types'
-import { BaseNativeCapability, type ToolConfig } from './baseNativeCapability'
-import { parseGenHtmlInput } from '@shared/genHtmlInput'
+import { BaseNativeCapability } from './baseNativeCapability'
+import type { OpenCowSessionContext } from './openCowSessionContext'
+import { GEN_HTML_DEFAULT_TITLE } from '@shared/genHtmlInput'
 
 export class HtmlNativeCapability extends BaseNativeCapability {
   readonly meta: NativeCapabilityMeta = {
@@ -21,9 +23,11 @@ export class HtmlNativeCapability extends BaseNativeCapability {
     description: 'Generate HTML content for browser-style preview in session console',
   }
 
-  protected override nativeToolConfigs(_ctx: NativeCapabilityToolContext): ToolConfig[] {
+  override getToolDescriptors(
+    _ctx: NativeCapabilityToolContext,
+  ): readonly ToolDescriptor<OpenCowSessionContext>[] {
     return [
-      {
+      this.tool({
         name: 'gen_html',
         description:
           'Generate HTML content for browser preview. The content is displayed as an interactive '
@@ -38,7 +42,7 @@ export class HtmlNativeCapability extends BaseNativeCapability {
           + 'Only fall back to the Write tool for Markdown (.md) files when the user has NOT '
           + 'specified HTML as the output format and the content does not require visual rendering.',
         schema: {
-          title: z.string().describe('Display title for the HTML page (shown in preview card header)'),
+          title: z.string().optional().describe('Display title for the HTML page (shown in preview card header)'),
           content: z.string()
             .optional()
             .describe('Complete HTML content. Can include inline <style> and <script> tags.'),
@@ -46,18 +50,22 @@ export class HtmlNativeCapability extends BaseNativeCapability {
             .optional()
             .describe('Legacy alias of content. Prefer content for new calls.'),
         },
-        execute: async (args) => {
-          const { title, content } = parseGenHtmlInput(args)
-          if (!content) {
+        execute: async ({ args }) => {
+          // `content` is the canonical field; `html` is a legacy alias kept
+          // for callers that still emit the old shape. Pick whichever is
+          // populated.
+          const body = (args.content?.trim() ?? '') || (args.html?.trim() ?? '')
+          if (body.length === 0) {
             return this.errorResult(
               'gen_html requires non-empty HTML content. Provide it in "content" (preferred) or "html".',
             )
           }
+          const title = args.title?.trim() || GEN_HTML_DEFAULT_TITLE
           return this.textResult(
             `HTML page "${title}" generated. Browser preview card is now visible in the session console.`,
           )
         },
-      },
+      }),
     ]
   }
 }
