@@ -855,8 +855,14 @@ export class SessionOrchestrator {
         const eligibleSkills = snapshot.skills.filter(
           (s) => s.enabled && s.eligibility.eligible,
         )
-        if (eligibleSkills.length > 0) {
-          options.commands = eligibleSkills.map(toSdkCommand)
+        const eligibleCommands = snapshot.commands.filter(
+          (c) => c.enabled && c.eligibility.eligible,
+        )
+        if (eligibleSkills.length > 0 || eligibleCommands.length > 0) {
+          options.commands = [
+            ...eligibleCommands.map(toSdkCommand),
+            ...eligibleSkills.map(toSdkCommand),
+          ]
         }
         const eligibleAgents = snapshot.agents.filter(
           (a) => a.enabled && a.eligibility.eligible,
