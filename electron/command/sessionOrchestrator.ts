@@ -30,6 +30,7 @@ import { toCapabilityAllowlist } from '../nativeCapabilities/openCowCapabilityRe
 import type { NativeToolDescriptor } from '../nativeCapabilities/types'
 import type { OpenCowSessionContext } from '../nativeCapabilities/openCowSessionContext'
 import { toInlineTool, type SdkTool } from '@opencow-ai/opencow-agent-sdk'
+import { toSdkCommand } from '../services/capabilityCenter/sdkCommandAdapter'
 import type { BrowserService } from '../browser/browserService'
 import type { PendingQuestionRegistry } from '../nativeCapabilities/interaction/pendingQuestionRegistry'
 import type { CapabilityCenter } from '../services/capabilityCenter'
@@ -870,6 +871,25 @@ export class SessionOrchestrator {
           ...(Array.isArray(options.tools) ? options.tools : []),
           ...inlineNativeTools,
         ]
+      }
+
+      // Phase 1B.11d: convert OpenCow's marketplace/project/global skills
+      // into SDK Command shapes and pass them via Options.commands so the
+      // SDK's built-in SkillTool can catalog, delta-emit, and dispatch them.
+      // This replaces the old system-prompt-injection path where skills were
+      // pasted as static <skill> XML segments via promptSegmentBuilder.ts.
+      if (this.deps.capabilityCenter) {
+        try {
+          const snapshot = await this.deps.capabilityCenter.getSnapshot(config.projectId)
+          const eligibleSkills = snapshot.skills.filter(
+            (s) => s.enabled && s.eligibility.eligible,
+          )
+          if (eligibleSkills.length > 0) {
+            options.commands = eligibleSkills.map(toSdkCommand)
+          }
+        } catch (err) {
+          log.warn('Failed to convert marketplace skills to SDK commands', err)
+        }
       }
 
       if (hooks) {

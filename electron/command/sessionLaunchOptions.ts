@@ -59,6 +59,19 @@ export interface ClaudeSessionLaunchOptions extends SessionLaunchOptionsBase {
   canUseTool?: RuntimeCanUseTool
   mcpServers?: Record<string, unknown>
   hooks?: SDKHookMap
+  /**
+   * Phase 1B.11d — host-provided skill commands for SDK's built-in SkillTool.
+   * Each entry must match the SDK's internal `Command & { type: 'prompt' }`
+   * shape. The SDK merges these with its filesystem-scanned skills, includes
+   * them in the SkillTool catalog, and lets the model invoke them via
+   * `Skill('name')`.
+   */
+  commands?: unknown[]
+  /**
+   * Phase 1B.11d — host-provided agent definitions for SDK's built-in AgentTool.
+   * Each entry must match the SDK's internal `AgentDefinition` shape.
+   */
+  agents?: unknown[]
 }
 
 export interface CodexSessionLaunchOptions extends SessionLaunchOptionsBase {
