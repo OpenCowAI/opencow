@@ -49,28 +49,27 @@ function derivePromptPolicy(prompt: UserMessageContent | undefined): PromptPolic
 /**
  * Default native-tool allowlist for general-purpose sessions.
  *
- * Browser is always available so users can naturally say "open x.com" in any
- * conversation — whether from the app, Telegram, Discord, or any future channel.
+ * All 8 native capabilities are exposed by default — capability-level, not
+ * tool-level. Token cost is bounded (~5.6K for all tools across all 8
+ * capabilities) and amortised by prompt caching.
  *
- * HTML is always available so users can naturally say "generate an HTML page"
- * and get an interactive browser preview card via
- * gen_html, rather than a raw file written by the Write tool.
- *
- * Interaction ask-user-question is default-on for desktop sessions to keep
- * prompt contract and runtime tool policy consistent.
- *
- * Issue/Schedule lifecycle propose tools are also default-on for all
- * general-purpose sessions so governance does not depend on language-specific
- * intent parsing rules.
+ * The previous narrow allowlist (browser + html + 3 tool-scoped entries)
+ * caused session `ccb-XTyTIQFpUSI-` to fail: user asked "list issues" but
+ * `list_issues` was not in the allowlist, so the model fell back to
+ * `gh issue list` in Bash. Root cause: conflating visibility with governance.
+ * Governance for mutating operations lives in LifecycleOperationCoordinator
+ * (confirmation flow), not in the allowlist.
  *
  * Builtin tools remain enabled (not overridden here).
  */
 const GENERAL_PURPOSE_NATIVE_TOOLS: StartSessionNativeToolAllowItem[] = [
   { capability: 'browser' },
   { capability: 'html' },
-  { capability: 'interaction', tool: 'ask_user_question' },
-  { capability: 'issues', tool: 'propose_issue_operation' },
-  { capability: 'schedules', tool: 'propose_schedule_operation' },
+  { capability: 'interaction' },
+  { capability: 'issues' },
+  { capability: 'projects' },
+  { capability: 'schedules' },
+  { capability: 'evose' },
 ]
 
 /**
