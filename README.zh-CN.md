@@ -345,7 +345,7 @@ git checkout -b feat/my-feature
 
 [Apache-2.0](LICENSE) — 完全免费且开源。无付费层级、无使用限制、无订阅。
 
-> **第三方 SDK：** OpenCow 集成了第三方 AI SDK（如 `@anthropic-ai/claude-agent-sdk`、`@openai/codex-sdk`），它们各自受其许可条款约束。请在使用前查阅各 SDK 的许可证。
+> **第三方 SDK：** OpenCow 集成了第三方 AI SDK（如 `@opencow-ai/opencow-agent-sdk`、`@openai/codex-sdk`），它们各自受其许可条款约束。请在使用前查阅各 SDK 的许可证。
 
 <div align="center">
 <br />
