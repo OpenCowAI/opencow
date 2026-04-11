@@ -34,25 +34,27 @@ let _modulePromise: Promise<OpenCowAgentModule> | null = null
 async function loadSdkModule(): Promise<OpenCowAgentModule> {
   if (!_modulePromise) {
     _modulePromise = (async () => {
-      // Load the main SDK module first — it owns the singleton state.
       const entryPath = require.resolve('@opencow-ai/opencow-agent-sdk/dist/sdk.js')
       const sdkMod = await import(pathToFileURL(entryPath).href) as OpenCowAgentModule & {
         registerBuiltInToolsProvider?: (provider: () => unknown[]) => void
       }
 
       // Register built-in tools (Bash, Read, Write, Edit, etc.) so they're
-      // available in SDK query() sessions. Two-step pattern: pass the SDK's
-      // registerBuiltInToolsProvider to the sub-path bundle so they share
-      // the same singleton (separate bundles have isolated module state).
+      // available in SDK query() sessions.
+      //
+      // registerBuiltInToolsProvider comes from the main SDK (owns the singleton).
+      // getBuiltInTools comes from the sub-path (pure data, no global state).
       if (sdkMod.registerBuiltInToolsProvider) {
         try {
-          const builtInToolsPath = require.resolve('@opencow-ai/opencow-agent-sdk/builtInTools')
-          const builtInTools = await import(pathToFileURL(builtInToolsPath).href) as {
-            registerBuiltInToolsForSDK?: (registerProvider: unknown) => void
+          const btPath = require.resolve('@opencow-ai/opencow-agent-sdk/builtInTools')
+          const { getBuiltInTools } = await import(pathToFileURL(btPath).href) as {
+            getBuiltInTools?: () => unknown[]
           }
-          builtInTools.registerBuiltInToolsForSDK?.(sdkMod.registerBuiltInToolsProvider)
+          if (getBuiltInTools) {
+            sdkMod.registerBuiltInToolsProvider(getBuiltInTools)
+          }
         } catch {
-          // Graceful fallback: SDK version may not have builtInTools sub-path yet
+          // Graceful fallback: SDK version may not have builtInTools sub-path
         }
       }
 
