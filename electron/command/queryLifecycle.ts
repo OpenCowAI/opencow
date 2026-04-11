@@ -34,22 +34,29 @@ let _modulePromise: Promise<OpenCowAgentModule> | null = null
 async function loadSdkModule(): Promise<OpenCowAgentModule> {
   if (!_modulePromise) {
     _modulePromise = (async () => {
-      // Register built-in tools (Bash, Read, Write, Edit, etc.) so they're
-      // available in SDK query() sessions. Without this, only MCP/capability
-      // tools are available. Loaded from a separate sub-path bundle to keep
-      // the main SDK bundle lean.
-      try {
-        const builtInToolsPath = require.resolve('@opencow-ai/opencow-agent-sdk/builtInTools')
-        const builtInTools = await import(pathToFileURL(builtInToolsPath).href) as {
-          registerBuiltInToolsForSDK?: () => void
-        }
-        builtInTools.registerBuiltInToolsForSDK?.()
-      } catch {
-        // Graceful fallback: SDK version may not have builtInTools sub-path yet
+      // Load the main SDK module first — it owns the singleton state.
+      const entryPath = require.resolve('@opencow-ai/opencow-agent-sdk/dist/sdk.js')
+      const sdkMod = await import(pathToFileURL(entryPath).href) as OpenCowAgentModule & {
+        registerBuiltInToolsProvider?: (provider: () => unknown[]) => void
       }
 
-      const entryPath = require.resolve('@opencow-ai/opencow-agent-sdk/dist/sdk.js')
-      return import(pathToFileURL(entryPath).href) as Promise<OpenCowAgentModule>
+      // Register built-in tools (Bash, Read, Write, Edit, etc.) so they're
+      // available in SDK query() sessions. Two-step pattern: pass the SDK's
+      // registerBuiltInToolsProvider to the sub-path bundle so they share
+      // the same singleton (separate bundles have isolated module state).
+      if (sdkMod.registerBuiltInToolsProvider) {
+        try {
+          const builtInToolsPath = require.resolve('@opencow-ai/opencow-agent-sdk/builtInTools')
+          const builtInTools = await import(pathToFileURL(builtInToolsPath).href) as {
+            registerBuiltInToolsForSDK?: (registerProvider: unknown) => void
+          }
+          builtInTools.registerBuiltInToolsForSDK?.(sdkMod.registerBuiltInToolsProvider)
+        } catch {
+          // Graceful fallback: SDK version may not have builtInTools sub-path yet
+        }
+      }
+
+      return sdkMod
     })()
   }
   return _modulePromise
