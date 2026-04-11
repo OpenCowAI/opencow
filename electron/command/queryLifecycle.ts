@@ -30,38 +30,39 @@ type OpenCowAgentModule = {
 }
 
 let _modulePromise: Promise<OpenCowAgentModule> | null = null
+let _builtInTools: unknown[] | null = null
 
 async function loadSdkModule(): Promise<OpenCowAgentModule> {
   if (!_modulePromise) {
     _modulePromise = (async () => {
       const entryPath = require.resolve('@opencow-ai/opencow-agent-sdk/dist/sdk.js')
-      const sdkMod = await import(pathToFileURL(entryPath).href) as OpenCowAgentModule & {
-        registerBuiltInToolsProvider?: (provider: () => unknown[]) => void
-      }
+      const sdkMod = await import(pathToFileURL(entryPath).href) as OpenCowAgentModule
 
-      // Register built-in tools (Bash, Read, Write, Edit, etc.) so they're
-      // available in SDK query() sessions.
-      //
-      // registerBuiltInToolsProvider comes from the main SDK (owns the singleton).
-      // getBuiltInTools comes from the sub-path (pure data, no global state).
-      if (sdkMod.registerBuiltInToolsProvider) {
-        try {
-          const btPath = require.resolve('@opencow-ai/opencow-agent-sdk/builtInTools')
-          const { getBuiltInTools } = await import(pathToFileURL(btPath).href) as {
-            getBuiltInTools?: () => unknown[]
-          }
-          if (getBuiltInTools) {
-            sdkMod.registerBuiltInToolsProvider(getBuiltInTools)
-          }
-        } catch {
-          // Graceful fallback: SDK version may not have builtInTools sub-path
+      // Preload built-in tools from the sub-path bundle.
+      // Tools are passed through options.builtInTools on each query() call
+      // rather than global registration — clean data flow, no singleton issues.
+      try {
+        const btPath = require.resolve('@opencow-ai/opencow-agent-sdk/builtInTools')
+        const { getBuiltInTools } = await import(pathToFileURL(btPath).href) as {
+          getBuiltInTools?: () => unknown[]
         }
+        _builtInTools = getBuiltInTools?.() ?? null
+      } catch {
+        // SDK version may not have builtInTools sub-path
       }
 
       return sdkMod
     })()
   }
   return _modulePromise
+}
+
+/**
+ * Get the preloaded built-in tools list (Bash, Read, Write, Edit, etc.)
+ * Returns null if builtInTools sub-path is not available.
+ */
+export function getPreloadedBuiltInTools(): unknown[] | null {
+  return _builtInTools
 }
 
 /** Test seam: inject a mock loader without touching ESM module resolution. */
@@ -148,7 +149,11 @@ export class QueryLifecycle implements SessionLifecycle {
     const stream = (async function* () {
       try {
         const { query } = await loadSdkModule()
-        const q = query({ prompt: lifecycle.queue, options: toSdkOptions(options) })
+        const sdkOptions = {
+          ...toSdkOptions(options),
+          ...(_builtInTools ? { builtInTools: _builtInTools } : {}),
+        }
+        const q = query({ prompt: lifecycle.queue, options: sdkOptions })
         lifecycle._query = q
         if (lifecycle._stopped) {
           q.close()
