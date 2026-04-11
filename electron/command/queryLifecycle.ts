@@ -27,6 +27,7 @@ type SdkQuery = {
 }
 type OpenCowAgentModule = {
   query: (params: { prompt: AsyncIterable<unknown>; options?: Record<string, unknown> }) => SdkQuery
+  registerBuiltInToolsForSDK?: () => void
 }
 
 let _modulePromise: Promise<OpenCowAgentModule> | null = null
@@ -35,7 +36,12 @@ async function loadSdkModule(): Promise<OpenCowAgentModule> {
   if (!_modulePromise) {
     _modulePromise = (async () => {
       const entryPath = require.resolve('@opencow-ai/opencow-agent-sdk/dist/sdk.js')
-      return import(pathToFileURL(entryPath).href) as Promise<OpenCowAgentModule>
+      const mod = await import(pathToFileURL(entryPath).href) as OpenCowAgentModule
+      // Register built-in tools (Bash, Read, Write, Edit, etc.) so they're
+      // available in SDK query() sessions. Without this, only MCP/capability
+      // tools are available. Safe to call multiple times (idempotent).
+      mod.registerBuiltInToolsForSDK?.()
+      return mod
     })()
   }
   return _modulePromise
