@@ -84,7 +84,14 @@
     }
   },
   "providerSetup": {
-    "title": "连接你的 AI 引擎",
+    "title": "连接一个 LLM 服务商",
+    "description": "粘贴一个 Anthropic API key 即可开始，或打开设置配置 OpenAI / Gemini / OAuth 等服务商。",
+    "apiKeyLabel": "Anthropic API key",
+    "save": "保存并继续",
+    "saving": "保存中…",
+    "skip": "跳过",
+    "advanced": "高级选项 →",
+    "alreadyConfigured": "已自动导入原有的服务商配置，可随时在设置中调整。",
     "subtitle": "选择你要使用的 AI 服务并完成配置。",
     "recommended": "推荐",
     "selectEngine": "选择引擎",
