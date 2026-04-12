@@ -137,6 +137,22 @@ export class SubscriptionProvider implements ProviderAdapter {
     log.info('Subscription credentials cleared')
   }
 
+  /**
+   * Subscription probe = real checkStatus() — it already talks to
+   * Anthropic's token endpoint when refresh is needed.
+   */
+  async probe(): Promise<import('../types').ProbeResult> {
+    const status = await this.checkStatus()
+    if (status.authenticated) {
+      return { ok: true, detail: status.detail?.subscriptionType }
+    }
+    return {
+      ok: false,
+      reason: 'unauthenticated',
+      message: status.error ?? 'Subscription credentials missing or expired',
+    }
+  }
+
   // ── Private: Token Resolution ──────────────────────────────────────
 
   /**

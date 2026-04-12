@@ -19,12 +19,14 @@
 
 import type {
   HTTPAuthResult,
+  ProbeResult,
   ProviderAdapter,
   ProviderAdapterStatus,
 } from '../types'
 import type { CredentialStore } from '../credentialStore'
 import type { ProviderCredentialInfo } from '@shared/types'
 import { createLogger } from '../../../platform/logger'
+import { probeUpstream } from './probe'
 
 const log = createLogger('Provider:OpenAI')
 
@@ -127,6 +129,22 @@ class OpenAIAdapter implements ProviderAdapter {
     log.info(`${this.logLabel} credentials cleared`)
   }
 
+  async probe(): Promise<ProbeResult> {
+    const credential = await this.readCredential()
+    if (!credential?.apiKey) {
+      return { ok: false, reason: 'unauthenticated', message: 'No API key stored' }
+    }
+    const baseUrl = this.resolveBaseUrl(credential)
+    if (!baseUrl) {
+      return { ok: false, reason: 'unauthenticated', message: 'Base URL is required' }
+    }
+    return probeUpstream({
+      url: joinPath(baseUrl, 'models'),
+      headers: { Authorization: `Bearer ${credential.apiKey}` },
+      logLabel: `${this.logLabel} (${baseUrl})`,
+    })
+  }
+
   // ── private ─────────────────────────────────────────────────────────
 
   private async readCredential(): Promise<OpenAICredentialBlob | undefined> {
@@ -136,6 +154,12 @@ class OpenAIAdapter implements ProviderAdapter {
   private resolveBaseUrl(credential: OpenAICredentialBlob): string {
     return credential.baseUrl?.trim() || this.defaultBaseUrl
   }
+}
+
+function joinPath(base: string, path: string): string {
+  const b = base.replace(/\/+$/, '')
+  const p = path.replace(/^\/+/, '')
+  return `${b}/${p}`
 }
 
 /** Official OpenAI endpoint (api.openai.com). */

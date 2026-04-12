@@ -137,7 +137,31 @@ export interface ProviderAdapter {
 
   /** Remove all stored credentials for this provider. */
   logout(): Promise<void>
+
+  /**
+   * Probe the upstream API with the stored credentials to verify auth.
+   *
+   * Contract (distinct from `checkStatus()`):
+   *   - `checkStatus()` is a **local** check — does a credential blob
+   *     exist, is the OAuth token not past its expiry? Cheap, fires on
+   *     every status poll. Never throws.
+   *   - `probe()` makes an actual HTTP request to the provider's
+   *     lightest authenticated endpoint (typically `/v1/models`).
+   *     Called on-demand from the Settings UI Test button. Returns a
+   *     classified result so the caller can surface a meaningful
+   *     error to the user.
+   *
+   * Implementations SHOULD use endpoints that:
+   *   - Do not consume tokens or count toward usage
+   *   - Distinguish 401 (auth failed) from 5xx (upstream down) from
+   *     network errors (proxy / DNS / TLS)
+   */
+  probe(): Promise<ProbeResult>
 }
+
+export type ProbeResult =
+  | { ok: true; detail?: string }
+  | { ok: false; reason: 'unauthenticated' | 'network' | 'unsupported' | 'error'; message: string }
 
 // ── OAuth Constants ─────────────────────────────────────────────────
 

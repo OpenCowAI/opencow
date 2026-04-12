@@ -103,4 +103,18 @@ export class OpenRouterProvider implements ProviderAdapter {
     await this.store.removeAt(this.credentialKey)
     log.info('OpenRouter credentials cleared')
   }
+
+  async probe(): Promise<import('../types').ProbeResult> {
+    const credential = await this.store.getAs<OpenRouterCredential>(this.credentialKey)
+    if (!credential?.apiKey) {
+      return { ok: false, reason: 'unauthenticated', message: 'No API key stored' }
+    }
+    const { probeUpstream } = await import('./probe')
+    const baseUrl = credential.baseUrl?.trim() || OPENROUTER_BASE_URL
+    return probeUpstream({
+      url: `${baseUrl.replace(/\/+$/, '')}/v1/models`,
+      headers: { Authorization: `Bearer ${credential.apiKey}` },
+      logLabel: `OpenRouter (${baseUrl})`,
+    })
+  }
 }

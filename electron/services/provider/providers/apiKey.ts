@@ -11,9 +11,10 @@
  * - OpenAIApiKeyProvider:    `sk-*` keys, `Authorization: Bearer`, api.openai.com
  */
 
-import type { HTTPAuthResult, ProviderAdapter, ProviderAdapterStatus } from '../types'
+import type { HTTPAuthResult, ProbeResult, ProviderAdapter, ProviderAdapterStatus } from '../types'
 import type { CredentialStore } from '../credentialStore'
 import { createLogger } from '../../../platform/logger'
+import { probeUpstream } from './probe'
 
 const log = createLogger('Auth:ApiKey')
 
@@ -75,6 +76,7 @@ abstract class BaseApiKeyProvider implements ProviderAdapter {
 
   abstract getEnv(): Promise<Record<string, string>>
   abstract getHTTPAuth(): Promise<HTTPAuthResult | null>
+  abstract probe(): Promise<ProbeResult>
 }
 
 // ─── Anthropic (Claude engine) ──────────────────────────────────────
@@ -112,5 +114,19 @@ export class AnthropicApiKeyProvider extends BaseApiKeyProvider {
     }
   }
 
+  async probe(): Promise<ProbeResult> {
+    const key = await this.store.getAs<string>(this.credentialKey)
+    if (!key) {
+      return { ok: false, reason: 'unauthenticated', message: 'No API key stored' }
+    }
+    return probeUpstream({
+      url: `${ANTHROPIC_BASE_URL}/v1/models`,
+      headers: {
+        'x-api-key': key,
+        'anthropic-version': '2023-06-01',
+      },
+      logLabel: 'Anthropic API',
+    })
+  }
 }
 

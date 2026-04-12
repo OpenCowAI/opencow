@@ -284,6 +284,7 @@ export class ProviderService {
     const started = Date.now()
     const profile = this.findProfile(id)
     if (!profile) {
+      log.warn(`testProfile: profile not found (${id})`)
       return {
         profileId: id,
         outcome: { ok: false, reason: 'error', message: `Profile not found: ${id}` },
@@ -291,34 +292,47 @@ export class ProviderService {
       }
     }
 
+    log.info(`testProfile started`, {
+      profile: profile.name,
+      type: profile.credential.type,
+    })
+
     try {
       const adapter = this.buildAdapterForProfile(profile)
-      const status = await adapter.checkStatus()
-      if (status.authenticated) {
-        return {
-          profileId: id,
-          outcome: { ok: true, detail: status.detail?.subscriptionType },
-          durationMs: Date.now() - started,
-        }
+      const result = await adapter.probe()
+      const durationMs = Date.now() - started
+
+      if (result.ok) {
+        log.info(`testProfile OK`, {
+          profile: profile.name,
+          type: profile.credential.type,
+          durationMs,
+          detail: result.detail,
+        })
+      } else {
+        log.warn(`testProfile FAIL`, {
+          profile: profile.name,
+          type: profile.credential.type,
+          reason: result.reason,
+          message: result.message,
+          durationMs,
+        })
       }
-      return {
-        profileId: id,
-        outcome: {
-          ok: false,
-          reason: 'unauthenticated',
-          message: status.error ?? 'No valid credentials',
-        },
-        durationMs: Date.now() - started,
-      }
+
+      return { profileId: id, outcome: result, durationMs }
     } catch (err) {
+      const durationMs = Date.now() - started
+      const message = err instanceof Error ? err.message : String(err)
+      log.error(`testProfile threw`, {
+        profile: profile.name,
+        type: profile.credential.type,
+        error: message,
+        durationMs,
+      })
       return {
         profileId: id,
-        outcome: {
-          ok: false,
-          reason: 'error',
-          message: err instanceof Error ? err.message : String(err),
-        },
-        durationMs: Date.now() - started,
+        outcome: { ok: false, reason: 'error', message },
+        durationMs,
       }
     }
   }

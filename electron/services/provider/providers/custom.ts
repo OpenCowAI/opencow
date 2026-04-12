@@ -18,6 +18,7 @@
 
 import type {
   HTTPAuthResult,
+  ProbeResult,
   ProviderAdapter,
   ProviderAdapterStatus,
   CustomCredential,
@@ -25,6 +26,7 @@ import type {
 } from '../types'
 import { CredentialStore } from '../credentialStore'
 import { createLogger } from '../../../platform/logger'
+import { probeUpstream } from './probe'
 
 const log = createLogger('Provider:Custom')
 
@@ -122,4 +124,28 @@ export class CustomProvider implements ProviderAdapter {
     await this.store.removeAt(this.credentialKey)
     log.info('Custom provider credentials cleared')
   }
+
+  async probe(): Promise<ProbeResult> {
+    const credential = await this.store.getAs<CustomCredential>(this.credentialKey)
+    if (!credential?.apiKey || !credential?.baseUrl) {
+      return { ok: false, reason: 'unauthenticated', message: 'Missing API key or base URL' }
+    }
+    const headers: Record<string, string> =
+      credential.authStyle === 'bearer'
+        ? { Authorization: `Bearer ${credential.apiKey}` }
+        : { 'x-api-key': credential.apiKey, 'anthropic-version': '2023-06-01' }
+    return probeUpstream({
+      url: joinPath(credential.baseUrl, 'v1/models'),
+      headers,
+      logLabel: `Anthropic-compat (${credential.baseUrl})`,
+    })
+  }
+}
+
+function joinPath(base: string, path: string): string {
+  const b = base.replace(/\/+$/, '')
+  const p = path.replace(/^\/+/, '')
+  // Honour base URLs that already include `/v1` (common for proxies).
+  if (b.endsWith('/v1') && p.startsWith('v1/')) return `${b}/${p.slice(3)}`
+  return `${b}/${p}`
 }

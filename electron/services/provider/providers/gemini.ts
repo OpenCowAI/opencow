@@ -14,12 +14,14 @@
 
 import type {
   HTTPAuthResult,
+  ProbeResult,
   ProviderAdapter,
   ProviderAdapterStatus,
 } from '../types'
 import type { CredentialStore } from '../credentialStore'
 import type { ProviderCredentialInfo } from '@shared/types'
 import { createLogger } from '../../../platform/logger'
+import { probeUpstream } from './probe'
 
 const log = createLogger('Provider:Gemini')
 
@@ -76,5 +78,21 @@ export class GeminiProvider implements ProviderAdapter {
   async logout(): Promise<void> {
     await this.store.removeAt(this.credentialKey)
     log.info('Gemini credentials cleared')
+  }
+
+  async probe(): Promise<ProbeResult> {
+    const key = await this.store.getAs<string>(this.credentialKey)
+    if (!key) {
+      return { ok: false, reason: 'unauthenticated', message: 'No API key stored' }
+    }
+    // Google's Gemini API authenticates via `?key=<KEY>` query param on
+    // the public endpoint; the OpenAI-compatible shim uses Bearer on a
+    // different host. Probe the public endpoint — it's what the auth
+    // token actually validates against.
+    return probeUpstream({
+      url: `https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(key)}`,
+      headers: {},
+      logLabel: 'Gemini',
+    })
   }
 }
