@@ -984,20 +984,14 @@ export function registerIPCHandlers(deps: IPCDeps): void {
   // --- Provider handlers ---
   if (deps.providerService) {
     const providerService = deps.providerService
-    registerHandler('provider:get-status', () => providerService.getStatus())
-    registerHandler('provider:login', (mode, params) =>
-      providerService.login(mode, params))
-    registerHandler('provider:cancel-login', async (mode) => {
-      await providerService.cancelLogin(mode)
-      return true
+    registerHandler('provider:get-status', async () => {
+      const profileId = providerService.resolveProfileId()
+      if (!profileId) return { state: 'unauthenticated', profileId: null } as const
+      return providerService.getStatusForProfile(profileId)
     })
-    registerHandler('provider:logout', async (mode) => {
-      await providerService.logout(mode)
-      return true
-    })
-    registerHandler('provider:get-credential', (mode) =>
-      providerService.getCredential(mode))
-    // Phase B.4 — profile CRUD
+    registerHandler('provider:get-credential', (profileId) =>
+      providerService.getCredentialForProfile(profileId))
+    // Profile CRUD
     registerHandler('provider:list-profiles', async () =>
       providerService.listProfiles())
     registerHandler('provider:create-profile', (input) =>

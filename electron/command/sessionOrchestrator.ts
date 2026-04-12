@@ -73,8 +73,11 @@ export interface OrchestratorDeps {
   getProxyEnv: () => Record<string, string>
   getProviderEnv: () => Promise<Record<string, string>>
   getProviderDefaultModel: () => string | undefined
-  /** Returns the current active provider mode (synchronous in-memory read). */
-  getActiveProviderMode: () => ApiProvider | null
+  /**
+   * Returns the current default profile id (synchronous in-memory
+   * read). Used to detect mid-session provider switches.
+   */
+  getActiveProviderProfileId: () => import('@shared/providerProfile').ProviderProfileId | null
   getCommandDefaults: () => CommandDefaults
   store: ManagedSessionStore
   /** Optional OpenCowCapabilityRegistry — injects OpenCow built-in native capability tools into sessions. */
@@ -435,7 +438,7 @@ export class SessionOrchestrator {
       lifecycleDone: Promise.resolve(),
       pipeline: null,
       policy: null,
-      providerMode: null,
+      providerProfileId: null,
       spawnErrorCount: 0,
       onComplete: input.onComplete,
       completionFired: false,
@@ -536,7 +539,7 @@ export class SessionOrchestrator {
 
     // Record the provider mode active at lifecycle spawn time — used by
     // sendMessage() to detect mid-session provider switches.
-    if (rt) rt.providerMode = this.deps.getActiveProviderMode()
+    if (rt) rt.providerProfileId = this.deps.getActiveProviderProfileId()
 
     // Layer proxy settings (settings > process.env, already in sessionEnv)
     const settingsProxy = this.deps.getProxyEnv()
@@ -1101,13 +1104,13 @@ export class SessionOrchestrator {
       // 2. Provider mode drift: SDK subprocess env is frozen at spawn. If the
       //    user switched provider mode mid-session, force a lifecycle restart
       //    to pick up fresh credentials.
-      const currentMode = this.deps.getActiveProviderMode()
-      const sessionMode = rt.providerMode ?? null
-      if (currentMode !== sessionMode) {
+      const currentProfileId = this.deps.getActiveProviderProfileId()
+      const sessionProfileId = rt.providerProfileId ?? null
+      if (currentProfileId !== sessionProfileId) {
         log.info('sendMessage: provider mode drift detected, restarting lifecycle', {
           sessionId,
-          from: sessionMode,
-          to: currentMode,
+          from: sessionProfileId,
+          to: currentProfileId,
         })
         return await this.resumeSessionInternal(sessionId, content, { forceRestart: true })
       }
@@ -1255,7 +1258,7 @@ export class SessionOrchestrator {
       lifecycleDone: Promise.resolve(),
       pipeline: null,
       policy: null,
-      providerMode: null,
+      providerProfileId: null,
       spawnErrorCount: existing?.spawnErrorCount ?? 0,
       completionFired: false,
     }

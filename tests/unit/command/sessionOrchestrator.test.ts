@@ -179,7 +179,7 @@ function makeDeps(
     getCodexAuthConfig: async (_engineKind) => null,
     getProviderDefaultModel: (_engineKind) => undefined,
     getProviderDefaultReasoningEffort: (_engineKind) => undefined,
-    getActiveProviderMode: (_engineKind) => null,
+    getActiveProviderProfileId: () => null,
     getCommandDefaults: () => ({
       maxTurns: 10,
       permissionMode: 'default' as const,
@@ -607,7 +607,7 @@ describe('SessionOrchestrator.sendMessage — provider mode drift detection', ()
     activeProviderMode = 'openrouter'
     deps = {
       ...makeDeps(db, tmpDir),
-      getActiveProviderMode: (_engineKind) => activeProviderMode as ReturnType<OrchestratorDeps['getActiveProviderMode']>,
+      getActiveProviderProfileId: () => activeProviderMode as ReturnType<OrchestratorDeps['getActiveProviderProfileId']>,
     }
     orchestrator = new SessionOrchestrator(deps)
     __setCodexSdkLoaderForTest(

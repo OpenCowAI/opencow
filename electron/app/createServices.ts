@@ -30,6 +30,7 @@ import { SessionOrchestrator } from '../command/sessionOrchestrator'
 import { ManagedSessionStore } from '../services/managedSessionStore'
 import { CredentialStore } from '../services/provider/credentialStore'
 import { ProviderService } from '../services/provider/providerService'
+import { runProviderMigration } from '../services/provider/migration'
 import { BrowserStore } from '../browser/browserStore'
 import { BrowserService } from '../browser/browserService'
 import { TerminalService } from '../terminal/terminalService'
@@ -291,18 +292,28 @@ export async function createAppServices(deps: ServiceFactoryDeps): Promise<AppSe
 
   const providerCredentialStore = new CredentialStore(dataPaths.credentials)
 
-  // Phase B.3d: mount the pre-Phase-A Codex credential file as read-only
-  // for the one-shot migration. The file is absent for fresh installs and
-  // for users who never configured Codex on 0.3.21 — we probe before
-  // constructing the store to keep the dep optional.
+  // Phase B.7 cutover — silent one-shot migration. Detects any
+  // pre-Phase-A / Phase A / Phase B-preview settings shape, moves
+  // credentials into profile-scoped slots, deletes legacy files, and
+  // stamps schemaVersion: 1. Runs every boot but short-circuits when
+  // the stamp is present.
   const legacyCodexCredentialStore = existsSync(dataPaths.legacyCodexCredentials)
     ? new CredentialStore(dataPaths.legacyCodexCredentials)
-    : undefined
+    : null
+  try {
+    await runProviderMigration({
+      settingsService,
+      mainCredentialStore: providerCredentialStore,
+      legacyCodexCredentialStore,
+      legacyCodexCredentialsPath: dataPaths.legacyCodexCredentials,
+    })
+  } catch (err) {
+    log.error('Provider migration failed — Settings UI may be empty until this resolves', err)
+  }
 
   const providerService = new ProviderService({
     dispatch: (e) => bus.dispatch(e),
     credentialStore: providerCredentialStore,
-    legacyCodexCredentialStore,
     getProviderSettings: () => settingsService.getProviderSettings(),
     updateProviderSettings: async (patch) => {
       const current = await settingsService.load()
@@ -312,19 +323,6 @@ export async function createAppServices(deps: ServiceFactoryDeps): Promise<AppSe
       return nextProvider
     },
     focusApp: focusMainWindow,
-  })
-
-  // Phase B.3c: copy legacy flat-keyed credentials into profile-scoped
-  // slots. Non-destructive — the legacy keys stay intact so the Phase A
-  // `getProviderEnv()` session-spawn path keeps working. Phase C cutover
-  // will delete the legacy keys once the orchestrator switches to
-  // `getProviderEnvForProfile()`.
-  //
-  // Without this, the new Settings UI shows migrated profiles with empty
-  // credential slots — the user sees "unauthenticated" even though the
-  // session itself still works via the legacy path.
-  await providerService.applyProfileCredentialMigration().catch((err) => {
-    log.warn('Profile credential migration (copy) failed', err)
   })
 
   // BrowserService is created before SessionOrchestrator so the orchestrator can
@@ -431,11 +429,15 @@ export async function createAppServices(deps: ServiceFactoryDeps): Promise<AppSe
   orchestrator = new SessionOrchestrator({
     dispatch: (e) => bus.dispatch(e),
     getProxyEnv: () => settingsService.getProxyEnv(),
-    getProviderEnv: () => providerService.getProviderEnv(),
+    getProviderEnv: async () => {
+      const defaultId = providerService.resolveProfileId()
+      if (!defaultId) return {}
+      return providerService.getProviderEnvForProfile(defaultId)
+    },
     getProviderDefaultModel: () =>
       settingsService.getProviderSettings().defaultModel,
-    getActiveProviderMode: () =>
-      settingsService.getProviderSettings().activeMode ?? null,
+    getActiveProviderProfileId: () =>
+      providerService.resolveProfileId(),
     getCommandDefaults: () => settingsService.getCommandDefaults(),
     store: managedSessionStore,
     nativeCapabilityRegistry,
@@ -655,7 +657,11 @@ export async function createAppServices(deps: ServiceFactoryDeps): Promise<AppSe
   // HeadlessLLMClient: engine-agnostic single-turn text generation for memory extraction.
   // Uses Vercel AI SDK (@ai-sdk/anthropic, @ai-sdk/openai) — no SDK subprocess needed.
   const headlessClient = new HeadlessLLMClientImpl({
-    resolveAuth: () => providerService.resolveHTTPAuth(),
+    resolveAuth: async () => {
+      const profileId = providerService.resolveProfileId()
+      if (!profileId) throw new Error('No default provider profile configured')
+      return providerService.resolveHTTPAuthForProfile(profileId)
+    },
     getFetch: () => proxyFetchFactory.getStandardFetch(),
   })
 

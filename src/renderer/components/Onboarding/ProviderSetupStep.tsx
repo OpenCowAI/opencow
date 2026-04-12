@@ -1,243 +1,29 @@
 // SPDX-License-Identifier: Apache-2.0
 
 /**
- * ProviderSetupStep — Onboarding step for configuring the AI provider.
+ * Onboarding → Provider Setup step (Phase B.7 cutover).
  *
- * Design decisions:
- *   - Reuses PROVIDER_MODES from Settings/provider/constants as the single
- *     source of truth for modes (no duplication).
- *   - Reuses CredentialForms from Settings/provider for credential input.
- *   - Uses useProviderLogin hook for shared login orchestration.
- *   - Communicates "provider configured" state upward via onProviderConfigured
- *     callback so the orchestrator can pass it to DoneStep (preserving the
- *     prop-driven pattern).
+ * Minimal by design: the onboarding flow should not re-implement the
+ * full Settings Provider UI. Users get a single fast path — enter an
+ * Anthropic API key — or jump to full Settings for advanced providers
+ * (Claude OAuth / OpenAI / Gemini / proxies).
+ *
+ * If migration already populated profiles from a prior OpenCow install,
+ * the step auto-advances so the user never sees an unnecessary prompt.
  */
 
-import { useState, useCallback, useEffect, useMemo, useRef } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { ArrowLeft, Check, ChevronDown, ChevronRight, ExternalLink, Loader2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useSettingsStore } from '@/stores/settingsStore'
-import { useProviderLogin } from '@/hooks/useProviderLogin'
-import type { ApiProvider, ProviderCredentialInfo } from '@shared/types'
-import {
-  PROVIDER_MODES,
-  getModeLabelKey,
-  type ProviderModeOption,
-} from '../Settings/provider/constants'
-import {
-  ApiKeyForm,
-  OpenRouterForm,
-  CustomCredentialForm,
-} from '../Settings/provider/CredentialForms'
-import { StepIndicator } from './StepIndicator'
-import type { StepConfig } from './types'
-
-// ─── Types ──────────────────────────────────────────────────────────────
+import { getAppAPI } from '@/windowAPI'
 
 interface ProviderSetupStepProps {
-  stepConfig: StepConfig
+  stepConfig: { stepNumber: number; totalSteps: number }
   onBack: () => void
   onContinue: () => void
-  /** Called when provider authentication state changes. */
   onProviderConfigured: (configured: boolean) => void
 }
-
-type SetupPhase = 'selecting' | 'authenticated'
-
-// ─── Sub-Components ─────────────────────────────────────────────────────
-
-function ModeRadioItem({
-  modeOption,
-  selected,
-  onSelect,
-}: {
-  modeOption: ProviderModeOption
-  selected: boolean
-  onSelect: () => void
-}): React.JSX.Element {
-  const { t } = useTranslation('settings')
-  const Icon = modeOption.icon
-
-  return (
-    <button
-      type="button"
-      onClick={onSelect}
-      className={cn(
-        'w-full flex items-start gap-3 rounded-lg border px-3 py-2.5 text-left transition-all',
-        selected
-          ? 'border-[hsl(var(--primary))] bg-[hsl(var(--primary)/0.05)]'
-          : 'border-[hsl(var(--border))] hover:border-[hsl(var(--primary)/0.3)] hover:bg-[hsl(var(--foreground)/0.02)]',
-      )}
-    >
-      <span
-        className={cn(
-          'mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-2 transition-colors',
-          selected ? 'border-[hsl(var(--primary))]' : 'border-[hsl(var(--muted-foreground)/0.4)]',
-        )}
-      >
-        {selected && <span className="h-2 w-2 rounded-full bg-[hsl(var(--primary))]" />}
-      </span>
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2">
-          <Icon className="h-3.5 w-3.5 text-[hsl(var(--muted-foreground))]" aria-hidden="true" />
-          <span className="text-sm font-medium">{t(modeOption.labelKey)}</span>
-        </div>
-        <p className="mt-0.5 text-xs text-[hsl(var(--muted-foreground))]">
-          {t(modeOption.descKey)}
-        </p>
-      </div>
-    </button>
-  )
-}
-
-function SuccessCard({
-  modeLabel,
-  onReset,
-}: {
-  modeLabel: string
-  onReset: () => void
-}): React.JSX.Element {
-  const { t } = useTranslation('onboarding')
-
-  return (
-    <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-4">
-      <div className="flex items-center gap-2 mb-3">
-        <div className="flex h-7 w-7 items-center justify-center rounded-full bg-emerald-500/15">
-          <Check className="h-4 w-4 text-emerald-500" />
-        </div>
-        <span className="text-sm font-semibold text-emerald-500">
-          {t('providerSetup.success.title')}
-        </span>
-      </div>
-      <div className="space-y-1.5 text-sm">
-        <div className="flex justify-between">
-          <span className="text-[hsl(var(--muted-foreground))]">
-            {t('providerSetup.success.mode')}
-          </span>
-          <span className="font-medium">{modeLabel}</span>
-        </div>
-        <div className="flex justify-between">
-          <span className="text-[hsl(var(--muted-foreground))]">
-            {t('providerSetup.success.status')}
-          </span>
-          <span className="font-medium text-emerald-500">
-            {t('providerSetup.success.authenticated')}
-          </span>
-        </div>
-      </div>
-      <button
-        type="button"
-        onClick={onReset}
-        className="mt-3 text-xs text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] transition-colors underline"
-      >
-        {t('providerSetup.success.changeConfig')}
-      </button>
-    </div>
-  )
-}
-
-function SubscriptionLoginPanel({
-  loading,
-  onLogin,
-  onCancel,
-}: {
-  loading: boolean
-  onLogin: () => void
-  onCancel: () => void
-}): React.JSX.Element {
-  const { t } = useTranslation('onboarding')
-  const { t: tc } = useTranslation('common')
-
-  return (
-    <div className="space-y-3 mt-3">
-      {!loading ? (
-        <button
-          type="button"
-          onClick={onLogin}
-          className={cn(
-            'inline-flex items-center gap-2 rounded-md px-4 py-1.5 text-sm font-medium transition-colors',
-            'bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))]',
-            'hover:bg-[hsl(var(--primary)/0.9)]',
-          )}
-        >
-          <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
-          {t('providerSetup.loginWithClaude')}
-        </button>
-      ) : (
-        <div className="flex items-center gap-3">
-          <span className="inline-flex items-center gap-2 text-sm text-amber-500">
-            <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
-            {t('providerSetup.waitingForAuth')}
-          </span>
-          <button
-            type="button"
-            onClick={onCancel}
-            className="text-xs text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] underline transition-colors"
-          >
-            {tc('cancel')}
-          </button>
-        </div>
-      )}
-      <p className="text-xs text-[hsl(var(--muted-foreground))]">
-        {t('providerSetup.subscriptionHint')}
-      </p>
-    </div>
-  )
-}
-
-/** Renders the correct credential form for the given mode. */
-function CredentialFormForMode({
-  mode,
-  loading,
-  initialValues,
-  onLogin,
-  onCancel,
-}: {
-  mode: ApiProvider
-  loading: boolean
-  initialValues: ProviderCredentialInfo | null
-  onLogin: (mode: ApiProvider, params?: Record<string, unknown>) => void
-  onCancel: () => void
-}): React.JSX.Element {
-  if (mode === 'subscription') {
-    return (
-      <SubscriptionLoginPanel
-        loading={loading}
-        onLogin={() => onLogin('subscription')}
-        onCancel={onCancel}
-      />
-    )
-  }
-  if (mode === 'api_key') {
-    return (
-      <ApiKeyForm
-        initialValues={initialValues}
-        loading={loading}
-        onSubmit={(params) => onLogin('api_key', params)}
-      />
-    )
-  }
-  if (mode === 'openrouter') {
-    return (
-      <OpenRouterForm
-        initialValues={initialValues}
-        loading={loading}
-        onSubmit={(params) => onLogin('openrouter', params)}
-      />
-    )
-  }
-  return (
-    <CustomCredentialForm
-      initialValues={initialValues}
-      loading={loading}
-      forceBearer={false}
-      onSubmit={(params) => onLogin('custom', params)}
-    />
-  )
-}
-
-// ─── Main Component ─────────────────────────────────────────────────────
 
 export function ProviderSetupStep({
   stepConfig,
@@ -246,208 +32,129 @@ export function ProviderSetupStep({
   onProviderConfigured,
 }: ProviderSetupStepProps): React.JSX.Element {
   const { t } = useTranslation('onboarding')
-  const { t: tSettings } = useTranslation('settings')
+  const settings = useSettingsStore((s) => s.settings)
+  const openSettingsModal = useSettingsStore((s) => s.openSettingsModal)
 
-  // ── Shared login hook ──
-  const { loading, error, login, cancelLogin, clearError } = useProviderLogin()
+  const hasProfiles = useMemo(
+    () => (settings?.provider.profiles.length ?? 0) > 0,
+    [settings?.provider.profiles],
+  )
 
-  // ── Store reads ──
-  const providerStatus = useSettingsStore((s) => s.providerStatus)
-  const loadProviderStatus = useSettingsStore((s) => s.loadProviderStatus)
+  const [apiKey, setApiKey] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
-  // ── Local state ──
-  const [selectedMode, setSelectedMode] = useState<ApiProvider | null>(null)
-  const [showAdvanced, setShowAdvanced] = useState(false)
-  const [phase, setPhase] = useState<SetupPhase>('selecting')
-  const [editValues] = useState<ProviderCredentialInfo | null>(null)
-
-  // Ref: when the user explicitly clicks "change config", we must prevent the
-  // auth-sync effect from immediately reverting to 'authenticated'.
-  const userResetRef = useRef(false)
-
-  // ── Derived data from single source of truth ──
-  const primaryModes = useMemo(() => PROVIDER_MODES.filter((m) => !m.advanced), [])
-  const advancedModes = useMemo(() => PROVIDER_MODES.filter((m) => m.advanced), [])
-
-  // ── Sync: if the store says "authenticated", reflect it (unless user just clicked reset) ──
+  // Auto-mark configured when profiles already exist (migration or
+  // prior configuration).
   useEffect(() => {
-    if (userResetRef.current) return
-    if (providerStatus?.state === 'authenticated' && providerStatus.mode) {
-      setSelectedMode(providerStatus.mode)
-      setPhase('authenticated')
+    if (hasProfiles) onProviderConfigured(true)
+  }, [hasProfiles, onProviderConfigured])
+
+  const handleQuickAdd = useCallback(async () => {
+    setBusy(true)
+    setError(null)
+    try {
+      await getAppAPI()['provider:create-profile']({
+        name: 'Anthropic API',
+        credential: { type: 'anthropic-api' },
+        authParams: { apiKey: apiKey.trim() },
+        setAsDefault: true,
+      })
       onProviderConfigured(true)
+      onContinue()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setBusy(false)
     }
-  }, [providerStatus, onProviderConfigured])
+  }, [apiKey, onContinue, onProviderConfigured])
 
-  // ── Initial provider status load ──
-  useEffect(() => {
-    void loadProviderStatus()
-  }, [loadProviderStatus])
+  const handleAdvanced = useCallback(() => {
+    openSettingsModal('provider')
+  }, [openSettingsModal])
 
-  // ── Handlers ──
-
-  const handleModeSelect = useCallback(
-    (mode: ApiProvider) => {
-      userResetRef.current = false
-      setSelectedMode(mode)
-      setPhase('selecting')
-      clearError()
-    },
-    [clearError],
-  )
-
-  const handleResetToSelecting = useCallback(() => {
-    userResetRef.current = true
-    setPhase('selecting')
-    clearError()
-  }, [clearError])
-
-  const handleLogin = useCallback(
-    async (mode: ApiProvider, params?: Record<string, unknown>) => {
-      userResetRef.current = false
-      const result = await login(mode, params)
-      if (result.success) {
-        setPhase('authenticated')
-        onProviderConfigured(true)
-      }
-    },
-    [login, onProviderConfigured],
-  )
-
-  const handleCancelLogin = useCallback(async () => {
-    if (!selectedMode) return
-    await cancelLogin(selectedMode)
-  }, [selectedMode, cancelLogin])
-
-  // ── Resolve display labels ──
-  const modeLabelKey = getModeLabelKey(selectedMode)
-  const modeLabel = modeLabelKey ? tSettings(modeLabelKey) : ''
-
-  // ── Render ──
   return (
-    <div className="onboarding-step-enter flex max-h-[calc(100vh-7rem)] flex-col">
-      <div className="shrink-0">
-        <StepIndicator {...stepConfig} />
+    <div className="flex flex-col">
+      <div className="mb-4">
+        <p className="text-[10px] font-semibold uppercase tracking-wider text-[hsl(var(--muted-foreground)/0.8)]">
+          {t('stepLabel', { current: stepConfig.stepNumber, total: stepConfig.totalSteps })}
+        </p>
+        <h2 className="mt-1 text-lg font-semibold">{t('providerSetup.title')}</h2>
+        <p className="mt-1 text-sm text-[hsl(var(--muted-foreground))]">
+          {t('providerSetup.description')}
+        </p>
+      </div>
 
-        {/* Header */}
-        <div className="text-center mb-5">
-          <h2 className="text-xl font-bold mb-1">{t('providerSetup.title')}</h2>
-          <p className="text-sm text-[hsl(var(--muted-foreground))]">
-            {t('providerSetup.subtitle')}
+      {hasProfiles ? (
+        <div className="rounded-lg border border-green-500/30 bg-green-500/5 p-4">
+          <p className="text-sm text-green-400">
+            {t('providerSetup.alreadyConfigured', {
+              count: settings?.provider.profiles.length,
+              defaultValue: 'Your provider configuration was imported. You can review and edit it in Settings at any time.',
+            })}
           </p>
         </div>
-      </div>
-
-      <div data-testid="onboarding-scroll-content" className="min-h-0 flex-1 overflow-y-auto pr-1">
-        {/* Content card */}
-        <div className="rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-4 mb-5">
-          {phase === 'authenticated' ? (
-            <SuccessCard modeLabel={modeLabel} onReset={handleResetToSelecting} />
-          ) : (
-            <div className="space-y-4">
-              {/* Mode selector */}
-              <div>
-                <label className="block text-xs font-medium text-[hsl(var(--muted-foreground))] uppercase tracking-wider mb-2">
-                  {t('providerSetup.selectMode')}
-                </label>
-                <div className="space-y-1.5">
-                  {primaryModes.map((modeOption) => (
-                    <ModeRadioItem
-                      key={modeOption.mode}
-                      modeOption={modeOption}
-                      selected={selectedMode === modeOption.mode}
-                      onSelect={() => handleModeSelect(modeOption.mode)}
-                    />
-                  ))}
-
-                  {advancedModes.length > 0 && (
-                    <>
-                      <button
-                        type="button"
-                        onClick={() => setShowAdvanced((v) => !v)}
-                        className="flex items-center gap-1.5 py-1 text-xs text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] transition-colors"
-                      >
-                        {showAdvanced ? (
-                          <ChevronDown className="h-3 w-3" />
-                        ) : (
-                          <ChevronRight className="h-3 w-3" />
-                        )}
-                        {t('providerSetup.moreOptions')}
-                      </button>
-                      {showAdvanced &&
-                        advancedModes.map((modeOption) => (
-                          <ModeRadioItem
-                            key={modeOption.mode}
-                            modeOption={modeOption}
-                            selected={selectedMode === modeOption.mode}
-                            onSelect={() => handleModeSelect(modeOption.mode)}
-                          />
-                        ))}
-                    </>
-                  )}
-                </div>
-              </div>
-
-              {/* Credential form */}
-              {selectedMode && (
-                <div className="rounded-lg bg-[hsl(var(--background))] border border-[hsl(var(--border))] p-3">
-                  <CredentialFormForMode
-                    mode={selectedMode}
-                    loading={loading}
-                    initialValues={editValues}
-                    onLogin={(mode, params) => void handleLogin(mode, params)}
-                    onCancel={() => void handleCancelLogin()}
-                  />
-                </div>
+      ) : (
+        <div className="space-y-3 rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--foreground)/0.02)] p-4">
+          <label className="block">
+            <span className="block text-xs font-medium mb-1">{t('providerSetup.apiKeyLabel')}</span>
+            <input
+              type="password"
+              autoComplete="off"
+              value={apiKey}
+              onChange={(e) => setApiKey(e.target.value)}
+              placeholder="sk-ant-..."
+              className={cn(
+                'w-full rounded-md border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-2.5 py-1.5 text-sm outline-none font-mono',
+                'focus:ring-2 focus:ring-[hsl(var(--ring))]',
               )}
-
-              {/* Error message */}
-              {error && (
-                <div className="rounded-md border border-red-500/30 bg-red-500/10 px-3 py-2">
-                  <p className="text-sm text-red-400">{error}</p>
-                </div>
-              )}
+            />
+          </label>
+          {error && (
+            <div className="rounded-md border border-red-500/30 bg-red-500/10 px-3 py-2">
+              <p className="text-xs text-red-400">{error}</p>
             </div>
           )}
-        </div>
-      </div>
-
-      {/* Action buttons */}
-      <div className="shrink-0 pt-6">
-        <div className="flex items-center justify-between">
-          <button
-            type="button"
-            onClick={onBack}
-            className="inline-flex items-center gap-1.5 text-sm text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] transition-colors"
-          >
-            <ArrowLeft className="h-3.5 w-3.5" />
-            {t('common.back')}
-          </button>
-
-          <div className="flex items-center gap-3">
-            {phase !== 'authenticated' && (
-              <button
-                type="button"
-                onClick={onContinue}
-                className="text-sm text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] transition-colors"
-              >
-                {t('common.skipForNow')}
-              </button>
-            )}
+          <div className="flex items-center justify-between pt-2">
             <button
               type="button"
-              onClick={onContinue}
-              className={cn(
-                'px-5 py-2 rounded-lg text-sm font-medium transition-opacity',
-                phase === 'authenticated'
-                  ? 'bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))] hover:opacity-90'
-                  : 'bg-[hsl(var(--foreground)/0.08)] text-[hsl(var(--foreground))] hover:bg-[hsl(var(--foreground)/0.12)]',
-              )}
+              onClick={handleAdvanced}
+              className="text-xs text-[hsl(var(--muted-foreground))] underline hover:text-[hsl(var(--foreground))]"
             >
-              {t('common.continue')}
+              {t('providerSetup.advanced')}
+            </button>
+            <button
+              type="button"
+              disabled={busy || !apiKey.trim()}
+              onClick={handleQuickAdd}
+              className="text-xs px-3 py-1.5 rounded-md bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))] hover:opacity-90 disabled:opacity-50"
+            >
+              {busy ? t('providerSetup.saving') : t('providerSetup.save')}
             </button>
           </div>
         </div>
+      )}
+
+      <div className="mt-6 flex items-center justify-between">
+        <button
+          type="button"
+          onClick={onBack}
+          className="text-xs px-3 py-1.5 rounded-md border border-[hsl(var(--border))] hover:bg-[hsl(var(--foreground)/0.04)]"
+        >
+          {t('back')}
+        </button>
+        <button
+          type="button"
+          onClick={onContinue}
+          className={cn(
+            'text-xs px-3 py-1.5 rounded-md',
+            hasProfiles
+              ? 'bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))] hover:opacity-90'
+              : 'border border-[hsl(var(--border))] hover:bg-[hsl(var(--foreground)/0.04)]',
+          )}
+        >
+          {hasProfiles ? t('continue') : t('providerSetup.skip')}
+        </button>
       </div>
     </div>
   )

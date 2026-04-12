@@ -32,12 +32,6 @@ import type { FeishuBotSettings } from './feishuBot/types'
 import { toDiscordBotEntry } from './discordBot/converters'
 import type { DiscordBotSettings } from './discordBot/types'
 import { resolveThemeConfig, DEFAULT_THEME_CONFIG } from '../../src/shared/themeRegistry'
-import {
-  migrateLegacyProviderSettings,
-  migrateLegacyCodexSettings,
-  type ProviderProfileSettings,
-  type MigrationCredentialPlan,
-} from '../../src/shared/providerProfile'
 
 const DEFAULT_SETTINGS: AppSettings = {
   theme: DEFAULT_THEME_CONFIG,
@@ -60,7 +54,8 @@ const DEFAULT_SETTINGS: AppSettings = {
     endpoints: []
   },
   provider: {
-    activeMode: null,
+    profiles: [],
+    defaultProfileId: null,
   },
   messaging: {
     connections: [],
@@ -216,7 +211,7 @@ export class SettingsService {
           useProxy: ep.useProxy ?? false,
         }))
       },
-      provider: migrateProviderSettings(providerRaw, legacyCommandModelStr),
+      provider: readProviderSettings(providerRaw, legacyCommandModelStr),
       messaging: migrateToMessaging(p),
       schedule: {
         enabled: p.schedule?.enabled ?? DEFAULT_SETTINGS.schedule.enabled,
@@ -408,132 +403,35 @@ function legacyBotEntryToTelegramConnection(entry: TelegramBotEntry): TelegramCo
   }
 }
 
-// ── Provider settings migration ───────────────────────────────────────────────
+// ── Provider settings reader ──────────────────────────────────────────────────
+//
+// settingsService is intentionally legacy-unaware: it reads whatever
+// shape is on disk and hands it to the caller. The full legacy → v1
+// migration lives in electron/services/provider/migration/ and runs
+// once at bootstrap. After that, only the v1 shape is ever observed.
 
-const VALID_PROVIDER_MODES = new Set(['subscription', 'api_key', 'openrouter', 'custom'])
-function normalizeProviderMode(raw: unknown): ProviderSettings['activeMode'] {
-  if (typeof raw !== 'string') return null
-  return VALID_PROVIDER_MODES.has(raw) ? raw as ProviderSettings['activeMode'] : null
-}
-
-function pickLegacyDefaultModel(raw: Record<string, unknown> | undefined, legacyCommandModel?: string): string | undefined {
-  const legacyCustomModel = (raw?.custom as Record<string, unknown> | undefined)?.defaultModel
-  const legacyOpenRouterModel = (raw?.openrouter as Record<string, unknown> | undefined)?.defaultModel
-  const topLevelDefaultModel = raw?.defaultModel
-  return (typeof topLevelDefaultModel === 'string' && topLevelDefaultModel)
-    || legacyCommandModel
-    || (typeof legacyCustomModel === 'string' ? legacyCustomModel : undefined)
-    || (typeof legacyOpenRouterModel === 'string' ? legacyOpenRouterModel : undefined)
-}
-
-function normalizeProviderSettingsShape(
-  raw: unknown,
-  fallback: ProviderSettings,
-): ProviderSettings {
-  const r = (raw ?? {}) as Record<string, unknown>
-  const hasActiveMode = Object.prototype.hasOwnProperty.call(r, 'activeMode')
-  const hasDefaultModel = Object.prototype.hasOwnProperty.call(r, 'defaultModel')
-  const activeMode = normalizeProviderMode(r.activeMode)
-  const defaultModel = typeof r.defaultModel === 'string' && r.defaultModel ? r.defaultModel : undefined
-  return {
-    activeMode: hasActiveMode ? activeMode : fallback.activeMode,
-    ...(hasDefaultModel
-      ? (defaultModel ? { defaultModel } : {})
-      : (fallback.defaultModel ? { defaultModel: fallback.defaultModel } : {})),
-  }
-}
-
-/**
- * Migrate provider settings to the flat shape.
- *
- * New shape (post–engine-abstraction removal):
- *   provider.activeMode / provider.defaultModel
- *
- * Legacy sources consumed:
- *   - provider.byEngine.claude.{activeMode,defaultModel}  (schema v2 — the
- *     engine-scoped wrapper we're removing)
- *   - provider.activeMode / provider.defaultModel (older flat shape) or
- *     legacy top-level auth.* fields
- */
-function migrateProviderSettings(
+function readProviderSettings(
   raw: (Partial<ProviderSettings> & Record<string, unknown>) | undefined,
-  legacyCommandModel?: string,
+  legacyCommandModel: string | undefined,
 ): ProviderSettings {
   const source = (raw ?? {}) as Record<string, unknown>
-
-  const legacyFlat: ProviderSettings = {
-    activeMode: normalizeProviderMode(source.activeMode),
-    ...(pickLegacyDefaultModel(source, legacyCommandModel)
-      ? { defaultModel: pickLegacyDefaultModel(source, legacyCommandModel) }
-      : {}),
-  }
-
-  // Legacy engine-scoped wrapper: { byEngine: { claude: { activeMode, ... } } }
-  const byEngineRaw = source.byEngine as Record<string, unknown> | undefined
-  const engineScoped = byEngineRaw?.claude
-
-  const flat = normalizeProviderSettingsShape(engineScoped ?? source, legacyFlat)
-
-  // Phase B.1: populate profiles + defaultProfileId alongside the flat
-  // activeMode. Callers still read activeMode today; profiles/defaultProfileId
-  // are additive groundwork for Phase B.3's ProviderService rewrite. If
-  // profiles was already persisted (re-open of an already-migrated
-  // settings.json), migrateLegacyProviderSettings is a passthrough.
-  const profileInput =
-    Array.isArray(source.profiles)
-      ? (source as unknown as ProviderProfileSettings)
-      : { activeMode: flat.activeMode, defaultModel: flat.defaultModel }
-  const profileResult = migrateLegacyProviderSettings(profileInput)
-
-  // Phase B.3d: if the user came from pre-Phase-A OpenCow (<= 0.3.21)
-  // with a Codex-engine config, produce profiles for those as well so
-  // their configuration isn't silently lost. The Codex-profile types
-  // (`openai-direct` / `openai-compat-proxy`) are Phase D (SDK M1)
-  // pending, so they surface in the Settings UI as disabled entries
-  // but the user's credentials + baseUrl are preserved.
-  const codexActiveMode =
-    (byEngineRaw?.codex as Record<string, unknown> | undefined)?.activeMode
-  const codexMigration =
-    typeof codexActiveMode === 'string' && !Array.isArray(source.profiles)
-      ? migrateLegacyCodexSettings(codexActiveMode)
-      : null
-
-  const mergedProfiles = codexMigration
-    ? [...profileResult.settings.profiles, codexMigration.profile]
-    : profileResult.settings.profiles
+  const profilesArray = Array.isArray(source.profiles)
+    ? (source.profiles as ProviderSettings['profiles'])
+    : []
+  const defaultProfileId =
+    (source.defaultProfileId ?? null) as ProviderSettings['defaultProfileId']
+  const defaultModel =
+    (typeof source.defaultModel === 'string' && source.defaultModel)
+      ? source.defaultModel
+      : legacyCommandModel
+  const schemaVersion = source.schemaVersion === 1 ? 1 : undefined
 
   return {
-    ...flat,
-    profiles: mergedProfiles,
-    defaultProfileId: profileResult.settings.defaultProfileId,
+    ...(schemaVersion ? { schemaVersion } : {}),
+    profiles: profilesArray,
+    defaultProfileId,
+    ...(defaultModel ? { defaultModel } : {}),
   }
-}
-
-/**
- * Extract the credential rename plan produced by provider migration.
- *
- * Phase B.1 emits a rename plan but does NOT apply it — the settings
- * service is responsible for loading from disk, not for CredentialStore
- * mutations. The rename plan is produced here so callers
- * (createServices bootstrap, tests) can apply it atomically after load.
- *
- * Returns an empty plan when no migration is needed (already-migrated or
- * no legacy activeMode).
- */
-export function computeProviderCredentialRenamePlan(
-  raw: (Partial<ProviderSettings> & Record<string, unknown>) | undefined,
-): MigrationCredentialPlan[] {
-  const source = (raw ?? {}) as Record<string, unknown>
-  if (Array.isArray(source.profiles)) return []
-
-  const byEngineRaw = source.byEngine as Record<string, unknown> | undefined
-  const engineScoped = byEngineRaw?.claude
-  const effectiveSource = (engineScoped ?? source) as Record<string, unknown>
-  const activeMode = normalizeProviderMode(effectiveSource.activeMode)
-  if (!activeMode) return []
-
-  const result = migrateLegacyProviderSettings({ activeMode })
-  return result.credentialRenames
 }
 
 // ── Theme migration ───────────────────────────────────────────────────────────

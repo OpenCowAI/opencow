@@ -126,27 +126,10 @@ describe('SettingsService', () => {
     expect(settings.command.permissionMode).toBe('bypassPermissions')
   })
 
-  it('migrates legacy command.defaultModel to provider.defaultModel', async () => {
-    await writeFile(
-      join(tempDir, 'settings.json'),
-      JSON.stringify({ command: { defaultModel: 'claude-opus-4-6' } }),
-      'utf-8'
-    )
-    const fresh = new SettingsService(join(tempDir, 'settings.json'))
-    const settings = await fresh.load()
-    expect(settings.provider.defaultModel).toBe('claude-opus-4-6')
-  })
-
-  it('flattens legacy provider.byEngine.claude.activeMode into provider.activeMode', async () => {
-    await writeFile(
-      join(tempDir, 'settings.json'),
-      JSON.stringify({ provider: { byEngine: { claude: { activeMode: 'api_key' } } } }),
-      'utf-8'
-    )
-    const fresh = new SettingsService(join(tempDir, 'settings.json'))
-    const settings = await fresh.load()
-    expect(settings.provider.activeMode).toBe('api_key')
-  })
+  // Post-Phase-B.7: settingsService is legacy-unaware. All historical
+  // shape migration lives in electron/services/provider/migration/ and
+  // is tested in tests/unit/provider/providerMigration.test.ts. These
+  // tests only cover the v1 shape round-trip.
 
   it('provider default model is preserved via getProviderSettings', async () => {
     const settings = await service.load()
@@ -156,126 +139,34 @@ describe('SettingsService', () => {
     expect(provider.defaultModel).toBe('claude-opus-4-6')
   })
 
-  // Phase B.1+ migration — legacy `provider.activeMode` is mirrored into
-  // `provider.profiles` + `provider.defaultProfileId` on load.
-  it('populates profiles + defaultProfileId from legacy activeMode on load', async () => {
-    await writeFile(
-      join(tempDir, 'settings.json'),
-      JSON.stringify({ provider: { activeMode: 'api_key' } }),
-      'utf-8',
-    )
-    const fresh = new SettingsService(join(tempDir, 'settings.json'))
-    const settings = await fresh.load()
-    expect(settings.provider.activeMode).toBe('api_key')
-    expect(settings.provider.profiles).toHaveLength(1)
-    expect(settings.provider.profiles?.[0]).toMatchObject({
-      name: 'Anthropic API',
-      credential: { type: 'anthropic-api' },
-    })
-    expect(settings.provider.defaultProfileId).toBe(settings.provider.profiles?.[0].id)
-  })
-
-  it('uses deterministic profile id for migrated entries', async () => {
-    await writeFile(
-      join(tempDir, 'settings.json'),
-      JSON.stringify({ provider: { activeMode: 'api_key' } }),
-      'utf-8',
-    )
-    const firstLoad = await new SettingsService(join(tempDir, 'settings.json')).load()
-    const secondLoad = await new SettingsService(join(tempDir, 'settings.json')).load()
-    expect(firstLoad.provider.profiles?.[0].id).toBe(secondLoad.provider.profiles?.[0].id)
-    expect(firstLoad.provider.profiles?.[0].id).toMatch(/^prof_migrated_/)
-  })
-
-  it('round-trips already-migrated profiles on reload (idempotent)', async () => {
-    await writeFile(
-      join(tempDir, 'settings.json'),
-      JSON.stringify({ provider: { activeMode: 'api_key' } }),
-      'utf-8',
-    )
-    const first = new SettingsService(join(tempDir, 'settings.json'))
-    const loaded = await first.load()
-    await first.update(loaded)
-
-    const second = new SettingsService(join(tempDir, 'settings.json'))
-    const reloaded = await second.load()
-    expect(reloaded.provider.profiles?.[0].id).toBe(loaded.provider.profiles?.[0].id)
-    expect(reloaded.provider.profiles?.[0].updatedAt).toBe(loaded.provider.profiles?.[0].updatedAt)
-  })
-
-  it('produces empty profile list when activeMode is null', async () => {
+  it('returns empty profile list by default', async () => {
     const settings = await service.load()
-    expect(settings.provider.activeMode).toBeNull()
     expect(settings.provider.profiles).toEqual([])
     expect(settings.provider.defaultProfileId).toBeNull()
   })
 
-  // Phase B.3d — migrate pre-Phase-A Codex config (byEngine.codex.activeMode)
-  it('migrates a legacy byEngine.codex.activeMode into an openai-compat-proxy profile', async () => {
-    await writeFile(
-      join(tempDir, 'settings.json'),
-      JSON.stringify({
-        provider: {
-          byEngine: {
-            claude: { activeMode: 'api_key' },
-            codex: { activeMode: 'openrouter' },
+  it('round-trips a v1 settings.json with profiles unchanged', async () => {
+    const v1 = {
+      provider: {
+        schemaVersion: 1,
+        profiles: [
+          {
+            id: 'prof_abc1234567',
+            name: 'My Anthropic',
+            credential: { type: 'anthropic-api' },
+            createdAt: '2026-04-12T20:00:00.000Z',
+            updatedAt: '2026-04-12T20:00:00.000Z',
           },
-        },
-      }),
-      'utf-8',
-    )
+        ],
+        defaultProfileId: 'prof_abc1234567',
+      },
+    }
+    await writeFile(join(tempDir, 'settings.json'), JSON.stringify(v1), 'utf-8')
     const fresh = new SettingsService(join(tempDir, 'settings.json'))
     const settings = await fresh.load()
-
-    // Both Claude and Codex profiles should coexist.
-    expect(settings.provider.profiles).toHaveLength(2)
-    const codexProfile = settings.provider.profiles?.find(
-      (p) => p.id === 'prof_migrated_codex_openrouter',
-    )
-    expect(codexProfile).toBeDefined()
-    expect(codexProfile?.credential).toMatchObject({
-      type: 'openai-compat-proxy',
-      baseUrl: 'https://openrouter.ai/api/v1',
-    })
-    // Default remains the Claude profile — Codex profiles are Phase D
-    // pending and should NOT become default automatically.
-    expect(settings.provider.defaultProfileId).toBe('prof_migrated_api_key')
-  })
-
-  it('migrates codex api_key → openai-direct profile', async () => {
-    await writeFile(
-      join(tempDir, 'settings.json'),
-      JSON.stringify({
-        provider: {
-          byEngine: { codex: { activeMode: 'api_key' } },
-        },
-      }),
-      'utf-8',
-    )
-    const settings = await new SettingsService(join(tempDir, 'settings.json')).load()
-    expect(settings.provider.profiles?.[0]).toMatchObject({
-      id: 'prof_migrated_codex_api_key',
-      name: 'OpenAI (Codex)',
-      credential: { type: 'openai-direct' },
-    })
-  })
-
-  it('ignores byEngine.codex when activeMode is null', async () => {
-    await writeFile(
-      join(tempDir, 'settings.json'),
-      JSON.stringify({
-        provider: {
-          byEngine: {
-            claude: { activeMode: 'api_key' },
-            codex: { activeMode: null },
-          },
-        },
-      }),
-      'utf-8',
-    )
-    const settings = await new SettingsService(join(tempDir, 'settings.json')).load()
+    expect(settings.provider.schemaVersion).toBe(1)
     expect(settings.provider.profiles).toHaveLength(1)
-    expect(settings.provider.profiles?.[0].id).toBe('prof_migrated_api_key')
+    expect(settings.provider.defaultProfileId).toBe('prof_abc1234567')
   })
 
   it('getEventSubscriptionSettings returns current event subscription settings', async () => {

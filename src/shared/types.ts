@@ -600,15 +600,9 @@ export interface IPCChannels {
   'update-settings': { args: [settings: AppSettings]; return: AppSettings }
   // Provider
   'provider:get-status': { args: []; return: ProviderStatus }
-  'provider:login': {
-    args: [mode: ApiProvider, params?: Record<string, unknown>]
-    return: ProviderStatus
-  }
-  'provider:cancel-login': { args: [mode: ApiProvider]; return: boolean }
-  'provider:logout': { args: [mode: ApiProvider]; return: boolean }
   'provider:get-credential': {
-    args: [mode: ApiProvider]
-    return: ProviderCredentialInfo | null
+    args: [profileId: import('./providerProfile').ProviderProfileId]
+    return: import('./providerProfile').ProviderCredentialInfo | null
   }
   // Phase B.4 — profile CRUD (additive; legacy channels above continue to work).
   'provider:list-profiles': {
@@ -3645,19 +3639,22 @@ export interface IMOrchestratorDeps {
 
 // === Provider ===
 
+/**
+ * @deprecated Post-Phase-B.7, the flat "API provider mode" concept is
+ * replaced by `ProviderType` in `./providerProfile.ts`. This alias
+ * remains only for legacy test files and will be dropped once those
+ * are rewritten.
+ */
 export type ApiProvider = 'subscription' | 'api_key' | 'openrouter' | 'custom'
-/** Non-sensitive credential fields returned for pre-filling the edit form. API key is included (masked in UI). */
-export interface ProviderCredentialInfo {
-  apiKey?: string
-  baseUrl?: string
-  authStyle?: 'api_key' | 'bearer'
-}
+
+export type { ProviderCredentialInfo } from './providerProfile'
 
 export type ProviderStatusState = 'authenticated' | 'unauthenticated' | 'authenticating' | 'error'
 
 export interface ProviderStatus {
   state: ProviderStatusState
-  mode: ApiProvider | null
+  /** The profile this status refers to, or null when no profile is configured. */
+  profileId: import('./providerProfile').ProviderProfileId | null
   detail?: {
     email?: string
     organization?: string
@@ -3667,27 +3664,25 @@ export interface ProviderStatus {
 }
 
 /**
- * Non-sensitive provider config (persisted in settings.json). Secrets live
- * in CredentialStore.
+ * Non-sensitive provider config (persisted in settings.json). Secrets
+ * live in the CredentialStore under `credential:${profileId}` keys.
  *
- * Phase B migration state (in-flight — see
- * docs/proposals/2026-04-12-provider-management-redesign.md §4 and
- * src/shared/providerProfile.ts):
+ * Schema v1 shape (Phase B.7 cutover):
+ *   - `schemaVersion: 1`  — stamp written by the migration runner
+ *   - `profiles[]`        — user-owned LLM account records
+ *   - `defaultProfileId`  — pointer into `profiles` or null when none
+ *   - `defaultModel`      — optional model hint applied when a profile
+ *                            omits its own `preferredModel`
  *
- *   - `activeMode` + `defaultModel` are the Phase A flat shape, still
- *     read by the current ProviderService / Settings UI.
- *   - `profiles` + `defaultProfileId` are the Phase B.1 shape. After
- *     B.2 both are populated; after B.3 the activeMode field is
- *     removed and this interface becomes `ProviderProfileSettings`.
+ * The pre-Phase-A `byEngine.{claude,codex}` shape and the Phase A flat
+ * `activeMode` shape are read only by the migration runner (see
+ * electron/services/provider/migration/). Runtime readers see v1 only.
  */
 export interface ProviderSettings {
-  activeMode: ApiProvider | null
-  /** Optional default model hint. */
+  schemaVersion?: 1
+  profiles: import('./providerProfile').ProviderProfile[]
+  defaultProfileId: import('./providerProfile').ProviderProfileId | null
   defaultModel?: string
-  /** Phase B.1+ profile list. Populated by settingsService migration. */
-  profiles?: import('./providerProfile').ProviderProfile[]
-  /** Phase B.1+ default profile pointer. */
-  defaultProfileId?: import('./providerProfile').ProviderProfileId | null
 }
 
 // === Update Settings ===
