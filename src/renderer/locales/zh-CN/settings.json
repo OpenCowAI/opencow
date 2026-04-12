@@ -169,10 +169,7 @@
   },
   "command": {
     "title": "对话设置",
-    "description": "新建 AI 会话时的默认参数（最大轮次目前仅对 Claude 生效）。",
-    "defaultEngine": "默认引擎",
-    "engineClaude": "Claude",
-    "engineCodex": "Codex",
+    "description": "新建 AI 会话时的默认参数。",
     "maxTurns": "最大轮次",
     "permissionMode": "权限模式",
     "bypassPermissions": "跳过权限（默认）",

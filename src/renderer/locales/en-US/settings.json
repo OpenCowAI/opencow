@@ -169,10 +169,7 @@
   },
   "command": {
     "title": "Chat",
-    "description": "Default parameters for new AI sessions (Max Turns currently applies to Claude sessions only).",
-    "defaultEngine": "Default Engine",
-    "engineClaude": "Claude",
-    "engineCodex": "Codex",
+    "description": "Default parameters for new AI sessions.",
     "maxTurns": "Max Turns",
     "permissionMode": "Permission Mode",
     "bypassPermissions": "Bypass Permissions (Default)",
