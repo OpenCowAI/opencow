@@ -30,16 +30,16 @@ describe('generateProviderProfileId', () => {
 })
 
 describe('isProviderTypeImplemented', () => {
-  it('flags Anthropic-native types as implemented in Phase B', () => {
+  it('flags Anthropic-native + OpenAI-family + Gemini as implemented', () => {
     expect(isProviderTypeImplemented('claude-subscription')).toBe(true)
     expect(isProviderTypeImplemented('anthropic-api')).toBe(true)
     expect(isProviderTypeImplemented('anthropic-compat-proxy')).toBe(true)
+    expect(isProviderTypeImplemented('openai-direct')).toBe(true)
+    expect(isProviderTypeImplemented('openai-compat-proxy')).toBe(true)
+    expect(isProviderTypeImplemented('gemini')).toBe(true)
   })
 
-  it('flags non-Anthropic and cloud types as NOT implemented in Phase B', () => {
-    expect(isProviderTypeImplemented('openai-direct')).toBe(false)
-    expect(isProviderTypeImplemented('openai-compat-proxy')).toBe(false)
-    expect(isProviderTypeImplemented('gemini')).toBe(false)
+  it('flags cloud-SDK types (Bedrock / Vertex) as NOT yet implemented', () => {
     expect(isProviderTypeImplemented('anthropic-bedrock')).toBe(false)
     expect(isProviderTypeImplemented('anthropic-vertex')).toBe(false)
   })

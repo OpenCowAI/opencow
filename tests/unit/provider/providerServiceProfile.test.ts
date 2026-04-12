@@ -667,16 +667,16 @@ describe('ProviderService.testProfile', () => {
 
   it('returns ok=false with reason=unsupported for types not yet implemented', async () => {
     const store = new FakeCredentialStore()
-    const geminiProfile: ProviderProfile = {
-      id: asProviderProfileId('prof_gemini123'),
-      name: 'Gemini',
-      credential: { type: 'gemini' },
+    const bedrockProfile: ProviderProfile = {
+      id: asProviderProfileId('prof_bedrock12'),
+      name: 'Bedrock',
+      credential: { type: 'anthropic-bedrock', region: 'us-east-1' },
       createdAt: '2026-04-12T20:00:00.000Z',
       updatedAt: '2026-04-12T20:00:00.000Z',
     }
-    const service = buildWithStore(store, geminiProfile)
+    const service = buildWithStore(store, bedrockProfile)
 
-    const result = await service.testProfile(geminiProfile.id)
+    const result = await service.testProfile(bedrockProfile.id)
 
     expect(result.outcome.ok).toBe(false)
     if (!result.outcome.ok) {

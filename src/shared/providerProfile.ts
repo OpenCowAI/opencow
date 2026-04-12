@@ -47,13 +47,16 @@ export type ProviderType =
 
 /**
  * Types that are wired end-to-end in the current OpenCow build.
- * Phase B implements the Anthropic-native subset; OpenAI/Gemini
- * are Phase D (depends on opencow-agent-sdk M1).
+ * Bedrock/Vertex are the only two still unimplemented — they require
+ * AWS/GCP SDK integration which is a separate ticket.
  */
 const IMPLEMENTED_PROVIDER_TYPES: ReadonlySet<ProviderType> = new Set([
   'claude-subscription',
   'anthropic-api',
   'anthropic-compat-proxy',
+  'openai-direct',
+  'openai-compat-proxy',
+  'gemini',
 ])
 
 export function isProviderTypeImplemented(type: ProviderType): boolean {

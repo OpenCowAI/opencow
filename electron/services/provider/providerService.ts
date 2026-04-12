@@ -31,6 +31,11 @@ import { SubscriptionProvider } from './providers/subscription'
 import { AnthropicApiKeyProvider } from './providers/apiKey'
 import { OpenRouterProvider } from './providers/openRouter'
 import { CustomProvider } from './providers/custom'
+import {
+  OpenAIDirectProvider,
+  OpenAICompatProxyProvider,
+} from './providers/openai'
+import { GeminiProvider } from './providers/gemini'
 import { createLogger } from '../../platform/logger'
 import type {
   ProviderProfile,
@@ -102,17 +107,22 @@ export class ProviderService {
       case 'anthropic-api':
         return new AnthropicApiKeyProvider(this.deps.credentialStore, key)
       case 'anthropic-compat-proxy':
-        // Phase B.3b: legacy `openrouter` and `custom` both map to this
-        // profile type. The adapter distinguishes them via credential
-        // shape at runtime — OpenRouter stores `{ apiKey, baseUrl? }`
-        // while Custom stores `{ apiKey, baseUrl, authStyle }`. The
-        // CustomProvider adapter handles both — Phase B.5 will
-        // consolidate when the UI is rewritten.
         return new CustomProvider(this.deps.credentialStore, key)
-      default:
+      case 'openai-direct':
+        return new OpenAIDirectProvider(this.deps.credentialStore, key)
+      case 'openai-compat-proxy':
+        return new OpenAICompatProxyProvider(this.deps.credentialStore, key)
+      case 'gemini':
+        return new GeminiProvider(this.deps.credentialStore, key)
+      case 'anthropic-bedrock':
+      case 'anthropic-vertex':
         throw new Error(
-          `ProviderService: profile type "${profile.credential.type}" is not yet supported in this build`,
+          `ProviderService: profile type "${profile.credential.type}" is not yet supported in this build (AWS/GCP SDK integration pending)`,
         )
+      default: {
+        const exhaustive: never = profile.credential
+        throw new Error(`Unhandled profile type: ${JSON.stringify(exhaustive)}`)
+      }
     }
   }
 
