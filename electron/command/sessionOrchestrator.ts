@@ -533,8 +533,26 @@ export class SessionOrchestrator {
       log.warn('node binary was not found at startup — session will likely fail with ENOENT')
     }
 
-    // Layer provider credentials (highest priority — overrides any system-level tokens)
-    const providerEnv = await this.deps.getProviderEnv()
+    // Layer provider credentials (highest priority — overrides any system-level tokens).
+    // A throw here (e.g. ProfileMisconfiguredError: profile has no
+    // Model) short-circuits session spawn. The session is transitioned
+    // to `error` with the thrown message so the user sees it in the
+    // chat view instead of a hung/broken session.
+    let providerEnv: Record<string, string>
+    try {
+      providerEnv = await this.deps.getProviderEnv()
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      log.error('Session spawn aborted: provider env resolution failed', { sessionId, error: message })
+      session.transition({ type: 'turn_error', message })
+      this.dispatchSessionTerminal({
+        sessionId,
+        session,
+        terminalEvent: 'error',
+        error: message,
+      })
+      return
+    }
     Object.assign(sessionEnv, providerEnv)
 
     // Record the provider mode active at lifecycle spawn time — used by

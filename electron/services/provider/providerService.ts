@@ -201,6 +201,20 @@ export class ProviderService {
       return {}
     }
 
+    // Non-Claude profiles MUST specify a model. The SDK's built-in
+    // defaults target Anthropic endpoints only; letting a session
+    // spawn without a model against an OpenAI-compat / Gemini endpoint
+    // causes the SDK to emit malformed requests that upstream returns
+    // as error text — which the SDK then surfaces as assistant content
+    // ("API Error: fetch failed"). Fail fast here so the user gets a
+    // clear error immediately instead of a confusing fake reply.
+    if (profileRequiresExplicitModel(profile) && !profile.preferredModel) {
+      throw new ProfileMisconfiguredError(
+        profile,
+        `Profile "${profile.name}" (${profile.credential.type}) requires an explicit Model — open Settings → Providers, edit this profile, and set a Model (e.g. ${suggestedModelFor(profile)}).`,
+      )
+    }
+
     const adapter = this.tryBuildAdapter(profile)
     if (!adapter) return {}
 
@@ -222,6 +236,12 @@ export class ProviderService {
           break
       }
     }
+    log.info('getProviderEnvForProfile', {
+      profile: profile.name,
+      type: profile.credential.type,
+      model: preferred ?? '(none — SDK default)',
+      envKeys: Object.keys(env).sort(),
+    })
     return env
   }
 
@@ -424,5 +444,48 @@ export class ProviderService {
   /** Drive the app focus hook after OAuth completion. */
   focusAppWindow(): void {
     this.deps.focusApp?.()
+  }
+}
+
+/**
+ * Thrown when a profile is selected for use but lacks mandatory
+ * configuration (today: `preferredModel` on non-Claude profiles).
+ * Callers SHOULD catch this at the orchestrator boundary and surface
+ * the message to the user via the session error channel.
+ */
+export class ProfileMisconfiguredError extends Error {
+  constructor(readonly profile: ProviderProfile, message: string) {
+    super(message)
+    this.name = 'ProfileMisconfiguredError'
+  }
+}
+
+function profileRequiresExplicitModel(profile: ProviderProfile): boolean {
+  switch (profile.credential.type) {
+    case 'claude-subscription':
+      // Anthropic OAuth sessions use Anthropic's server-side default.
+      return false
+    case 'anthropic-api':
+      // Direct Anthropic API: SDK's built-in model default matches.
+      return false
+    case 'anthropic-compat-proxy':
+    case 'openai-direct':
+    case 'openai-compat-proxy':
+    case 'gemini':
+      return true
+  }
+}
+
+function suggestedModelFor(profile: ProviderProfile): string {
+  switch (profile.credential.type) {
+    case 'claude-subscription':
+    case 'anthropic-api':
+    case 'anthropic-compat-proxy':
+      return 'claude-sonnet-4-6'
+    case 'openai-direct':
+    case 'openai-compat-proxy':
+      return 'gpt-5.4'
+    case 'gemini':
+      return 'gemini-2.5-pro'
   }
 }

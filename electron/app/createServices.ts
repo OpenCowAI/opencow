@@ -431,8 +431,21 @@ export async function createAppServices(deps: ServiceFactoryDeps): Promise<AppSe
     getProxyEnv: () => settingsService.getProxyEnv(),
     getProviderEnv: async () => {
       const defaultId = providerService.resolveProfileId()
-      if (!defaultId) return {}
-      return providerService.getProviderEnvForProfile(defaultId)
+      if (!defaultId) {
+        log.warn('getProviderEnv: no default profile configured — session will fail auth')
+        return {}
+      }
+      try {
+        return await providerService.getProviderEnvForProfile(defaultId)
+      } catch (err) {
+        // ProfileMisconfiguredError and any downstream failure surfaces
+        // here. Re-throw so the orchestrator's start-session path turns
+        // it into a visible session error instead of spawning a broken
+        // SDK that emits "API Error: fetch failed" as assistant text.
+        const message = err instanceof Error ? err.message : String(err)
+        log.error('getProviderEnv failed — session will not spawn', { error: message })
+        throw err
+      }
     },
     getProviderDefaultModel: () => {
       const profileId = providerService.resolveProfileId()
