@@ -23,7 +23,6 @@ describe('ManagedSession', () => {
     const session = new ManagedSession(baseConfig)
     const info = session.getInfo()
     expect(info.state).toBe('creating')
-    expect(info.engineKind).toBe('claude')
     expect(info.origin).toEqual({ source: 'issue', issueId: 'issue-1' })
     expect(info.messages).toHaveLength(0)
   })
@@ -635,37 +634,10 @@ describe('ManagedSession', () => {
     expect(session.getInfo().contextState?.metricKind).toBe('context_occupancy')
   })
 
-  it('switchEngine clears model overrides and context state', () => {
-    const session = new ManagedSession({
-      ...baseConfig,
-      engineKind: 'claude',
-      model: 'claude-sonnet-4-6',
-    })
-    session.setModel('claude-sonnet-4-6')
-    session.applyContextSnapshot({
-      metricKind: 'context_occupancy', usedTokens: 1024,
-      limitTokens: 200_000,
-      source: 'claude.assistant_usage',
-      confidence: 'estimated',
-      updatedAtMs: Date.now(),
-    })
-
-    session.switchEngine({ newEngine: 'codex', contextSummary: 'summary' })
-
-    const info = session.getInfo()
-    expect(info.engineKind).toBe('codex')
-    expect(info.model).toBeNull()
-    expect(info.contextState).toBeNull()
-    expect(session.getModelOverride()).toBeNull()
-    const cfg = session.getConfig()
-    expect(cfg.engineKind).toBe('codex')
-  })
-
   it('fromInfo restores runtime model but does not restore startup model override', () => {
     const now = Date.now()
     const restored = ManagedSession.fromInfo({
       id: 'ccb-restored',
-      engineKind: 'codex',
       engineSessionRef: 'engine-ref',
       engineState: null,
       state: 'idle',

@@ -124,7 +124,6 @@ describe('engineEventMapper', () => {
   it('maps ManagedSessionInfo into managed_runtime session_start EngineEvent', () => {
     const mapped = mapManagedSessionInfoToSessionStartEngineEvent({
       id: 'managed-1',
-      engineKind: 'codex',
       engineSessionRef: null,
 
       engineState: null,
@@ -155,7 +154,6 @@ describe('engineEventMapper', () => {
     expect(mapped.payload).toEqual(
       expect.objectContaining({
         model: 'o3',
-        engineKind: 'codex',
         state: 'streaming',
         projectId: 'proj-1',
       }),

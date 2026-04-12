@@ -10,7 +10,6 @@ import type { Database } from '../../../electron/database/types'
 function makeSession(overrides: Partial<ManagedSessionInfo> = {}): ManagedSessionInfo {
   return {
     id: `ccb-${Math.random().toString(36).slice(2, 8)}`,
-    engineKind: 'claude',
     engineSessionRef: null,
     engineState: null,
     state: 'stopped',
@@ -101,13 +100,11 @@ describe('ManagedSessionStore', () => {
     it('persists engine metadata fields', async () => {
       await store.save(makeSession({
         id: 'ccb-engine-1',
-        engineKind: 'codex',
         engineSessionRef: 'thread_123',
         engineState: { checkpoint: 'abc' },
       }))
 
       const loaded = await store.get('ccb-engine-1')
-      expect(loaded?.engineKind).toBe('codex')
       expect(loaded?.engineSessionRef).toBe('thread_123')
       expect(loaded?.engineState).toEqual({ checkpoint: 'abc' })
     })

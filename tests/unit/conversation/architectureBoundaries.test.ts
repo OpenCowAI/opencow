@@ -42,6 +42,5 @@ describe('conversation architecture boundaries', () => {
     expect(existsSync('electron/command/handlers/handleResult.ts')).toBe(false)
     expect(existsSync('electron/command/handlers/handlePartialMessage.ts')).toBe(false)
     expect(existsSync('electron/command/codex/codexTurnProjector.ts')).toBe(false)
-    expect(existsSync('electron/conversation/runtime/codex/codexTurnProjector.ts')).toBe(true)
   })
 })

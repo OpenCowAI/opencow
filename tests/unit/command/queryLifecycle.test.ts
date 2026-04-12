@@ -117,7 +117,6 @@ function endStream() {
 
 function makeClaudeLaunchOptions() {
   return {
-    engineKind: 'claude' as const,
     maxTurns: 10,
     includePartialMessages: true,
     permissionMode: 'default',
@@ -246,24 +245,4 @@ describe('QueryLifecycle', () => {
     expect(() => lifecycle.start({ initialPrompt: 'hello', launchOptions: makeClaudeLaunchOptions() })).toThrow('already stopped')
   })
 
-  it('fails fast when non-claude launch options are provided', () => {
-    const lifecycle = new QueryLifecycle()
-    expect(() =>
-      lifecycle.start({
-        initialPrompt: 'hello',
-        launchOptions: {
-          engineKind: 'codex',
-          maxTurns: 10,
-          includePartialMessages: true,
-          permissionMode: 'default',
-          allowDangerouslySkipPermissions: true,
-          env: {},
-          systemPromptPayload: {
-            transport: 'synthetic_first_turn_prefix',
-            text: 'TEST',
-          },
-        },
-      }),
-    ).toThrowError(/requires claude launch options/)
-  })
 })

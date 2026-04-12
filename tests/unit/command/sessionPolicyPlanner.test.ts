@@ -9,7 +9,6 @@ import {
 describe('sessionPolicyPlanner', () => {
   it('plans policy from prompt execution contract and injects native allowlist', () => {
     const plan = planSessionPolicy({
-      engineKind: 'codex',
       origin: { source: 'issue', issueId: 'issue-1' },
       prompt: [
         { type: 'text', text: '请调用 evose app' },
@@ -39,9 +38,10 @@ describe('sessionPolicyPlanner', () => {
     expect(plan.effectivePolicy.tools.native.allow).toEqual([
       { capability: 'browser' },
       { capability: 'html' },
-      { capability: 'interaction', tool: 'ask_user_question' },
-      { capability: 'issues', tool: 'propose_issue_operation' },
-      { capability: 'schedules', tool: 'propose_schedule_operation' },
+      { capability: 'interaction' },
+      { capability: 'issues' },
+      { capability: 'projects' },
+      { capability: 'schedules' },
       { capability: 'evose' },
     ])
   })

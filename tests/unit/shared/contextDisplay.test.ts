@@ -7,7 +7,6 @@ import type { ManagedSessionInfo } from '../../../src/shared/types'
 function makeSession(overrides: Partial<ManagedSessionInfo> = {}): ManagedSessionInfo {
   return {
     id: 'session-1',
-    engineKind: 'claude',
     engineSessionRef: null,
 
     engineState: null,
@@ -168,7 +167,6 @@ describe('resolveContextDisplayState', () => {
     const result = resolveContextDisplayState(makeSession({
       contextState: null,
       model: 'unknown-model-xyz',
-      engineKind: 'claude',
     }))
     expect(result.limitTokens).toBe(200_000) // engine default
   })
@@ -177,7 +175,6 @@ describe('resolveContextDisplayState', () => {
     const result = resolveContextDisplayState(makeSession({
       contextState: null,
       contextLimitOverride: null,
-      engineKind: 'codex',
       model: 'gpt-5.3-codex',
     }))
     expect(result.limitTokens).toBe(400_000)
@@ -234,7 +231,6 @@ describe('resolveContextDisplayState', () => {
 
   it('prefers contextState over legacy fallback fields', () => {
     const result = resolveContextDisplayState(makeSession({
-      engineKind: 'codex',
       model: 'gpt-5-codex',
       lastInputTokens: 10_000,
       contextLimitOverride: 120_000,

@@ -8,7 +8,6 @@ describe('GenaiPricesContextWindowCatalog', () => {
     const catalog = new GenaiPricesContextWindowCatalog()
 
     const result = catalog.resolveContextWindow({
-      engineKind: 'claude',
       model: 'claude-sonnet-4-6',
     })
 
@@ -16,23 +15,10 @@ describe('GenaiPricesContextWindowCatalog', () => {
     expect(result.limitTokens).toBe(1_000_000)
   })
 
-  it('returns a known context_window from genai-prices for Codex/OpenAI', () => {
-    const catalog = new GenaiPricesContextWindowCatalog()
-
-    const result = catalog.resolveContextWindow({
-      engineKind: 'codex',
-      model: 'gpt-5.3-codex',
-    })
-
-    expect(result.diagnostic).toBeNull()
-    expect(result.limitTokens).toBe(400_000)
-  })
-
   it('returns null without diagnostic when model is null', () => {
     const catalog = new GenaiPricesContextWindowCatalog()
 
     const result = catalog.resolveContextWindow({
-      engineKind: 'claude',
       model: null,
     })
 
@@ -46,7 +32,6 @@ describe('GenaiPricesContextWindowCatalog', () => {
     const catalog = new GenaiPricesContextWindowCatalog()
 
     const result = catalog.resolveContextWindow({
-      engineKind: 'codex',
       model: 'non-existent-model-xyz',
     })
 

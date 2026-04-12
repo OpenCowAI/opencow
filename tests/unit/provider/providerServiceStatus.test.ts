@@ -2,38 +2,34 @@
 
 import { describe, expect, it } from 'vitest'
 import { ProviderService } from '../../../electron/services/provider/providerService'
-import type { AIEngineKind, ApiProvider, ProviderSettings } from '../../../src/shared/types'
+import type { ApiProvider, ProviderSettings } from '../../../src/shared/types'
 import type { ProviderAdapter } from '../../../electron/services/provider/types'
 
 function createProviderServiceForStatusTest(params: {
-  engineKind: AIEngineKind
   mode: ApiProvider | null
   adapter: ProviderAdapter
 }): ProviderService {
   const settings: ProviderSettings = {
-    byEngine: {
-      claude: { activeMode: null },
-    },
+    activeMode: params.mode,
   }
-  settings.byEngine[params.engineKind].activeMode = params.mode
 
   const service = Object.create(ProviderService.prototype) as ProviderService & {
     deps: unknown
-    providersByEngine: unknown
+    providers: unknown
   }
   service.deps = {
     dispatch: () => {},
-    credentialStoreByEngine: {} as never,
+    credentialStore: {} as never,
     getProviderSettings: () => settings,
   }
-  service.providersByEngine = new Map<AIEngineKind, Map<ApiProvider, ProviderAdapter>>([
-    ['claude', new Map(params.mode ? [[params.mode, params.adapter]] : [])],
-  ])
+  service.providers = new Map<ApiProvider, ProviderAdapter>(
+    params.mode ? [[params.mode, params.adapter]] : [],
+  )
   return service as ProviderService
 }
 
 describe('ProviderService.getStatus', () => {
-  it('returns authenticated when claude adapter confirms auth', async () => {
+  it('returns authenticated when adapter confirms auth', async () => {
     const adapter: ProviderAdapter = {
       checkStatus: async () => ({ authenticated: true }),
       getEnv: async () => ({}),
@@ -41,13 +37,9 @@ describe('ProviderService.getStatus', () => {
       getHTTPAuth: async () => null,
       logout: async () => {},
     }
-    const service = createProviderServiceForStatusTest({
-      engineKind: 'claude',
-      mode: 'api_key',
-      adapter,
-    })
+    const service = createProviderServiceForStatusTest({ mode: 'api_key', adapter })
 
-    const status = await service.getStatus('claude')
+    const status = await service.getStatus()
     expect(status.state).toBe('authenticated')
     expect(status.mode).toBe('api_key')
   })
@@ -60,13 +52,9 @@ describe('ProviderService.getStatus', () => {
       getHTTPAuth: async () => null,
       logout: async () => {},
     }
-    const service = createProviderServiceForStatusTest({
-      engineKind: 'claude',
-      mode: null,
-      adapter,
-    })
+    const service = createProviderServiceForStatusTest({ mode: null, adapter })
 
-    const status = await service.getStatus('claude')
+    const status = await service.getStatus()
     expect(status.state).toBe('unauthenticated')
     expect(status.mode).toBeNull()
   })

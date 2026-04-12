@@ -1,16 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, it } from 'vitest'
-import { DEFAULT_CONTEXT_LIMIT_BY_ENGINE, getContextLimit } from '../../../src/shared/modelContextLimits'
+import { DEFAULT_CONTEXT_LIMIT, getContextLimit } from '../../../src/shared/modelContextLimits'
 
 describe('modelContextLimits', () => {
   it('matches known Claude model prefixes', () => {
-    const limit = getContextLimit({ engineKind: 'claude', model: 'claude-sonnet-4-20250514' })
+    const limit = getContextLimit({ model: 'claude-sonnet-4-20250514' })
     expect(limit).toBe(200_000)
   })
 
-  it('falls back to engine default when model is unknown', () => {
-    const claudeFallback = getContextLimit({ engineKind: 'claude', model: 'mystery-model' })
-    expect(claudeFallback).toBe(DEFAULT_CONTEXT_LIMIT_BY_ENGINE.claude)
+  it('falls back to default when model is unknown', () => {
+    expect(getContextLimit({ model: 'mystery-model' })).toBe(DEFAULT_CONTEXT_LIMIT)
   })
 })

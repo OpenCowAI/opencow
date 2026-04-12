@@ -44,18 +44,7 @@
   },
   "provider": {
     "title": "Provider",
-    "description": "Configure provider connections separately for Claude and Codex engines. Credentials are encrypted and stored locally.",
-    "engineScope": "Engine Scope",
-    "defaultEngine": "Default Session Engine",
-    "defaultEngineHint": "Used by default for new sessions. You can still override it per session.",
-    "engines": {
-      "claude": "Claude Engine",
-      "codex": "Codex Engine"
-    },
-    "configTitles": {
-      "claude": "Claude Configuration",
-      "codex": "Codex Configuration"
-    },
+    "description": "Configure the LLM provider connection used by OpenCow. Credentials are encrypted and stored locally.",
     "modes": {
       "subscription": "Claude Subscription",
       "subscriptionDesc": "Pro, Max, Team, or Enterprise — login via browser OAuth",

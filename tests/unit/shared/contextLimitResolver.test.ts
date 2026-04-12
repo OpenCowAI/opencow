@@ -22,7 +22,6 @@ describe('resolveContextLimit', () => {
     })
 
     const result = resolveContextLimit({
-      engineKind: 'claude',
       model: 'claude-sonnet-4-6',
       contextState: {
         metricKind: 'context_occupancy',
@@ -51,7 +50,6 @@ describe('resolveContextLimit', () => {
     })
 
     const result = resolveContextLimit({
-      engineKind: 'claude',
       model: 'claude-sonnet-4-6',
       contextState: {
         metricKind: 'context_occupancy',
@@ -80,7 +78,6 @@ describe('resolveContextLimit', () => {
     })
 
     const result = resolveContextLimit({
-      engineKind: 'claude',
       model: 'claude-sonnet-4-6',
       contextState: null,
       contextLimitOverride: null,
@@ -108,7 +105,6 @@ describe('resolveContextLimit', () => {
     })
 
     const result = resolveContextLimit({
-      engineKind: 'claude',
       model: 'mystery-model',
       contextState: null,
       contextLimitOverride: null,
@@ -129,7 +125,6 @@ describe('resolveContextLimit', () => {
     setContextWindowCatalogForTest(catalog)
 
     const result = resolveContextLimit({
-      engineKind: 'claude',
       model: 'claude-opus-4',
       contextState: {
         metricKind: 'context_occupancy',

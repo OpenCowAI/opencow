@@ -44,18 +44,7 @@
   },
   "provider": {
     "title": "服务商",
-    "description": "分别配置 OpenCow 在 Claude / Codex 引擎下的服务商连接方式。凭据已加密并存储在本地。",
-    "engineScope": "配置引擎",
-    "defaultEngine": "默认会话引擎",
-    "defaultEngineHint": "新建会话时默认使用该引擎。可在会话级别覆盖。",
-    "engines": {
-      "claude": "Claude 引擎",
-      "codex": "Codex 引擎"
-    },
-    "configTitles": {
-      "claude": "Claude 配置",
-      "codex": "Codex 配置"
-    },
+    "description": "配置 OpenCow 使用的 LLM 服务商连接方式。凭据已加密并存储在本地。",
     "modes": {
       "subscription": "Claude 订阅",
       "subscriptionDesc": "Pro、Max、Team 或 Enterprise — 通过浏览器 OAuth 登录",

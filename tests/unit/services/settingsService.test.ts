@@ -28,7 +28,6 @@ describe('SettingsService', () => {
     expect(settings.proxy.noProxy).toBe('')
     expect(settings.command.maxTurns).toBe(10000)
     expect(settings.command.permissionMode).toBe('bypassPermissions')
-    expect(settings.command.defaultEngine).toBe('claude')
     expect(settings.eventSubscriptions.enabled).toBe(true)
     expect(settings.eventSubscriptions.onError).toBe(true)
     expect(settings.eventSubscriptions.onComplete).toBe(true)
@@ -127,7 +126,7 @@ describe('SettingsService', () => {
     expect(settings.command.permissionMode).toBe('bypassPermissions')
   })
 
-  it('migrates legacy command.defaultModel to provider.byEngine.claude.defaultModel', async () => {
+  it('migrates legacy command.defaultModel to provider.defaultModel', async () => {
     await writeFile(
       join(tempDir, 'settings.json'),
       JSON.stringify({ command: { defaultModel: 'claude-opus-4-6' } }),
@@ -135,26 +134,26 @@ describe('SettingsService', () => {
     )
     const fresh = new SettingsService(join(tempDir, 'settings.json'))
     const settings = await fresh.load()
-    expect(settings.provider.byEngine.claude.defaultModel).toBe('claude-opus-4-6')
+    expect(settings.provider.defaultModel).toBe('claude-opus-4-6')
   })
 
-  it('migrates legacy provider.activeMode into provider.byEngine.claude.activeMode', async () => {
+  it('flattens legacy provider.byEngine.claude.activeMode into provider.activeMode', async () => {
     await writeFile(
       join(tempDir, 'settings.json'),
-      JSON.stringify({ provider: { activeMode: 'api_key' } }),
+      JSON.stringify({ provider: { byEngine: { claude: { activeMode: 'api_key' } } } }),
       'utf-8'
     )
     const fresh = new SettingsService(join(tempDir, 'settings.json'))
     const settings = await fresh.load()
-    expect(settings.provider.byEngine.claude.activeMode).toBe('api_key')
+    expect(settings.provider.activeMode).toBe('api_key')
   })
 
-  it('provider.byEngine default model is preserved via getProviderSettings', async () => {
+  it('provider default model is preserved via getProviderSettings', async () => {
     const settings = await service.load()
-    settings.provider.byEngine.claude.defaultModel = 'claude-opus-4-6'
+    settings.provider.defaultModel = 'claude-opus-4-6'
     await service.update(settings)
     const provider = service.getProviderSettings()
-    expect(provider.byEngine.claude.defaultModel).toBe('claude-opus-4-6')
+    expect(provider.defaultModel).toBe('claude-opus-4-6')
   })
 
   it('getEventSubscriptionSettings returns current event subscription settings', async () => {
