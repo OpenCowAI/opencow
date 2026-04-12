@@ -30,13 +30,15 @@ const log = createLogger('Provider:Custom')
 
 export class CustomProvider implements ProviderAdapter {
   private readonly store: CredentialStore
+  private readonly credentialKey: string
 
-  constructor(store: CredentialStore) {
+  constructor(store: CredentialStore, credentialKey: string = 'custom') {
     this.store = store
+    this.credentialKey = credentialKey
   }
 
   async checkStatus(): Promise<ProviderAdapterStatus> {
-    const credential = await this.store.get('custom')
+    const credential = await this.store.getAs<CustomCredential>(this.credentialKey)
     if (!credential?.apiKey || !credential?.baseUrl) {
       return { authenticated: false }
     }
@@ -44,7 +46,7 @@ export class CustomProvider implements ProviderAdapter {
   }
 
   async getEnv(): Promise<Record<string, string>> {
-    const credential = await this.store.get('custom')
+    const credential = await this.store.getAs<CustomCredential>(this.credentialKey)
     if (!credential?.apiKey || !credential?.baseUrl) return {}
 
     const env: Record<string, string> = {
@@ -88,7 +90,7 @@ export class CustomProvider implements ProviderAdapter {
       authStyle,
     }
 
-    await this.store.update('custom', credential)
+    await this.store.updateAs(this.credentialKey, credential)
     log.info('Custom provider credentials saved', {
       baseUrl: credential.baseUrl,
       authStyle,
@@ -97,7 +99,7 @@ export class CustomProvider implements ProviderAdapter {
   }
 
   async getCredential(): Promise<import('@shared/types').ProviderCredentialInfo | null> {
-    const credential = await this.store.get('custom')
+    const credential = await this.store.getAs<CustomCredential>(this.credentialKey)
     if (!credential?.apiKey || !credential?.baseUrl) return null
     return {
       apiKey: credential.apiKey,
@@ -107,7 +109,7 @@ export class CustomProvider implements ProviderAdapter {
   }
 
   async getHTTPAuth(): Promise<HTTPAuthResult | null> {
-    const credential = await this.store.get('custom')
+    const credential = await this.store.getAs<CustomCredential>(this.credentialKey)
     if (!credential?.apiKey || !credential?.baseUrl) return null
     return {
       apiKey: credential.apiKey,
@@ -117,7 +119,7 @@ export class CustomProvider implements ProviderAdapter {
   }
 
   async logout(): Promise<void> {
-    await this.store.remove('custom')
+    await this.store.removeAt(this.credentialKey)
     log.info('Custom provider credentials cleared')
   }
 }

@@ -32,6 +32,15 @@ import { AnthropicApiKeyProvider } from './providers/apiKey'
 import { OpenRouterProvider } from './providers/openRouter'
 import { CustomProvider } from './providers/custom'
 import { createLogger } from '../../platform/logger'
+import type {
+  ProviderProfile,
+  ProviderProfileId,
+} from '../../../src/shared/providerProfile'
+import {
+  credentialKeyFor,
+  legacyCredentialKey,
+  migrateLegacyProviderSettings,
+} from '../../../src/shared/providerProfile'
 
 const log = createLogger('ProviderService')
 
@@ -60,6 +69,33 @@ export class ProviderService {
       ['openrouter', new OpenRouterProvider(store)],
       ['custom', new CustomProvider(store)],
     ])
+  }
+
+  /**
+   * Build a per-profile adapter — same underlying CredentialStore, but keyed
+   * by `credential:${profileId}` so each profile's secrets live at a
+   * separate top-level entry. Called on demand by profile-aware methods.
+   */
+  private buildAdapterForProfile(profile: ProviderProfile): ProviderAdapter {
+    const key = credentialKeyFor(profile.id)
+    switch (profile.credential.type) {
+      case 'claude-subscription':
+        return new SubscriptionProvider(this.deps.credentialStore, key)
+      case 'anthropic-api':
+        return new AnthropicApiKeyProvider(this.deps.credentialStore, key)
+      case 'anthropic-compat-proxy':
+        // Phase B.3b: legacy `openrouter` and `custom` both map to this
+        // profile type. The adapter distinguishes them via credential
+        // shape at runtime — OpenRouter stores `{ apiKey, baseUrl? }`
+        // while Custom stores `{ apiKey, baseUrl, authStyle }`. The
+        // CustomProvider adapter handles both — Phase B.5 will
+        // consolidate when the UI is rewritten.
+        return new CustomProvider(this.deps.credentialStore, key)
+      default:
+        throw new Error(
+          `ProviderService: profile type "${profile.credential.type}" is not yet supported in this build`,
+        )
+    }
   }
 
   // ── Public API ──────────────────────────────────────────────────────
@@ -255,9 +291,156 @@ export class ProviderService {
     }
   }
 
+  // ── Phase B.3b: Profile-aware public API ───────────────────────────
+  //
+  // These methods consume the new `profiles` / `defaultProfileId` fields
+  // on ProviderSettings. They coexist with the Phase A activeMode-based
+  // methods above — the orchestrator / UI switchover happens in Phase C
+  // (per-session picker) and Phase B.5 (Settings list UI).
+
+  /**
+   * Apply credential renames produced by Phase B.1 migration.
+   *
+   * Idempotent: checks whether each legacy key still exists before
+   * renaming, so re-running this after a successful migration is a
+   * no-op. Safe to call on every bootstrap.
+   *
+   * The rename uses the pure `getAs`/`updateAs`/`removeAt` CredentialStore
+   * API — it does not construct new credential objects, only moves the
+   * value from `mode` → `credential:${profileId}`.
+   */
+  async applyProfileCredentialMigration(): Promise<void> {
+    const settings = this.deps.getProviderSettings()
+    const profiles = settings.profiles ?? []
+    if (profiles.length === 0) return
+
+    // Reconstruct the rename plan from current profiles: for each
+    // migrated profile (id starts with `prof_migrated_`), derive the
+    // legacy ApiProvider mode from the deterministic id suffix.
+    for (const profile of profiles) {
+      const legacyMode = parseLegacyModeFromMigratedId(profile.id)
+      if (!legacyMode) continue
+
+      const legacyKey = legacyCredentialKey(legacyMode)
+      const newKey = credentialKeyFor(profile.id)
+
+      const legacyValue = await this.deps.credentialStore.getAs<unknown>(legacyKey)
+      if (legacyValue === undefined) continue // already migrated or never existed
+
+      const existingAtNew = await this.deps.credentialStore.getAs<unknown>(newKey)
+      if (existingAtNew !== undefined) {
+        // New key already populated (e.g. user logged in via new UI before
+        // rename ran). Preserve the newer value — just delete the legacy
+        // one to keep the store clean.
+        await this.deps.credentialStore.removeAt(legacyKey)
+        log.info(`Credential migration: dropped stale legacy key "${legacyKey}" (new key already populated)`)
+        continue
+      }
+
+      await this.deps.credentialStore.updateAs(newKey, legacyValue)
+      await this.deps.credentialStore.removeAt(legacyKey)
+      log.info(`Credential migration: moved "${legacyKey}" → "${newKey}"`)
+    }
+  }
+
+  /**
+   * Get environment variables for a specific profile.
+   *
+   * Phase C session orchestrator will call this with the session's
+   * chosen profileId (or defaultProfileId). Returns an empty object if
+   * the profile cannot be found or is of an unsupported type.
+   */
+  async getProviderEnvForProfile(profileId: ProviderProfileId): Promise<Record<string, string>> {
+    const profile = this.findProfile(profileId)
+    if (!profile) {
+      log.warn(`getProviderEnvForProfile: profile "${profileId}" not found`)
+      return {}
+    }
+
+    let adapter: ProviderAdapter
+    try {
+      adapter = this.buildAdapterForProfile(profile)
+    } catch (err) {
+      log.warn(`getProviderEnvForProfile: ${err instanceof Error ? err.message : String(err)}`)
+      return {}
+    }
+
+    const env = await adapter.getEnv()
+    const settings = this.deps.getProviderSettings()
+    const preferred = profile.preferredModel ?? settings.defaultModel
+    if (preferred) {
+      env.ANTHROPIC_DEFAULT_SONNET_MODEL = preferred
+    }
+    return env
+  }
+
+  /**
+   * Get provider status for a specific profile. Returns unauthenticated
+   * when credentials are missing or the type is not implemented.
+   */
+  async getStatusForProfile(profileId: ProviderProfileId): Promise<ProviderStatus> {
+    const profile = this.findProfile(profileId)
+    if (!profile) {
+      return { state: 'unauthenticated', mode: null }
+    }
+
+    let adapter: ProviderAdapter
+    try {
+      adapter = this.buildAdapterForProfile(profile)
+    } catch (err) {
+      return { state: 'error', mode: null, error: err instanceof Error ? err.message : String(err) }
+    }
+
+    const adapterStatus = await adapter.checkStatus()
+    return {
+      state: adapterStatus.authenticated ? 'authenticated' : 'unauthenticated',
+      // Temporary: until Phase B.5 rewrites the UI, expose the legacy mode
+      // equivalent so the renderer's ProviderBanner keeps working.
+      mode: legacyModeFromProfile(profile),
+      detail: adapterStatus.detail,
+      error: adapterStatus.error,
+    }
+  }
+
+  private findProfile(profileId: ProviderProfileId): ProviderProfile | null {
+    const profiles = this.deps.getProviderSettings().profiles ?? []
+    return profiles.find((p) => p.id === profileId) ?? null
+  }
+
   // ── Private ─────────────────────────────────────────────────────────
 
   private broadcastStatus(status: ProviderStatus): void {
     this.deps.dispatch({ type: 'provider:status', payload: status })
   }
 }
+
+// ── Phase B.3b helpers ────────────────────────────────────────────────
+
+const MIGRATED_ID_PREFIX = 'prof_migrated_'
+
+function parseLegacyModeFromMigratedId(id: ProviderProfileId): ApiProvider | null {
+  if (!id.startsWith(MIGRATED_ID_PREFIX)) return null
+  const suffix = id.slice(MIGRATED_ID_PREFIX.length)
+  const valid: ReadonlySet<ApiProvider> = new Set(['subscription', 'api_key', 'openrouter', 'custom'])
+  return valid.has(suffix as ApiProvider) ? (suffix as ApiProvider) : null
+}
+
+function legacyModeFromProfile(profile: ProviderProfile): ApiProvider | null {
+  const legacy = parseLegacyModeFromMigratedId(profile.id)
+  if (legacy) return legacy
+  // Fallback: map credential type → ApiProvider when possible (new UI-
+  // created profiles don't carry the `prof_migrated_` prefix).
+  switch (profile.credential.type) {
+    case 'claude-subscription':
+      return 'subscription'
+    case 'anthropic-api':
+      return 'api_key'
+    case 'anthropic-compat-proxy':
+      return 'custom'
+    default:
+      return null
+  }
+}
+
+// Suppress unused-import warning — retained for future UI helpers.
+void migrateLegacyProviderSettings

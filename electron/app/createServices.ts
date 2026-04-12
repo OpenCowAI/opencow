@@ -296,6 +296,13 @@ export async function createAppServices(deps: ServiceFactoryDeps): Promise<AppSe
     focusApp: focusMainWindow,
   })
 
+  // Phase B.3b: move legacy-keyed credentials to profile-keyed slots.
+  // Idempotent: the first bootstrap after Phase B migration performs the
+  // rename; subsequent bootstraps are no-ops.
+  await providerService.applyProfileCredentialMigration().catch((err) => {
+    log.warn('Profile credential migration failed — falling back to legacy path', err)
+  })
+
   // BrowserService is created before SessionOrchestrator so the orchestrator can
   // hold a reference and release per-session browser views when sessions stop.
   const browserService = new BrowserService({

@@ -157,7 +157,7 @@ describe('migrateLegacyProviderSettings', () => {
       { generateId: stubIdFactory, now: stubNow },
     )
     expect(result.credentialRenames).toHaveLength(1)
-    expect(result.credentialRenames[0].fromKey).toBe('api_key')
+    expect(result.credentialRenames[0].fromKey).toBe('apiKey')
     expect(result.credentialRenames[0].toKey).toBe(`credential:${STUB_ID}`)
   })
 })

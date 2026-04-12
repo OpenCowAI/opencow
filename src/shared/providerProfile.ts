@@ -229,8 +229,15 @@ export function credentialKeyFor(id: ProviderProfileId): string {
   return `credential:${id}`
 }
 
-/** CredentialStore key used by the legacy flat-mode schema. */
+/**
+ * CredentialStore key used by the legacy flat-mode schema.
+ *
+ * NOTE: the adapter default keys are NOT 1:1 with ApiProvider names —
+ * AnthropicApiKeyProvider uses `apiKey` (camelCase) as its default key,
+ * while all other adapters use their ApiProvider name as-is.
+ */
 export function legacyCredentialKey(mode: ApiProvider): string {
+  if (mode === 'api_key') return 'apiKey'
   return mode
 }
 
