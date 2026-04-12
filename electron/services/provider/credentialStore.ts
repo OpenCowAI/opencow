@@ -74,6 +74,41 @@ export class CredentialStore<T extends Record<string, unknown> = StoredCredentia
     })
   }
 
+  /**
+   * Get a credential at a dynamically-constructed key (not statically known
+   * in the generic type T). Caller asserts the value shape.
+   *
+   * Used for profile-scoped credential access where the key is
+   * `credential:${profileId}` — see docs/proposals/2026-04-12-provider-
+   * management-redesign.md §4.1.
+   */
+  async getAs<U>(key: string): Promise<U | undefined> {
+    return this.serialize(async () => {
+      const current = await this.loadInternal()
+      const value = (current as Record<string, unknown>)[key]
+      return value !== undefined ? (structuredClone(value) as U) : undefined
+    })
+  }
+
+  /** Typed counterpart of `update` for dynamically-constructed keys. */
+  async updateAs<U>(key: string, value: U): Promise<void> {
+    return this.serialize(async () => {
+      const current = await this.loadInternal()
+      const next = { ...current, [key]: value } as T
+      await this.persistToDisk(next)
+    })
+  }
+
+  /** Typed counterpart of `remove` for dynamically-constructed keys. */
+  async removeAt(key: string): Promise<void> {
+    return this.serialize(async () => {
+      const current = await this.loadInternal()
+      const next = { ...current } as Record<string, unknown>
+      delete next[key]
+      await this.persistToDisk(next as T)
+    })
+  }
+
   /** Clear all stored credentials. */
   async clear(): Promise<void> {
     return this.serialize(async () => {

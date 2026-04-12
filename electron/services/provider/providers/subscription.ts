@@ -28,17 +28,19 @@ const log = createLogger('Auth:Subscription')
 
 export class SubscriptionProvider implements ProviderAdapter {
   private readonly store: CredentialStore
+  private readonly credentialKey: string
   /** Guard against concurrent login attempts. */
   private loginInProgress = false
   /** AbortController for the current OAuth flow — enables cancellation. */
   private flowAbort: AbortController | null = null
 
-  constructor(store: CredentialStore) {
+  constructor(store: CredentialStore, credentialKey: string = 'subscription') {
     this.store = store
+    this.credentialKey = credentialKey
   }
 
   async checkStatus(): Promise<ProviderAdapterStatus> {
-    const credential = await this.store.get('subscription')
+    const credential = await this.store.getAs<OAuthCredential>(this.credentialKey)
     if (!credential) {
       return { authenticated: false }
     }
@@ -47,7 +49,7 @@ export class SubscriptionProvider implements ProviderAdapter {
     if (this.isTokenExpired(credential)) {
       try {
         await this.refreshToken(credential)
-        const refreshed = await this.store.get('subscription')
+        const refreshed = await this.store.getAs<OAuthCredential>(this.credentialKey)
         return {
           authenticated: true,
           detail: { subscriptionType: refreshed?.subscriptionType },
@@ -99,7 +101,7 @@ export class SubscriptionProvider implements ProviderAdapter {
         return { authenticated: false, error: 'OAuth completed but no access token received' }
       }
 
-      await this.store.update('subscription', credential)
+      await this.store.updateAs(this.credentialKey, credential)
       log.info('OAuth credential stored successfully', {
         hasRefreshToken: !!credential.refreshToken,
         expiresAt: new Date(credential.expiresAt).toISOString(),
@@ -131,7 +133,7 @@ export class SubscriptionProvider implements ProviderAdapter {
   }
 
   async logout(): Promise<void> {
-    await this.store.remove('subscription')
+    await this.store.removeAt(this.credentialKey)
     log.info('Subscription credentials cleared')
   }
 
@@ -148,13 +150,13 @@ export class SubscriptionProvider implements ProviderAdapter {
    * NOT share this method.
    */
   private async resolveAccessToken(): Promise<string | null> {
-    const credential = await this.store.get('subscription')
+    const credential = await this.store.getAs<OAuthCredential>(this.credentialKey)
     if (!credential?.accessToken) return null
 
     if (this.isTokenExpired(credential)) {
       try {
         await this.refreshToken(credential)
-        const refreshed = await this.store.get('subscription')
+        const refreshed = await this.store.getAs<OAuthCredential>(this.credentialKey)
         if (refreshed?.accessToken) return refreshed.accessToken
         log.warn('Token refresh completed but accessToken still missing')
       } catch (err) {
@@ -386,7 +388,7 @@ export class SubscriptionProvider implements ProviderAdapter {
       fallbackRefreshToken: credential.refreshToken,
     })
 
-    await this.store.update('subscription', refreshed)
+    await this.store.updateAs(this.credentialKey, refreshed)
     log.info('Token refreshed successfully')
   }
 

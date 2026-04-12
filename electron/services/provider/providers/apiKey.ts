@@ -29,13 +29,15 @@ const log = createLogger('Auth:ApiKey')
  */
 abstract class BaseApiKeyProvider implements ProviderAdapter {
   protected readonly store: CredentialStore
+  protected readonly credentialKey: string
 
-  constructor(store: CredentialStore) {
+  constructor(store: CredentialStore, credentialKey: string = 'apiKey') {
     this.store = store
+    this.credentialKey = credentialKey
   }
 
   async checkStatus(): Promise<ProviderAdapterStatus> {
-    const key = await this.store.get('apiKey')
+    const key = await this.store.getAs<string>(this.credentialKey)
     if (!key) return { authenticated: false }
     return { authenticated: true }
   }
@@ -52,19 +54,19 @@ abstract class BaseApiKeyProvider implements ProviderAdapter {
       return { authenticated: false, error: validationError }
     }
 
-    await this.store.update('apiKey', trimmed)
+    await this.store.updateAs(this.credentialKey, trimmed)
     log.info('API key saved')
     return { authenticated: true }
   }
 
   async getCredential(): Promise<import('@shared/types').ProviderCredentialInfo | null> {
-    const key = await this.store.get('apiKey')
+    const key = await this.store.getAs<string>(this.credentialKey)
     if (!key) return null
     return { apiKey: key }
   }
 
   async logout(): Promise<void> {
-    await this.store.remove('apiKey')
+    await this.store.removeAt(this.credentialKey)
     log.info('API key cleared')
   }
 
@@ -95,13 +97,13 @@ export class AnthropicApiKeyProvider extends BaseApiKeyProvider {
   }
 
   async getEnv(): Promise<Record<string, string>> {
-    const key = await this.store.get('apiKey')
+    const key = await this.store.getAs<string>(this.credentialKey)
     if (!key) return {}
     return { ANTHROPIC_API_KEY: key }
   }
 
   async getHTTPAuth(): Promise<HTTPAuthResult | null> {
-    const key = await this.store.get('apiKey')
+    const key = await this.store.getAs<string>(this.credentialKey)
     if (!key) return null
     return {
       apiKey: key,

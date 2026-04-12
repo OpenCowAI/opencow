@@ -25,11 +25,23 @@ class MockCredentialStore {
     return this.state[key]
   }
 
+  async getAs<U>(key: string): Promise<U | undefined> {
+    return this.state[key] as U | undefined
+  }
+
   async update(key: string, value: unknown): Promise<void> {
     this.state[key] = value
   }
 
+  async updateAs<U>(key: string, value: U): Promise<void> {
+    this.state[key] = value
+  }
+
   async remove(key: string): Promise<void> {
+    delete this.state[key]
+  }
+
+  async removeAt(key: string): Promise<void> {
     delete this.state[key]
   }
 }
