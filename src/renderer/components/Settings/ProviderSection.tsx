@@ -15,7 +15,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { ChevronDown, MoreHorizontal, Plus, Star } from 'lucide-react'
+import { CheckCircle2, ChevronDown, Loader2, MoreHorizontal, Plus, Star, XCircle } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useSettingsStore } from '@/stores/settingsStore'
 import { getAppAPI } from '@/windowAPI'
@@ -23,7 +23,9 @@ import type {
   CreateProviderProfileInput,
   ProviderProfile,
   ProviderProfileId,
+  ProviderTestResult,
   ProviderType,
+  UpdateProviderProfilePatch,
 } from '@shared/providerProfile'
 import { isProviderTypeImplemented } from '@shared/providerProfile'
 import { ProviderProfileForm } from './provider/ProviderProfileForm'
@@ -125,6 +127,38 @@ export function ProviderSection(): React.JSX.Element {
     [refreshProfiles, closeForm],
   )
 
+  const handleUpdate = useCallback(
+    async (id: ProviderProfileId, input: CreateProviderProfileInput) => {
+      setFormBusy(true)
+      setFormError(null)
+      try {
+        // Derive an update patch from the form payload. The form already
+        // handles "blank key = keep" semantics (ProviderProfileForm passes
+        // authParams only when the user typed a new key).
+        const patch: UpdateProviderProfilePatch = {
+          name: input.name,
+          ...(input.credential.type === 'anthropic-compat-proxy'
+            ? {
+                credentialConfig: {
+                  baseUrl: input.credential.baseUrl,
+                  authStyle: input.credential.authStyle,
+                },
+              }
+            : {}),
+          ...(input.authParams ? { authParams: input.authParams } : {}),
+        }
+        await getAppAPI()['provider:update-profile'](id, patch)
+        await refreshProfiles()
+        closeForm()
+      } catch (err) {
+        setFormError(err instanceof Error ? err.message : String(err))
+      } finally {
+        setFormBusy(false)
+      }
+    },
+    [refreshProfiles, closeForm],
+  )
+
   const handleRemove = useCallback(
     async (id: ProviderProfileId, name: string) => {
       const ok = window.confirm(t('provider.profile.confirmRemove', { name }))
@@ -149,6 +183,40 @@ export function ProviderSection(): React.JSX.Element {
       }
     },
     [refreshProfiles],
+  )
+
+  // ── Per-profile Test Connection state ─────────────────────────────
+  const [testResults, setTestResults] = useState<Record<string, ProviderTestResult>>({})
+  const [testingIds, setTestingIds] = useState<Set<string>>(new Set())
+
+  const handleTest = useCallback(
+    async (id: ProviderProfileId) => {
+      setTestingIds((prev) => new Set(prev).add(id))
+      try {
+        const result = await getAppAPI()['provider:test-profile'](id)
+        setTestResults((prev) => ({ ...prev, [id]: result }))
+      } catch (err) {
+        setTestResults((prev) => ({
+          ...prev,
+          [id]: {
+            profileId: id,
+            outcome: {
+              ok: false,
+              reason: 'error',
+              message: err instanceof Error ? err.message : String(err),
+            },
+            durationMs: 0,
+          },
+        }))
+      } finally {
+        setTestingIds((prev) => {
+          const next = new Set(prev)
+          next.delete(id)
+          return next
+        })
+      }
+    },
+    [],
   )
 
   // Close the Add dropdown when clicking outside.
@@ -209,7 +277,7 @@ export function ProviderSection(): React.JSX.Element {
                   mode="edit"
                   type={profile.credential.type}
                   initial={profile}
-                  onSubmit={(input) => handleCreate({ ...input })}
+                  onSubmit={(input) => handleUpdate(profile.id, input)}
                   onCancel={closeForm}
                   error={formError}
                   busy={formBusy}
@@ -219,6 +287,8 @@ export function ProviderSection(): React.JSX.Element {
               <ProfileRow
                 profile={profile}
                 isDefault={profile.id === defaultProfileId}
+                testing={testingIds.has(profile.id)}
+                lastTest={testResults[profile.id] ?? null}
                 onEdit={() => {
                   setAddingType(null)
                   setEditingId(profile.id)
@@ -226,6 +296,7 @@ export function ProviderSection(): React.JSX.Element {
                 }}
                 onRemove={() => handleRemove(profile.id, profile.name)}
                 onSetDefault={() => handleSetDefault(profile.id)}
+                onTest={() => handleTest(profile.id)}
               />
             )}
           </li>
@@ -256,12 +327,17 @@ export function ProviderSection(): React.JSX.Element {
 interface ProfileRowProps {
   profile: ProviderProfile
   isDefault: boolean
+  testing: boolean
+  lastTest: ProviderTestResult | null
   onEdit: () => void
   onRemove: () => void
   onSetDefault: () => void
+  onTest: () => void
 }
 
-function ProfileRow({ profile, isDefault, onEdit, onRemove, onSetDefault }: ProfileRowProps): React.JSX.Element {
+function ProfileRow({
+  profile, isDefault, testing, lastTest, onEdit, onRemove, onSetDefault, onTest,
+}: ProfileRowProps): React.JSX.Element {
   const { t } = useTranslation('settings')
   return (
     <div
@@ -293,10 +369,19 @@ function ProfileRow({ profile, isDefault, onEdit, onRemove, onSetDefault }: Prof
           <span className="text-[10px] text-[hsl(var(--muted-foreground))] font-mono">
             {profile.credential.type}
           </span>
+          <TestStateBadge testing={testing} result={lastTest} />
         </div>
         <ProfileRowDetail profile={profile} />
       </div>
       <div className="flex-none flex items-center gap-1">
+        <button
+          type="button"
+          onClick={onTest}
+          disabled={testing}
+          className="text-xs px-2 py-1 rounded-md border border-[hsl(var(--border))] hover:bg-[hsl(var(--foreground)/0.04)] disabled:opacity-50"
+        >
+          {t('provider.profile.test')}
+        </button>
         <button
           type="button"
           onClick={onEdit}
@@ -314,6 +399,41 @@ function ProfileRow({ profile, isDefault, onEdit, onRemove, onSetDefault }: Prof
         </button>
       </div>
     </div>
+  )
+}
+
+function TestStateBadge({
+  testing, result,
+}: { testing: boolean; result: ProviderTestResult | null }): React.JSX.Element | null {
+  const { t } = useTranslation('settings')
+  if (testing) {
+    return (
+      <span className="inline-flex items-center gap-1 text-[10px] text-[hsl(var(--muted-foreground))]">
+        <Loader2 className="h-3 w-3 animate-spin" aria-hidden="true" />
+        {t('provider.profile.testing')}
+      </span>
+    )
+  }
+  if (!result) return null
+  if (result.outcome.ok) {
+    return (
+      <span
+        className="inline-flex items-center gap-1 text-[10px] text-green-500"
+        title={t('provider.profile.testOkTitle', { ms: result.durationMs })}
+      >
+        <CheckCircle2 className="h-3 w-3" aria-hidden="true" />
+        {t('provider.profile.testOk')}
+      </span>
+    )
+  }
+  return (
+    <span
+      className="inline-flex items-center gap-1 text-[10px] text-red-500"
+      title={result.outcome.message}
+    >
+      <XCircle className="h-3 w-3" aria-hidden="true" />
+      {t(`provider.profile.testFail.${result.outcome.reason}`)}
+    </span>
   )
 }
 

@@ -66,7 +66,17 @@
       "authStyleLabel": "Auth Style",
       "subscriptionHint": "Clicking Sign in will open your browser for Claude OAuth. No key is stored locally — only the OAuth tokens issued by Anthropic.",
       "unsupported": "Provider type \"{{type}}\" is not yet supported in this build. Upgrade pending opencow-agent-sdk M1.",
-      "sdkNotReady": "SDK M1"
+      "sdkNotReady": "SDK M1",
+      "test": "Test",
+      "testing": "Testing…",
+      "testOk": "OK",
+      "testOkTitle": "Connection verified in {{ms}} ms",
+      "testFail": {
+        "unauthenticated": "No credentials",
+        "network": "Network error",
+        "unsupported": "Unsupported type",
+        "error": "Error"
+      }
     },
     "modes": {
       "subscription": "Claude Subscription",

@@ -238,9 +238,13 @@ function buildCreateInput(params: {
 
   switch (type) {
     case 'claude-subscription':
+      // Passing an (empty) authParams triggers SubscriptionProvider.authenticate(),
+      // which opens the browser-based OAuth flow. Without this the profile
+      // would be persisted without credentials and be immediately unauthenticated.
       return {
         name,
         credential: { type: 'claude-subscription' },
+        authParams: {},
       }
     case 'anthropic-api':
       if (!apiKey.trim()) return null
