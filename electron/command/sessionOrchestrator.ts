@@ -945,6 +945,7 @@ export class SessionOrchestrator {
         finalState: session.getState(),
         totalMessages: session.getMessages().length,
         durationMs: Date.now() - startTime,
+        error: session.snapshot().error,
       })
     } finally {
       const rtCleanup = this.runtimes.get(sessionId)
