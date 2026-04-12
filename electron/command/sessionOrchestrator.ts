@@ -894,9 +894,24 @@ export class SessionOrchestrator {
 
     // ── Pre-flight summary (single log for the entire request payload) ────
     const startTime = Date.now()
+    // Redacted env snapshot: names + boolean presence of each var, NEVER
+    // the values. Auth tokens and URLs are both sensitive by product
+    // policy (a misconfigured proxy URL is a supply-chain exposure).
+    // This is the single source of truth for "what exactly did we ask
+    // the SDK to use?" — invaluable for triaging `fetch failed` reports.
+    const envSummary: Record<string, string> = {}
+    for (const [key, value] of Object.entries(sessionEnv)) {
+      if (!/^(CLAUDE|ANTHROPIC|OPENAI|GEMINI|GITHUB|BEDROCK|VERTEX)_/.test(key)) continue
+      if (key.includes('KEY') || key.includes('TOKEN')) {
+        envSummary[key] = value ? `present (${value.length} chars)` : 'empty'
+      } else {
+        envSummary[key] = value ?? ''
+      }
+    }
     log.info('Session pre-flight summary', {
       sessionId,
       model: options.model ?? 'default',
+      providerEnv: envSummary,
       promptLayers: {
         identity: !!promptLayers.identity,
         context: promptLayers.context?.length ?? 0,

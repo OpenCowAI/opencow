@@ -549,6 +549,29 @@ export class ManagedSession {
     }
 
     log.debug('addMessage', { sessionId: this.sessionId, messageId: id, role, blockCount: blocks.length })
+
+    // Heuristic: when the SDK fails to make an upstream request (e.g.
+    // OpenAI-compat endpoint returns a non-JSON error), some shims
+    // stream the error text as assistant content instead of surfacing
+    // it via the error channel. That's how "API Error: fetch failed"
+    // reaches the chat view without ever appearing in the failure log.
+    // Detect textual error patterns in assistant messages and emit a
+    // WARN so the session history log tells the full story.
+    if (role === 'assistant') {
+      const textContent = blocks
+        .filter((b): b is Extract<ContentBlock, { type: 'text' }> => b.type === 'text')
+        .map((b) => b.text)
+        .join('\n')
+        .trim()
+      if (looksLikeUpstreamError(textContent)) {
+        log.warn('assistant message looks like an upstream error (SDK may have swallowed a fetch failure)', {
+          sessionId: this.sessionId,
+          messageId: id,
+          preview: textContent.slice(0, 400),
+        })
+      }
+    }
+
     this.lastActivity = timestamp
     return id
   }
@@ -967,4 +990,14 @@ export class ManagedSession {
     }
     return session
   }
+}
+
+function looksLikeUpstreamError(text: string): boolean {
+  if (!text) return false
+  // Text-under-80-chars that starts with these tokens is almost certainly
+  // an SDK-rendered error, not a real assistant reply.
+  if (text.length > 400) return false
+  return /^(API Error|Error:|fetch failed|ECONNREFUSED|ENOTFOUND|ETIMEDOUT|SyntaxError|TypeError|HTTP 4\d\d|HTTP 5\d\d|Request failed)/i.test(
+    text,
+  )
 }
