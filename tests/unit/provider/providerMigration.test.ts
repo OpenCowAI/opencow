@@ -136,7 +136,9 @@ describe('planProviderMigration', () => {
     expect(plan.targetSettings.profiles).toHaveLength(1)
     expect(plan.targetSettings.profiles[0].credential.type).toBe('anthropic-api')
     expect(plan.targetSettings.defaultProfileId).toBe(plan.targetSettings.profiles[0].id)
-    expect(plan.targetSettings.defaultModel).toBe('claude-opus-4-6')
+    // Legacy top-level defaultModel folds into the migrated profile's
+    // preferredModel — per-profile is the only shape that survives B.7.
+    expect(plan.targetSettings.profiles[0].preferredModel).toBe('claude-opus-4-6')
     expect(plan.credentialMoves).toHaveLength(1)
     expect(plan.credentialMoves[0]).toMatchObject({
       source: 'main',

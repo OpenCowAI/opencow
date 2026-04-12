@@ -412,7 +412,7 @@ function legacyBotEntryToTelegramConnection(entry: TelegramBotEntry): TelegramCo
 
 function readProviderSettings(
   raw: (Partial<ProviderSettings> & Record<string, unknown>) | undefined,
-  legacyCommandModel: string | undefined,
+  _legacyCommandModel: string | undefined,
 ): ProviderSettings {
   const source = (raw ?? {}) as Record<string, unknown>
   const profilesArray = Array.isArray(source.profiles)
@@ -420,17 +420,12 @@ function readProviderSettings(
     : []
   const defaultProfileId =
     (source.defaultProfileId ?? null) as ProviderSettings['defaultProfileId']
-  const defaultModel =
-    (typeof source.defaultModel === 'string' && source.defaultModel)
-      ? source.defaultModel
-      : legacyCommandModel
   const schemaVersion = source.schemaVersion === 1 ? 1 : undefined
 
   return {
     ...(schemaVersion ? { schemaVersion } : {}),
     profiles: profilesArray,
     defaultProfileId,
-    ...(defaultModel ? { defaultModel } : {}),
   }
 }
 

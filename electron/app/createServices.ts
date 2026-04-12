@@ -434,8 +434,12 @@ export async function createAppServices(deps: ServiceFactoryDeps): Promise<AppSe
       if (!defaultId) return {}
       return providerService.getProviderEnvForProfile(defaultId)
     },
-    getProviderDefaultModel: () =>
-      settingsService.getProviderSettings().defaultModel,
+    getProviderDefaultModel: () => {
+      const profileId = providerService.resolveProfileId()
+      if (!profileId) return undefined
+      const profile = providerService.listProfiles().find((p) => p.id === profileId)
+      return profile?.preferredModel
+    },
     getActiveProviderProfileId: () =>
       providerService.resolveProfileId(),
     getCommandDefaults: () => settingsService.getCommandDefaults(),

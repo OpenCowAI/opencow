@@ -3682,7 +3682,6 @@ export interface ProviderSettings {
   schemaVersion?: 1
   profiles: import('./providerProfile').ProviderProfile[]
   defaultProfileId: import('./providerProfile').ProviderProfileId | null
-  defaultModel?: string
 }
 
 // === Update Settings ===

@@ -90,7 +90,6 @@ export function planProviderMigration(input: PlanInput): MigrationPlan {
       schemaVersion: PROVIDER_SCHEMA_VERSION,
       profiles: [],
       defaultProfileId: null,
-      ...(provider.defaultModel ? { defaultModel: provider.defaultModel } : {}),
     })
   }
 
@@ -98,7 +97,7 @@ export function planProviderMigration(input: PlanInput): MigrationPlan {
   const moves: CredentialMove[] = []
 
   if (claudeMode) {
-    const built = buildClaudeMigration(claudeMode)
+    const built = buildClaudeMigration(claudeMode, provider.defaultModel)
     profiles.push(built.profile)
     moves.push(built.credentialMove)
   }
@@ -125,7 +124,6 @@ export function planProviderMigration(input: PlanInput): MigrationPlan {
       schemaVersion: PROVIDER_SCHEMA_VERSION,
       profiles,
       defaultProfileId,
-      ...(provider.defaultModel ? { defaultModel: provider.defaultModel } : {}),
     },
     credentialMoves: moves,
     legacyKeysToDelete: moves
@@ -184,12 +182,17 @@ interface BuildResult {
   credentialMove: CredentialMove
 }
 
-function buildClaudeMigration(mode: ApiProvider): BuildResult {
+function buildClaudeMigration(mode: ApiProvider, legacyDefaultModel?: string): BuildResult {
   const id = generateProviderProfileId()
   const timestamp = new Date().toISOString()
   const source: MigrationSource = { engine: 'claude', legacyMode: mode }
   const fromKey = LEGACY_CREDENTIAL_KEYS[mode]
   const toKey = `credential:${id}`
+  // The pre-Phase-A `defaultModel` was Claude-only (stored model names
+  // like `claude-opus-4-6`). Fold it into this profile's preferredModel
+  // — per-profile is the only shape that makes sense now that Phase B
+  // supports multiple protocols.
+  const preferredModel = legacyDefaultModel ? { preferredModel: legacyDefaultModel } : {}
 
   switch (mode) {
     case 'subscription':
@@ -198,6 +201,7 @@ function buildClaudeMigration(mode: ApiProvider): BuildResult {
           id,
           name: 'Claude Pro/Max',
           credential: { type: 'claude-subscription' },
+          ...preferredModel,
           createdAt: timestamp,
           updatedAt: timestamp,
           _migrationSource: source,
@@ -210,6 +214,7 @@ function buildClaudeMigration(mode: ApiProvider): BuildResult {
           id,
           name: 'Anthropic API',
           credential: { type: 'anthropic-api' },
+          ...preferredModel,
           createdAt: timestamp,
           updatedAt: timestamp,
           _migrationSource: source,
@@ -228,6 +233,7 @@ function buildClaudeMigration(mode: ApiProvider): BuildResult {
             baseUrl: OPENROUTER_CLAUDE_BASE_URL,
             authStyle: 'bearer',
           },
+          ...preferredModel,
           createdAt: timestamp,
           updatedAt: timestamp,
           _migrationSource: source,
@@ -266,6 +272,7 @@ function buildClaudeMigration(mode: ApiProvider): BuildResult {
             baseUrl: '',
             authStyle: 'bearer',
           },
+          ...preferredModel,
           createdAt: timestamp,
           updatedAt: timestamp,
           _migrationSource: source,

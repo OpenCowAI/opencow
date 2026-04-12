@@ -69,6 +69,7 @@ export function ProviderProfileForm({
       ? initial.credential.authStyle
       : 'bearer',
   )
+  const [preferredModel, setPreferredModel] = useState(initial?.preferredModel ?? '')
 
   const canSubmit =
     name.trim().length > 0
@@ -85,10 +86,11 @@ export function ProviderProfileForm({
       apiKey,
       baseUrl,
       authStyle,
+      preferredModel: preferredModel.trim(),
     })
     if (!input) return
     await onSubmit(input)
-  }, [canSubmit, type, mode, name, apiKey, baseUrl, authStyle, onSubmit])
+  }, [canSubmit, type, mode, name, apiKey, baseUrl, authStyle, preferredModel, onSubmit])
 
   return (
     <div className="space-y-3">
@@ -165,6 +167,24 @@ export function ProviderProfileForm({
         </div>
       )}
 
+      <label className="block">
+        <span className="block text-xs font-medium mb-1">
+          {t('provider.profile.preferredModelLabel')}
+          <span className="ml-1.5 text-[10px] font-normal text-[hsl(var(--muted-foreground))]">
+            {type === 'claude-subscription'
+              ? t('provider.profile.preferredModelOptional')
+              : t('provider.profile.preferredModelRecommended')}
+          </span>
+        </span>
+        <input
+          type="text"
+          value={preferredModel}
+          onChange={(e) => setPreferredModel(e.target.value)}
+          placeholder={defaultModelPlaceholder(type)}
+          className={cn(formInputClass, 'font-mono')}
+        />
+      </label>
+
       {type === 'claude-subscription' && (
         <p className="text-xs text-[hsl(var(--muted-foreground))]">
           {t('provider.profile.subscriptionHint')}
@@ -235,6 +255,21 @@ function apiKeyPlaceholder(type: ProviderType): string {
   return 'sk-...'
 }
 
+/** Suggested model id per protocol — shown as placeholder, never auto-applied. */
+function defaultModelPlaceholder(type: ProviderType): string {
+  switch (type) {
+    case 'claude-subscription':
+    case 'anthropic-api':
+    case 'anthropic-compat-proxy':
+      return 'claude-sonnet-4-5-20250929'
+    case 'openai-direct':
+    case 'openai-compat-proxy':
+      return 'gpt-4o-mini'
+    case 'gemini':
+      return 'gemini-2.0-flash-exp'
+  }
+}
+
 function readInitialBaseUrl(initial?: ProviderProfile): string | null {
   if (!initial) return null
   const c = initial.credential
@@ -251,20 +286,23 @@ function buildCreateInput(params: {
   apiKey: string
   baseUrl: string
   authStyle: 'api_key' | 'bearer'
+  preferredModel: string
 }): CreateProviderProfileInput | null {
-  const { type, mode, name, apiKey, baseUrl, authStyle } = params
+  const { type, mode, name, apiKey, baseUrl, authStyle, preferredModel } = params
   const trimmedKey = apiKey.trim()
   const trimmedUrl = baseUrl.trim()
+  const modelField = preferredModel ? { preferredModel } : {}
 
   switch (type) {
     case 'claude-subscription':
-      return { name, credential: { type: 'claude-subscription' }, authParams: {} }
+      return { name, credential: { type: 'claude-subscription' }, authParams: {}, ...modelField }
 
     case 'anthropic-api':
       if (mode === 'create' && !trimmedKey) return null
       return {
         name,
         credential: { type: 'anthropic-api' },
+        ...modelField,
         ...(trimmedKey ? { authParams: { apiKey: trimmedKey } } : {}),
       }
 
@@ -274,6 +312,7 @@ function buildCreateInput(params: {
       return {
         name,
         credential: { type: 'anthropic-compat-proxy', baseUrl: trimmedUrl, authStyle },
+        ...modelField,
         ...(trimmedKey
           ? { authParams: { apiKey: trimmedKey, baseUrl: trimmedUrl, authStyle } }
           : {}),
@@ -284,6 +323,7 @@ function buildCreateInput(params: {
       return {
         name,
         credential: { type: 'openai-direct' },
+        ...modelField,
         ...(trimmedKey ? { authParams: { apiKey: trimmedKey } } : {}),
       }
 
@@ -293,6 +333,7 @@ function buildCreateInput(params: {
       return {
         name,
         credential: { type: 'openai-compat-proxy', baseUrl: trimmedUrl },
+        ...modelField,
         ...(trimmedKey ? { authParams: { apiKey: trimmedKey, baseUrl: trimmedUrl } } : {}),
       }
 
@@ -301,6 +342,7 @@ function buildCreateInput(params: {
       return {
         name,
         credential: { type: 'gemini' },
+        ...modelField,
         ...(trimmedKey ? { authParams: { apiKey: trimmedKey } } : {}),
       }
   }

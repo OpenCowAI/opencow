@@ -205,14 +205,22 @@ export class ProviderService {
     if (!adapter) return {}
 
     const env = await adapter.getEnv()
-    const preferred = profile.preferredModel ?? this.deps.getProviderSettings().defaultModel
+    // Protocol-aware model injection. Setting OPENAI_MODEL to a Claude
+    // model name (or vice-versa) would break upstream routing — each
+    // profile's preferredModel only makes sense for its own protocol.
+    const preferred = profile.preferredModel
     if (preferred) {
-      // ANTHROPIC_DEFAULT_SONNET_MODEL is honoured by Anthropic-native
-      // adapters; for OpenAI-family adapters the SDK reads OPENAI_MODEL
-      // from the query env. Set both — the SDK ignores the one it
-      // doesn't route on.
-      env.ANTHROPIC_DEFAULT_SONNET_MODEL = preferred
-      env.OPENAI_MODEL = preferred
+      switch (this.resolveProtocol(profile)) {
+        case 'anthropic':
+          env.ANTHROPIC_DEFAULT_SONNET_MODEL = preferred
+          break
+        case 'openai':
+          env.OPENAI_MODEL = preferred
+          break
+        case 'gemini':
+          env.GEMINI_MODEL = preferred
+          break
+      }
     }
     return env
   }
@@ -268,13 +276,17 @@ export class ProviderService {
     if (!httpAuth) {
       throw new Error(`Profile "${profile.name}" has no stored HTTP credentials`)
     }
-    const settings = this.deps.getProviderSettings()
+    if (!profile.preferredModel) {
+      throw new Error(
+        `Profile "${profile.name}" has no preferredModel set — direct HTTP calls require an explicit model`,
+      )
+    }
     return {
       protocol: this.resolveProtocol(profile),
       apiKey: httpAuth.apiKey,
       baseUrl: httpAuth.baseUrl,
       authStyle: httpAuth.authStyle,
-      model: profile.preferredModel ?? settings.defaultModel ?? 'claude-sonnet-4-20250514',
+      model: profile.preferredModel,
     }
   }
 

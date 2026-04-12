@@ -134,6 +134,8 @@ export function ProviderSection(): React.JSX.Element {
         // authParams only when the user typed a new key).
         const patch: UpdateProviderProfilePatch = {
           name: input.name,
+          // preferredModel uses null to clear, string to set, undefined to skip.
+          preferredModel: input.preferredModel ?? null,
           ...(input.credential.type === 'anthropic-compat-proxy'
             ? {
                 credentialConfig: {
@@ -141,7 +143,9 @@ export function ProviderSection(): React.JSX.Element {
                   authStyle: input.credential.authStyle,
                 },
               }
-            : {}),
+            : input.credential.type === 'openai-compat-proxy'
+              ? { credentialConfig: { baseUrl: input.credential.baseUrl } }
+              : {}),
           ...(input.authParams ? { authParams: input.authParams } : {}),
         }
         await getAppAPI()['provider:update-profile'](id, patch)
@@ -435,21 +439,17 @@ function TestStateBadge({
 
 function ProfileRowDetail({ profile }: { profile: ProviderProfile }): React.JSX.Element | null {
   const cred = profile.credential
-  if (cred.type === 'anthropic-compat-proxy') {
-    return (
-      <p className="text-xs text-[hsl(var(--muted-foreground))] truncate font-mono">
-        {cred.baseUrl || '—'}
-      </p>
-    )
+  const lines: string[] = []
+  if (cred.type === 'anthropic-compat-proxy' || cred.type === 'openai-compat-proxy') {
+    lines.push(cred.baseUrl || '—')
   }
-  if (cred.type === 'openai-compat-proxy') {
-    return (
-      <p className="text-xs text-[hsl(var(--muted-foreground))] truncate font-mono">
-        {cred.baseUrl || '—'}
-      </p>
-    )
-  }
-  return null
+  if (profile.preferredModel) lines.push(profile.preferredModel)
+  if (lines.length === 0) return null
+  return (
+    <p className="text-xs text-[hsl(var(--muted-foreground))] truncate font-mono">
+      {lines.join(' · ')}
+    </p>
+  )
 }
 
 interface AddTypeDropdownProps {
