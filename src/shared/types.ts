@@ -384,11 +384,11 @@ export interface IPCChannels {
     return: void
   }
   'capability:sync': {
-    args: [params?: { engineKind?: AIEngineKind }]
+    args: []
     return: { synced: string[]; errors: string[] }
   }
   'capability:detect-drift': {
-    args: [params?: { engineKind?: AIEngineKind }]
+    args: []
     return: CapabilityDriftReport[]
   }
   // M6: diagnostics + version history
@@ -599,15 +599,15 @@ export interface IPCChannels {
   'get-settings': { args: []; return: AppSettings }
   'update-settings': { args: [settings: AppSettings]; return: AppSettings }
   // Provider
-  'provider:get-status': { args: [engineKind?: AIEngineKind]; return: ProviderStatus }
+  'provider:get-status': { args: []; return: ProviderStatus }
   'provider:login': {
-    args: [engineKind: AIEngineKind, mode: ApiProvider, params?: Record<string, unknown>]
+    args: [mode: ApiProvider, params?: Record<string, unknown>]
     return: ProviderStatus
   }
-  'provider:cancel-login': { args: [engineKind: AIEngineKind, mode: ApiProvider]; return: boolean }
-  'provider:logout': { args: [engineKind: AIEngineKind, mode: ApiProvider]; return: boolean }
+  'provider:cancel-login': { args: [mode: ApiProvider]; return: boolean }
+  'provider:logout': { args: [mode: ApiProvider]; return: boolean }
   'provider:get-credential': {
-    args: [engineKind: AIEngineKind, mode: ApiProvider]
+    args: [mode: ApiProvider]
     return: ProviderCredentialInfo | null
   }
   // Webhooks
@@ -2950,18 +2950,11 @@ export interface CompactBoundaryEvent {
   phase?: 'compacting' | 'done'
 }
 
-export interface EngineSwitchEvent {
-  type: 'engine_switch'
-  fromEngine: AIEngineKind
-  toEngine: AIEngineKind
-}
-
 export type SystemEvent =
   | TaskStartedEvent
   | TaskNotificationEvent
   | HookStatusEvent
   | CompactBoundaryEvent
-  | EngineSwitchEvent
 
 // === Command Phase: Managed Sessions ===
 
@@ -2982,9 +2975,6 @@ export type SessionStopReason =
   | 'budget_exceeded' // spending limit hit (result.subtype === 'error_max_budget_usd')
   | 'execution_error' // unrecoverable execution error (result.subtype === 'error_during_execution')
   | 'structured_output_error' // structured output validation failed (result.subtype === 'error_max_structured_output_retries')
-
-/** Conversation engine kind for managed sessions. */
-export type AIEngineKind = 'claude'
 
 // ─── Session Origin (discriminated union) ─────────────────────────────────
 //
@@ -3125,8 +3115,6 @@ export interface StartSessionPolicy {
 export interface ManagedSessionConfig {
   prompt: UserMessageContent
   origin: SessionOrigin
-  /** Conversation engine kind. Defaults to 'claude'. */
-  engineKind?: AIEngineKind
   /** Engine-specific checkpoint/thread state. */
   engineState?: Record<string, unknown> | null
   /** Resolved startup cwd for engine lifecycle bootstrap (single source of truth). */
@@ -3237,7 +3225,6 @@ export interface SessionContextState {
  */
 export interface SessionSnapshot {
   id: string
-  engineKind: AIEngineKind
   /** Engine-specific session/thread reference (canonical). */
   engineSessionRef: string | null
   /** Engine-specific checkpoint/thread state payload. */
@@ -3322,8 +3309,6 @@ export interface StartSessionInput {
   prompt: UserMessageContent
   /** Session origin — determines routing and idempotency behavior. Defaults to {source:'agent'} if omitted. */
   origin?: SessionOrigin
-  /** Conversation engine kind. Defaults to 'claude'. */
-  engineKind?: AIEngineKind
   /** Session workspace scope. Defaults to `{ scope: 'global' }` when omitted. */
   workspace?: SessionWorkspaceInput
   model?: string
@@ -3389,8 +3374,6 @@ export interface ProxySettings {
 export interface CommandDefaults {
   maxTurns: number
   permissionMode: PermissionMode
-  /** Default engine used when startSession input does not specify engineKind. */
-  defaultEngine: AIEngineKind
 }
 
 export interface EventSubscriptionSettings {
@@ -3655,16 +3638,16 @@ export interface ProviderStatus {
   error?: string
 }
 
-/** Non-sensitive provider config (persisted in settings.json). Secrets live in CredentialStore. */
-export interface ProviderEngineSettings {
-  activeMode: ApiProvider | null
-  /** Optional per-engine default model hint. */
-  defaultModel?: string
-}
-
-/** Engine-scoped provider configuration. */
+/**
+ * Non-sensitive provider config (persisted in settings.json). Secrets live
+ * in CredentialStore. Flattened (no more `byEngine.claude.*`) after the
+ * engine abstraction removal — see
+ * docs/proposals/2026-04-12-provider-management-redesign.md §4.
+ */
 export interface ProviderSettings {
-  byEngine: Record<AIEngineKind, ProviderEngineSettings>
+  activeMode: ApiProvider | null
+  /** Optional default model hint. */
+  defaultModel?: string
 }
 
 // === Update Settings ===

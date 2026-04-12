@@ -7,7 +7,7 @@ import {
   getBuiltinSlashCommands,
 } from '@shared/slashItems'
 import type { SlashItem } from '@shared/slashItems'
-import type { AIEngineKind, CapabilitySnapshot } from '@shared/types'
+import type { CapabilitySnapshot } from '@shared/types'
 import { useProjectScope } from '../contexts/ProjectScopeContext'
 import {
   capabilityToSlashItem,
@@ -25,8 +25,8 @@ import {
  * Deduplication uses first-seen-wins ordering:
  *   builtin > commands (project > global, user > plugin) > skills (same)
  */
-function buildSlashItems(snapshot: CapabilitySnapshot | null, engineKind: AIEngineKind): SlashItem[] {
-  const builtins = getBuiltinSlashCommands(engineKind)
+function buildSlashItems(snapshot: CapabilitySnapshot | null): SlashItem[] {
+  const builtins = getBuiltinSlashCommands()
   if (!snapshot) return builtins
 
   const commands = sortByPriority(filterActiveEntries(snapshot.commands))
@@ -65,11 +65,11 @@ export interface UseSlashCommandsReturn {
  *
  * Only enabled + eligible entries appear (disabled / ineligible are filtered).
  */
-export function useSlashCommands(engineKind: AIEngineKind = 'claude'): UseSlashCommandsReturn {
+export function useSlashCommands(): UseSlashCommandsReturn {
   const { projectId } = useProjectScope()
   const { snapshot, loading } = useCapabilitySnapshot(projectId)
 
-  const allItems = useMemo(() => buildSlashItems(snapshot, engineKind), [snapshot, engineKind])
+  const allItems = useMemo(() => buildSlashItems(snapshot), [snapshot])
 
   return { allItems, loading }
 }

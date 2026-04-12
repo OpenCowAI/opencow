@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-import type { AIEngineKind, StartSessionNativeToolAllowItem } from '../../src/shared/types'
+import type { StartSessionNativeToolAllowItem } from '../../src/shared/types'
 import { createLogger } from '../platform/logger'
 import type { CapabilityCenter, CapabilityPlanRequest } from '../services/capabilityCenter'
 import type { SDKHookMap } from '../services/capabilityCenter/claudeCodeAdapter'
@@ -16,7 +16,6 @@ interface CapabilityPlanInput {
 }
 
 export interface EngineCapabilityRuntimeInput {
-  engineKind: AIEngineKind
   planInput: CapabilityPlanInput
   promptLayers: SystemPromptLayers
   options: SessionLaunchOptions
@@ -65,14 +64,8 @@ export class EngineCapabilityRuntime {
 
     try {
       const plan = await this.capabilityCenter.buildCapabilityPlan(input.planInput)
-      if (input.options.engineKind !== input.engineKind) {
-        throw new Error(
-          `Capability injection engine mismatch: runtime=${input.engineKind}, options=${input.options.engineKind}`,
-        )
-      }
 
       const output = this.claudeAdapter.inject({
-        engineKind: 'claude',
         plan,
         promptLayers: input.promptLayers,
         options: input.options,
@@ -80,7 +73,7 @@ export class EngineCapabilityRuntime {
       })
 
       log.info(
-        `Capability injection (${input.engineKind}): ${plan.summary.skills.length} skills, ` +
+        `Capability injection: ${plan.summary.skills.length} skills, ` +
         `agent=${plan.summary.agent ?? 'none'}, ${plan.summary.rules.length} rules, ` +
         `${plan.summary.hooks.length} hooks, ${plan.summary.mcpServers.length} MCP servers` +
         (plan.summary.mcpServers.length > 0 ? ` [${plan.summary.mcpServers.join(', ')}]` : '') +
@@ -99,7 +92,7 @@ export class EngineCapabilityRuntime {
       if (EngineCapabilityRuntime.isInvariantError(err)) {
         throw err
       }
-      log.error(`Capability injection failed for engine=${input.engineKind}`, err)
+      log.error('Capability injection failed', err)
       return fallback
     }
   }

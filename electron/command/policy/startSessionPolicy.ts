@@ -1,23 +1,19 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import type {
-  AIEngineKind,
   StartSessionNativeToolAllowItem,
   StartSessionPolicyInput,
   StartSessionPolicy,
 } from '../../../src/shared/types'
 
-const DEFAULT_SKILL_MAX_CHARS_BY_ENGINE: Readonly<Record<AIEngineKind, number>> = {
-  claude: 80_000,
-}
+const DEFAULT_SKILL_MAX_CHARS = 80_000
 
 export interface ResolveStartSessionPolicyInput {
-  engineKind: AIEngineKind
   policy?: StartSessionPolicyInput
 }
 
 export function resolveStartSessionPolicy(input: ResolveStartSessionPolicyInput): StartSessionPolicy {
-  const defaultSkillMaxChars = DEFAULT_SKILL_MAX_CHARS_BY_ENGINE[input.engineKind]
+  const defaultSkillMaxChars = DEFAULT_SKILL_MAX_CHARS
   const raw = input.policy
 
   const builtinEnabled = raw?.tools?.builtin?.enabled ?? true

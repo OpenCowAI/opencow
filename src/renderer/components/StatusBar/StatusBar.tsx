@@ -69,14 +69,11 @@ export function StatusBar(): React.JSX.Element {
   const modeKey = providerStatus?.mode ? (PROVIDER_MODE_KEYS[providerStatus.mode] ?? null) : null
   const modeLabel = modeKey ? t(`statusBar.providerModes.${modeKey}`) : null
 
-  // Build combined "Engine · Provider" display label
-  const defaultEngine = settings?.command?.defaultEngine ?? 'claude'
-  const engineLabel = t(`statusBar.engineNames.${defaultEngine}`)
-  const displayLabel = (() => {
-    if (!modeLabel) return engineLabel
-    if (modeLabel === engineLabel) return engineLabel // avoid "Claude · Claude"
-    return `${engineLabel} · ${modeLabel}`
-  })()
+  // Display label — show the provider mode if known, otherwise the default engine name
+  const engineLabel = t('statusBar.engineNames.claude')
+  const displayLabel = modeLabel && modeLabel !== engineLabel
+    ? `${engineLabel} · ${modeLabel}`
+    : engineLabel
 
   const authTitle = isAuthed
     ? t('statusBar.providerVia', { mode: displayLabel })

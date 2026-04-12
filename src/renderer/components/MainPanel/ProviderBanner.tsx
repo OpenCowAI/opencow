@@ -25,8 +25,7 @@ export function ProviderBanner(): React.JSX.Element | null {
   const { t } = useTranslation('navigation')
   const [dismissed, setDismissed] = useState(false)
 
-  const settings = useSettingsStore((s) => s.settings)
-  const providerStatusByEngine = useSettingsStore((s) => s.providerStatusByEngine)
+  const providerStatus = useSettingsStore((s) => s.providerStatus)
   const openSettingsModal = useSettingsStore((s) => s.openSettingsModal)
   const onboarding = useAppStore((s) => s.onboarding)
 
@@ -41,10 +40,7 @@ export function ProviderBanner(): React.JSX.Element | null {
   // Don't show during onboarding
   if (!onboarding.completed) return null
 
-  // Determine if the default engine is authenticated
-  const defaultEngine = settings?.command.defaultEngine ?? 'claude'
-  const status = providerStatusByEngine[defaultEngine]
-  const isAuthenticated = status?.state === 'authenticated'
+  const isAuthenticated = providerStatus?.state === 'authenticated'
 
   // Don't show if authenticated or manually dismissed
   if (isAuthenticated || dismissed) return null

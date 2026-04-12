@@ -714,7 +714,6 @@ export const SessionPanel = React.memo(function SessionPanel({
                       onSend={handleSendOrQueue}
                       disabled={false}
                       placeholder={isResumeState ? t('agentChat.continueConversation') : undefined}
-                      engineKind={session?.engineKind}
                       cacheKey={issueId}
                       sessionControl={sessionControlProps}
                     />

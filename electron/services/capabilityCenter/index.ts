@@ -28,7 +28,6 @@ import type { Database } from '../../database/types'
 import type { DataBus } from '../../core/dataBus'
 import { createLogger } from '../../platform/logger'
 import type {
-  AIEngineKind,
   ManagedCapabilityCategory,
   CapabilitySnapshot,
   CapabilityDiagnostic,
@@ -271,7 +270,7 @@ export class CapabilityCenter {
     request: CapabilityPlanRequest
   }): Promise<CapabilityPlan> {
     log.info(
-      `Building capability plan: engine=${params.request.session.engineKind}, projectId=${params.projectId ?? '(none)'}, agent=${params.request.session.agentName ?? '(default)'}`,
+      `Building capability plan: projectId=${params.projectId ?? '(none)'}, agent=${params.request.session.agentName ?? '(default)'}`,
     )
     const snapshot = await this.getSnapshot(params.projectId)
     log.info(
@@ -434,11 +433,8 @@ export class CapabilityCenter {
   }
 
   /** Detect drifted distributions (source modified since last publish) */
-  async detectDrift(params?: { engineKind?: AIEngineKind }): Promise<CapabilityDriftReport[]> {
-    const effectiveEngine = params?.engineKind === 'claude' ? 'claude' as const : undefined
-    const drifts = await this.distributionPipeline.detectDrift({
-      engineKind: effectiveEngine,
-    })
+  async detectDrift(): Promise<CapabilityDriftReport[]> {
+    const drifts = await this.distributionPipeline.detectDrift()
     return drifts.map((d) => ({
       category: d.category,
       name: d.name,
@@ -450,11 +446,8 @@ export class CapabilityCenter {
   }
 
   /** Sync all drifted distributions */
-  async syncAll(params?: { engineKind?: AIEngineKind }): Promise<{ synced: string[]; errors: string[] }> {
-    const effectiveEngine = params?.engineKind === 'claude' ? 'claude' as const : undefined
-    const result = await this.distributionPipeline.syncAll({
-      engineKind: effectiveEngine,
-    })
+  async syncAll(): Promise<{ synced: string[]; errors: string[] }> {
+    const result = await this.distributionPipeline.syncAll()
     if (result.synced.length > 0) {
       this.notifyChange()
     }

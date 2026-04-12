@@ -7,7 +7,7 @@
  * (Settings modal) and ProviderSetupStep (Onboarding).
  *
  * Responsibilities:
- *   - Update settings with selected engine + mode
+ *   - Update settings with selected mode
  *   - Call provider:login IPC
  *   - Sync resulting ProviderStatus to settingsStore
  *   - Expose loading / error transient state
@@ -17,18 +17,12 @@ import { useState, useCallback } from 'react'
 import { useSettingsStore } from '@/stores/settingsStore'
 import { getAppAPI } from '@/windowAPI'
 import type {
-  AIEngineKind,
   ApiProvider,
   AppSettings,
   ProviderStatus,
 } from '@shared/types'
 
 // ─── Types ──────────────────────────────────────────────────────────────
-
-export interface ProviderLoginOptions {
-  /** Also set this engine as the global default. */
-  setAsDefaultEngine?: boolean
-}
 
 export interface ProviderLoginResult {
   status: ProviderStatus
@@ -39,12 +33,10 @@ export interface UseProviderLoginReturn {
   loading: boolean
   error: string | null
   login: (
-    engineKind: AIEngineKind,
     mode: ApiProvider,
     params?: Record<string, unknown>,
-    options?: ProviderLoginOptions,
   ) => Promise<ProviderLoginResult>
-  cancelLogin: (engineKind: AIEngineKind, mode: ApiProvider) => Promise<void>
+  cancelLogin: (mode: ApiProvider) => Promise<void>
   clearError: () => void
 }
 
@@ -54,35 +46,24 @@ export function useProviderLogin(): UseProviderLoginReturn {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const setProviderStatusForEngine = useSettingsStore((s) => s.setProviderStatusForEngine)
+  const setProviderStatus = useSettingsStore((s) => s.setProviderStatus)
 
   const login = useCallback(
     async (
-      engineKind: AIEngineKind,
       mode: ApiProvider,
       params?: Record<string, unknown>,
-      options?: ProviderLoginOptions,
     ): Promise<ProviderLoginResult> => {
       setLoading(true)
       setError(null)
 
       try {
-        // 1. Build next settings — set activeMode (and optionally defaultEngine)
+        // 1. Update settings with selected activeMode
         const currentSettings = useSettingsStore.getState().settings!
         const nextSettings: AppSettings = {
           ...currentSettings,
-          ...(options?.setAsDefaultEngine
-            ? { command: { ...currentSettings.command, defaultEngine: engineKind } }
-            : {}),
           provider: {
             ...currentSettings.provider,
-            byEngine: {
-              ...currentSettings.provider.byEngine,
-              [engineKind]: {
-                ...(currentSettings.provider.byEngine[engineKind] ?? { activeMode: null }),
-                activeMode: mode,
-              },
-            },
+            activeMode: mode,
           },
         }
 
@@ -91,8 +72,8 @@ export function useProviderLogin(): UseProviderLoginReturn {
         useSettingsStore.getState().setSettings(nextSettings)
 
         // 3. Call provider:login IPC
-        const status = await getAppAPI()['provider:login'](engineKind, mode, params)
-        setProviderStatusForEngine({ engineKind, status, syncGlobal: true })
+        const status = await getAppAPI()['provider:login'](mode, params)
+        setProviderStatus({ status })
 
         // 4. Surface errors
         if (status.state === 'error' && status.error) {
@@ -111,13 +92,13 @@ export function useProviderLogin(): UseProviderLoginReturn {
         setLoading(false)
       }
     },
-    [setProviderStatusForEngine],
+    [setProviderStatus],
   )
 
   const cancelLogin = useCallback(
-    async (engineKind: AIEngineKind, mode: ApiProvider): Promise<void> => {
+    async (mode: ApiProvider): Promise<void> => {
       try {
-        await getAppAPI()['provider:cancel-login'](engineKind, mode)
+        await getAppAPI()['provider:cancel-login'](mode)
       } catch {
         // Best-effort cancel — don't propagate
       } finally {

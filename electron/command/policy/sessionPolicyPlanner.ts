@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import type {
-  AIEngineKind,
   SessionOrigin,
   StartSessionNativeToolAllowItem,
   StartSessionPolicy,
@@ -23,7 +22,6 @@ export interface SessionPromptActivation {
 }
 
 export interface PlanSessionPolicyInput {
-  engineKind: AIEngineKind
   origin: SessionOrigin
   policy?: StartSessionPolicyInput
   prompt?: UserMessageContent
@@ -43,7 +41,6 @@ export function planSessionPolicy(input: PlanSessionPolicyInput): SessionPolicyP
     prompt: input.prompt,
   })
   const effectivePolicy = resolveStartSessionPolicy({
-    engineKind: input.engineKind,
     policy: policyInput,
   })
   return {

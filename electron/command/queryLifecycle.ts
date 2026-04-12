@@ -90,9 +90,6 @@ export class QueryLifecycle implements SessionLifecycle {
     if (this._stopped) throw new Error('QueryLifecycle already stopped')
     this._started = true
     const initialPrompt: UserMessageContent = input.initialPrompt
-    if (input.launchOptions.engineKind !== 'claude') {
-      throw new Error(`QueryLifecycle requires claude launch options, got ${input.launchOptions.engineKind}`)
-    }
     const options: ClaudeSessionLaunchOptions = input.launchOptions
 
     // Log initial prompt preview (first 200 + last 100 chars for long text)

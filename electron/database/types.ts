@@ -79,8 +79,14 @@ export interface InboxMessageTable {
 export interface ManagedSessionTable {
   id: string
   sdk_session_id: string | null
-  /** Engine kind for this session row — 'claude'. Legacy rows may contain other values. */
-  engine_kind: string
+  /**
+   * Engine kind for this session row. Column is retained as TEXT NOT NULL
+   * for backward compat (migration 036); application writes a constant
+   * 'claude'. Narrowed here to block any new code from reading another
+   * value. Future migration will drop the column; see
+   * docs/proposals/2026-04-12-provider-management-redesign.md §4.3.
+   */
+  engine_kind: 'claude'
   /** Engine-specific serialized checkpoint/thread state. */
   engine_state_json: string | null
   state: string // ManagedSessionState
@@ -149,7 +155,8 @@ export interface ProjectClaudeMappingTable {
 export interface ProjectExternalMappingTable {
   id: string
   project_id: string
-  engine_kind: string
+  /** See ManagedSessionTable.engine_kind — narrowed to constant 'claude'. */
+  engine_kind: 'claude'
   external_project_ref: string
   discovered_at: number
 }

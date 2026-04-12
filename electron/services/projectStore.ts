@@ -3,7 +3,7 @@
 import type { Kysely } from 'kysely'
 import type { Database, ProjectTable } from '../database/types'
 import { generateId } from '../shared/identity'
-import type { AIEngineKind, ProjectPreferences, ProjectPreferencesPatch } from '../../src/shared/types'
+import type { ProjectPreferences, ProjectPreferencesPatch } from '../../src/shared/types'
 import { normalizeProjectPreferences } from '../../src/shared/projectPreferences'
 
 export interface StoredProject {
@@ -21,20 +21,20 @@ export interface StoredProject {
 export interface StoredProjectExternalMapping {
   id: string
   projectId: string
-  engineKind: AIEngineKind
+  engineKind: 'claude'
   externalProjectRef: string
   discoveredAt: number
 }
 
 export interface AddExternalMappingInput {
-  engineKind: AIEngineKind
+  engineKind: 'claude'
   externalProjectRef: string
   projectId: string
   discoveredAt?: number
 }
 
 export interface ExternalProjectRefQuery {
-  engineKind: AIEngineKind
+  engineKind: 'claude'
   externalProjectRef: string
 }
 
@@ -282,7 +282,7 @@ export class ProjectStore {
     ])
   }
 
-  async listAllExternalRefs(params: { engineKind: AIEngineKind }): Promise<Set<string>> {
+  async listAllExternalRefs(params: { engineKind: 'claude' }): Promise<Set<string>> {
     const rows = await this.db
       .selectFrom('project_external_mappings')
       .select('external_project_ref')

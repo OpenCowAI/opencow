@@ -4,7 +4,6 @@ import { readFile, writeFile, mkdir } from 'fs/promises'
 import { randomUUID } from 'crypto'
 import { dirname } from 'path'
 import {
-  type AIEngineKind,
   DEFAULT_EVOSE_SETTINGS,
   DEFAULT_UPDATE_SETTINGS,
   type AppSettings,
@@ -16,7 +15,6 @@ import {
   type IMConnection,
   type MessagingSettings,
   type EventSubscriptionSettings,
-  type ProviderEngineSettings,
   type ProviderSettings,
   type UserConfigurableWorkspaceInput,
   type TelegramBotEntry,
@@ -45,7 +43,6 @@ const DEFAULT_SETTINGS: AppSettings = {
   command: {
     maxTurns: 10000,
     permissionMode: 'bypassPermissions',
-    defaultEngine: 'claude',
   },
   eventSubscriptions: {
     enabled: true,
@@ -57,11 +54,7 @@ const DEFAULT_SETTINGS: AppSettings = {
     endpoints: []
   },
   provider: {
-    byEngine: {
-      claude: {
-        activeMode: null,
-      },
-    },
+    activeMode: null,
   },
   messaging: {
     connections: [],
@@ -182,14 +175,14 @@ export class SettingsService {
       telegramBot?: Record<string, unknown>
       /** Legacy key — old settings persisted under `auth`; migrate to `provider`. */
       auth?: Partial<ProviderSettings> & Record<string, unknown>
-      /** Legacy key — old command.defaultModel migrated to provider.byEngine.claude.defaultModel. */
+      /** Legacy key — old command.defaultModel migrated to provider.defaultModel. */
       command?: Record<string, unknown>
     }
 
     // Migration: read from `provider` first, fall back to legacy `auth` key.
     const providerRaw = (p.provider ?? p.auth) as (Partial<ProviderSettings> & Record<string, unknown>) | undefined
 
-    // Migrate legacy command.defaultModel → provider.byEngine.claude.defaultModel (if not already set).
+    // Migrate legacy command.defaultModel → provider.defaultModel (if not already set).
     const legacyCommandModel = p.command?.defaultModel
     const legacyCommandModelStr = typeof legacyCommandModel === 'string' && legacyCommandModel ? legacyCommandModel : undefined
 
@@ -203,7 +196,6 @@ export class SettingsService {
       command: {
         maxTurns: (p.command?.maxTurns as number) ?? DEFAULT_SETTINGS.command.maxTurns,
         permissionMode: normalizePermissionMode((p.command as Record<string, unknown> | undefined)?.permissionMode),
-        defaultEngine: normalizeEngine((p.command as Record<string, unknown> | undefined)?.defaultEngine),
       },
       eventSubscriptions: {
         enabled: p.eventSubscriptions?.enabled ?? DEFAULT_SETTINGS.eventSubscriptions.enabled,
@@ -413,9 +405,9 @@ function legacyBotEntryToTelegramConnection(entry: TelegramBotEntry): TelegramCo
 // ── Provider settings migration ───────────────────────────────────────────────
 
 const VALID_PROVIDER_MODES = new Set(['subscription', 'api_key', 'openrouter', 'custom'])
-function normalizeProviderMode(raw: unknown): ProviderSettings['byEngine']['claude']['activeMode'] {
+function normalizeProviderMode(raw: unknown): ProviderSettings['activeMode'] {
   if (typeof raw !== 'string') return null
-  return VALID_PROVIDER_MODES.has(raw) ? raw as ProviderSettings['byEngine']['claude']['activeMode'] : null
+  return VALID_PROVIDER_MODES.has(raw) ? raw as ProviderSettings['activeMode'] : null
 }
 
 function pickLegacyDefaultModel(raw: Record<string, unknown> | undefined, legacyCommandModel?: string): string | undefined {
@@ -428,10 +420,10 @@ function pickLegacyDefaultModel(raw: Record<string, unknown> | undefined, legacy
     || (typeof legacyOpenRouterModel === 'string' ? legacyOpenRouterModel : undefined)
 }
 
-function normalizeEngineProviderSettings(
+function normalizeProviderSettingsShape(
   raw: unknown,
-  fallback: ProviderEngineSettings,
-): ProviderEngineSettings {
+  fallback: ProviderSettings,
+): ProviderSettings {
   const r = (raw ?? {}) as Record<string, unknown>
   const hasActiveMode = Object.prototype.hasOwnProperty.call(r, 'activeMode')
   const hasDefaultModel = Object.prototype.hasOwnProperty.call(r, 'defaultModel')
@@ -446,13 +438,16 @@ function normalizeEngineProviderSettings(
 }
 
 /**
- * Migrate provider settings to engine-scoped shape.
+ * Migrate provider settings to the flat shape.
  *
- * New shape:
- *   provider.byEngine.claude.activeMode/defaultModel
+ * New shape (post–engine-abstraction removal):
+ *   provider.activeMode / provider.defaultModel
  *
- * Legacy fallback:
- *   - provider.activeMode/defaultModel (or auth.*) is migrated into `byEngine.claude`
+ * Legacy sources consumed:
+ *   - provider.byEngine.claude.{activeMode,defaultModel}  (schema v2 — the
+ *     engine-scoped wrapper we're removing)
+ *   - provider.activeMode / provider.defaultModel (older flat shape) or
+ *     legacy top-level auth.* fields
  */
 function migrateProviderSettings(
   raw: (Partial<ProviderSettings> & Record<string, unknown>) | undefined,
@@ -460,23 +455,18 @@ function migrateProviderSettings(
 ): ProviderSettings {
   const source = (raw ?? {}) as Record<string, unknown>
 
-  const legacyClaude: ProviderSettings['byEngine']['claude'] = {
+  const legacyFlat: ProviderSettings = {
     activeMode: normalizeProviderMode(source.activeMode),
     ...(pickLegacyDefaultModel(source, legacyCommandModel)
       ? { defaultModel: pickLegacyDefaultModel(source, legacyCommandModel) }
       : {}),
   }
 
+  // Legacy engine-scoped wrapper: { byEngine: { claude: { activeMode, ... } } }
   const byEngineRaw = source.byEngine as Record<string, unknown> | undefined
+  const engineScoped = byEngineRaw?.claude
 
-  return {
-    byEngine: {
-      claude: normalizeEngineProviderSettings(
-        byEngineRaw?.claude,
-        legacyClaude,
-      ),
-    },
-  }
+  return normalizeProviderSettingsShape(engineScoped ?? source, legacyFlat)
 }
 
 // ── Theme migration ───────────────────────────────────────────────────────────
@@ -542,10 +532,6 @@ function mergeUpdateSettings(raw: unknown): UpdateSettings {
       ? r.updateCheckInterval as UpdateCheckInterval
       : DEFAULT_UPDATE_SETTINGS.updateCheckInterval,
   }
-}
-
-function normalizeEngine(_raw: unknown): AIEngineKind {
-  return 'claude'
 }
 
 function normalizePermissionMode(raw: unknown): AppSettings['command']['permissionMode'] {

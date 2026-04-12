@@ -110,10 +110,10 @@ export class DistributionPipeline {
 
   // ── Drift Detection ─────────────────────────────────────────────
 
-  async detectDrift(options?: { engineKind?: GovernanceEngineKind }): Promise<DriftReport[]> {
+  async detectDrift(): Promise<DriftReport[]> {
     const distributions = await this.stateRepo.getAllDistributions()
     const claudeDistributions = distributions.filter((d) =>
-      isClaudeCodeTargetType(d.targetType) && (!options?.engineKind || options.engineKind === 'claude'),
+      isClaudeCodeTargetType(d.targetType),
     )
     const unknownDistributions = distributions.filter(
       (d) => !isClaudeCodeTargetType(d.targetType),
@@ -138,12 +138,9 @@ export class DistributionPipeline {
   async syncCapability(
     category: ManagedCapabilityCategory,
     name: string,
-    options?: { engineKind?: GovernanceEngineKind },
   ): Promise<SyncResult> {
     const distributions = await this.stateRepo.getDistributionsFor(category, name)
-    const filtered = options?.engineKind
-      ? distributions.filter((d) => targetTypeToEngineKindStrict(d.targetType) === options.engineKind)
-      : distributions
+    const filtered = distributions
     return this.republishAll(
       filtered.map((d) => ({
         category,
@@ -180,8 +177,8 @@ export class DistributionPipeline {
   // ── Full Sync ───────────────────────────────────────────────────
 
   /** Sync all drifted distributions (source modified since last publish). */
-  async syncAll(options?: { engineKind?: GovernanceEngineKind }): Promise<SyncResult> {
-    const drifts = await this.detectDrift(options)
+  async syncAll(): Promise<SyncResult> {
+    const drifts = await this.detectDrift()
     return this.republishAll(
       drifts.map((d) => ({
         category: d.category,

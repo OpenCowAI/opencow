@@ -2,19 +2,11 @@
 
 import type { ManagedSessionTable } from '../../database/types'
 import type {
-  AIEngineKind,
   ManagedSessionInfo,
   ManagedSessionMessage,
   SessionExecutionContext,
   SessionOrigin,
 } from '../../../src/shared/types'
-
-const DEFAULT_ENGINE_KIND: AIEngineKind = 'claude'
-
-function normalizeEngineKind(_raw: string): AIEngineKind {
-  // Legacy rows may contain non-claude values; always normalize to 'claude'.
-  return DEFAULT_ENGINE_KIND
-}
 
 function parseEngineState(raw: string | null): Record<string, unknown> | null {
   if (!raw) return null
@@ -150,10 +142,8 @@ function originToColumns(origin: SessionOrigin): {
 
 export function managedSessionRowToInfo(row: ManagedSessionTable): ManagedSessionInfo {
   const engineSessionRef = row.sdk_session_id
-  const engineKind = normalizeEngineKind(row.engine_kind)
   return {
     id: row.id,
-    engineKind,
     engineSessionRef,
     engineState: parseEngineState(row.engine_state_json),
     state: row.state as ManagedSessionInfo['state'],
@@ -184,13 +174,14 @@ export function managedSessionRowToInfo(row: ManagedSessionTable): ManagedSessio
 
 export function managedSessionInfoToRow(session: ManagedSessionInfo): ManagedSessionTable {
   const { origin_source, origin_id, origin_extra } = originToColumns(session.origin)
-  const engineKind = normalizeEngineKind(session.engineKind)
   const engineSessionRef = session.engineSessionRef ?? null
 
   return {
     id: session.id,
     sdk_session_id: engineSessionRef,
-    engine_kind: engineKind,
+    // engine_kind is a constant column: DB retains TEXT NOT NULL, app only ever writes 'claude'.
+    // See docs/proposals/2026-04-12-provider-management-redesign.md §4.3 for deferred-drop plan.
+    engine_kind: 'claude',
     engine_state_json: session.engineState ? JSON.stringify(session.engineState) : null,
     state: session.state,
     stop_reason: session.stopReason,

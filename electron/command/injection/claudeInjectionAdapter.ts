@@ -8,8 +8,6 @@ import type { ClaudeEngineInjectionAdapter, ClaudeEngineInjectionRequest, Engine
 const log = createLogger('ClaudeInjectionAdapter')
 
 export class ClaudeInjectionAdapter implements ClaudeEngineInjectionAdapter {
-  readonly engineKind = 'claude' as const
-
   private readonly claudeAdapter = new ClaudeCodeAdapter()
 
   inject(request: ClaudeEngineInjectionRequest): EngineInjectionResult {

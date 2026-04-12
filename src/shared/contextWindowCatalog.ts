@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { calcPrice, type Usage } from '@pydantic/genai-prices'
-import type { AIEngineKind } from './types'
 
 export type ContextWindowCatalogErrorCode =
   | 'catalog_lookup_failed'
@@ -13,7 +12,6 @@ export interface ContextWindowCatalogDiagnostic {
 }
 
 export interface ContextWindowCatalogQuery {
-  readonly engineKind: AIEngineKind
   readonly model: string | null
   /** Optional provider hint to reduce ambiguous catalog matches. */
   readonly providerHint?: string
@@ -26,9 +24,12 @@ export interface ContextWindowCatalog {
   }
 }
 
-const ENGINE_TO_PROVIDER_HINT: Partial<Record<AIEngineKind, string>> = {
-  claude: 'anthropic',
-}
+/**
+ * Default provider hint. Today OpenCow only supports Anthropic-protocol
+ * providers; when that changes (see docs/proposals/2026-04-12-provider-
+ * management-redesign.md), the query will carry providerHint explicitly.
+ */
+const DEFAULT_PROVIDER_HINT = 'anthropic'
 
 function normalizeContextWindow(value: number | null | undefined): number | null {
   if (value == null) return null
@@ -37,7 +38,7 @@ function normalizeContextWindow(value: number | null | undefined): number | null
 }
 
 function cacheKeyFor(query: ContextWindowCatalogQuery): string {
-  return `${query.engineKind}:${query.providerHint ?? ''}:${(query.model ?? '').toLowerCase()}`
+  return `${query.providerHint ?? ''}:${(query.model ?? '').toLowerCase()}`
 }
 
 const ZERO_USAGE: Usage = {
@@ -66,7 +67,7 @@ export class GenaiPricesContextWindowCatalog implements ContextWindowCatalog {
   } {
     if (!query.model) return { limitTokens: null, diagnostic: null }
 
-    const hintedProvider = query.providerHint ?? ENGINE_TO_PROVIDER_HINT[query.engineKind]
+    const hintedProvider = query.providerHint ?? DEFAULT_PROVIDER_HINT
     const key = cacheKeyFor({ ...query, providerHint: hintedProvider })
     if (this.cache.has(key)) {
       return { limitTokens: this.cache.get(key) ?? null, diagnostic: null }
@@ -86,7 +87,6 @@ export class GenaiPricesContextWindowCatalog implements ContextWindowCatalog {
         code: 'catalog_lookup_failed',
         message: 'Failed to resolve context_window from genai-prices',
         context: {
-          engineKind: query.engineKind,
           model: query.model,
           providerHint: hintedProvider ?? null,
           error: error instanceof Error ? error.message : String(error),

@@ -48,7 +48,6 @@ export function resolveContextDisplayState(session: SessionSnapshot): ContextDis
   const usedTokens = contextState?.usedTokens ?? 0
 
   const limitResolution = resolveContextLimit({
-    engineKind: session.engineKind,
     model: session.model,
     contextState,
     contextLimitOverride: session.contextLimitOverride,

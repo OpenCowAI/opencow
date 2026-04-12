@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-import type { AIEngineKind, CapabilityScope, CapabilityOrigin } from './types'
+import type { CapabilityScope, CapabilityOrigin } from './types'
 
 /** Slash command item category */
 export type SlashItemCategory = 'builtin' | 'command' | 'skill'
@@ -65,21 +65,11 @@ const CLAUDE_BUILTIN_SLASH_COMMANDS: SlashItem[] = [
   { id: 'builtin:plan', name: 'plan', description: 'Enter plan mode', category: 'builtin', order: 6 },
 ]
 
-/** Engine-scoped pass-through built-in manifest. */
-export const BUILTIN_SLASH_COMMANDS_BY_ENGINE: Record<AIEngineKind, SlashItem[]> = {
-  claude: CLAUDE_BUILTIN_SLASH_COMMANDS,
-}
+/** Pass-through built-in commands (Claude Code SDK built-ins). */
+export const BUILTIN_SLASH_COMMANDS: SlashItem[] = CLAUDE_BUILTIN_SLASH_COMMANDS
 
-/**
- * Backward-compatible default builtin list.
- *
- * Existing callers/tests that are not engine-aware still receive Claude's
- * pass-through builtin set.
- */
-export const BUILTIN_SLASH_COMMANDS: SlashItem[] = BUILTIN_SLASH_COMMANDS_BY_ENGINE.claude
-
-export function getBuiltinSlashCommands(engineKind: AIEngineKind): SlashItem[] {
-  return BUILTIN_SLASH_COMMANDS_BY_ENGINE[engineKind] ?? BUILTIN_SLASH_COMMANDS
+export function getBuiltinSlashCommands(): SlashItem[] {
+  return BUILTIN_SLASH_COMMANDS
 }
 
 const CATEGORY_ORDER: SlashGroupCategory[] = ['builtin', 'command', 'skill', 'apps']

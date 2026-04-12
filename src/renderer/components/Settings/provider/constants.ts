@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { CreditCard, Globe, Key, Zap, type LucideIcon } from 'lucide-react'
-import type { AIEngineKind, ApiProvider } from '@shared/types'
+import type { ApiProvider } from '@shared/types'
 
 export interface ProviderModeOption {
   mode: ApiProvider
@@ -12,11 +12,7 @@ export interface ProviderModeOption {
   advanced?: boolean
 }
 
-export const ENGINE_TABS: ReadonlyArray<{ kind: AIEngineKind; labelKey: string }> = [
-  { kind: 'claude', labelKey: 'provider.engines.claude' },
-]
-
-const CLAUDE_PROVIDER_MODES: ReadonlyArray<ProviderModeOption> = [
+export const PROVIDER_MODES: ReadonlyArray<ProviderModeOption> = [
   {
     mode: 'subscription',
     labelKey: 'provider.modes.subscription',
@@ -45,31 +41,20 @@ const CLAUDE_PROVIDER_MODES: ReadonlyArray<ProviderModeOption> = [
   },
 ]
 
-export const PROVIDER_MODES_BY_ENGINE: Record<AIEngineKind, ReadonlyArray<ProviderModeOption>> = {
-  claude: CLAUDE_PROVIDER_MODES,
+const MODE_LABEL_KEY: Partial<Record<ApiProvider, string>> = {
+  subscription: 'provider.modes.subscription',
+  api_key: 'provider.modes.apiKey',
+  openrouter: 'provider.modes.openrouter',
+  custom: 'provider.modes.custom',
 }
 
-const MODE_LABEL_KEY_BY_ENGINE: Record<AIEngineKind, Partial<Record<ApiProvider, string>>> = {
-  claude: {
-    subscription: 'provider.modes.subscription',
-    api_key: 'provider.modes.apiKey',
-    openrouter: 'provider.modes.openrouter',
-    custom: 'provider.modes.custom',
-  },
-}
-
-export function getModeLabelKey(
-  engineKind: AIEngineKind,
-  mode: ApiProvider | null | undefined,
-): string | null {
+export function getModeLabelKey(mode: ApiProvider | null | undefined): string | null {
   if (!mode) return null
-  return MODE_LABEL_KEY_BY_ENGINE[engineKind][mode] ?? null
+  return MODE_LABEL_KEY[mode] ?? null
 }
 
-export const MODEL_SUGGESTIONS_BY_ENGINE: Record<AIEngineKind, ReadonlyArray<string>> = {
-  claude: [
-    'claude-opus-4-6',
-    'claude-sonnet-4-6',
-    'claude-haiku-4-5-20251001',
-  ],
-}
+export const MODEL_SUGGESTIONS: ReadonlyArray<string> = [
+  'claude-opus-4-6',
+  'claude-sonnet-4-6',
+  'claude-haiku-4-5-20251001',
+]

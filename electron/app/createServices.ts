@@ -63,7 +63,6 @@ import { MemoryService } from '../memory/memoryService'
 import { MAX_SESSION_CONTENT_LENGTH } from '../memory/constants'
 import { prepareExtractionContent } from '../memory/contentPreparer'
 import { HeadlessLLMClientImpl } from '../llm/headlessLLMClient'
-import { resolveActiveEngine } from '../llm/resolveActiveEngine'
 import { GitCommandExecutor } from '../services/git/gitCommandExecutor'
 import { EvoseService } from '../services/evoseService'
 import { ScheduleStore } from '../services/scheduleStore'
@@ -289,12 +288,10 @@ export async function createAppServices(deps: ServiceFactoryDeps): Promise<AppSe
   // Avoids circular dependency: IssueService is created before Phase 2 modules.
   issueService.setChangeQueueService(changeQueueService)
 
-  const claudeCredentialStore = new CredentialStore(dataPaths.credentials)
+  const providerCredentialStore = new CredentialStore(dataPaths.credentials)
   const providerService = new ProviderService({
     dispatch: (e) => bus.dispatch(e),
-    credentialStoreByEngine: {
-      claude: claudeCredentialStore,
-    },
+    credentialStore: providerCredentialStore,
     getProviderSettings: () => settingsService.getProviderSettings(),
     focusApp: focusMainWindow,
   })
@@ -403,11 +400,11 @@ export async function createAppServices(deps: ServiceFactoryDeps): Promise<AppSe
   orchestrator = new SessionOrchestrator({
     dispatch: (e) => bus.dispatch(e),
     getProxyEnv: () => settingsService.getProxyEnv(),
-    getProviderEnv: (engineKind) => providerService.getProviderEnv(engineKind),
-    getProviderDefaultModel: (engineKind) =>
-      settingsService.getProviderSettings().byEngine[engineKind]?.defaultModel,
-    getActiveProviderMode: (engineKind) =>
-      settingsService.getProviderSettings().byEngine[engineKind]?.activeMode ?? null,
+    getProviderEnv: () => providerService.getProviderEnv(),
+    getProviderDefaultModel: () =>
+      settingsService.getProviderSettings().defaultModel,
+    getActiveProviderMode: () =>
+      settingsService.getProviderSettings().activeMode ?? null,
     getCommandDefaults: () => settingsService.getCommandDefaults(),
     store: managedSessionStore,
     nativeCapabilityRegistry,
@@ -627,13 +624,7 @@ export async function createAppServices(deps: ServiceFactoryDeps): Promise<AppSe
   // HeadlessLLMClient: engine-agnostic single-turn text generation for memory extraction.
   // Uses Vercel AI SDK (@ai-sdk/anthropic, @ai-sdk/openai) — no SDK subprocess needed.
   const headlessClient = new HeadlessLLMClientImpl({
-    resolveAuth: () => {
-      const engine = resolveActiveEngine(
-        settingsService.getProviderSettings(),
-        settingsService.getCommandDefaults().defaultEngine,
-      )
-      return providerService.resolveHTTPAuth(engine)
-    },
+    resolveAuth: () => providerService.resolveHTTPAuth(),
     getFetch: () => proxyFetchFactory.getStandardFetch(),
   })
 

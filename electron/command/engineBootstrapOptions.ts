@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 
-import type { AIEngineKind } from '../../src/shared/types'
 import type { ManagedSessionRuntimeConfig } from './managedSession'
 import type { SessionLaunchOptions } from './sessionLaunchOptions'
 import { createLogger } from '../platform/logger'
@@ -8,7 +7,7 @@ import { createLogger } from '../platform/logger'
 const log = createLogger('EngineBootstrapOptions')
 
 export interface EngineBootstrapDeps {
-  getProviderDefaultModel: (engineKind: AIEngineKind) => string | undefined
+  getProviderDefaultModel: () => string | undefined
 }
 
 export interface BootstrapLogger {
@@ -17,7 +16,6 @@ export interface BootstrapLogger {
 }
 
 export interface BuildEngineBootstrapOptionsInput {
-  engineKind: AIEngineKind
   config: ManagedSessionRuntimeConfig
   resume?: string
   sessionEnv: Record<string, string>
@@ -71,10 +69,6 @@ class ClaudeEngineBootstrapper implements EngineBootstrapper {
   }
 
   async apply(ctx: EngineBootstrapContext): Promise<void> {
-    if (ctx.options.engineKind !== 'claude') {
-      throw new Error(`ClaudeEngineBootstrapper received mismatched options engineKind=${ctx.options.engineKind}`)
-    }
-
     // Phase 1B.11 cleanup (AC #11): the historical
     // `pathToClaudeCodeExecutable` and `spawnClaudeCodeProcess` writes
     // were no-ops against the opencow-agent-sdk fork. Spike 3 in

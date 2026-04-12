@@ -4,14 +4,13 @@
  * ProviderSetupStep — Onboarding step for configuring the AI provider.
  *
  * Design decisions:
- *   - Reuses PROVIDER_MODES_BY_ENGINE & ENGINE_TABS from Settings/provider/constants
- *     as the single source of truth for modes (no duplication).
+ *   - Reuses PROVIDER_MODES from Settings/provider/constants as the single
+ *     source of truth for modes (no duplication).
  *   - Reuses CredentialForms from Settings/provider for credential input.
  *   - Uses useProviderLogin hook for shared login orchestration.
- *   - Reads i18n from both 'onboarding' (step-specific) and 'settings' (mode labels)
- *     namespaces to avoid duplicating translations.
- *   - Communicates "provider configured" state upward via onProviderConfigured callback
- *     so the orchestrator can pass it to DoneStep (preserving the prop-driven pattern).
+ *   - Communicates "provider configured" state upward via onProviderConfigured
+ *     callback so the orchestrator can pass it to DoneStep (preserving the
+ *     prop-driven pattern).
  */
 
 import { useState, useCallback, useEffect, useMemo, useRef } from 'react'
@@ -20,17 +19,16 @@ import { ArrowLeft, Check, ChevronDown, ChevronRight, ExternalLink, Loader2 } fr
 import { cn } from '@/lib/utils'
 import { useSettingsStore } from '@/stores/settingsStore'
 import { useProviderLogin } from '@/hooks/useProviderLogin'
-import type { AIEngineKind, ApiProvider, ProviderCredentialInfo } from '@shared/types'
+import type { ApiProvider, ProviderCredentialInfo } from '@shared/types'
 import {
-  ENGINE_TABS,
-  PROVIDER_MODES_BY_ENGINE,
+  PROVIDER_MODES,
   getModeLabelKey,
-  type ProviderModeOption
+  type ProviderModeOption,
 } from '../Settings/provider/constants'
 import {
   ApiKeyForm,
   OpenRouterForm,
-  CustomCredentialForm
+  CustomCredentialForm,
 } from '../Settings/provider/CredentialForms'
 import { StepIndicator } from './StepIndicator'
 import type { StepConfig } from './types'
@@ -49,50 +47,10 @@ type SetupPhase = 'selecting' | 'authenticated'
 
 // ─── Sub-Components ─────────────────────────────────────────────────────
 
-function EngineCard({
-  engineTab,
-  recommended,
-  selected,
-  onSelect
-}: {
-  engineTab: (typeof ENGINE_TABS)[number]
-  recommended?: boolean
-  selected: boolean
-  onSelect: () => void
-}): React.JSX.Element {
-  const { t } = useTranslation('settings')
-  const { t: tOnboarding } = useTranslation('onboarding')
-
-  return (
-    <button
-      type="button"
-      onClick={onSelect}
-      className={cn(
-        'relative flex-1 rounded-xl border-2 px-4 py-3 text-left transition-all',
-        selected
-          ? 'border-[hsl(var(--primary))] bg-[hsl(var(--primary)/0.06)]'
-          : 'border-[hsl(var(--border))] hover:border-[hsl(var(--primary)/0.4)] hover:bg-[hsl(var(--foreground)/0.02)]'
-      )}
-    >
-      <span className="text-sm font-semibold">{t(engineTab.labelKey)}</span>
-      {recommended && (
-        <span className="ml-2 inline-flex items-center rounded-md bg-[hsl(var(--primary)/0.12)] px-1.5 py-0.5 text-[10px] font-medium text-[hsl(var(--primary))]">
-          {tOnboarding('providerSetup.recommended')}
-        </span>
-      )}
-      {selected && (
-        <span className="absolute top-2 right-2 flex h-5 w-5 items-center justify-center rounded-full bg-[hsl(var(--primary))]">
-          <Check className="h-3 w-3 text-[hsl(var(--primary-foreground))]" />
-        </span>
-      )}
-    </button>
-  )
-}
-
 function ModeRadioItem({
   modeOption,
   selected,
-  onSelect
+  onSelect,
 }: {
   modeOption: ProviderModeOption
   selected: boolean
@@ -109,13 +67,13 @@ function ModeRadioItem({
         'w-full flex items-start gap-3 rounded-lg border px-3 py-2.5 text-left transition-all',
         selected
           ? 'border-[hsl(var(--primary))] bg-[hsl(var(--primary)/0.05)]'
-          : 'border-[hsl(var(--border))] hover:border-[hsl(var(--primary)/0.3)] hover:bg-[hsl(var(--foreground)/0.02)]'
+          : 'border-[hsl(var(--border))] hover:border-[hsl(var(--primary)/0.3)] hover:bg-[hsl(var(--foreground)/0.02)]',
       )}
     >
       <span
         className={cn(
           'mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-2 transition-colors',
-          selected ? 'border-[hsl(var(--primary))]' : 'border-[hsl(var(--muted-foreground)/0.4)]'
+          selected ? 'border-[hsl(var(--primary))]' : 'border-[hsl(var(--muted-foreground)/0.4)]',
         )}
       >
         {selected && <span className="h-2 w-2 rounded-full bg-[hsl(var(--primary))]" />}
@@ -134,11 +92,9 @@ function ModeRadioItem({
 }
 
 function SuccessCard({
-  engineLabel,
   modeLabel,
-  onReset
+  onReset,
 }: {
-  engineLabel: string
   modeLabel: string
   onReset: () => void
 }): React.JSX.Element {
@@ -155,12 +111,6 @@ function SuccessCard({
         </span>
       </div>
       <div className="space-y-1.5 text-sm">
-        <div className="flex justify-between">
-          <span className="text-[hsl(var(--muted-foreground))]">
-            {t('providerSetup.success.engine')}
-          </span>
-          <span className="font-medium">{engineLabel}</span>
-        </div>
         <div className="flex justify-between">
           <span className="text-[hsl(var(--muted-foreground))]">
             {t('providerSetup.success.mode')}
@@ -190,7 +140,7 @@ function SuccessCard({
 function SubscriptionLoginPanel({
   loading,
   onLogin,
-  onCancel
+  onCancel,
 }: {
   loading: boolean
   onLogin: () => void
@@ -208,7 +158,7 @@ function SubscriptionLoginPanel({
           className={cn(
             'inline-flex items-center gap-2 rounded-md px-4 py-1.5 text-sm font-medium transition-colors',
             'bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))]',
-            'hover:bg-[hsl(var(--primary)/0.9)]'
+            'hover:bg-[hsl(var(--primary)/0.9)]',
           )}
         >
           <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
@@ -238,14 +188,12 @@ function SubscriptionLoginPanel({
 
 /** Renders the correct credential form for the given mode. */
 function CredentialFormForMode({
-  engineKind,
   mode,
   loading,
   initialValues,
   onLogin,
-  onCancel
+  onCancel,
 }: {
-  engineKind: AIEngineKind
   mode: ApiProvider
   loading: boolean
   initialValues: ProviderCredentialInfo | null
@@ -295,7 +243,7 @@ export function ProviderSetupStep({
   stepConfig,
   onBack,
   onContinue,
-  onProviderConfigured
+  onProviderConfigured,
 }: ProviderSetupStepProps): React.JSX.Element {
   const { t } = useTranslation('onboarding')
   const { t: tSettings } = useTranslation('settings')
@@ -304,11 +252,10 @@ export function ProviderSetupStep({
   const { loading, error, login, cancelLogin, clearError } = useProviderLogin()
 
   // ── Store reads ──
-  const providerStatusByEngine = useSettingsStore((s) => s.providerStatusByEngine)
+  const providerStatus = useSettingsStore((s) => s.providerStatus)
   const loadProviderStatus = useSettingsStore((s) => s.loadProviderStatus)
 
   // ── Local state ──
-  const [selectedEngine, setSelectedEngine] = useState<AIEngineKind>('claude')
   const [selectedMode, setSelectedMode] = useState<ApiProvider | null>(null)
   const [showAdvanced, setShowAdvanced] = useState(false)
   const [phase, setPhase] = useState<SetupPhase>('selecting')
@@ -319,39 +266,25 @@ export function ProviderSetupStep({
   const userResetRef = useRef(false)
 
   // ── Derived data from single source of truth ──
-  const modes = PROVIDER_MODES_BY_ENGINE[selectedEngine]
-  const primaryModes = useMemo(() => modes.filter((m) => !m.advanced), [modes])
-  const advancedModes = useMemo(() => modes.filter((m) => m.advanced), [modes])
-  const currentStatus = providerStatusByEngine[selectedEngine]
+  const primaryModes = useMemo(() => PROVIDER_MODES.filter((m) => !m.advanced), [])
+  const advancedModes = useMemo(() => PROVIDER_MODES.filter((m) => m.advanced), [])
 
   // ── Sync: if the store says "authenticated", reflect it (unless user just clicked reset) ──
   useEffect(() => {
     if (userResetRef.current) return
-    if (currentStatus?.state === 'authenticated' && currentStatus.mode) {
-      setSelectedMode(currentStatus.mode)
+    if (providerStatus?.state === 'authenticated' && providerStatus.mode) {
+      setSelectedMode(providerStatus.mode)
       setPhase('authenticated')
       onProviderConfigured(true)
     }
-  }, [currentStatus, onProviderConfigured])
+  }, [providerStatus, onProviderConfigured])
 
-  // ── Refresh status when engine tab changes ──
+  // ── Initial provider status load ──
   useEffect(() => {
-    void loadProviderStatus({ engineKind: selectedEngine, syncGlobal: false })
-  }, [selectedEngine, loadProviderStatus])
+    void loadProviderStatus()
+  }, [loadProviderStatus])
 
   // ── Handlers ──
-
-  const handleEngineSelect = useCallback(
-    (engine: AIEngineKind) => {
-      userResetRef.current = false
-      setSelectedEngine(engine)
-      setSelectedMode(null)
-      setShowAdvanced(false)
-      setPhase('selecting')
-      clearError()
-    },
-    [clearError]
-  )
 
   const handleModeSelect = useCallback(
     (mode: ApiProvider) => {
@@ -360,7 +293,7 @@ export function ProviderSetupStep({
       setPhase('selecting')
       clearError()
     },
-    [clearError]
+    [clearError],
   )
 
   const handleResetToSelecting = useCallback(() => {
@@ -372,24 +305,22 @@ export function ProviderSetupStep({
   const handleLogin = useCallback(
     async (mode: ApiProvider, params?: Record<string, unknown>) => {
       userResetRef.current = false
-      const result = await login(selectedEngine, mode, params, { setAsDefaultEngine: true })
+      const result = await login(mode, params)
       if (result.success) {
         setPhase('authenticated')
         onProviderConfigured(true)
       }
     },
-    [selectedEngine, login, onProviderConfigured]
+    [login, onProviderConfigured],
   )
 
   const handleCancelLogin = useCallback(async () => {
     if (!selectedMode) return
-    await cancelLogin(selectedEngine, selectedMode)
-  }, [selectedEngine, selectedMode, cancelLogin])
+    await cancelLogin(selectedMode)
+  }, [selectedMode, cancelLogin])
 
   // ── Resolve display labels ──
-  const engineTab = ENGINE_TABS.find((e) => e.kind === selectedEngine)!
-  const engineLabel = tSettings(engineTab.labelKey)
-  const modeLabelKey = getModeLabelKey(selectedEngine, selectedMode)
+  const modeLabelKey = getModeLabelKey(selectedMode)
   const modeLabel = modeLabelKey ? tSettings(modeLabelKey) : ''
 
   // ── Render ──
@@ -411,31 +342,9 @@ export function ProviderSetupStep({
         {/* Content card */}
         <div className="rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-4 mb-5">
           {phase === 'authenticated' ? (
-            <SuccessCard
-              engineLabel={engineLabel}
-              modeLabel={modeLabel}
-              onReset={handleResetToSelecting}
-            />
+            <SuccessCard modeLabel={modeLabel} onReset={handleResetToSelecting} />
           ) : (
             <div className="space-y-4">
-              {/* Engine selector */}
-              <div>
-                <label className="block text-xs font-medium text-[hsl(var(--muted-foreground))] uppercase tracking-wider mb-2">
-                  {t('providerSetup.selectEngine')}
-                </label>
-                <div className="flex gap-2">
-                  {ENGINE_TABS.map((tab) => (
-                    <EngineCard
-                      key={tab.kind}
-                      engineTab={tab}
-                      recommended={tab.kind === 'claude'}
-                      selected={selectedEngine === tab.kind}
-                      onSelect={() => handleEngineSelect(tab.kind)}
-                    />
-                  ))}
-                </div>
-              </div>
-
               {/* Mode selector */}
               <div>
                 <label className="block text-xs font-medium text-[hsl(var(--muted-foreground))] uppercase tracking-wider mb-2">
@@ -483,7 +392,6 @@ export function ProviderSetupStep({
               {selectedMode && (
                 <div className="rounded-lg bg-[hsl(var(--background))] border border-[hsl(var(--border))] p-3">
                   <CredentialFormForMode
-                    engineKind={selectedEngine}
                     mode={selectedMode}
                     loading={loading}
                     initialValues={editValues}
@@ -533,7 +441,7 @@ export function ProviderSetupStep({
                 'px-5 py-2 rounded-lg text-sm font-medium transition-opacity',
                 phase === 'authenticated'
                   ? 'bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))] hover:opacity-90'
-                  : 'bg-[hsl(var(--foreground)/0.08)] text-[hsl(var(--foreground))] hover:bg-[hsl(var(--foreground)/0.12)]'
+                  : 'bg-[hsl(var(--foreground)/0.08)] text-[hsl(var(--foreground))] hover:bg-[hsl(var(--foreground)/0.12)]',
               )}
             >
               {t('common.continue')}

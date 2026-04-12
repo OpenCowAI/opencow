@@ -84,8 +84,7 @@ async function runCriticalBootstrapStage(): Promise<void> {
   const locale = resolveLocale(state.settings?.language, state.systemLocale)
   applyLocale(locale)
 
-  const providerEngine = state.settings?.command.defaultEngine ?? 'claude'
-  void settingsStore.loadProviderStatus({ engineKind: providerEngine, syncGlobal: true })
+  void settingsStore.loadProviderStatus()
     .catch((error: unknown) => {
       log.error('Failed to load provider status during bootstrap', error)
     })

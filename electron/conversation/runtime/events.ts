@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 
-import type { AIEngineKind } from '../../../src/shared/types'
 import type { ConversationContentBlock } from '../domain/content'
 
 export interface RuntimeTurnUsage {
@@ -210,7 +209,7 @@ export type EngineRuntimeEvent =
     }
 
 export interface EngineRuntimeEventEnvelope {
-  readonly engine: AIEngineKind
+  readonly engine: 'claude'
   readonly occurredAtMs: number
   readonly event: EngineRuntimeEvent
   /** Turn-scoped correlation key; omitted for session/global events. */
@@ -218,7 +217,7 @@ export interface EngineRuntimeEventEnvelope {
 }
 
 export function createRuntimeEventEnvelope(params: {
-  engine: AIEngineKind
+  engine: 'claude'
   event: EngineRuntimeEvent
   turnRef?: RuntimeTurnRef
   occurredAtMs?: number

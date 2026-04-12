@@ -12,7 +12,6 @@
 import type {
   DocumentCapabilityEntry,
   CapabilitySnapshot,
-  AIEngineKind,
   StartSessionNativeToolAllowItem,
 } from '@shared/types'
 import type { StateRepository } from './stateRepository'
@@ -34,9 +33,7 @@ import {
 
 const log = createLogger('SessionInjector')
 
-const DEFAULT_MAX_SKILL_CHARS_BY_ENGINE: Readonly<Record<AIEngineKind, number>> = {
-  claude: 80_000,
-}
+const DEFAULT_MAX_SKILL_CHARS = 80_000
 
 /**
  * SDK-ready MCP server config — opaque record passed directly to the SDK.
@@ -93,7 +90,6 @@ export interface PlanSummary {
 
 export interface CapabilityPlanRequest {
   session: {
-    engineKind: AIEngineKind
     agentName?: string
   }
   activation?: {
@@ -112,11 +108,11 @@ export async function buildCapabilityPlan(params: {
   request: CapabilityPlanRequest
 }): Promise<CapabilityPlan> {
   const { snapshot, stateRepo, request } = params
-  const { engineKind, agentName } = request.session
-  const maxSkillChars = request.policy?.maxSkillChars ?? DEFAULT_MAX_SKILL_CHARS_BY_ENGINE[engineKind]
+  const { agentName } = request.session
+  const maxSkillChars = request.policy?.maxSkillChars ?? DEFAULT_MAX_SKILL_CHARS
 
   let skills = snapshot.skills.filter((entry) => entry.enabled && entry.eligibility.eligible)
-  const distributionResult = await filterDistributedSkills(skills, stateRepo, engineKind)
+  const distributionResult = await filterDistributedSkills(skills, stateRepo)
   skills = distributionResult.skills
 
   const agent = agentName
@@ -243,17 +239,16 @@ export async function buildCapabilityPlan(params: {
 async function filterDistributedSkills(
   skills: DocumentCapabilityEntry[],
   stateRepo: StateRepository,
-  engineKind: AIEngineKind,
 ): Promise<{ skills: DocumentCapabilityEntry[]; skippedDistributed: string[] }> {
   const projectSkillNames = skills.filter((skill) => skill.scope === 'project').map((skill) => skill.name)
   const globalSkillNames = skills.filter((skill) => skill.scope === 'global').map((skill) => skill.name)
 
   const [projectDistributions, globalDistributions] = await Promise.all([
     stateRepo.batchGetDistributions('skill', projectSkillNames, {
-      targetTypes: [mapScopeToTarget('project', engineKind)],
+      targetTypes: [mapScopeToTarget('project')],
     }),
     stateRepo.batchGetDistributions('skill', globalSkillNames, {
-      targetTypes: [mapScopeToTarget('global', engineKind)],
+      targetTypes: [mapScopeToTarget('global')],
     }),
   ])
 
@@ -282,7 +277,7 @@ function resolveAgentSkillNames(agent: DocumentCapabilityEntry | null): Set<stri
 
 // Phase 1B.11d: toSkillSegmentPriority deleted (skill prompt segments removed)
 
-function mapScopeToTarget(scope: 'global' | 'project', _engineKind: AIEngineKind): string {
+function mapScopeToTarget(scope: 'global' | 'project'): string {
   return resolveDistributionTargetType({ scope, engineKind: 'claude' })
 }
 

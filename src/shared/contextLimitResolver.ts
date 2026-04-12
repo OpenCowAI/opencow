@@ -8,7 +8,6 @@ import {
 } from './contextWindowCatalog'
 
 export interface ContextLimitResolverInput {
-  readonly engineKind: 'claude'
   readonly model: string | null
   readonly contextState: SessionContextState | null
   readonly contextLimitOverride: number | null | undefined
@@ -49,7 +48,6 @@ export function resolveContextLimit(input: ContextLimitResolverInput): ContextLi
   }
 
   const catalogResult = getContextWindowCatalog().resolveContextWindow({
-    engineKind: input.engineKind,
     model: input.model,
     providerHint: input.providerHint,
   })
@@ -63,7 +61,6 @@ export function resolveContextLimit(input: ContextLimitResolverInput): ContextLi
 
   return {
     limitTokens: getContextLimit({
-      engineKind: input.engineKind,
       model: input.model,
     }),
     source: 'static',

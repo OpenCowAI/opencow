@@ -17,7 +17,6 @@ import type {
 // ── Main type ───────────────────────────────────────────────────────────────
 
 export interface SessionLaunchOptions {
-  engineKind: 'claude'
   maxTurns: number
   includePartialMessages: boolean
   permissionMode: string
@@ -53,7 +52,6 @@ export type ClaudeSessionLaunchOptions = SessionLaunchOptions
  * adapters and merged into the launch options during orchestrator pre-flight.
  */
 export interface SessionLaunchOptionPatch {
-  engineKind?: 'claude'
   mcpServers?: Record<string, unknown>
 }
 

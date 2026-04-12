@@ -799,12 +799,12 @@ export function registerIPCHandlers(deps: IPCDeps): void {
       await cc.unpublish({ category: params.category, name: params.name, target: await resolveDistTarget(params) })
     })
 
-    registerHandler('capability:sync', async (params) => {
-      return cc.syncAll(params)
+    registerHandler('capability:sync', async () => {
+      return cc.syncAll()
     })
 
-    registerHandler('capability:detect-drift', async (params) => {
-      return cc.detectDrift(params)
+    registerHandler('capability:detect-drift', async () => {
+      return cc.detectDrift()
     })
 
     // M5: structured form save (backend handles serialization)
@@ -946,14 +946,6 @@ export function registerIPCHandlers(deps: IPCDeps): void {
       const updated = await settingsService.update(settings)
       const evoseSettingsChanged = isEvoseSettingsChanged(oldSettings, updated)
 
-      // Detect default engine change — log for debugging engine drift scenarios
-      if (oldSettings.command.defaultEngine !== updated.command.defaultEngine) {
-        log.info('Default engine changed in settings', {
-          from: oldSettings.command.defaultEngine,
-          to: updated.command.defaultEngine,
-        })
-      }
-
       // Detect language change → rebuild menu + update tray locale
       if (oldSettings.language !== updated.language) {
         const locale = resolveLocale(updated.language, app.getLocale())
@@ -992,19 +984,19 @@ export function registerIPCHandlers(deps: IPCDeps): void {
   // --- Provider handlers ---
   if (deps.providerService) {
     const providerService = deps.providerService
-    registerHandler('provider:get-status', (engineKind) => providerService.getStatus(engineKind ?? 'claude'))
-    registerHandler('provider:login', (engineKind, mode, params) =>
-      providerService.login(engineKind, mode, params))
-    registerHandler('provider:cancel-login', async (engineKind, mode) => {
-      await providerService.cancelLogin(engineKind, mode)
+    registerHandler('provider:get-status', () => providerService.getStatus())
+    registerHandler('provider:login', (mode, params) =>
+      providerService.login(mode, params))
+    registerHandler('provider:cancel-login', async (mode) => {
+      await providerService.cancelLogin(mode)
       return true
     })
-    registerHandler('provider:logout', async (engineKind, mode) => {
-      await providerService.logout(engineKind, mode)
+    registerHandler('provider:logout', async (mode) => {
+      await providerService.logout(mode)
       return true
     })
-    registerHandler('provider:get-credential', (engineKind, mode) =>
-      providerService.getCredential(engineKind, mode))
+    registerHandler('provider:get-credential', (mode) =>
+      providerService.getCredential(mode))
   }
 
   // --- Command handlers ---

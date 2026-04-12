@@ -3,7 +3,6 @@
 import { createSessionLifecycle, type SessionLifecycle } from './sessionLifecycle'
 import {
   isIMPlatformSource,
-  type AIEngineKind,
   type ApiProvider,
   type CommandDefaults,
   type ContentBlock,
@@ -63,7 +62,6 @@ import {
 import type { SessionRuntime, SessionCompletionCallback, SessionCompletionResult } from './sessionRuntime'
 import { planSessionPolicy } from './policy/sessionPolicyPlanner'
 import { decideSessionReconfiguration } from './policy/sessionReconfigurationCoordinator'
-import { buildConversationSummary } from './conversationSummary'
 import { dispatchSessionTerminal as dispatchSessionTerminalEvent } from './sessionTerminalDispatcher'
 
 const log = createLogger('Orchestrator')
@@ -73,10 +71,10 @@ type Dispatch = (event: DataBusEvent) => void
 export interface OrchestratorDeps {
   dispatch: Dispatch
   getProxyEnv: () => Record<string, string>
-  getProviderEnv: (engineKind: AIEngineKind) => Promise<Record<string, string>>
-  getProviderDefaultModel: (engineKind: AIEngineKind) => string | undefined
-  /** Returns the current active provider mode for the given engine (synchronous in-memory read). */
-  getActiveProviderMode: (engineKind: AIEngineKind) => ApiProvider | null
+  getProviderEnv: () => Promise<Record<string, string>>
+  getProviderDefaultModel: () => string | undefined
+  /** Returns the current active provider mode (synchronous in-memory read). */
+  getActiveProviderMode: () => ApiProvider | null
   getCommandDefaults: () => CommandDefaults
   store: ManagedSessionStore
   /** Optional OpenCowCapabilityRegistry — injects OpenCow built-in native capability tools into sessions. */
@@ -325,12 +323,9 @@ export class SessionOrchestrator {
 
   async startSession(input: SessionStartOptions): Promise<string> {
     const origin: SessionOrigin = input.origin ?? { source: 'agent' }
-    const defaultEngine = this.deps.getCommandDefaults().defaultEngine
-    const engineKind: AIEngineKind = input.engineKind ?? defaultEngine
     const resolvedWorkspace = await this.workspaceResolver.resolve(input.workspace)
     log.info('startSession requested', {
       origin: origin.source,
-      engineKind,
       projectId: resolvedWorkspace.projectId,
       workspaceScope: resolvedWorkspace.scope,
       hasCustomMcpServers: !!(input.customMcpServers && Object.keys(input.customMcpServers).length > 0),
@@ -409,7 +404,6 @@ export class SessionOrchestrator {
     const session = new ManagedSession({
       prompt: input.prompt,
       origin,
-      engineKind,
       startupCwd: resolvedWorkspace.cwd,
       projectPath: resolvedWorkspace.projectPath ?? undefined,
       projectId: resolvedWorkspace.projectId ?? undefined,
@@ -423,7 +417,7 @@ export class SessionOrchestrator {
       customMcpServers: input.customMcpServers,
     })
 
-    const lifecycle = createSessionLifecycle(engineKind)
+    const lifecycle = createSessionLifecycle()
     const tempId = session.id
 
     // Broadcast creation
@@ -471,7 +465,6 @@ export class SessionOrchestrator {
     log.info('Session created and lifecycle started', {
       sessionId: tempId,
       origin: session.origin.source,
-      engineKind,
     })
     return tempId
   }
@@ -501,9 +494,7 @@ export class SessionOrchestrator {
     }
 
     const config = session.getConfig()
-    const engineKind: AIEngineKind = config.engineKind ?? 'claude'
     const policyPlan = planSessionPolicy({
-      engineKind,
       origin: config.origin,
       policy: config.policy,
       prompt: initialPrompt,
@@ -513,7 +504,6 @@ export class SessionOrchestrator {
     if (rt) rt.policy = sessionPolicy
     log.debug('Session lifecycle bootstrapping', {
       sessionId,
-      engineKind,
       resume: !!extra?.resume,
       origin: session.origin.source,
     })
@@ -541,12 +531,12 @@ export class SessionOrchestrator {
     }
 
     // Layer provider credentials (highest priority — overrides any system-level tokens)
-    const providerEnv = await this.deps.getProviderEnv(engineKind)
+    const providerEnv = await this.deps.getProviderEnv()
     Object.assign(sessionEnv, providerEnv)
 
     // Record the provider mode active at lifecycle spawn time — used by
     // sendMessage() to detect mid-session provider switches.
-    if (rt) rt.providerMode = this.deps.getActiveProviderMode(engineKind)
+    if (rt) rt.providerMode = this.deps.getActiveProviderMode()
 
     // Layer proxy settings (settings > process.env, already in sessionEnv)
     const settingsProxy = this.deps.getProxyEnv()
@@ -564,7 +554,6 @@ export class SessionOrchestrator {
       env: sessionEnv,
     }
     const options: SessionLaunchOptions = {
-      engineKind: 'claude',
       ...baseOptions,
       systemPromptPayload: createProviderNativeSystemPrompt(''),
     }
@@ -591,7 +580,6 @@ export class SessionOrchestrator {
 
     const modelOverride = session.getModelOverride()
     await this.engineBootstrapRegistry.apply({
-      engineKind,
       config: {
         ...config,
         ...(modelOverride ? { model: modelOverride } : {}),
@@ -703,12 +691,10 @@ export class SessionOrchestrator {
     )
 
     const capabilityOutput = await this.capabilityRuntime.apply({
-      engineKind,
       planInput: {
         projectId: config.projectId,
         request: {
           session: {
-            engineKind,
             agentName: config.agentName,
           },
           policy: {
@@ -889,7 +875,6 @@ export class SessionOrchestrator {
     const startTime = Date.now()
     log.info('Session pre-flight summary', {
       sessionId,
-      engineKind,
       model: options.model ?? 'default',
       promptLayers: {
         identity: !!promptLayers.identity,
@@ -928,7 +913,7 @@ export class SessionOrchestrator {
       const runtimeEventStream = lifecycle.start({
         initialPrompt,
         launchOptions: options,
-        callbacks: options.engineKind === 'claude'
+        callbacks: true
           ? undefined
           : {
               onExecutionContextSignal: (signal) => notifyExecutionContextCwd(signal),
@@ -957,7 +942,6 @@ export class SessionOrchestrator {
       streamEndedCleanly = true
       log.info('Session lifecycle completed', {
         sessionId,
-        engineKind,
         finalState: session.getState(),
         totalMessages: session.getMessages().length,
         durationMs: Date.now() - startTime,
@@ -1049,8 +1033,6 @@ export class SessionOrchestrator {
       sessionId,
       hasRuntime: !!rt,
       sessionState: rt?.session.getState() ?? 'no-runtime',
-      sessionEngine: rt?.session.getEngineKind() ?? 'unknown',
-      defaultEngine: this.deps.getCommandDefaults().defaultEngine,
     })
 
     // MCP ask_user_question is blocking — route answer to PendingQuestionRegistry
@@ -1118,8 +1100,7 @@ export class SessionOrchestrator {
       // 2. Provider mode drift: SDK subprocess env is frozen at spawn. If the
       //    user switched provider mode mid-session, force a lifecycle restart
       //    to pick up fresh credentials.
-      const engineKind = rt.session.getEngineKind()
-      const currentMode = this.deps.getActiveProviderMode(engineKind)
+      const currentMode = this.deps.getActiveProviderMode()
       const sessionMode = rt.providerMode ?? null
       if (currentMode !== sessionMode) {
         log.info('sendMessage: provider mode drift detected, restarting lifecycle', {
@@ -1127,12 +1108,6 @@ export class SessionOrchestrator {
           from: sessionMode,
           to: currentMode,
         })
-        return await this.resumeSessionInternal(sessionId, content, { forceRestart: true })
-      }
-
-      // 3. Engine kind drift: user switched default engine since this session started.
-      //    Pattern identical to provider mode drift above.
-      if (this.detectAndApplyEngineDrift(rt.session)) {
         return await this.resumeSessionInternal(sessionId, content, { forceRestart: true })
       }
     }
@@ -1214,20 +1189,10 @@ export class SessionOrchestrator {
     log.debug('resumeSessionInternal entered', {
       sessionId,
       forceRestart: options.forceRestart,
-      defaultEngine: this.deps.getCommandDefaults().defaultEngine,
     })
 
     const existing = this.runtimes.get(sessionId)
-    let forceRestart = options.forceRestart
-
-    // ── Engine drift check (must run BEFORE the fast path) ────────────────
-    // The fast path pushes messages into the existing lifecycle queue, which
-    // would silently bypass engine switching. Detect drift first; if the
-    // engine changed, skip the fast path and fall through to full restart.
-    if (existing && !forceRestart && this.detectAndApplyEngineDrift(existing.session)) {
-      log.info('resumeSessionInternal: engine drift detected, skipping fast path for full restart', { sessionId })
-      forceRestart = true
-    }
+    const forceRestart = options.forceRestart
 
     // Fast path: if the SDK process is still alive (multi-turn wait mode),
     // push to the existing queue instead of the expensive kill → restart cycle.
@@ -1254,18 +1219,14 @@ export class SessionOrchestrator {
       session = ManagedSession.fromInfo(persisted)
     }
 
-    // Engine kind drift check — covers persisted sessions restored from store
-    // (no active runtime). Idempotent: no-op if already applied above.
-    const engineSwitched = this.detectAndApplyEngineDrift(session)
-
     const engineSessionRef = session.getEngineRef()
-    if (!engineSessionRef && !forceRestart && !engineSwitched) {
+    if (!engineSessionRef && !forceRestart) {
       log.warn('resumeSession failed: missing engine session ref', { sessionId })
       return false
     }
 
     // Create fresh lifecycle (one-shot, never reused)
-    const lifecycle = createSessionLifecycle(session.getEngineKind())
+    const lifecycle = createSessionLifecycle()
 
     session.addMessage('user', userContentToBlocks(message))
     session.transition({ type: 'resume_session' })
@@ -1311,47 +1272,6 @@ export class SessionOrchestrator {
   }
 
   // ── Engine drift helpers ─────────────────────────────────────────────
-
-  /**
-   * Detect and apply engine kind drift: if the session's engine differs from
-   * the current default, switch it in-place and dispatch UI updates.
-   *
-   * @returns `true` if an engine switch was performed.
-   */
-  private detectAndApplyEngineDrift(session: ManagedSession): boolean {
-    const currentDefaultEngine = this.deps.getCommandDefaults().defaultEngine
-    const sessionEngine = session.getEngineKind()
-    if (sessionEngine === currentDefaultEngine) return false
-
-    const messageCount = session.getMessages().length
-    log.info('engine kind drift detected, switching engine', {
-      sessionId: session.id,
-      origin: session.origin.source,
-      from: sessionEngine,
-      to: currentDefaultEngine,
-      messageCount,
-    })
-    const summary = buildConversationSummary({
-      messages: session.getMessages(),
-      fromEngine: sessionEngine,
-    })
-    session.switchEngine({
-      newEngine: currentDefaultEngine,
-      contextSummary: summary,
-      originalContext: session.getConfig().contextSystemPrompt,
-    })
-    log.info('engine switch applied', {
-      sessionId: session.id,
-      newEngine: currentDefaultEngine,
-      summaryLength: summary.length,
-      hasOriginalContext: !!session.getConfig().contextSystemPrompt,
-    })
-
-    // Dispatch snapshot + system event so renderer updates immediately
-    this.dispatchSessionUpdate(session)
-    this.dispatchLastSystemEvent(session)
-    return true
-  }
 
   // ── Dispatch helpers ──────────────────────────────────────────────────
 
@@ -1736,9 +1656,7 @@ export class SessionOrchestrator {
    * so we skip hook-log events for them to avoid duplicates.
    */
   shouldSkipHookSourceEvent(sessionId: string): boolean {
-    const rt = this.findActiveRuntime(sessionId)
-    if (!rt) return false
-    return rt.session.getEngineKind() === 'claude'
+    return this.findActiveRuntime(sessionId) !== null
   }
 
   /**

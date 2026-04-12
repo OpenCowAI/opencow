@@ -154,7 +154,6 @@ export function SessionChatLayout({
             <ChatHeroInput
               onSend={onSendOrQueue}
               placeholder={isPaused ? pausedPlaceholder : undefined}
-              engineKind={session.engineKind}
               sessionControl={{ isProcessing, onStop }}
               registerAsChatTabInput={registerAsChatTabInput}
             />

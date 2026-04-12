@@ -4,7 +4,7 @@ import type { ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ExternalLink, Loader2, LogOut, Pencil, XCircle } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import type { AIEngineKind, ApiProvider, ProviderCredentialInfo, ProviderStatus } from '@shared/types'
+import type { ApiProvider, ProviderCredentialInfo, ProviderStatus } from '@shared/types'
 import { CustomCredentialForm, ApiKeyForm, OpenRouterForm } from './CredentialForms'
 import { StatusBadge } from './StatusBadge'
 
@@ -26,7 +26,6 @@ interface CredentialPanelActions {
 }
 
 interface ProviderCredentialPanelsProps {
-  engineKind: AIEngineKind
   mode: ApiProvider
   state: CredentialPanelState
   actions: CredentialPanelActions
@@ -210,7 +209,7 @@ function CredentialModePanel({ state, actions, children }: CredentialModePanelPr
 function renderCredentialForm(
   props: ProviderCredentialPanelsProps,
 ): React.JSX.Element {
-  const { mode, engineKind, state, actions } = props
+  const { mode, state, actions } = props
 
   if (mode === 'api_key') {
     return (

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-import type { UserMessageContent, AIEngineKind } from '../../src/shared/types'
+import type { UserMessageContent } from '../../src/shared/types'
 import type { EngineRuntimeEventEnvelope } from '../conversation/runtime/events'
 import type { SessionLaunchOptions } from './sessionLaunchOptions'
 import { QueryLifecycle } from './queryLifecycle'
@@ -42,6 +42,6 @@ export interface SessionLifecycle {
   stop(): Promise<void>
 }
 
-export function createSessionLifecycle(_engineKind: AIEngineKind): SessionLifecycle {
+export function createSessionLifecycle(): SessionLifecycle {
   return new QueryLifecycle()
 }

@@ -11,13 +11,13 @@
  *
  * Architecture:
  *   - Strategy pattern: each ApiProvider maps to a ProviderAdapter implementation
- *   - Engine-scoped active provider (`provider.byEngine.claude.activeMode`)
+ *   - Active provider stored in `provider.activeMode` (see §4 of
+ *     docs/proposals/2026-04-12-provider-management-redesign.md)
  *   - Sensitive credentials in CredentialStore (encrypted)
  *   - Non-sensitive config in SettingsService (plaintext JSON)
  */
 
 import type {
-  AIEngineKind,
   ApiProvider,
   ProviderSettings,
   ProviderStatus,
@@ -37,7 +37,7 @@ const log = createLogger('ProviderService')
 
 export interface ProviderServiceDeps {
   dispatch: (event: DataBusEvent) => void
-  credentialStoreByEngine: Record<AIEngineKind, CredentialStore>
+  credentialStore: CredentialStore
   /** Returns current provider settings (non-sensitive config). */
   getProviderSettings: () => ProviderSettings
   /** Bring the app window to the foreground (called after successful auth). */
@@ -46,13 +46,11 @@ export interface ProviderServiceDeps {
 
 export class ProviderService {
   private readonly deps: ProviderServiceDeps
-  private readonly providersByEngine: Map<AIEngineKind, Map<ApiProvider, ProviderAdapter>>
+  private readonly providers: Map<ApiProvider, ProviderAdapter>
 
   constructor(deps: ProviderServiceDeps) {
     this.deps = deps
-    this.providersByEngine = new Map<AIEngineKind, Map<ApiProvider, ProviderAdapter>>([
-      ['claude', this.createProviders(deps.credentialStoreByEngine.claude)],
-    ])
+    this.providers = this.createProviders(deps.credentialStore)
   }
 
   private createProviders(store: CredentialStore): Map<ApiProvider, ProviderAdapter> {
@@ -64,28 +62,19 @@ export class ProviderService {
     ])
   }
 
-  private getEngineProviders(engineKind: AIEngineKind): Map<ApiProvider, ProviderAdapter> {
-    return this.providersByEngine.get(engineKind) ?? this.providersByEngine.get('claude')!
-  }
-
-  private getEngineProviderSettings(engineKind: AIEngineKind): ProviderSettings['byEngine']['claude'] {
-    const settings = this.deps.getProviderSettings()
-    return settings.byEngine[engineKind] ?? { activeMode: null }
-  }
-
   // ── Public API ──────────────────────────────────────────────────────
 
   /**
    * Get the current provider status for the active mode.
    * Returns `unauthenticated` if no mode is configured.
    */
-  async getStatus(engineKind: AIEngineKind = 'claude'): Promise<ProviderStatus> {
-    const mode = this.getEngineProviderSettings(engineKind).activeMode
+  async getStatus(): Promise<ProviderStatus> {
+    const mode = this.deps.getProviderSettings().activeMode
     if (!mode) {
       return { state: 'unauthenticated', mode: null }
     }
 
-    const provider = this.getEngineProviders(engineKind).get(mode)
+    const provider = this.providers.get(mode)
     if (!provider) {
       return { state: 'error', mode, error: `Unknown provider mode: ${mode}` }
     }
@@ -107,17 +96,15 @@ export class ProviderService {
    * Returns an empty object if no provider mode is configured (SDK falls back
    * to system-level credentials).
    */
-  async getProviderEnv(engineKind: AIEngineKind): Promise<Record<string, string>> {
-    const engineSettings = this.getEngineProviderSettings(engineKind)
-    const mode = engineSettings.activeMode
+  async getProviderEnv(): Promise<Record<string, string>> {
+    const settings = this.deps.getProviderSettings()
+    const mode = settings.activeMode
     if (!mode) {
-      if (engineKind === 'claude') {
-        log.warn(`getProviderEnv(${engineKind}): no activeMode configured — session will use system credentials`)
-      }
+      log.warn('getProviderEnv: no activeMode configured — session will use system credentials')
       return {}
     }
 
-    const provider = this.getEngineProviders(engineKind).get(mode)
+    const provider = this.providers.get(mode)
     if (!provider) {
       log.warn(`getProviderEnv: no adapter for mode "${mode}" — returning empty env`)
       return {}
@@ -127,8 +114,8 @@ export class ProviderService {
       const env = await provider.getEnv()
 
       // Claude SDK default model is controlled via ANTHROPIC_DEFAULT_SONNET_MODEL.
-      if (engineKind === 'claude' && engineSettings.defaultModel) {
-        env.ANTHROPIC_DEFAULT_SONNET_MODEL = engineSettings.defaultModel
+      if (settings.defaultModel) {
+        env.ANTHROPIC_DEFAULT_SONNET_MODEL = settings.defaultModel
       }
 
       // Warn if the provider returned empty env — this almost certainly means
@@ -136,13 +123,13 @@ export class ProviderService {
       const hasAuthKey = Object.keys(env).some(
         (k) => k === 'CLAUDE_CODE_OAUTH_TOKEN' || k === 'ANTHROPIC_API_KEY' || k === 'ANTHROPIC_AUTH_TOKEN'
       )
-      if (engineKind === 'claude' && !hasAuthKey) {
-        log.warn(`getProviderEnv(${engineKind}): mode "${mode}" returned no auth credentials — session may fail`)
+      if (!hasAuthKey) {
+        log.warn(`getProviderEnv: mode "${mode}" returned no auth credentials — session may fail`)
       }
 
       return env
     } catch (err) {
-      log.error(`getProviderEnv(${engineKind}): failed for mode "${mode}"`, err)
+      log.error(`getProviderEnv: failed for mode "${mode}"`, err)
       return {}
     }
   }
@@ -154,8 +141,8 @@ export class ProviderService {
    * For api_key: validates and stores the provided key.
    * For openrouter: validates and stores the OpenRouter API key.
    */
-  async login(engineKind: AIEngineKind, mode: ApiProvider, params?: Record<string, unknown>): Promise<ProviderStatus> {
-    const provider = this.getEngineProviders(engineKind).get(mode)
+  async login(mode: ApiProvider, params?: Record<string, unknown>): Promise<ProviderStatus> {
+    const provider = this.providers.get(mode)
     if (!provider) {
       return { state: 'error', mode, error: `Unknown provider mode: ${mode}` }
     }
@@ -196,8 +183,8 @@ export class ProviderService {
    * Cancel an in-progress login flow for the given mode.
    * Delegates to the adapter's cancelLogin() if it supports cancellation.
    */
-  async cancelLogin(engineKind: AIEngineKind, mode: ApiProvider): Promise<void> {
-    const provider = this.getEngineProviders(engineKind).get(mode)
+  async cancelLogin(mode: ApiProvider): Promise<void> {
+    const provider = this.providers.get(mode)
     if (provider?.cancelLogin) {
       await provider.cancelLogin()
       this.broadcastStatus({ state: 'unauthenticated', mode })
@@ -209,8 +196,8 @@ export class ProviderService {
    * Logout from a specific provider mode.
    * Clears credentials and broadcasts unauthenticated status.
    */
-  async logout(engineKind: AIEngineKind, mode: ApiProvider): Promise<void> {
-    const provider = this.getEngineProviders(engineKind).get(mode)
+  async logout(mode: ApiProvider): Promise<void> {
+    const provider = this.providers.get(mode)
     if (provider) {
       await provider.logout()
     }
@@ -226,8 +213,8 @@ export class ProviderService {
    * Return stored credential fields for the given mode (for edit form pre-fill).
    * Returns null if the provider doesn't support it or no credential is stored.
    */
-  async getCredential(engineKind: AIEngineKind, mode: ApiProvider): Promise<ProviderCredentialInfo | null> {
-    const provider = this.getEngineProviders(engineKind).get(mode)
+  async getCredential(mode: ApiProvider): Promise<ProviderCredentialInfo | null> {
+    const provider = this.providers.get(mode)
     if (!provider?.getCredential) return null
     return provider.getCredential()
   }
@@ -235,21 +222,21 @@ export class ProviderService {
   /**
    * Resolve structured HTTP auth for direct LLM API calls.
    *
-   * Combines adapter-level credentials with engine-level config
+   * Combines adapter-level credentials with settings-level config
    * (protocol, model) to produce a complete auth config suitable
    * for constructing HTTP headers in direct fetch() calls.
    *
    * @throws When no active provider, adapter not found, or credentials unavailable
    */
-  async resolveHTTPAuth(engineKind: AIEngineKind): Promise<LLMAuthConfig> {
-    const engineSettings = this.getEngineProviderSettings(engineKind)
-    const mode = engineSettings.activeMode
+  async resolveHTTPAuth(): Promise<LLMAuthConfig> {
+    const settings = this.deps.getProviderSettings()
+    const mode = settings.activeMode
 
     if (!mode) {
-      throw new Error(`No active provider mode configured for engine "${engineKind}"`)
+      throw new Error('No active provider mode configured')
     }
 
-    const provider = this.getEngineProviders(engineKind).get(mode)
+    const provider = this.providers.get(mode)
     if (!provider) {
       throw new Error(`No adapter found for provider mode "${mode}"`)
     }
@@ -264,7 +251,7 @@ export class ProviderService {
       apiKey: httpAuth.apiKey,
       baseUrl: httpAuth.baseUrl,
       authStyle: httpAuth.authStyle,
-      model: engineSettings.defaultModel ?? 'claude-sonnet-4-20250514',
+      model: settings.defaultModel ?? 'claude-sonnet-4-20250514',
     }
   }
 

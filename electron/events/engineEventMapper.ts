@@ -104,7 +104,6 @@ export function mapManagedSessionInfoToSessionStartEngineEvent(
   const payload = omitUndefined({
     origin: info.origin,
     model: info.model,
-    engineKind: info.engineKind,
     state: info.state,
     projectId: info.projectId,
   })
