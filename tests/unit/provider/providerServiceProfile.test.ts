@@ -83,7 +83,7 @@ const migratedSubscriptionProfile: ProviderProfile = {
 }
 
 describe('ProviderService.applyProfileCredentialMigration', () => {
-  it('moves a legacy api_key credential to the profile-scoped slot', async () => {
+  it('copies a legacy api_key credential into the profile-scoped slot (keeps legacy)', async () => {
     const store = new FakeCredentialStore()
     await store.updateAs('apiKey', 'sk-ant-legacy')
     const service = buildService({
@@ -98,7 +98,8 @@ describe('ProviderService.applyProfileCredentialMigration', () => {
     await service.applyProfileCredentialMigration()
 
     const after = store.snapshot()
-    expect(after['apiKey']).toBeUndefined()
+    // COPY semantics — both keys populated so legacy getProviderEnv() keeps working.
+    expect(after['apiKey']).toBe('sk-ant-legacy')
     expect(after[`credential:${migratedApiKeyProfile.id}`]).toBe('sk-ant-legacy')
   })
 
@@ -121,7 +122,7 @@ describe('ProviderService.applyProfileCredentialMigration', () => {
     expect(after1).toEqual(after2)
   })
 
-  it('preserves a value at the new key when both exist and removes the legacy one', async () => {
+  it('does not clobber the new slot when it is already populated', async () => {
     const store = new FakeCredentialStore()
     await store.updateAs('apiKey', 'sk-ant-stale')
     await store.updateAs(`credential:${migratedApiKeyProfile.id}`, 'sk-ant-fresh')
@@ -138,7 +139,8 @@ describe('ProviderService.applyProfileCredentialMigration', () => {
     await service.applyProfileCredentialMigration()
 
     const after = store.snapshot()
-    expect(after['apiKey']).toBeUndefined()
+    // Both survive — the fresh new-slot value wins.
+    expect(after['apiKey']).toBe('sk-ant-stale')
     expect(after[`credential:${migratedApiKeyProfile.id}`]).toBe('sk-ant-fresh')
   })
 

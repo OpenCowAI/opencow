@@ -303,17 +303,18 @@ export async function createAppServices(deps: ServiceFactoryDeps): Promise<AppSe
     focusApp: focusMainWindow,
   })
 
-  // Phase B.3b: profile credential migration is defined but NOT invoked
-  // at bootstrap. Running it here would remove the legacy flat keys
-  // (`apiKey` / `subscription` / etc.) that ProviderService.getProviderEnv()
-  // still reads via the Phase A activeMode path, breaking session spawn.
-  // The migration will be enabled as part of the Phase C cutover, after
-  // the orchestrator is switched to getProviderEnvForProfile().
+  // Phase B.3c: copy legacy flat-keyed credentials into profile-scoped
+  // slots. Non-destructive — the legacy keys stay intact so the Phase A
+  // `getProviderEnv()` session-spawn path keeps working. Phase C cutover
+  // will delete the legacy keys once the orchestrator switches to
+  // `getProviderEnvForProfile()`.
   //
-  // For now, multi-profile tests can exercise the code path by mounting
-  // an already-migrated CredentialStore directly — see
-  // tests/unit/provider/providerServiceProfile.test.ts.
-  void providerService.applyProfileCredentialMigration
+  // Without this, the new Settings UI shows migrated profiles with empty
+  // credential slots — the user sees "unauthenticated" even though the
+  // session itself still works via the legacy path.
+  await providerService.applyProfileCredentialMigration().catch((err) => {
+    log.warn('Profile credential migration (copy) failed', err)
+  })
 
   // BrowserService is created before SessionOrchestrator so the orchestrator can
   // hold a reference and release per-session browser views when sessions stop.

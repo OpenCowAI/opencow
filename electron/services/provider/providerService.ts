@@ -310,22 +310,27 @@ export class ProviderService {
   /**
    * Apply credential renames produced by Phase B.1 migration.
    *
-   * Idempotent: checks whether each legacy key still exists before
-   * renaming, so re-running this after a successful migration is a
-   * no-op. Safe to call on every bootstrap.
+   * Phase B.3c semantics (COPY, not MOVE):
    *
-   * The rename uses the pure `getAs`/`updateAs`/`removeAt` CredentialStore
-   * API — it does not construct new credential objects, only moves the
-   * value from `mode` → `credential:${profileId}`.
+   * During Phase B transition, the legacy `getProviderEnv()` / `getStatus()`
+   * paths (keyed by ApiProvider activeMode) coexist with the new
+   * `*ForProfile()` paths (keyed by `credential:${profileId}`). Both must
+   * succeed, so this method COPIES the legacy value into the profile-
+   * scoped slot — leaving the legacy key intact.
+   *
+   * When Phase C lands and the orchestrator is switched fully to
+   * `getProviderEnvForProfile()`, a follow-up bootstrap pass will delete
+   * the legacy keys.
+   *
+   * Idempotent: if the profile-scoped slot is already populated (user
+   * re-authenticated via the new UI), the legacy copy is skipped —
+   * don't clobber fresher values.
    */
   async applyProfileCredentialMigration(): Promise<void> {
     const settings = this.deps.getProviderSettings()
     const profiles = settings.profiles ?? []
     if (profiles.length === 0) return
 
-    // Reconstruct the rename plan from current profiles: for each
-    // migrated profile (id starts with `prof_migrated_`), derive the
-    // legacy ApiProvider mode from the deterministic id suffix.
     for (const profile of profiles) {
       const legacyMode = parseLegacyModeFromMigratedId(profile.id)
       if (!legacyMode) continue
@@ -334,21 +339,13 @@ export class ProviderService {
       const newKey = credentialKeyFor(profile.id)
 
       const legacyValue = await this.deps.credentialStore.getAs<unknown>(legacyKey)
-      if (legacyValue === undefined) continue // already migrated or never existed
+      if (legacyValue === undefined) continue // never existed
 
       const existingAtNew = await this.deps.credentialStore.getAs<unknown>(newKey)
-      if (existingAtNew !== undefined) {
-        // New key already populated (e.g. user logged in via new UI before
-        // rename ran). Preserve the newer value — just delete the legacy
-        // one to keep the store clean.
-        await this.deps.credentialStore.removeAt(legacyKey)
-        log.info(`Credential migration: dropped stale legacy key "${legacyKey}" (new key already populated)`)
-        continue
-      }
+      if (existingAtNew !== undefined) continue // new slot already populated
 
       await this.deps.credentialStore.updateAs(newKey, legacyValue)
-      await this.deps.credentialStore.removeAt(legacyKey)
-      log.info(`Credential migration: moved "${legacyKey}" → "${newKey}"`)
+      log.info(`Credential migration: copied "${legacyKey}" → "${newKey}" (legacy key retained)`)
     }
   }
 
