@@ -266,6 +266,91 @@ export function deterministicMigratedId(mode: ApiProvider): ProviderProfileId {
   return `prof_migrated_${mode}` as ProviderProfileId
 }
 
+/**
+ * Deterministic id for profiles migrated from the legacy Codex engine
+ * (line-of-business in OpenCow <= 0.3.21). Distinct prefix so Codex
+ * migrations never collide with the Claude-engine migration above.
+ */
+export function deterministicMigratedCodexId(mode: ApiProvider): ProviderProfileId {
+  return `prof_migrated_codex_${mode}` as ProviderProfileId
+}
+
+/**
+ * Migrate a legacy Codex-engine configuration (`provider.byEngine.codex.*`
+ * from pre-Phase-A settings) into profile records. All Codex profiles
+ * map to OpenAI-family types which are not yet implemented at runtime
+ * (Phase D dependency on opencow-agent-sdk M1). They are still produced
+ * so the user's existing configuration is NOT silently lost — the
+ * Settings UI shows them as "SDK M1" pending entries.
+ *
+ * Rules:
+ *   - `api_key`    → type `openai-direct`, name "OpenAI (Codex)"
+ *   - `openrouter` → type `openai-compat-proxy`, name "OpenRouter (Codex)",
+ *                    baseUrl preset to OpenRouter's OpenAI endpoint
+ *   - `custom`     → type `openai-compat-proxy`, name "Custom OpenAI-Compatible",
+ *                    baseUrl populated by the credential-layer migration
+ *   - `null` / `subscription` → nothing (Codex never had OAuth)
+ */
+export function migrateLegacyCodexSettings(
+  codexActiveMode: string | null | undefined,
+  opts: { now?: () => string } = {},
+): { profile: ProviderProfile; credentialRename: MigrationCredentialPlan } | null {
+  const now = opts.now ?? (() => new Date().toISOString())
+  const mode = codexActiveMode as ApiProvider | null | undefined
+  if (!mode || mode === 'subscription') return null
+  if (mode !== 'api_key' && mode !== 'openrouter' && mode !== 'custom') return null
+
+  const id = deterministicMigratedCodexId(mode)
+  const timestamp = now()
+  const profile = buildCodexProfileFromLegacyMode(mode, id, timestamp)
+  return {
+    profile,
+    credentialRename: {
+      fromKey: legacyCredentialKey(mode),
+      toKey: credentialKeyFor(id),
+    },
+  }
+}
+
+function buildCodexProfileFromLegacyMode(
+  mode: 'api_key' | 'openrouter' | 'custom',
+  id: ProviderProfileId,
+  timestamp: string,
+): ProviderProfile {
+  switch (mode) {
+    case 'api_key':
+      return {
+        id,
+        name: 'OpenAI (Codex)',
+        credential: { type: 'openai-direct' },
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      }
+    case 'openrouter':
+      return {
+        id,
+        name: 'OpenRouter (Codex)',
+        credential: {
+          type: 'openai-compat-proxy',
+          baseUrl: 'https://openrouter.ai/api/v1',
+        },
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      }
+    case 'custom':
+      return {
+        id,
+        name: 'Custom OpenAI-Compatible',
+        credential: {
+          type: 'openai-compat-proxy',
+          baseUrl: '', // populated by applyProfileCredentialMigration
+        },
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      }
+  }
+}
+
 /** CredentialStore key where secrets for a profile live. */
 export function credentialKeyFor(id: ProviderProfileId): string {
   return `credential:${id}`

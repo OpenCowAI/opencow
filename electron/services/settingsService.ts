@@ -34,6 +34,7 @@ import type { DiscordBotSettings } from './discordBot/types'
 import { resolveThemeConfig, DEFAULT_THEME_CONFIG } from '../../src/shared/themeRegistry'
 import {
   migrateLegacyProviderSettings,
+  migrateLegacyCodexSettings,
   type ProviderProfileSettings,
   type MigrationCredentialPlan,
 } from '../../src/shared/providerProfile'
@@ -484,9 +485,26 @@ function migrateProviderSettings(
       : { activeMode: flat.activeMode, defaultModel: flat.defaultModel }
   const profileResult = migrateLegacyProviderSettings(profileInput)
 
+  // Phase B.3d: if the user came from pre-Phase-A OpenCow (<= 0.3.21)
+  // with a Codex-engine config, produce profiles for those as well so
+  // their configuration isn't silently lost. The Codex-profile types
+  // (`openai-direct` / `openai-compat-proxy`) are Phase D (SDK M1)
+  // pending, so they surface in the Settings UI as disabled entries
+  // but the user's credentials + baseUrl are preserved.
+  const codexActiveMode =
+    (byEngineRaw?.codex as Record<string, unknown> | undefined)?.activeMode
+  const codexMigration =
+    typeof codexActiveMode === 'string' && !Array.isArray(source.profiles)
+      ? migrateLegacyCodexSettings(codexActiveMode)
+      : null
+
+  const mergedProfiles = codexMigration
+    ? [...profileResult.settings.profiles, codexMigration.profile]
+    : profileResult.settings.profiles
+
   return {
     ...flat,
-    profiles: profileResult.settings.profiles,
+    profiles: mergedProfiles,
     defaultProfileId: profileResult.settings.defaultProfileId,
   }
 }

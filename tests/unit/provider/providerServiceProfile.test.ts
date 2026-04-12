@@ -290,6 +290,89 @@ describe('ProviderService.applyProfileCredentialMigration', () => {
     })
   })
 
+  // Phase B.3d — Codex profiles pull credentials from the separate
+  // legacy codex file, not the main store.
+  it('reads codex-migrated profile credentials from the legacy codex store', async () => {
+    const mainStore = new FakeCredentialStore()
+    const codexStore = new FakeCredentialStore()
+    await codexStore.updateAs('custom', {
+      apiKey: 'sk-codex-legacy',
+      baseUrl: 'https://openai-gateway.example/v1',
+    })
+
+    const codexProfile: ProviderProfile = {
+      id: asProviderProfileId('prof_migrated_codex_custom'),
+      name: 'Custom OpenAI-Compatible',
+      credential: { type: 'openai-compat-proxy', baseUrl: '' },
+      createdAt: '2026-04-12T20:00:00.000Z',
+      updatedAt: '2026-04-12T20:00:00.000Z',
+    }
+    const settings: ProviderSettings = {
+      activeMode: null,
+      profiles: [codexProfile],
+      defaultProfileId: codexProfile.id,
+    }
+    let lastPatch: Partial<ProviderSettings> | null = null
+    const service = new ProviderService({
+      dispatch: () => {},
+      credentialStore: mainStore as unknown as import('../../../electron/services/provider/credentialStore').CredentialStore,
+      legacyCodexCredentialStore: codexStore as unknown as import('../../../electron/services/provider/credentialStore').CredentialStore,
+      getProviderSettings: () => settings,
+      updateProviderSettings: async (patch) => {
+        lastPatch = patch
+        Object.assign(settings, patch)
+        return settings
+      },
+    })
+
+    await service.applyProfileCredentialMigration()
+
+    // Main store now has the migrated codex credential at the profile-scoped slot.
+    expect(mainStore.snapshot()[`credential:${codexProfile.id}`]).toEqual({
+      apiKey: 'sk-codex-legacy',
+      baseUrl: 'https://openai-gateway.example/v1',
+    })
+    // Legacy codex store retained (read-only).
+    expect(codexStore.snapshot()['custom']).toBeTruthy()
+    // Profile enriched with the real baseUrl.
+    const patchProfiles = (lastPatch as { profiles: ProviderProfile[] } | null)?.profiles
+    expect(patchProfiles?.[0].credential).toEqual({
+      type: 'openai-compat-proxy',
+      baseUrl: 'https://openai-gateway.example/v1',
+    })
+  })
+
+  it('skips codex-migrated profiles when the legacy codex store is not provided', async () => {
+    const mainStore = new FakeCredentialStore()
+    const codexProfile: ProviderProfile = {
+      id: asProviderProfileId('prof_migrated_codex_custom'),
+      name: 'Custom OpenAI-Compatible',
+      credential: { type: 'openai-compat-proxy', baseUrl: '' },
+      createdAt: '2026-04-12T20:00:00.000Z',
+      updatedAt: '2026-04-12T20:00:00.000Z',
+    }
+    const service = new ProviderService({
+      dispatch: () => {},
+      credentialStore: mainStore as unknown as import('../../../electron/services/provider/credentialStore').CredentialStore,
+      // No legacyCodexCredentialStore — fresh install or user never used Codex.
+      getProviderSettings: () => ({
+        activeMode: null,
+        profiles: [codexProfile],
+        defaultProfileId: codexProfile.id,
+      }),
+      updateProviderSettings: async () => ({
+        activeMode: null,
+        profiles: [codexProfile],
+        defaultProfileId: codexProfile.id,
+      }),
+    })
+
+    await service.applyProfileCredentialMigration()
+
+    // Nothing was copied — no codex store to copy from.
+    expect(mainStore.snapshot()[`credential:${codexProfile.id}`]).toBeUndefined()
+  })
+
   it('subscription and api_key migrations do not patch profile.credential', async () => {
     const store = new FakeCredentialStore()
     await store.updateAs('apiKey', 'sk-ant-legacy')

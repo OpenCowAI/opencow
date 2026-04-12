@@ -210,6 +210,74 @@ describe('SettingsService', () => {
     expect(settings.provider.defaultProfileId).toBeNull()
   })
 
+  // Phase B.3d — migrate pre-Phase-A Codex config (byEngine.codex.activeMode)
+  it('migrates a legacy byEngine.codex.activeMode into an openai-compat-proxy profile', async () => {
+    await writeFile(
+      join(tempDir, 'settings.json'),
+      JSON.stringify({
+        provider: {
+          byEngine: {
+            claude: { activeMode: 'api_key' },
+            codex: { activeMode: 'openrouter' },
+          },
+        },
+      }),
+      'utf-8',
+    )
+    const fresh = new SettingsService(join(tempDir, 'settings.json'))
+    const settings = await fresh.load()
+
+    // Both Claude and Codex profiles should coexist.
+    expect(settings.provider.profiles).toHaveLength(2)
+    const codexProfile = settings.provider.profiles?.find(
+      (p) => p.id === 'prof_migrated_codex_openrouter',
+    )
+    expect(codexProfile).toBeDefined()
+    expect(codexProfile?.credential).toMatchObject({
+      type: 'openai-compat-proxy',
+      baseUrl: 'https://openrouter.ai/api/v1',
+    })
+    // Default remains the Claude profile — Codex profiles are Phase D
+    // pending and should NOT become default automatically.
+    expect(settings.provider.defaultProfileId).toBe('prof_migrated_api_key')
+  })
+
+  it('migrates codex api_key → openai-direct profile', async () => {
+    await writeFile(
+      join(tempDir, 'settings.json'),
+      JSON.stringify({
+        provider: {
+          byEngine: { codex: { activeMode: 'api_key' } },
+        },
+      }),
+      'utf-8',
+    )
+    const settings = await new SettingsService(join(tempDir, 'settings.json')).load()
+    expect(settings.provider.profiles?.[0]).toMatchObject({
+      id: 'prof_migrated_codex_api_key',
+      name: 'OpenAI (Codex)',
+      credential: { type: 'openai-direct' },
+    })
+  })
+
+  it('ignores byEngine.codex when activeMode is null', async () => {
+    await writeFile(
+      join(tempDir, 'settings.json'),
+      JSON.stringify({
+        provider: {
+          byEngine: {
+            claude: { activeMode: 'api_key' },
+            codex: { activeMode: null },
+          },
+        },
+      }),
+      'utf-8',
+    )
+    const settings = await new SettingsService(join(tempDir, 'settings.json')).load()
+    expect(settings.provider.profiles).toHaveLength(1)
+    expect(settings.provider.profiles?.[0].id).toBe('prof_migrated_api_key')
+  })
+
   it('getEventSubscriptionSettings returns current event subscription settings', async () => {
     const settings = await service.load()
     settings.eventSubscriptions.enabled = false

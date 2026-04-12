@@ -18,6 +18,7 @@
 
 import { dirname } from 'path'
 import { mkdir } from 'fs/promises'
+import { existsSync } from 'fs'
 import { InboxService } from '../services/inboxService'
 import { InboxStore } from '../services/inboxStore'
 import { IssueService } from '../services/issueService'
@@ -289,9 +290,19 @@ export async function createAppServices(deps: ServiceFactoryDeps): Promise<AppSe
   issueService.setChangeQueueService(changeQueueService)
 
   const providerCredentialStore = new CredentialStore(dataPaths.credentials)
+
+  // Phase B.3d: mount the pre-Phase-A Codex credential file as read-only
+  // for the one-shot migration. The file is absent for fresh installs and
+  // for users who never configured Codex on 0.3.21 — we probe before
+  // constructing the store to keep the dep optional.
+  const legacyCodexCredentialStore = existsSync(dataPaths.legacyCodexCredentials)
+    ? new CredentialStore(dataPaths.legacyCodexCredentials)
+    : undefined
+
   const providerService = new ProviderService({
     dispatch: (e) => bus.dispatch(e),
     credentialStore: providerCredentialStore,
+    legacyCodexCredentialStore,
     getProviderSettings: () => settingsService.getProviderSettings(),
     updateProviderSettings: async (patch) => {
       const current = await settingsService.load()

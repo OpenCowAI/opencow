@@ -51,6 +51,15 @@ const log = createLogger('ProviderService')
 export interface ProviderServiceDeps {
   dispatch: (event: DataBusEvent) => void
   credentialStore: CredentialStore
+  /**
+   * Read-only view of the legacy Codex credential file
+   * (`credentials-codex.enc`). Provided at bootstrap when the file
+   * exists on disk (OpenCow <= 0.3.21 users). The one-shot migration in
+   * `applyProfileCredentialMigration()` copies its entries into the
+   * main store at `credential:${profileId}` slots. No new writes ever
+   * go to this store.
+   */
+  legacyCodexCredentialStore?: CredentialStore
   /** Returns current provider settings (non-sensitive config). */
   getProviderSettings: () => ProviderSettings
   /**
@@ -344,16 +353,29 @@ export class ProviderService {
     let profilesChanged = false
 
     for (const profile of profiles) {
-      const legacyMode = parseLegacyModeFromMigratedId(profile.id)
-      if (!legacyMode) {
+      const migratedSource = parseMigratedId(profile.id)
+      if (!migratedSource) {
         nextProfiles.push(profile)
         continue
       }
 
-      const legacyKey = legacyCredentialKey(legacyMode)
+      const { engine, mode } = migratedSource
+      const legacyKey = legacyCredentialKey(mode)
       const newKey = credentialKeyFor(profile.id)
 
-      const legacyValue = await this.deps.credentialStore.getAs<unknown>(legacyKey)
+      // Codex credentials are in a separate encrypted file (`credentials-
+      // codex.enc`); Claude credentials are in the main store. Dispatch
+      // accordingly. If the legacy Codex store wasn't wired (user never
+      // ran pre-Phase-A OpenCow), the codex source is simply absent.
+      const sourceStore = engine === 'codex'
+        ? this.deps.legacyCodexCredentialStore
+        : this.deps.credentialStore
+      if (!sourceStore) {
+        nextProfiles.push(profile)
+        continue
+      }
+
+      const legacyValue = await sourceStore.getAs<unknown>(legacyKey)
       const existingAtNew = await this.deps.credentialStore.getAs<unknown>(newKey)
 
       if (legacyValue === undefined || existingAtNew !== undefined) {
@@ -361,7 +383,7 @@ export class ProviderService {
         continue
       }
 
-      const enriched = enrichMigratedCredential(legacyMode, legacyValue)
+      const enriched = enrichMigratedCredential(mode, legacyValue, engine)
       await this.deps.credentialStore.updateAs(newKey, enriched.credentialBlob)
 
       if (enriched.profileCredential) {
@@ -375,7 +397,9 @@ export class ProviderService {
         nextProfiles.push(profile)
       }
 
-      log.info(`Credential migration: copied "${legacyKey}" → "${newKey}" (legacy key retained)`)
+      log.info(
+        `Credential migration: copied ${engine} "${legacyKey}" → "${newKey}" (legacy retained)`,
+      )
     }
 
     if (profilesChanged && this.deps.updateProviderSettings) {
@@ -671,12 +695,29 @@ export class ProviderService {
 // ── Phase B.3b helpers ────────────────────────────────────────────────
 
 const MIGRATED_ID_PREFIX = 'prof_migrated_'
+const MIGRATED_CODEX_PREFIX = 'prof_migrated_codex_'
+
+type MigratedSource = { engine: 'claude' | 'codex'; mode: ApiProvider }
+
+function parseMigratedId(id: ProviderProfileId): MigratedSource | null {
+  const valid: ReadonlySet<ApiProvider> = new Set(['subscription', 'api_key', 'openrouter', 'custom'])
+  if (id.startsWith(MIGRATED_CODEX_PREFIX)) {
+    const suffix = id.slice(MIGRATED_CODEX_PREFIX.length)
+    return valid.has(suffix as ApiProvider)
+      ? { engine: 'codex', mode: suffix as ApiProvider }
+      : null
+  }
+  if (id.startsWith(MIGRATED_ID_PREFIX)) {
+    const suffix = id.slice(MIGRATED_ID_PREFIX.length)
+    return valid.has(suffix as ApiProvider)
+      ? { engine: 'claude', mode: suffix as ApiProvider }
+      : null
+  }
+  return null
+}
 
 function parseLegacyModeFromMigratedId(id: ProviderProfileId): ApiProvider | null {
-  if (!id.startsWith(MIGRATED_ID_PREFIX)) return null
-  const suffix = id.slice(MIGRATED_ID_PREFIX.length)
-  const valid: ReadonlySet<ApiProvider> = new Set(['subscription', 'api_key', 'openrouter', 'custom'])
-  return valid.has(suffix as ApiProvider) ? (suffix as ApiProvider) : null
+  return parseMigratedId(id)?.mode ?? null
 }
 
 function legacyModeFromProfile(profile: ProviderProfile): ApiProvider | null {
@@ -713,10 +754,41 @@ void migrateLegacyProviderSettings
 function enrichMigratedCredential(
   mode: ApiProvider,
   legacyBlob: unknown,
+  engine: 'claude' | 'codex' = 'claude',
 ): {
   credentialBlob: unknown
   profileCredential: ProviderProfile['credential'] | null
 } {
+  // Codex-engine migrations map to OpenAI-family types (Phase D —
+  // runtime support via opencow-agent-sdk M1). The credential blob is
+  // copied verbatim for now; the adapter will be added in Phase D.
+  if (engine === 'codex') {
+    switch (mode) {
+      case 'api_key':
+        return { credentialBlob: legacyBlob, profileCredential: null }
+      case 'openrouter': {
+        const legacy = (legacyBlob ?? {}) as { apiKey?: string; baseUrl?: string }
+        const baseUrl = legacy.baseUrl?.trim() || 'https://openrouter.ai/api/v1'
+        return {
+          credentialBlob: { apiKey: legacy.apiKey ?? '', baseUrl },
+          profileCredential: { type: 'openai-compat-proxy', baseUrl },
+        }
+      }
+      case 'custom': {
+        const legacy = (legacyBlob ?? {}) as { apiKey?: string; baseUrl?: string }
+        const baseUrl = legacy.baseUrl?.trim() ?? ''
+        return {
+          credentialBlob: { apiKey: legacy.apiKey ?? '', baseUrl },
+          profileCredential: { type: 'openai-compat-proxy', baseUrl },
+        }
+      }
+      case 'subscription':
+        // Codex never had subscription mode — unreachable but covered
+        // for exhaustiveness.
+        return { credentialBlob: legacyBlob, profileCredential: null }
+    }
+  }
+
   switch (mode) {
     case 'subscription':
     case 'api_key':
