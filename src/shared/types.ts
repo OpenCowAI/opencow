@@ -610,6 +610,34 @@ export interface IPCChannels {
     args: [mode: ApiProvider]
     return: ProviderCredentialInfo | null
   }
+  // Phase B.4 — profile CRUD (additive; legacy channels above continue to work).
+  'provider:list-profiles': {
+    args: []
+    return: import('./providerProfile').ProviderProfile[]
+  }
+  'provider:create-profile': {
+    args: [input: import('./providerProfile').CreateProviderProfileInput]
+    return: import('./providerProfile').ProviderProfile
+  }
+  'provider:update-profile': {
+    args: [
+      id: import('./providerProfile').ProviderProfileId,
+      patch: import('./providerProfile').UpdateProviderProfilePatch,
+    ]
+    return: import('./providerProfile').ProviderProfile
+  }
+  'provider:remove-profile': {
+    args: [id: import('./providerProfile').ProviderProfileId]
+    return: boolean
+  }
+  'provider:set-default-profile': {
+    args: [id: import('./providerProfile').ProviderProfileId | null]
+    return: boolean
+  }
+  'provider:test-profile': {
+    args: [id: import('./providerProfile').ProviderProfileId]
+    return: import('./providerProfile').ProviderTestResult
+  }
   // Webhooks
   'webhook:test': { args: [endpoint: WebhookEndpoint]; return: WebhookTestResult }
   // Messaging — unified multi-platform IM API

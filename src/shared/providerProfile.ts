@@ -98,6 +98,48 @@ export interface ProviderProfileSettings {
   defaultModel?: string
 }
 
+// ─── IPC payloads ─────────────────────────────────────────────────────
+
+/**
+ * Payload for `provider:create-profile`. Secrets (API key, OAuth tokens)
+ * are passed in `authParams` and forwarded to the adapter's authenticate()
+ * method — they are never embedded in the profile record on disk.
+ */
+export interface CreateProviderProfileInput {
+  name: string
+  credential: ProviderCredential
+  preferredModel?: string
+  /** Adapter-specific authentication parameters (apiKey, baseUrl, authStyle, etc.). */
+  authParams?: Record<string, unknown>
+  /** If true, the newly created profile becomes the default. */
+  setAsDefault?: boolean
+}
+
+/** Editable fields of an existing profile. `credential.type` is immutable. */
+export interface UpdateProviderProfilePatch {
+  name?: string
+  preferredModel?: string | null
+  /**
+   * Non-secret credential fields (baseUrl, authStyle, region, etc.).
+   * The discriminator `type` cannot be changed after creation — to switch
+   * types, remove the profile and create a new one.
+   */
+  credentialConfig?: Partial<Omit<ProviderCredential, 'type'>>
+  /** New adapter-specific authentication parameters (e.g. rotate API key). */
+  authParams?: Record<string, unknown>
+}
+
+export type ProviderTestOutcome =
+  | { ok: true; detail?: string }
+  | { ok: false; reason: 'unauthenticated' | 'network' | 'unsupported' | 'error'; message: string }
+
+export interface ProviderTestResult {
+  profileId: ProviderProfileId
+  outcome: ProviderTestOutcome
+  /** Wall-clock ms the test took. */
+  durationMs: number
+}
+
 // ─── Id generation ────────────────────────────────────────────────────
 
 /**

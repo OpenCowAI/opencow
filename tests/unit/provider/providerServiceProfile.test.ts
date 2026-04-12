@@ -250,6 +250,229 @@ describe('ProviderService.getProviderEnvForProfile', () => {
   })
 })
 
+describe('ProviderService.createProfile / updateProfile / removeProfile', () => {
+  function buildMutableService() {
+    const store = new FakeCredentialStore()
+    const settings: ProviderSettings = {
+      activeMode: null,
+      profiles: [],
+      defaultProfileId: null,
+    }
+    const svcStore = store as unknown as import('../../../electron/services/provider/credentialStore').CredentialStore
+    const service = new ProviderService({
+      dispatch: () => {},
+      credentialStore: svcStore,
+      getProviderSettings: () => settings,
+      updateProviderSettings: async (patch) => {
+        Object.assign(settings, patch)
+        return settings
+      },
+    })
+    return { service, settings, store }
+  }
+
+  it('creates a profile, authenticates, and stores the credential', async () => {
+    const { service, settings, store } = buildMutableService()
+
+    const profile = await service.createProfile({
+      name: 'Personal API',
+      credential: { type: 'anthropic-api' },
+      authParams: { apiKey: 'sk-ant-personal' },
+    })
+
+    expect(profile.id).toMatch(/^prof_[a-z0-9]{10}$/)
+    expect(settings.profiles).toHaveLength(1)
+    expect(settings.defaultProfileId).toBe(profile.id) // first profile becomes default
+    expect(store.snapshot()[`credential:${profile.id}`]).toBe('sk-ant-personal')
+  })
+
+  it('rejects createProfile if adapter authenticate fails and leaves no orphan', async () => {
+    const { service, settings, store } = buildMutableService()
+
+    await expect(
+      service.createProfile({
+        name: 'Bad Key',
+        credential: { type: 'anthropic-api' },
+        authParams: { apiKey: 'not-a-valid-key' }, // wrong prefix
+      }),
+    ).rejects.toThrow(/Authentication failed/)
+
+    expect(settings.profiles).toEqual([])
+    expect(store.snapshot()).toEqual({})
+  })
+
+  it('setAsDefault=false keeps existing default when a second profile is created', async () => {
+    const { service, settings } = buildMutableService()
+
+    const first = await service.createProfile({
+      name: 'First',
+      credential: { type: 'anthropic-api' },
+      authParams: { apiKey: 'sk-ant-first' },
+    })
+    await service.createProfile({
+      name: 'Second',
+      credential: { type: 'anthropic-api' },
+      authParams: { apiKey: 'sk-ant-second' },
+    })
+
+    expect(settings.defaultProfileId).toBe(first.id)
+    expect(settings.profiles).toHaveLength(2)
+  })
+
+  it('updateProfile renames without requiring re-authentication', async () => {
+    const { service } = buildMutableService()
+    const profile = await service.createProfile({
+      name: 'Original',
+      credential: { type: 'anthropic-api' },
+      authParams: { apiKey: 'sk-ant-key' },
+    })
+
+    const updated = await service.updateProfile(profile.id, { name: '  New Name  ' })
+
+    expect(updated.name).toBe('New Name')
+    expect(updated.credential).toEqual(profile.credential)
+  })
+
+  it('updateProfile rejects re-authentication failure', async () => {
+    const { service } = buildMutableService()
+    const profile = await service.createProfile({
+      name: 'P',
+      credential: { type: 'anthropic-api' },
+      authParams: { apiKey: 'sk-ant-key' },
+    })
+
+    await expect(
+      service.updateProfile(profile.id, { authParams: { apiKey: 'bogus' } }),
+    ).rejects.toThrow(/Re-authentication failed/)
+  })
+
+  it('removeProfile clears credentials and reassigns default when needed', async () => {
+    const { service, settings, store } = buildMutableService()
+    const first = await service.createProfile({
+      name: 'First',
+      credential: { type: 'anthropic-api' },
+      authParams: { apiKey: 'sk-ant-first' },
+    })
+    const second = await service.createProfile({
+      name: 'Second',
+      credential: { type: 'anthropic-api' },
+      authParams: { apiKey: 'sk-ant-second' },
+    })
+
+    const removed = await service.removeProfile(first.id)
+
+    expect(removed).toBe(true)
+    expect(settings.profiles.map((p) => p.id)).toEqual([second.id])
+    expect(settings.defaultProfileId).toBe(second.id)
+    expect(store.snapshot()[`credential:${first.id}`]).toBeUndefined()
+  })
+
+  it('removeProfile sets defaultProfileId to null when removing the last profile', async () => {
+    const { service, settings } = buildMutableService()
+    const only = await service.createProfile({
+      name: 'Only',
+      credential: { type: 'anthropic-api' },
+      authParams: { apiKey: 'sk-ant-key' },
+    })
+
+    await service.removeProfile(only.id)
+
+    expect(settings.profiles).toEqual([])
+    expect(settings.defaultProfileId).toBeNull()
+  })
+
+  it('setDefaultProfile rejects an unknown id', async () => {
+    const { service } = buildMutableService()
+    await expect(
+      service.setDefaultProfile(asProviderProfileId('prof_missing')),
+    ).rejects.toThrow(/profile not found/)
+  })
+
+  it('throws when mutator is called without updateProviderSettings dep', async () => {
+    const store = new FakeCredentialStore()
+    const service = buildService({
+      store,
+      settings: { activeMode: null, profiles: [], defaultProfileId: null },
+    })
+    await expect(
+      service.createProfile({
+        name: 'X',
+        credential: { type: 'anthropic-api' },
+      }),
+    ).rejects.toThrow(/updateProviderSettings dep is required/)
+  })
+})
+
+describe('ProviderService.testProfile', () => {
+  function buildWithStore(store: FakeCredentialStore, profile: ProviderProfile) {
+    const svcStore = store as unknown as import('../../../electron/services/provider/credentialStore').CredentialStore
+    return new ProviderService({
+      dispatch: () => {},
+      credentialStore: svcStore,
+      getProviderSettings: () => ({
+        activeMode: null,
+        profiles: [profile],
+        defaultProfileId: profile.id,
+      }),
+    })
+  }
+
+  it('returns ok=true when the adapter reports authenticated', async () => {
+    const store = new FakeCredentialStore()
+    await store.updateAs(`credential:${migratedApiKeyProfile.id}`, 'sk-ant-key')
+    const service = buildWithStore(store, migratedApiKeyProfile)
+
+    const result = await service.testProfile(migratedApiKeyProfile.id)
+
+    expect(result.outcome.ok).toBe(true)
+    expect(result.profileId).toBe(migratedApiKeyProfile.id)
+    expect(result.durationMs).toBeGreaterThanOrEqual(0)
+  })
+
+  it('returns ok=false with reason=unauthenticated when credentials are missing', async () => {
+    const store = new FakeCredentialStore()
+    const service = buildWithStore(store, migratedApiKeyProfile)
+
+    const result = await service.testProfile(migratedApiKeyProfile.id)
+
+    expect(result.outcome.ok).toBe(false)
+    if (!result.outcome.ok) {
+      expect(result.outcome.reason).toBe('unauthenticated')
+    }
+  })
+
+  it('returns ok=false with reason=unsupported for types not yet implemented', async () => {
+    const store = new FakeCredentialStore()
+    const geminiProfile: ProviderProfile = {
+      id: asProviderProfileId('prof_gemini123'),
+      name: 'Gemini',
+      credential: { type: 'gemini' },
+      createdAt: '2026-04-12T20:00:00.000Z',
+      updatedAt: '2026-04-12T20:00:00.000Z',
+    }
+    const service = buildWithStore(store, geminiProfile)
+
+    const result = await service.testProfile(geminiProfile.id)
+
+    expect(result.outcome.ok).toBe(false)
+    if (!result.outcome.ok) {
+      expect(result.outcome.reason).toBe('unsupported')
+    }
+  })
+
+  it('returns ok=false with reason=error for unknown profile id', async () => {
+    const store = new FakeCredentialStore()
+    const service = buildWithStore(store, migratedApiKeyProfile)
+
+    const result = await service.testProfile(asProviderProfileId('prof_missing'))
+
+    expect(result.outcome.ok).toBe(false)
+    if (!result.outcome.ok) {
+      expect(result.outcome.reason).toBe('error')
+    }
+  })
+})
+
 describe('ProviderService.getStatusForProfile', () => {
   it('returns authenticated for a subscription profile with stored OAuth', async () => {
     const store = new FakeCredentialStore()

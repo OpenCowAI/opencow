@@ -997,6 +997,19 @@ export function registerIPCHandlers(deps: IPCDeps): void {
     })
     registerHandler('provider:get-credential', (mode) =>
       providerService.getCredential(mode))
+    // Phase B.4 — profile CRUD
+    registerHandler('provider:list-profiles', async () =>
+      providerService.listProfiles())
+    registerHandler('provider:create-profile', (input) =>
+      providerService.createProfile(input))
+    registerHandler('provider:update-profile', (id, patch) =>
+      providerService.updateProfile(id, patch))
+    registerHandler('provider:remove-profile', (id) =>
+      providerService.removeProfile(id))
+    registerHandler('provider:set-default-profile', (id) =>
+      providerService.setDefaultProfile(id))
+    registerHandler('provider:test-profile', (id) =>
+      providerService.testProfile(id))
   }
 
   // --- Command handlers ---

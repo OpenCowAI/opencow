@@ -35,9 +35,13 @@ import { createLogger } from '../../platform/logger'
 import type {
   ProviderProfile,
   ProviderProfileId,
+  CreateProviderProfileInput,
+  UpdateProviderProfilePatch,
+  ProviderTestResult,
 } from '../../../src/shared/providerProfile'
 import {
   credentialKeyFor,
+  generateProviderProfileId,
   legacyCredentialKey,
   migrateLegacyProviderSettings,
 } from '../../../src/shared/providerProfile'
@@ -49,6 +53,11 @@ export interface ProviderServiceDeps {
   credentialStore: CredentialStore
   /** Returns current provider settings (non-sensitive config). */
   getProviderSettings: () => ProviderSettings
+  /**
+   * Persist a mutation to `settings.provider`. Invoked by profile CRUD
+   * methods after validating the change. Returns the saved snapshot.
+   */
+  updateProviderSettings?: (patch: Partial<ProviderSettings>) => Promise<ProviderSettings>
   /** Bring the app window to the foreground (called after successful auth). */
   focusApp?: () => void
 }
@@ -405,6 +414,220 @@ export class ProviderService {
   private findProfile(profileId: ProviderProfileId): ProviderProfile | null {
     const profiles = this.deps.getProviderSettings().profiles ?? []
     return profiles.find((p) => p.id === profileId) ?? null
+  }
+
+  // ── Phase B.4: Profile CRUD ────────────────────────────────────────
+  //
+  // These methods mutate `settings.provider.profiles` via the injected
+  // `updateProviderSettings` callback AND (for create/remove) touch
+  // CredentialStore at `credential:${profileId}`. Surfaced via IPC for
+  // the Settings UI rewrite landing in Phase B.5.
+
+  listProfiles(): ProviderProfile[] {
+    return [...(this.deps.getProviderSettings().profiles ?? [])]
+  }
+
+  async createProfile(input: CreateProviderProfileInput): Promise<ProviderProfile> {
+    this.assertSettingsUpdatesWired('createProfile')
+
+    const id = generateProviderProfileId()
+    const timestamp = new Date().toISOString()
+    const profile: ProviderProfile = {
+      id,
+      name: input.name.trim(),
+      credential: input.credential,
+      ...(input.preferredModel ? { preferredModel: input.preferredModel } : {}),
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    }
+
+    // Authenticate first so a failure leaves no orphan profile on disk.
+    if (input.authParams) {
+      const adapter = this.buildAdapterForProfile(profile)
+      const result = await adapter.authenticate(input.authParams)
+      if (!result.authenticated) {
+        throw new Error(
+          `Authentication failed for new profile "${profile.name}": ${result.error ?? 'unknown reason'}`,
+        )
+      }
+    }
+
+    const current = this.deps.getProviderSettings()
+    const nextProfiles = [...(current.profiles ?? []), profile]
+    await this.deps.updateProviderSettings!({
+      profiles: nextProfiles,
+      ...(input.setAsDefault || !current.defaultProfileId
+        ? { defaultProfileId: id }
+        : {}),
+    })
+
+    log.info(`Profile created: ${profile.name} (${id}, ${profile.credential.type})`)
+    return profile
+  }
+
+  async updateProfile(
+    id: ProviderProfileId,
+    patch: UpdateProviderProfilePatch,
+  ): Promise<ProviderProfile> {
+    this.assertSettingsUpdatesWired('updateProfile')
+
+    const profile = this.findProfile(id)
+    if (!profile) {
+      throw new Error(`Profile not found: ${id}`)
+    }
+
+    const updated: ProviderProfile = {
+      ...profile,
+      ...(patch.name !== undefined ? { name: patch.name.trim() } : {}),
+      ...(patch.preferredModel === null
+        ? { preferredModel: undefined }
+        : patch.preferredModel !== undefined
+          ? { preferredModel: patch.preferredModel }
+          : {}),
+      credential: patch.credentialConfig
+        ? this.mergeCredentialConfig(profile.credential, patch.credentialConfig)
+        : profile.credential,
+      updatedAt: new Date().toISOString(),
+    }
+
+    // Re-authenticate if the caller provided new auth params (key rotation).
+    if (patch.authParams) {
+      const adapter = this.buildAdapterForProfile(updated)
+      const result = await adapter.authenticate(patch.authParams)
+      if (!result.authenticated) {
+        throw new Error(
+          `Re-authentication failed for profile "${updated.name}": ${result.error ?? 'unknown reason'}`,
+        )
+      }
+    }
+
+    const current = this.deps.getProviderSettings()
+    const nextProfiles = (current.profiles ?? []).map((p) => (p.id === id ? updated : p))
+    await this.deps.updateProviderSettings!({ profiles: nextProfiles })
+
+    log.info(`Profile updated: ${updated.name} (${id})`)
+    return updated
+  }
+
+  async removeProfile(id: ProviderProfileId): Promise<boolean> {
+    this.assertSettingsUpdatesWired('removeProfile')
+
+    const profile = this.findProfile(id)
+    if (!profile) return false
+
+    // Clear credentials first — if the settings save fails, we at least
+    // don't leave dangling secrets for a profile that's about to vanish.
+    try {
+      const adapter = this.buildAdapterForProfile(profile)
+      await adapter.logout()
+    } catch (err) {
+      log.warn(`Failed to clear credentials for profile ${id}`, err)
+    }
+    await this.deps.credentialStore.removeAt(credentialKeyFor(id))
+
+    const current = this.deps.getProviderSettings()
+    const nextProfiles = (current.profiles ?? []).filter((p) => p.id !== id)
+    const nextDefault =
+      current.defaultProfileId === id
+        ? nextProfiles[0]?.id ?? null
+        : current.defaultProfileId ?? null
+    await this.deps.updateProviderSettings!({
+      profiles: nextProfiles,
+      defaultProfileId: nextDefault,
+    })
+
+    log.info(`Profile removed: ${profile.name} (${id})`)
+    return true
+  }
+
+  async setDefaultProfile(id: ProviderProfileId | null): Promise<boolean> {
+    this.assertSettingsUpdatesWired('setDefaultProfile')
+
+    if (id !== null && !this.findProfile(id)) {
+      throw new Error(`Cannot set default: profile not found (${id})`)
+    }
+    await this.deps.updateProviderSettings!({ defaultProfileId: id })
+    log.info(`Default profile set to ${id ?? '(none)'}`)
+    return true
+  }
+
+  /**
+   * Test a profile's credentials by asking its adapter to verify status.
+   *
+   * Phase B.4 stub — returns pass/fail based on `checkStatus()` outcome.
+   * Phase B.6 will upgrade this to send a minimal real request and
+   * classify network / auth / server errors distinctly.
+   */
+  async testProfile(id: ProviderProfileId): Promise<ProviderTestResult> {
+    const started = Date.now()
+    const profile = this.findProfile(id)
+    if (!profile) {
+      return {
+        profileId: id,
+        outcome: { ok: false, reason: 'error', message: `Profile not found: ${id}` },
+        durationMs: Date.now() - started,
+      }
+    }
+
+    let adapter: ProviderAdapter
+    try {
+      adapter = this.buildAdapterForProfile(profile)
+    } catch (err) {
+      return {
+        profileId: id,
+        outcome: {
+          ok: false,
+          reason: 'unsupported',
+          message: err instanceof Error ? err.message : String(err),
+        },
+        durationMs: Date.now() - started,
+      }
+    }
+
+    try {
+      const status = await adapter.checkStatus()
+      if (status.authenticated) {
+        return {
+          profileId: id,
+          outcome: { ok: true, detail: status.detail?.subscriptionType },
+          durationMs: Date.now() - started,
+        }
+      }
+      return {
+        profileId: id,
+        outcome: {
+          ok: false,
+          reason: 'unauthenticated',
+          message: status.error ?? 'No valid credentials',
+        },
+        durationMs: Date.now() - started,
+      }
+    } catch (err) {
+      return {
+        profileId: id,
+        outcome: {
+          ok: false,
+          reason: 'error',
+          message: err instanceof Error ? err.message : String(err),
+        },
+        durationMs: Date.now() - started,
+      }
+    }
+  }
+
+  private assertSettingsUpdatesWired(caller: string): void {
+    if (!this.deps.updateProviderSettings) {
+      throw new Error(
+        `ProviderService.${caller}: updateProviderSettings dep is required but was not provided`,
+      )
+    }
+  }
+
+  private mergeCredentialConfig(
+    current: ProviderProfile['credential'],
+    patch: Partial<Omit<ProviderProfile['credential'], 'type'>>,
+  ): ProviderProfile['credential'] {
+    return { ...current, ...patch } as ProviderProfile['credential']
   }
 
   // ── Private ─────────────────────────────────────────────────────────

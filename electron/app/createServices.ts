@@ -293,6 +293,12 @@ export async function createAppServices(deps: ServiceFactoryDeps): Promise<AppSe
     dispatch: (e) => bus.dispatch(e),
     credentialStore: providerCredentialStore,
     getProviderSettings: () => settingsService.getProviderSettings(),
+    updateProviderSettings: async (patch) => {
+      const current = await settingsService.load()
+      const nextProvider = { ...current.provider, ...patch }
+      await settingsService.update({ ...current, provider: nextProvider })
+      return nextProvider
+    },
     focusApp: focusMainWindow,
   })
 
