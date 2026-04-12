@@ -9,9 +9,10 @@
  * form knows how to collect the required credentials.
  */
 
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { cn } from '@/lib/utils'
+import { getAppAPI } from '@/windowAPI'
 import type {
   CreateProviderProfileInput,
   ProviderProfile,
@@ -63,34 +64,66 @@ export function ProviderProfileForm({
 
   const [name, setName] = useState(initial?.name ?? defaultNameFor(type))
   const [apiKey, setApiKey] = useState('')
+  /** Snapshot of the key as loaded from the store — used to tell
+   *  "user typed a new key" from "user left it alone" on save. */
+  const [loadedApiKey, setLoadedApiKey] = useState('')
   const [baseUrl, setBaseUrl] = useState(readInitialBaseUrl(initial) ?? defaultBaseUrlFor(type))
   const [authStyle, setAuthStyle] = useState<'api_key' | 'bearer'>(
     initial?.credential.type === 'anthropic-compat-proxy'
       ? initial.credential.authStyle
       : 'bearer',
   )
-  const [preferredModel, setPreferredModel] = useState(initial?.preferredModel ?? '')
+  // Default the model input to the protocol-appropriate suggestion
+  // when the user hasn't specified one. The placeholder was showing
+  // the same value — pre-filling actually *uses* it, saving the user
+  // an unnecessary copy-paste step.
+  const [preferredModel, setPreferredModel] = useState(
+    initial?.preferredModel ?? defaultModelPlaceholder(type),
+  )
+
+  // Edit mode: populate the API Key from CredentialStore via IPC so
+  // the user sees what's currently stored, not an intimidating blank
+  // field. Leaving the value untouched → no re-auth on save. Typing a
+  // new value → treated as rotation, backend re-authenticates.
+  useEffect(() => {
+    if (mode !== 'edit' || !initial || !fields.needsApiKey) return
+    void getAppAPI()['provider:get-credential'](initial.id)
+      .then((credential) => {
+        const key = credential?.apiKey ?? ''
+        setApiKey(key)
+        setLoadedApiKey(key)
+      })
+      .catch(() => {
+        // Non-fatal — leave field blank with "keep existing" hint.
+      })
+  }, [mode, initial, fields.needsApiKey])
 
   const canSubmit =
     name.trim().length > 0
-    // In edit mode, blank apiKey means "keep existing". In create mode we need one if the type requires.
     && (mode === 'edit' || !fields.needsApiKey || apiKey.trim().length > 0)
     && (!fields.needsBaseUrl || baseUrl.trim().length > 0)
 
   const handleSubmit = useCallback(async () => {
     if (!canSubmit) return
+    // Only forward apiKey if the user actually changed it — otherwise
+    // a no-op save would pointlessly re-authenticate.
+    const apiKeyChanged = apiKey.trim() !== loadedApiKey.trim()
     const input = buildCreateInput({
       type,
       mode,
       name: name.trim(),
-      apiKey,
+      apiKey: apiKeyChanged ? apiKey : '',
       baseUrl,
       authStyle,
       preferredModel: preferredModel.trim(),
     })
     if (!input) return
     await onSubmit(input)
-  }, [canSubmit, type, mode, name, apiKey, baseUrl, authStyle, preferredModel, onSubmit])
+  }, [
+    canSubmit, type, mode, name,
+    apiKey, loadedApiKey, baseUrl, authStyle, preferredModel,
+    onSubmit,
+  ])
 
   return (
     <div className="space-y-3">
@@ -109,11 +142,6 @@ export function ProviderProfileForm({
         <label className="block">
           <span className="block text-xs font-medium mb-1">
             {t('provider.profile.apiKeyLabel')}
-            {mode === 'edit' && (
-              <span className="ml-1.5 text-[10px] font-normal text-[hsl(var(--muted-foreground))]">
-                {t('provider.profile.apiKeyKeepHint')}
-              </span>
-            )}
           </span>
           <input
             type="password"
