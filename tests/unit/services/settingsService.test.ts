@@ -156,6 +156,60 @@ describe('SettingsService', () => {
     expect(provider.defaultModel).toBe('claude-opus-4-6')
   })
 
+  // Phase B.1+ migration — legacy `provider.activeMode` is mirrored into
+  // `provider.profiles` + `provider.defaultProfileId` on load.
+  it('populates profiles + defaultProfileId from legacy activeMode on load', async () => {
+    await writeFile(
+      join(tempDir, 'settings.json'),
+      JSON.stringify({ provider: { activeMode: 'api_key' } }),
+      'utf-8',
+    )
+    const fresh = new SettingsService(join(tempDir, 'settings.json'))
+    const settings = await fresh.load()
+    expect(settings.provider.activeMode).toBe('api_key')
+    expect(settings.provider.profiles).toHaveLength(1)
+    expect(settings.provider.profiles?.[0]).toMatchObject({
+      name: 'Anthropic API',
+      credential: { type: 'anthropic-api' },
+    })
+    expect(settings.provider.defaultProfileId).toBe(settings.provider.profiles?.[0].id)
+  })
+
+  it('uses deterministic profile id for migrated entries', async () => {
+    await writeFile(
+      join(tempDir, 'settings.json'),
+      JSON.stringify({ provider: { activeMode: 'api_key' } }),
+      'utf-8',
+    )
+    const firstLoad = await new SettingsService(join(tempDir, 'settings.json')).load()
+    const secondLoad = await new SettingsService(join(tempDir, 'settings.json')).load()
+    expect(firstLoad.provider.profiles?.[0].id).toBe(secondLoad.provider.profiles?.[0].id)
+    expect(firstLoad.provider.profiles?.[0].id).toMatch(/^prof_migrated_/)
+  })
+
+  it('round-trips already-migrated profiles on reload (idempotent)', async () => {
+    await writeFile(
+      join(tempDir, 'settings.json'),
+      JSON.stringify({ provider: { activeMode: 'api_key' } }),
+      'utf-8',
+    )
+    const first = new SettingsService(join(tempDir, 'settings.json'))
+    const loaded = await first.load()
+    await first.update(loaded)
+
+    const second = new SettingsService(join(tempDir, 'settings.json'))
+    const reloaded = await second.load()
+    expect(reloaded.provider.profiles?.[0].id).toBe(loaded.provider.profiles?.[0].id)
+    expect(reloaded.provider.profiles?.[0].updatedAt).toBe(loaded.provider.profiles?.[0].updatedAt)
+  })
+
+  it('produces empty profile list when activeMode is null', async () => {
+    const settings = await service.load()
+    expect(settings.provider.activeMode).toBeNull()
+    expect(settings.provider.profiles).toEqual([])
+    expect(settings.provider.defaultProfileId).toBeNull()
+  })
+
   it('getEventSubscriptionSettings returns current event subscription settings', async () => {
     const settings = await service.load()
     settings.eventSubscriptions.enabled = false

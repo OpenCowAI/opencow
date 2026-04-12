@@ -3640,14 +3640,26 @@ export interface ProviderStatus {
 
 /**
  * Non-sensitive provider config (persisted in settings.json). Secrets live
- * in CredentialStore. Flattened (no more `byEngine.claude.*`) after the
- * engine abstraction removal — see
- * docs/proposals/2026-04-12-provider-management-redesign.md §4.
+ * in CredentialStore.
+ *
+ * Phase B migration state (in-flight — see
+ * docs/proposals/2026-04-12-provider-management-redesign.md §4 and
+ * src/shared/providerProfile.ts):
+ *
+ *   - `activeMode` + `defaultModel` are the Phase A flat shape, still
+ *     read by the current ProviderService / Settings UI.
+ *   - `profiles` + `defaultProfileId` are the Phase B.1 shape. After
+ *     B.2 both are populated; after B.3 the activeMode field is
+ *     removed and this interface becomes `ProviderProfileSettings`.
  */
 export interface ProviderSettings {
   activeMode: ApiProvider | null
   /** Optional default model hint. */
   defaultModel?: string
+  /** Phase B.1+ profile list. Populated by settingsService migration. */
+  profiles?: import('./providerProfile').ProviderProfile[]
+  /** Phase B.1+ default profile pointer. */
+  defaultProfileId?: import('./providerProfile').ProviderProfileId | null
 }
 
 // === Update Settings ===

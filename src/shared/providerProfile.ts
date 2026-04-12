@@ -167,7 +167,6 @@ export function migrateLegacyProviderSettings(
     now?: () => string
   } = {},
 ): MigrationResult {
-  const generateId = opts.generateId ?? generateProviderProfileId
   const now = opts.now ?? (() => new Date().toISOString())
 
   // Already new shape → passthrough.
@@ -193,6 +192,11 @@ export function migrateLegacyProviderSettings(
     }
   }
 
+  // Deterministic id for migrated profiles — lets settingsService.load()
+  // be called repeatedly on a legacy (not-yet-saved-back) settings.json
+  // without generating fresh ids. New profiles created via UI still use
+  // `generateProviderProfileId()` and get random ids.
+  const generateId = opts.generateId ?? (() => deterministicMigratedId(mode))
   const profileId = generateId()
   const timestamp = now()
   const profile = buildProfileFromLegacyMode(mode, profileId, timestamp)
@@ -210,6 +214,14 @@ export function migrateLegacyProviderSettings(
       },
     ],
   }
+}
+
+/**
+ * Deterministic id used when migrating a legacy `activeMode` into a profile.
+ * Must be stable across repeated loads of the same unsaved settings.json.
+ */
+export function deterministicMigratedId(mode: ApiProvider): ProviderProfileId {
+  return `prof_migrated_${mode}` as ProviderProfileId
 }
 
 /** CredentialStore key where secrets for a profile live. */

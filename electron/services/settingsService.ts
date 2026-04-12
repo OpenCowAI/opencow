@@ -32,6 +32,11 @@ import type { FeishuBotSettings } from './feishuBot/types'
 import { toDiscordBotEntry } from './discordBot/converters'
 import type { DiscordBotSettings } from './discordBot/types'
 import { resolveThemeConfig, DEFAULT_THEME_CONFIG } from '../../src/shared/themeRegistry'
+import {
+  migrateLegacyProviderSettings,
+  type ProviderProfileSettings,
+  type MigrationCredentialPlan,
+} from '../../src/shared/providerProfile'
 
 const DEFAULT_SETTINGS: AppSettings = {
   theme: DEFAULT_THEME_CONFIG,
@@ -466,7 +471,51 @@ function migrateProviderSettings(
   const byEngineRaw = source.byEngine as Record<string, unknown> | undefined
   const engineScoped = byEngineRaw?.claude
 
-  return normalizeProviderSettingsShape(engineScoped ?? source, legacyFlat)
+  const flat = normalizeProviderSettingsShape(engineScoped ?? source, legacyFlat)
+
+  // Phase B.1: populate profiles + defaultProfileId alongside the flat
+  // activeMode. Callers still read activeMode today; profiles/defaultProfileId
+  // are additive groundwork for Phase B.3's ProviderService rewrite. If
+  // profiles was already persisted (re-open of an already-migrated
+  // settings.json), migrateLegacyProviderSettings is a passthrough.
+  const profileInput =
+    Array.isArray(source.profiles)
+      ? (source as unknown as ProviderProfileSettings)
+      : { activeMode: flat.activeMode, defaultModel: flat.defaultModel }
+  const profileResult = migrateLegacyProviderSettings(profileInput)
+
+  return {
+    ...flat,
+    profiles: profileResult.settings.profiles,
+    defaultProfileId: profileResult.settings.defaultProfileId,
+  }
+}
+
+/**
+ * Extract the credential rename plan produced by provider migration.
+ *
+ * Phase B.1 emits a rename plan but does NOT apply it — the settings
+ * service is responsible for loading from disk, not for CredentialStore
+ * mutations. The rename plan is produced here so callers
+ * (createServices bootstrap, tests) can apply it atomically after load.
+ *
+ * Returns an empty plan when no migration is needed (already-migrated or
+ * no legacy activeMode).
+ */
+export function computeProviderCredentialRenamePlan(
+  raw: (Partial<ProviderSettings> & Record<string, unknown>) | undefined,
+): MigrationCredentialPlan[] {
+  const source = (raw ?? {}) as Record<string, unknown>
+  if (Array.isArray(source.profiles)) return []
+
+  const byEngineRaw = source.byEngine as Record<string, unknown> | undefined
+  const engineScoped = byEngineRaw?.claude
+  const effectiveSource = (engineScoped ?? source) as Record<string, unknown>
+  const activeMode = normalizeProviderMode(effectiveSource.activeMode)
+  if (!activeMode) return []
+
+  const result = migrateLegacyProviderSettings({ activeMode })
+  return result.credentialRenames
 }
 
 // ── Theme migration ───────────────────────────────────────────────────────────
