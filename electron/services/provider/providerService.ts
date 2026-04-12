@@ -310,42 +310,76 @@ export class ProviderService {
   /**
    * Apply credential renames produced by Phase B.1 migration.
    *
-   * Phase B.3c semantics (COPY, not MOVE):
+   * Phase B.3c semantics (COPY + enrich):
    *
    * During Phase B transition, the legacy `getProviderEnv()` / `getStatus()`
    * paths (keyed by ApiProvider activeMode) coexist with the new
    * `*ForProfile()` paths (keyed by `credential:${profileId}`). Both must
-   * succeed, so this method COPIES the legacy value into the profile-
-   * scoped slot — leaving the legacy key intact.
+   * succeed, so this method COPIES the legacy credential into the
+   * profile-scoped slot — leaving the legacy key intact.
    *
-   * When Phase C lands and the orchestrator is switched fully to
-   * `getProviderEnvForProfile()`, a follow-up bootstrap pass will delete
-   * the legacy keys.
+   * Beyond copying, it also:
+   *   - Normalises the credential shape when the legacy adapter's shape
+   *     differs from the new one (e.g. OpenRouter stored `{ apiKey,
+   *     baseUrl? }` but CustomProvider expects `{ apiKey, baseUrl,
+   *     authStyle }`).
+   *   - Back-fills the profile's non-sensitive fields (baseUrl /
+   *     authStyle) from the legacy credential so the Settings UI
+   *     displays the user's actual configuration, not empty defaults
+   *     produced by the settings-layer migration.
    *
    * Idempotent: if the profile-scoped slot is already populated (user
-   * re-authenticated via the new UI), the legacy copy is skipped —
-   * don't clobber fresher values.
+   * re-authenticated via the new UI), skip — don't clobber fresher
+   * values.
+   *
+   * Phase C will delete the legacy keys once the orchestrator is fully
+   * cut over to `getProviderEnvForProfile()`.
    */
   async applyProfileCredentialMigration(): Promise<void> {
     const settings = this.deps.getProviderSettings()
     const profiles = settings.profiles ?? []
     if (profiles.length === 0) return
 
+    const nextProfiles: ProviderProfile[] = []
+    let profilesChanged = false
+
     for (const profile of profiles) {
       const legacyMode = parseLegacyModeFromMigratedId(profile.id)
-      if (!legacyMode) continue
+      if (!legacyMode) {
+        nextProfiles.push(profile)
+        continue
+      }
 
       const legacyKey = legacyCredentialKey(legacyMode)
       const newKey = credentialKeyFor(profile.id)
 
       const legacyValue = await this.deps.credentialStore.getAs<unknown>(legacyKey)
-      if (legacyValue === undefined) continue // never existed
-
       const existingAtNew = await this.deps.credentialStore.getAs<unknown>(newKey)
-      if (existingAtNew !== undefined) continue // new slot already populated
 
-      await this.deps.credentialStore.updateAs(newKey, legacyValue)
+      if (legacyValue === undefined || existingAtNew !== undefined) {
+        nextProfiles.push(profile)
+        continue
+      }
+
+      const enriched = enrichMigratedCredential(legacyMode, legacyValue)
+      await this.deps.credentialStore.updateAs(newKey, enriched.credentialBlob)
+
+      if (enriched.profileCredential) {
+        nextProfiles.push({
+          ...profile,
+          credential: enriched.profileCredential,
+          updatedAt: new Date().toISOString(),
+        })
+        profilesChanged = true
+      } else {
+        nextProfiles.push(profile)
+      }
+
       log.info(`Credential migration: copied "${legacyKey}" → "${newKey}" (legacy key retained)`)
+    }
+
+    if (profilesChanged && this.deps.updateProviderSettings) {
+      await this.deps.updateProviderSettings({ profiles: nextProfiles })
     }
   }
 
@@ -664,3 +698,66 @@ function legacyModeFromProfile(profile: ProviderProfile): ApiProvider | null {
 
 // Suppress unused-import warning — retained for future UI helpers.
 void migrateLegacyProviderSettings
+
+// ─── Phase B.3c migration helpers ────────────────────────────────────
+
+/**
+ * Transform a legacy credential blob into the shape the new profile-
+ * scoped adapter expects, and derive the profile's non-sensitive
+ * credential config from the same source.
+ *
+ * Returned `profileCredential === null` means no enrichment needed —
+ * the caller keeps the existing profile.credential (Subscription /
+ * Anthropic API profiles have no non-sensitive fields beyond `type`).
+ */
+function enrichMigratedCredential(
+  mode: ApiProvider,
+  legacyBlob: unknown,
+): {
+  credentialBlob: unknown
+  profileCredential: ProviderProfile['credential'] | null
+} {
+  switch (mode) {
+    case 'subscription':
+    case 'api_key':
+      return { credentialBlob: legacyBlob, profileCredential: null }
+
+    case 'openrouter': {
+      // Legacy OpenRouter stored `{ apiKey, baseUrl? }`; the new
+      // anthropic-compat-proxy adapter (CustomProvider) expects
+      // `{ apiKey, baseUrl, authStyle }`.
+      const legacy = (legacyBlob ?? {}) as { apiKey?: string; baseUrl?: string }
+      const baseUrl = legacy.baseUrl?.trim() || 'https://openrouter.ai/api/v1'
+      return {
+        credentialBlob: {
+          apiKey: legacy.apiKey ?? '',
+          baseUrl,
+          authStyle: 'bearer' as const,
+        },
+        profileCredential: {
+          type: 'anthropic-compat-proxy',
+          baseUrl,
+          authStyle: 'bearer',
+        },
+      }
+    }
+
+    case 'custom': {
+      const legacy = (legacyBlob ?? {}) as {
+        apiKey?: string
+        baseUrl?: string
+        authStyle?: 'api_key' | 'bearer'
+      }
+      const baseUrl = legacy.baseUrl?.trim() ?? ''
+      const authStyle = legacy.authStyle ?? 'bearer'
+      return {
+        credentialBlob: { apiKey: legacy.apiKey ?? '', baseUrl, authStyle },
+        profileCredential: {
+          type: 'anthropic-compat-proxy',
+          baseUrl,
+          authStyle,
+        },
+      }
+    }
+  }
+}

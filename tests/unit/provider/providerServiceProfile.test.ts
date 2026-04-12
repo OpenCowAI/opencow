@@ -178,6 +178,145 @@ describe('ProviderService.applyProfileCredentialMigration', () => {
     await service.applyProfileCredentialMigration()
     expect(store.snapshot()['apiKey']).toBe('sk-ant-legacy')
   })
+
+  // Phase B.3c — enrich legacy `openrouter` credential into the
+  // `anthropic-compat-proxy` shape, back-filling the profile's
+  // baseUrl/authStyle fields and normalising the credential blob.
+  it('enriches a legacy openrouter credential into anthropic-compat-proxy shape', async () => {
+    const store = new FakeCredentialStore()
+    await store.updateAs('openrouter', {
+      apiKey: 'sk-or-legacy',
+      baseUrl: 'https://custom.openrouter.test/v1',
+    })
+
+    const openrouterProfile: ProviderProfile = {
+      id: asProviderProfileId('prof_migrated_openrouter'),
+      name: 'OpenRouter',
+      credential: {
+        type: 'anthropic-compat-proxy',
+        baseUrl: '', // populated by settingsService migration as placeholder
+        authStyle: 'bearer',
+      },
+      createdAt: '2026-04-12T20:00:00.000Z',
+      updatedAt: '2026-04-12T20:00:00.000Z',
+    }
+
+    const settings: ProviderSettings = {
+      activeMode: 'openrouter',
+      profiles: [openrouterProfile],
+      defaultProfileId: openrouterProfile.id,
+    }
+    let lastPatch: Partial<ProviderSettings> | null = null
+    const svcStore = store as unknown as import('../../../electron/services/provider/credentialStore').CredentialStore
+    const service = new ProviderService({
+      dispatch: () => {},
+      credentialStore: svcStore,
+      getProviderSettings: () => settings,
+      updateProviderSettings: async (patch) => {
+        lastPatch = patch
+        Object.assign(settings, patch)
+        return settings
+      },
+    })
+
+    await service.applyProfileCredentialMigration()
+
+    // CredentialStore now has the legacy shape normalised to Custom-shape.
+    const normalised = store.snapshot()[`credential:${openrouterProfile.id}`] as Record<string, unknown>
+    expect(normalised).toEqual({
+      apiKey: 'sk-or-legacy',
+      baseUrl: 'https://custom.openrouter.test/v1',
+      authStyle: 'bearer',
+    })
+    // Legacy key retained (copy semantics).
+    expect(store.snapshot()['openrouter']).toBeTruthy()
+
+    // Profile enriched with actual baseUrl.
+    const patchProfiles = (lastPatch as { profiles: ProviderProfile[] } | null)?.profiles
+    expect(patchProfiles?.[0].credential).toEqual({
+      type: 'anthropic-compat-proxy',
+      baseUrl: 'https://custom.openrouter.test/v1',
+      authStyle: 'bearer',
+    })
+  })
+
+  it('enriches a legacy custom credential, preserving baseUrl + authStyle', async () => {
+    const store = new FakeCredentialStore()
+    await store.updateAs('custom', {
+      apiKey: 'sk-custom-xyz',
+      baseUrl: 'https://uniapi.example.net/v1',
+      authStyle: 'api_key',
+    })
+
+    const customProfile: ProviderProfile = {
+      id: asProviderProfileId('prof_migrated_custom'),
+      name: 'Custom Proxy',
+      credential: { type: 'anthropic-compat-proxy', baseUrl: '', authStyle: 'bearer' },
+      createdAt: '2026-04-12T20:00:00.000Z',
+      updatedAt: '2026-04-12T20:00:00.000Z',
+    }
+
+    const settings: ProviderSettings = {
+      activeMode: 'custom',
+      profiles: [customProfile],
+      defaultProfileId: customProfile.id,
+    }
+    let lastPatch: Partial<ProviderSettings> | null = null
+    const svcStore = store as unknown as import('../../../electron/services/provider/credentialStore').CredentialStore
+    const service = new ProviderService({
+      dispatch: () => {},
+      credentialStore: svcStore,
+      getProviderSettings: () => settings,
+      updateProviderSettings: async (patch) => {
+        lastPatch = patch
+        Object.assign(settings, patch)
+        return settings
+      },
+    })
+
+    await service.applyProfileCredentialMigration()
+
+    const normalised = store.snapshot()[`credential:${customProfile.id}`]
+    expect(normalised).toEqual({
+      apiKey: 'sk-custom-xyz',
+      baseUrl: 'https://uniapi.example.net/v1',
+      authStyle: 'api_key',
+    })
+    const patchProfiles = (lastPatch as { profiles: ProviderProfile[] } | null)?.profiles
+    expect(patchProfiles?.[0].credential).toEqual({
+      type: 'anthropic-compat-proxy',
+      baseUrl: 'https://uniapi.example.net/v1',
+      authStyle: 'api_key',
+    })
+  })
+
+  it('subscription and api_key migrations do not patch profile.credential', async () => {
+    const store = new FakeCredentialStore()
+    await store.updateAs('apiKey', 'sk-ant-legacy')
+    const settings: ProviderSettings = {
+      activeMode: 'api_key',
+      profiles: [migratedApiKeyProfile],
+      defaultProfileId: migratedApiKeyProfile.id,
+    }
+    let patchCallCount = 0
+    const svcStore = store as unknown as import('../../../electron/services/provider/credentialStore').CredentialStore
+    const service = new ProviderService({
+      dispatch: () => {},
+      credentialStore: svcStore,
+      getProviderSettings: () => settings,
+      updateProviderSettings: async (patch) => {
+        patchCallCount++
+        Object.assign(settings, patch)
+        return settings
+      },
+    })
+
+    await service.applyProfileCredentialMigration()
+
+    // api_key has no non-sensitive fields to backfill → no profile patch emitted.
+    expect(patchCallCount).toBe(0)
+    expect(store.snapshot()[`credential:${migratedApiKeyProfile.id}`]).toBe('sk-ant-legacy')
+  })
 })
 
 describe('ProviderService.getProviderEnvForProfile', () => {
