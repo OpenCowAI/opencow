@@ -296,12 +296,17 @@ export async function createAppServices(deps: ServiceFactoryDeps): Promise<AppSe
     focusApp: focusMainWindow,
   })
 
-  // Phase B.3b: move legacy-keyed credentials to profile-keyed slots.
-  // Idempotent: the first bootstrap after Phase B migration performs the
-  // rename; subsequent bootstraps are no-ops.
-  await providerService.applyProfileCredentialMigration().catch((err) => {
-    log.warn('Profile credential migration failed — falling back to legacy path', err)
-  })
+  // Phase B.3b: profile credential migration is defined but NOT invoked
+  // at bootstrap. Running it here would remove the legacy flat keys
+  // (`apiKey` / `subscription` / etc.) that ProviderService.getProviderEnv()
+  // still reads via the Phase A activeMode path, breaking session spawn.
+  // The migration will be enabled as part of the Phase C cutover, after
+  // the orchestrator is switched to getProviderEnvForProfile().
+  //
+  // For now, multi-profile tests can exercise the code path by mounting
+  // an already-migrated CredentialStore directly — see
+  // tests/unit/provider/providerServiceProfile.test.ts.
+  void providerService.applyProfileCredentialMigration
 
   // BrowserService is created before SessionOrchestrator so the orchestrator can
   // hold a reference and release per-session browser views when sessions stop.
