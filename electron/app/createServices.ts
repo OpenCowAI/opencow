@@ -296,7 +296,8 @@ export async function createAppServices(deps: ServiceFactoryDeps): Promise<AppSe
     updateProviderSettings: async (patch) => {
       const current = await settingsService.load()
       const nextProvider = { ...current.provider, ...patch }
-      await settingsService.update({ ...current, provider: nextProvider })
+      const saved = await settingsService.update({ ...current, provider: nextProvider })
+      bus.dispatch({ type: 'settings:updated', payload: saved })
       return nextProvider
     },
     focusApp: focusMainWindow,

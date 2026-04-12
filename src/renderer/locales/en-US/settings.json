@@ -43,8 +43,31 @@
     }
   },
   "provider": {
-    "title": "Provider",
-    "description": "Configure the LLM provider connection used by OpenCow. Credentials are encrypted and stored locally.",
+    "title": "Providers",
+    "description": "Configure the LLM accounts OpenCow can use. Each profile is one account; pick a default. Credentials are encrypted and stored locally.",
+    "profile": {
+      "addButton": "Add Provider",
+      "addHeading": "New {{type}} profile",
+      "emptyState": "No providers yet. Click Add Provider to get started.",
+      "defaultBadge": "Default",
+      "setDefault": "Set as default",
+      "edit": "Edit",
+      "remove": "Remove",
+      "confirmRemove": "Remove provider \"{{name}}\"? This will also clear its stored credentials.",
+      "save": "Save",
+      "saving": "Saving…",
+      "cancel": "Cancel",
+      "close": "Close",
+      "loginSubscription": "Sign in with Claude",
+      "nameLabel": "Name",
+      "apiKeyLabel": "API Key",
+      "apiKeyKeepHint": "(leave blank to keep existing)",
+      "baseUrlLabel": "Base URL",
+      "authStyleLabel": "Auth Style",
+      "subscriptionHint": "Clicking Sign in will open your browser for Claude OAuth. No key is stored locally — only the OAuth tokens issued by Anthropic.",
+      "unsupported": "Provider type \"{{type}}\" is not yet supported in this build. Upgrade pending opencow-agent-sdk M1.",
+      "sdkNotReady": "SDK M1"
+    },
     "modes": {
       "subscription": "Claude Subscription",
       "subscriptionDesc": "Pro, Max, Team, or Enterprise — login via browser OAuth",
