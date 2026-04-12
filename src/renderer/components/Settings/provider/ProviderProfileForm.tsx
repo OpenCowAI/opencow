@@ -261,12 +261,12 @@ function defaultModelPlaceholder(type: ProviderType): string {
     case 'claude-subscription':
     case 'anthropic-api':
     case 'anthropic-compat-proxy':
-      return 'claude-sonnet-4-5-20250929'
+      return 'claude-sonnet-4-6'
     case 'openai-direct':
     case 'openai-compat-proxy':
-      return 'gpt-4o-mini'
+      return 'gpt-5.4'
     case 'gemini':
-      return 'gemini-2.0-flash-exp'
+      return 'gemini-2.5-pro'
   }
 }
 
