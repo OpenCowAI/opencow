@@ -291,20 +291,8 @@ export class ProviderService {
       }
     }
 
-    const adapter = this.tryBuildAdapter(profile)
-    if (!adapter) {
-      return {
-        profileId: id,
-        outcome: {
-          ok: false,
-          reason: 'unsupported',
-          message: `Profile type "${profile.credential.type}" is not yet implemented`,
-        },
-        durationMs: Date.now() - started,
-      }
-    }
-
     try {
+      const adapter = this.buildAdapterForProfile(profile)
       const status = await adapter.checkStatus()
       if (status.authenticated) {
         return {
@@ -373,11 +361,6 @@ export class ProviderService {
         return new OpenAICompatProxyProvider(store, key)
       case 'gemini':
         return new GeminiProvider(store, key)
-      case 'anthropic-bedrock':
-      case 'anthropic-vertex':
-        throw new Error(
-          `Profile type "${profile.credential.type}" requires AWS/GCP SDK integration (not yet implemented)`,
-        )
       default: {
         const exhaustive: never = profile.credential
         throw new Error(`Unhandled profile credential: ${JSON.stringify(exhaustive)}`)
@@ -397,8 +380,6 @@ export class ProviderService {
       case 'claude-subscription':
       case 'anthropic-api':
       case 'anthropic-compat-proxy':
-      case 'anthropic-bedrock':
-      case 'anthropic-vertex':
         return 'anthropic'
       case 'openai-direct':
       case 'openai-compat-proxy':

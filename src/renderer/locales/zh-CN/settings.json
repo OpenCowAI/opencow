@@ -65,8 +65,6 @@
       "baseUrlLabel": "Base URL",
       "authStyleLabel": "认证方式",
       "subscriptionHint": "点击登录将打开浏览器走 Claude OAuth 流程。本地不保存密钥，只保存 Anthropic 下发的 OAuth Token。",
-      "unsupported": "当前版本尚不支持服务商类型「{{type}}」。",
-      "sdkNotReady": "即将推出",
       "test": "测试",
       "testing": "测试中…",
       "testOk": "通过",

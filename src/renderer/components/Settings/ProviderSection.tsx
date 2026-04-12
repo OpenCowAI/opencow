@@ -27,7 +27,6 @@ import type {
   ProviderType,
   UpdateProviderProfilePatch,
 } from '@shared/providerProfile'
-import { isProviderTypeImplemented } from '@shared/providerProfile'
 import { ProviderProfileForm } from './provider/ProviderProfileForm'
 
 // ─── Type catalog surfaced in the Add dropdown ───────────────────────
@@ -44,8 +43,6 @@ const TYPE_GROUPS: ReadonlyArray<TypeGroup> = [
       { type: 'claude-subscription', label: 'Claude Pro/Max subscription' },
       { type: 'anthropic-api', label: 'Anthropic API direct' },
       { type: 'anthropic-compat-proxy', label: 'Anthropic-compatible proxy' },
-      { type: 'anthropic-bedrock', label: 'AWS Bedrock' },
-      { type: 'anthropic-vertex', label: 'Google Vertex' },
     ],
   },
   {
@@ -250,7 +247,6 @@ export function ProviderSection(): React.JSX.Element {
             <AddTypeDropdown
               onPick={(type) => {
                 setDropdownOpen(false)
-                if (!isProviderTypeImplemented(type)) return
                 setEditingId(null)
                 setAddingType(type)
                 setFormError(null)
@@ -461,7 +457,6 @@ interface AddTypeDropdownProps {
 }
 
 function AddTypeDropdown({ onPick }: AddTypeDropdownProps): React.JSX.Element {
-  const { t } = useTranslation('settings')
   return (
     <div
       role="menu"
@@ -472,31 +467,17 @@ function AddTypeDropdown({ onPick }: AddTypeDropdownProps): React.JSX.Element {
           <p className="text-[10px] font-semibold uppercase tracking-wider text-[hsl(var(--muted-foreground)/0.7)] px-2 py-1">
             {group.heading}
           </p>
-          {group.items.map(({ type, label }) => {
-            const enabled = isProviderTypeImplemented(type)
-            return (
-              <button
-                key={type}
-                type="button"
-                onClick={() => enabled && onPick(type)}
-                disabled={!enabled}
-                className={cn(
-                  'block w-full text-left text-xs px-2 py-1.5 rounded-sm',
-                  enabled
-                    ? 'hover:bg-[hsl(var(--foreground)/0.06)] cursor-pointer'
-                    : 'text-[hsl(var(--muted-foreground)/0.5)] cursor-not-allowed',
-                )}
-                role="menuitem"
-              >
-                {label}
-                {!enabled && (
-                  <span className="ml-1.5 text-[9px] font-mono text-[hsl(var(--muted-foreground)/0.6)]">
-                    ({t('provider.profile.sdkNotReady')})
-                  </span>
-                )}
-              </button>
-            )
-          })}
+          {group.items.map(({ type, label }) => (
+            <button
+              key={type}
+              type="button"
+              onClick={() => onPick(type)}
+              className="block w-full text-left text-xs px-2 py-1.5 rounded-sm hover:bg-[hsl(var(--foreground)/0.06)] cursor-pointer"
+              role="menuitem"
+            >
+              {label}
+            </button>
+          ))}
         </div>
       ))}
     </div>

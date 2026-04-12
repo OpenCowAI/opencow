@@ -11,8 +11,9 @@
  * Design invariants:
  *   1. Profile objects are **non-sensitive** and live in settings.json.
  *      All secrets live in CredentialStore under `credential:${id}`.
- *   2. `ProviderType` enumerates all 8 protocol types up-front.
- *      Implementation status is gated by `isProviderTypeImplemented`.
+ *   2. `ProviderType` enumerates only runtime-implemented protocol
+ *      types — every entry is first-class. Adding a new type means
+ *      shipping an adapter, not a TODO marker.
  *   3. `ProviderProfileId` is a branded string — prevents accidental
  *      mixing with session / project / any other id type.
  */
@@ -27,32 +28,19 @@ export function asProviderProfileId(raw: string): ProviderProfileId {
 
 // ─── Type registry ────────────────────────────────────────────────────
 
+/**
+ * Every protocol type in this union is runtime-implemented. When adding
+ * a new type, wire a matching adapter in ProviderService.buildAdapterForProfile
+ * and add a branch to `ProviderCredential` below — the exhaustive switch
+ * in the service will fail to compile until both sides line up.
+ */
 export type ProviderType =
   | 'claude-subscription'
   | 'anthropic-api'
-  | 'anthropic-bedrock'
-  | 'anthropic-vertex'
   | 'anthropic-compat-proxy'
   | 'openai-direct'
   | 'openai-compat-proxy'
   | 'gemini'
-
-/**
- * Types wired end-to-end in the current OpenCow build. Bedrock / Vertex
- * depend on AWS / GCP SDK integration — a separate ticket.
- */
-const IMPLEMENTED_PROVIDER_TYPES: ReadonlySet<ProviderType> = new Set([
-  'claude-subscription',
-  'anthropic-api',
-  'anthropic-compat-proxy',
-  'openai-direct',
-  'openai-compat-proxy',
-  'gemini',
-])
-
-export function isProviderTypeImplemented(type: ProviderType): boolean {
-  return IMPLEMENTED_PROVIDER_TYPES.has(type)
-}
 
 // ─── Credential descriptor (non-sensitive only) ───────────────────────
 
@@ -63,8 +51,6 @@ export function isProviderTypeImplemented(type: ProviderType): boolean {
 export type ProviderCredential =
   | { type: 'claude-subscription' }
   | { type: 'anthropic-api' }
-  | { type: 'anthropic-bedrock'; region: string }
-  | { type: 'anthropic-vertex'; project: string; region: string }
   | {
       type: 'anthropic-compat-proxy'
       baseUrl: string

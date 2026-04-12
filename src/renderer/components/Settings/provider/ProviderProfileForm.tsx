@@ -3,14 +3,10 @@
 /**
  * Provider profile create/edit form — dispatches on ProviderType.
  *
- * Phase B.5 implements the three types wired end-to-end today:
- *   - claude-subscription  (OAuth, no local fields)
- *   - anthropic-api        (single API key)
- *   - anthropic-compat-proxy (baseUrl + key + authStyle)
- *
- * Deferred types (openai-direct, openai-compat-proxy, gemini,
- * anthropic-bedrock, anthropic-vertex) render a read-only "Not yet
- * supported" notice — matches the proposal's grey-out behaviour.
+ * Every ProviderType in the shared `providerProfile` union is wired here.
+ * When a new type is added, the exhaustive switches in both the render
+ * path (field set) and `buildCreateInput` will fail to compile until the
+ * form knows how to collect the required credentials.
  */
 
 import { useCallback, useState } from 'react'
@@ -21,7 +17,6 @@ import type {
   ProviderProfile,
   ProviderType,
 } from '@shared/providerProfile'
-import { isProviderTypeImplemented } from '@shared/providerProfile'
 
 interface ProviderProfileFormProps {
   mode: 'create' | 'edit'
@@ -35,6 +30,25 @@ interface ProviderProfileFormProps {
   busy: boolean
 }
 
+// ─── Field selectors per type ────────────────────────────────────────
+// Encoding "which fields this type needs" as a declarative record
+// avoids sprawl across the render logic and buildCreateInput.
+
+interface TypeFields {
+  needsApiKey: boolean
+  needsBaseUrl: boolean
+  needsAuthStyle: boolean
+}
+
+const FIELDS: Record<ProviderType, TypeFields> = {
+  'claude-subscription': { needsApiKey: false, needsBaseUrl: false, needsAuthStyle: false },
+  'anthropic-api': { needsApiKey: true, needsBaseUrl: false, needsAuthStyle: false },
+  'anthropic-compat-proxy': { needsApiKey: true, needsBaseUrl: true, needsAuthStyle: true },
+  'openai-direct': { needsApiKey: true, needsBaseUrl: false, needsAuthStyle: false },
+  'openai-compat-proxy': { needsApiKey: true, needsBaseUrl: true, needsAuthStyle: false },
+  'gemini': { needsApiKey: true, needsBaseUrl: false, needsAuthStyle: false },
+}
+
 export function ProviderProfileForm({
   mode,
   type,
@@ -45,50 +59,36 @@ export function ProviderProfileForm({
   busy,
 }: ProviderProfileFormProps): React.JSX.Element {
   const { t } = useTranslation('settings')
+  const fields = FIELDS[type]
 
   const [name, setName] = useState(initial?.name ?? defaultNameFor(type))
   const [apiKey, setApiKey] = useState('')
-  const [baseUrl, setBaseUrl] = useState(
-    initial?.credential.type === 'anthropic-compat-proxy'
-      ? initial.credential.baseUrl
-      : '',
-  )
+  const [baseUrl, setBaseUrl] = useState(readInitialBaseUrl(initial) ?? defaultBaseUrlFor(type))
   const [authStyle, setAuthStyle] = useState<'api_key' | 'bearer'>(
     initial?.credential.type === 'anthropic-compat-proxy'
       ? initial.credential.authStyle
       : 'bearer',
   )
 
-  const supported = isProviderTypeImplemented(type)
+  const canSubmit =
+    name.trim().length > 0
+    // In edit mode, blank apiKey means "keep existing". In create mode we need one if the type requires.
+    && (mode === 'edit' || !fields.needsApiKey || apiKey.trim().length > 0)
+    && (!fields.needsBaseUrl || baseUrl.trim().length > 0)
 
   const handleSubmit = useCallback(async () => {
-    if (!supported) return
-    const trimmedName = name.trim()
-    if (!trimmedName) return
-
-    const input = buildCreateInput({ type, name: trimmedName, apiKey, baseUrl, authStyle })
+    if (!canSubmit) return
+    const input = buildCreateInput({
+      type,
+      mode,
+      name: name.trim(),
+      apiKey,
+      baseUrl,
+      authStyle,
+    })
     if (!input) return
     await onSubmit(input)
-  }, [type, name, apiKey, baseUrl, authStyle, supported, onSubmit])
-
-  if (!supported) {
-    return (
-      <div className="rounded-md border border-amber-500/30 bg-amber-500/10 p-3">
-        <p className="text-sm text-amber-300">
-          {t('provider.profile.unsupported', { type })}
-        </p>
-        <div className="mt-3 flex justify-end">
-          <button
-            type="button"
-            onClick={onCancel}
-            className="text-xs px-3 py-1.5 rounded-md border border-[hsl(var(--border))] hover:bg-[hsl(var(--foreground)/0.04)]"
-          >
-            {t('provider.profile.close')}
-          </button>
-        </div>
-      </div>
-    )
-  }
+  }, [canSubmit, type, mode, name, apiKey, baseUrl, authStyle, onSubmit])
 
   return (
     <div className="space-y-3">
@@ -103,7 +103,7 @@ export function ProviderProfileForm({
         />
       </label>
 
-      {(type === 'anthropic-api' || type === 'anthropic-compat-proxy') && (
+      {fields.needsApiKey && (
         <label className="block">
           <span className="block text-xs font-medium mb-1">
             {t('provider.profile.apiKeyLabel')}
@@ -124,44 +124,45 @@ export function ProviderProfileForm({
         </label>
       )}
 
-      {type === 'anthropic-compat-proxy' && (
-        <>
-          <label className="block">
-            <span className="block text-xs font-medium mb-1">{t('provider.profile.baseUrlLabel')}</span>
-            <input
-              type="url"
-              value={baseUrl}
-              onChange={(e) => setBaseUrl(e.target.value)}
-              placeholder="https://example.com/v1"
-              className={cn(formInputClass, 'font-mono')}
-            />
-          </label>
-          <div>
-            <span className="block text-xs font-medium mb-1">{t('provider.profile.authStyleLabel')}</span>
-            <div className="flex gap-3 text-xs">
-              <label className="flex items-center gap-1.5">
-                <input
-                  type="radio"
-                  name="authStyle"
-                  value="bearer"
-                  checked={authStyle === 'bearer'}
-                  onChange={() => setAuthStyle('bearer')}
-                />
-                Bearer
-              </label>
-              <label className="flex items-center gap-1.5">
-                <input
-                  type="radio"
-                  name="authStyle"
-                  value="api_key"
-                  checked={authStyle === 'api_key'}
-                  onChange={() => setAuthStyle('api_key')}
-                />
-                x-api-key
-              </label>
-            </div>
+      {fields.needsBaseUrl && (
+        <label className="block">
+          <span className="block text-xs font-medium mb-1">{t('provider.profile.baseUrlLabel')}</span>
+          <input
+            type="url"
+            value={baseUrl}
+            onChange={(e) => setBaseUrl(e.target.value)}
+            placeholder={defaultBaseUrlFor(type) || 'https://example.com/v1'}
+            className={cn(formInputClass, 'font-mono')}
+          />
+        </label>
+      )}
+
+      {fields.needsAuthStyle && (
+        <div>
+          <span className="block text-xs font-medium mb-1">{t('provider.profile.authStyleLabel')}</span>
+          <div className="flex gap-3 text-xs">
+            <label className="flex items-center gap-1.5">
+              <input
+                type="radio"
+                name="authStyle"
+                value="bearer"
+                checked={authStyle === 'bearer'}
+                onChange={() => setAuthStyle('bearer')}
+              />
+              Bearer
+            </label>
+            <label className="flex items-center gap-1.5">
+              <input
+                type="radio"
+                name="authStyle"
+                value="api_key"
+                checked={authStyle === 'api_key'}
+                onChange={() => setAuthStyle('api_key')}
+              />
+              x-api-key
+            </label>
           </div>
-        </>
+        </div>
       )}
 
       {type === 'claude-subscription' && (
@@ -188,7 +189,7 @@ export function ProviderProfileForm({
         <button
           type="button"
           onClick={handleSubmit}
-          disabled={busy || !name.trim()}
+          disabled={busy || !canSubmit}
           className="text-xs px-3 py-1.5 rounded-md bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))] hover:opacity-90 disabled:opacity-50"
         >
           {busy
@@ -217,58 +218,90 @@ function defaultNameFor(type: ProviderType): string {
     case 'openai-direct': return 'OpenAI'
     case 'openai-compat-proxy': return 'OpenAI-compatible'
     case 'gemini': return 'Gemini'
-    case 'anthropic-bedrock': return 'Bedrock'
-    case 'anthropic-vertex': return 'Vertex'
+  }
+}
+
+function defaultBaseUrlFor(type: ProviderType): string {
+  switch (type) {
+    case 'anthropic-compat-proxy': return 'https://openrouter.ai/api/v1'
+    case 'openai-compat-proxy': return 'https://api.deepseek.com/v1'
+    default: return ''
   }
 }
 
 function apiKeyPlaceholder(type: ProviderType): string {
   if (type === 'anthropic-api') return 'sk-ant-...'
+  if (type === 'gemini') return 'AIza...'
   return 'sk-...'
+}
+
+function readInitialBaseUrl(initial?: ProviderProfile): string | null {
+  if (!initial) return null
+  const c = initial.credential
+  if (c.type === 'anthropic-compat-proxy' || c.type === 'openai-compat-proxy') {
+    return c.baseUrl
+  }
+  return null
 }
 
 function buildCreateInput(params: {
   type: ProviderType
+  mode: 'create' | 'edit'
   name: string
   apiKey: string
   baseUrl: string
   authStyle: 'api_key' | 'bearer'
 }): CreateProviderProfileInput | null {
-  const { type, name, apiKey, baseUrl, authStyle } = params
+  const { type, mode, name, apiKey, baseUrl, authStyle } = params
+  const trimmedKey = apiKey.trim()
+  const trimmedUrl = baseUrl.trim()
 
   switch (type) {
     case 'claude-subscription':
-      // Passing an (empty) authParams triggers SubscriptionProvider.authenticate(),
-      // which opens the browser-based OAuth flow. Without this the profile
-      // would be persisted without credentials and be immediately unauthenticated.
-      return {
-        name,
-        credential: { type: 'claude-subscription' },
-        authParams: {},
-      }
+      return { name, credential: { type: 'claude-subscription' }, authParams: {} }
+
     case 'anthropic-api':
-      if (!apiKey.trim()) return null
+      if (mode === 'create' && !trimmedKey) return null
       return {
         name,
         credential: { type: 'anthropic-api' },
-        authParams: { apiKey: apiKey.trim() },
+        ...(trimmedKey ? { authParams: { apiKey: trimmedKey } } : {}),
       }
+
     case 'anthropic-compat-proxy':
-      if (!apiKey.trim() || !baseUrl.trim()) return null
+      if (!trimmedUrl) return null
+      if (mode === 'create' && !trimmedKey) return null
       return {
         name,
-        credential: {
-          type: 'anthropic-compat-proxy',
-          baseUrl: baseUrl.trim(),
-          authStyle,
-        },
-        authParams: {
-          apiKey: apiKey.trim(),
-          baseUrl: baseUrl.trim(),
-          authStyle,
-        },
+        credential: { type: 'anthropic-compat-proxy', baseUrl: trimmedUrl, authStyle },
+        ...(trimmedKey
+          ? { authParams: { apiKey: trimmedKey, baseUrl: trimmedUrl, authStyle } }
+          : {}),
       }
-    default:
-      return null
+
+    case 'openai-direct':
+      if (mode === 'create' && !trimmedKey) return null
+      return {
+        name,
+        credential: { type: 'openai-direct' },
+        ...(trimmedKey ? { authParams: { apiKey: trimmedKey } } : {}),
+      }
+
+    case 'openai-compat-proxy':
+      if (!trimmedUrl) return null
+      if (mode === 'create' && !trimmedKey) return null
+      return {
+        name,
+        credential: { type: 'openai-compat-proxy', baseUrl: trimmedUrl },
+        ...(trimmedKey ? { authParams: { apiKey: trimmedKey, baseUrl: trimmedUrl } } : {}),
+      }
+
+    case 'gemini':
+      if (mode === 'create' && !trimmedKey) return null
+      return {
+        name,
+        credential: { type: 'gemini' },
+        ...(trimmedKey ? { authParams: { apiKey: trimmedKey } } : {}),
+      }
   }
 }

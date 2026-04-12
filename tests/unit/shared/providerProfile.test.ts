@@ -4,7 +4,6 @@ import { describe, expect, it } from 'vitest'
 import {
   credentialKeyFor,
   generateProviderProfileId,
-  isProviderTypeImplemented,
 } from '../../../src/shared/providerProfile'
 
 describe('generateProviderProfileId', () => {
@@ -17,22 +16,6 @@ describe('generateProviderProfileId', () => {
     const seen = new Set<string>()
     for (let i = 0; i < 50; i++) seen.add(generateProviderProfileId())
     expect(seen.size).toBe(50)
-  })
-})
-
-describe('isProviderTypeImplemented', () => {
-  it('flags Anthropic-native + OpenAI-family + Gemini as implemented', () => {
-    expect(isProviderTypeImplemented('claude-subscription')).toBe(true)
-    expect(isProviderTypeImplemented('anthropic-api')).toBe(true)
-    expect(isProviderTypeImplemented('anthropic-compat-proxy')).toBe(true)
-    expect(isProviderTypeImplemented('openai-direct')).toBe(true)
-    expect(isProviderTypeImplemented('openai-compat-proxy')).toBe(true)
-    expect(isProviderTypeImplemented('gemini')).toBe(true)
-  })
-
-  it('flags cloud-SDK types (Bedrock / Vertex) as NOT yet implemented', () => {
-    expect(isProviderTypeImplemented('anthropic-bedrock')).toBe(false)
-    expect(isProviderTypeImplemented('anthropic-vertex')).toBe(false)
   })
 })
 
