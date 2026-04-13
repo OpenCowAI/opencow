@@ -25,8 +25,13 @@ type SdkQuery = {
   [Symbol.asyncIterator](): AsyncIterator<unknown>
   close(): Promise<void> | void
 }
+type SdkSession = {
+  query: (params: { prompt: AsyncIterable<unknown>; options?: Record<string, unknown> }) => SdkQuery
+  close: () => Promise<void> | void
+}
 type OpenCowAgentModule = {
   query: (params: { prompt: AsyncIterable<unknown>; options?: Record<string, unknown> }) => SdkQuery
+  unstable_v2_createSession: (options: Record<string, unknown>) => SdkSession
   getBuiltInTools?: () => unknown[]
 }
 
@@ -57,6 +62,7 @@ export function __setOpenClaudeModuleLoaderForTest(
  */
 export class QueryLifecycle implements SessionLifecycle {
   private _query: SdkQuery | null = null
+  private _session: SdkSession | null = null
   private _started = false
   private readonly queue: MessageQueue
   private doneResolve: (() => void) | null = null
@@ -113,6 +119,10 @@ export class QueryLifecycle implements SessionLifecycle {
         this._query.close()
       }
       this._query = null
+      if (this._session) {
+        void this._session.close()
+      }
+      this._session = null
       this.queue.close()
       this.doneResolve?.()
       this.doneResolve = null
@@ -128,7 +138,15 @@ export class QueryLifecycle implements SessionLifecycle {
           ...toSdkOptions(options),
           ...(builtInTools ? { builtInTools } : {}),
         }
-        const q = sdkMod.query({ prompt: lifecycle.queue, options: sdkOptions })
+        // ε.3a: go through Session-first-class API. Today this is
+        // behaviourally identical to the old `sdkMod.query()` call —
+        // Session.query() forwards to the same runtime under the hood.
+        // The swap establishes end-to-end plumbing for ε.3b+, where
+        // per-turn Session.query() calls will replace the long-lived
+        // queue pattern and delete drift-detection entirely.
+        const session = sdkMod.unstable_v2_createSession(sdkOptions)
+        lifecycle._session = session
+        const q = session.query({ prompt: lifecycle.queue })
         lifecycle._query = q
         if (lifecycle._stopped) {
           q.close()
@@ -184,6 +202,10 @@ export class QueryLifecycle implements SessionLifecycle {
       // Generator was never started — resolve done immediately
       this.doneResolve?.()
       this.doneResolve = null
+    }
+    if (this._session) {
+      void this._session.close()
+      this._session = null
     }
     this.queue.close()
 
