@@ -1172,19 +1172,16 @@ export class SessionOrchestrator {
         return await this.resumeSessionInternal(sessionId, content, { forceRestart: true })
       }
 
-      // 2. Provider mode drift: SDK subprocess env is frozen at spawn. If the
-      //    user switched provider mode mid-session, force a lifecycle restart
-      //    to pick up fresh credentials.
-      const currentProfileId = this.deps.getActiveProviderProfileId()
-      const sessionProfileId = rt.providerProfileId ?? null
-      if (currentProfileId !== sessionProfileId) {
-        log.info('sendMessage: provider mode drift detected, restarting lifecycle', {
-          sessionId,
-          from: sessionProfileId,
-          to: currentProfileId,
-        })
-        return await this.resumeSessionInternal(sessionId, content, { forceRestart: true })
-      }
+      // 2. Provider drift: SDK lifecycle env is frozen at spawn. If the
+      //    effective profile for this turn differs from what we spawned
+      //    with, restart the lifecycle so fresh credentials + model +
+      //    base URL take effect.
+      //
+      //    Effective = session-pinned (ε.3b/c) if set, else Settings
+      //    default. Drift detection is moved to the single funnel
+      //    (resumeSessionInternal) below, so both sendMessage and the
+      //    UI-driven idle → resumeSession paths honour it. See the
+      //    detailed rationale comment there.
     }
 
     // Active session with live lifecycle — push to SDK queue directly.
@@ -1267,12 +1264,65 @@ export class SessionOrchestrator {
     })
 
     const existing = this.runtimes.get(sessionId)
-    const forceRestart = options.forceRestart
+    let forceRestart = options.forceRestart
 
-    // Fast path: if the SDK process is still alive (multi-turn wait mode),
-    // push to the existing queue instead of the expensive kill → restart cycle.
-    // This is the primary entry point from the renderer for `idle` sessions
-    // (the renderer routes idle → onResume → resumeSession).
+    // ── ε.3d.1: Provider drift gate (single funnel) ───────────────────────
+    //
+    // The fast path below reuses the existing SDK lifecycle whose env
+    // (OPENAI_MODEL / ANTHROPIC_BASE_URL / OPENAI_API_KEY / … anything
+    // that came out of `getProviderEnv(profileId)` at spawn time) is
+    // frozen for that lifecycle's lifetime. If the effective profile for
+    // THIS turn differs from the spawn-time profile, feeding the new
+    // message to the old lifecycle serves it via the old provider —
+    // silently.
+    //
+    // Effective profile = session-pinned id (ManagedSession.providerProfileId,
+    // ε.3b/c) if non-null, else Settings default. The Settings default
+    // path is the normal case and is what the Q1 user story targets:
+    // "I changed default provider → next turn uses new default".
+    //
+    // Observed bug: session ccb-xunTnZqTG32q (2026-04-14). Turn 1 used
+    // gpt-5.4 via aihubmix; user switched default mid-session in
+    // Settings; turn 2 kept serving via aihubmix because drift check
+    // only lived in sendMessage() — the renderer's idle → resumeSession
+    // path bypassed it and took the fast reuse path. Tool_use ids on
+    // both turns were `call_*` (OpenAI style), confirming the SDK
+    // lifecycle was never restarted.
+    //
+    // Fix: compute effective profile once here, compare against the
+    // captured spawn-time profile on the runtime, and force restart
+    // when they differ. This closes both entry points (sendMessage +
+    // UI-idle-resume) with one check, at the cost of one more field
+    // read per resume call.
+    //
+    // Full architectural fix (delete QueryLifecycle + MessageQueue +
+    // drift entirely; each turn = fresh session.query()) is the ε.3d
+    // completion phase and depends on the SDK-side Session resource
+    // pool landing in ε.1c (otherwise per-turn setup of MCP / tool pool
+    // / hooks / system prompt / capability becomes real overhead).
+    if (!forceRestart && existing) {
+      const sessionBound = existing.session.getProviderProfileId()
+      const effectiveProfileId =
+        sessionBound ?? this.deps.getActiveProviderProfileId()
+      const spawnedProfileId = existing.providerProfileId ?? null
+      if (effectiveProfileId !== spawnedProfileId) {
+        log.info(
+          'resumeSession: provider drift detected, forcing lifecycle restart',
+          {
+            sessionId,
+            spawnedWith: spawnedProfileId,
+            effectiveNow: effectiveProfileId,
+            sessionPinned: sessionBound !== null,
+          },
+        )
+        forceRestart = true
+      }
+    }
+
+    // Fast path: if the SDK lifecycle is still alive AND the effective
+    // provider hasn't drifted, push to the existing queue instead of
+    // tearing down + rebuilding. Primary entry point from the renderer
+    // for `idle` sessions (renderer routes idle → onResume → resumeSession).
     if (!forceRestart && existing && this.pushToActiveSession(sessionId, existing, message)) {
       log.debug('resumeSession fast path: reused active lifecycle', { sessionId })
       return true
