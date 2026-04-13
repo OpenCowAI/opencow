@@ -130,6 +130,7 @@ export class QueryLifecycle implements SessionLifecycle {
     const resolveTurnRef = (event: EngineRuntimeEvent): RuntimeTurnRef | undefined =>
       this.resolveTurnRef(event)
     const lifecycle = this
+    const resolveTurnOptions = input.resolveTurnOptions
     const stream = (async function* () {
       try {
         const sdkMod = await loadSdkModule()
@@ -138,29 +139,73 @@ export class QueryLifecycle implements SessionLifecycle {
           ...toSdkOptions(options),
           ...(builtInTools ? { builtInTools } : {}),
         }
-        // ε.3a: go through Session-first-class API. Today this is
-        // behaviourally identical to the old `sdkMod.query()` call —
-        // Session.query() forwards to the same runtime under the hood.
-        // The swap establishes end-to-end plumbing for ε.3b+, where
-        // per-turn Session.query() calls will replace the long-lived
-        // queue pattern and delete drift-detection entirely.
+        // ε.3d.2 — Session is session-level; queries are per-turn.
+        //
+        // The Session is created ONCE and held for the lifecycle's
+        // lifetime. Each user message (initial + subsequent pushMessage
+        // entries drained from `lifecycle.queue`) opens a fresh
+        // `session.query({ prompt: [msg], options: turnOverlay })`, so
+        // per-turn options — especially `env` with the current
+        // provider credentials — are resolved at TURN TIME, not frozen
+        // at session start.
+        //
+        // This replaces the pre-ε.3d.2 model where a single long-lived
+        // `session.query({ prompt: lifecycle.queue })` had its options
+        // frozen at spawn. Under that model, mid-session Settings
+        // changes required kill + respawn (drift detection). That whole
+        // mechanism is now redundant — any Settings change between
+        // turns naturally takes effect on the next `session.query()`
+        // via `resolveTurnOptions()`.
+        //
+        // Session-level resources (MCP connections, tool pool, agent
+        // pool, hooks, system-prompt template) will migrate from
+        // per-query rebuild to per-session pooled reuse in SDK ε.1c.
+        // Until that lands, each `session.query()` still pays the SDK
+        // setup cost — but correctness is not gated on that perf work.
         const session = sdkMod.unstable_v2_createSession(sdkOptions)
         lifecycle._session = session
-        const q = session.query({ prompt: lifecycle.queue })
-        lifecycle._query = q
-        if (lifecycle._stopped) {
-          q.close()
-          lifecycle._query = null
-          return
-        }
-        for await (const message of q) {
-          const events = adaptClaudeSdkMessage(message)
-          for (const event of events) {
-            yield createRuntimeEventEnvelope({
-              engine: 'claude',
-              event,
-              turnRef: resolveTurnRef(event),
-            })
+
+        if (lifecycle._stopped) return
+
+        for await (const userMessage of lifecycle.queue) {
+          if (lifecycle._stopped) break
+
+          // Resolve overlay for this turn (fresh env / provider / etc.)
+          let turnOverlay: Record<string, unknown> | undefined
+          if (resolveTurnOptions) {
+            try {
+              const overlay = await resolveTurnOptions()
+              if (overlay.env) {
+                turnOverlay = { env: overlay.env }
+              }
+            } catch (err) {
+              log.warn('resolveTurnOptions failed — proceeding with session defaults', err)
+            }
+          }
+
+          const promptIter = (async function* () {
+            yield userMessage
+          })()
+          const q = session.query({
+            prompt: promptIter,
+            ...(turnOverlay ? { options: turnOverlay } : {}),
+          })
+          lifecycle._query = q
+
+          try {
+            for await (const message of q) {
+              if (lifecycle._stopped) break
+              const events = adaptClaudeSdkMessage(message)
+              for (const event of events) {
+                yield createRuntimeEventEnvelope({
+                  engine: 'claude',
+                  event,
+                  turnRef: resolveTurnRef(event),
+                })
+              }
+            }
+          } finally {
+            lifecycle._query = null
           }
         }
       } finally {

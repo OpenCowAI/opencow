@@ -25,6 +25,30 @@ export interface SessionLifecycleStartInput {
   initialPrompt: UserMessageContent
   launchOptions: SessionLaunchOptions
   callbacks?: SessionLifecycleCallbacks
+  /**
+   * ε.3d.2 — per-turn options resolver.
+   *
+   * Called once before EACH turn's SDK `session.query()` call. Returns
+   * a narrow overlay applied ONLY to that single turn. In v1 the
+   * overlay is limited to `env`, which is deep-merged on top of the
+   * Session's base env by SessionRuntime — covering the primary use
+   * case: refreshing provider credentials / model / base URL between
+   * turns so mid-session Settings changes take effect on the next
+   * message without lifecycle kill + respawn. The drift-detection
+   * branch in sessionOrchestrator becomes redundant as a result.
+   *
+   * The overlay type is intentionally narrow: nothing that would
+   * require recomposing session-level state (system prompt, tool
+   * pool, MCP servers) belongs here. Session-level state stays
+   * session-level.
+   */
+  resolveTurnOptions?: () => Promise<TurnOptionsOverlay>
+}
+
+/** ε.3d.2 — narrow per-turn option overlay. */
+export interface TurnOptionsOverlay {
+  /** Fresh environment variables (deep-merged on top of Session env). */
+  env?: Record<string, string>
 }
 
 /**

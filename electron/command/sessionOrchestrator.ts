@@ -992,6 +992,25 @@ export class SessionOrchestrator {
           : {
               onExecutionContextSignal: (signal) => notifyExecutionContextCwd(signal),
             },
+        // ε.3d.2 — per-turn env refresh. Every turn calls this resolver
+        // before invoking `session.query()`, so mid-session Settings
+        // changes (default provider / credentials / model) propagate on
+        // the NEXT user message without lifecycle kill + respawn. The
+        // lookup honours session-pinned profile (ε.3c) first.
+        resolveTurnOptions: async () => {
+          const sessionBound = session.getProviderProfileId()
+          try {
+            const env = await this.deps.getProviderEnv(sessionBound)
+            return { env }
+          } catch (err) {
+            log.warn('resolveTurnOptions: provider env refresh failed — keeping spawn-time env', {
+              sessionId,
+              profileId: sessionBound ?? '(default)',
+              error: err instanceof Error ? err.message : String(err),
+            })
+            return {}
+          }
+        },
       })
       for await (const runtimeEvent of runtimeEventStream) {
         // Hard stop guard: manual stop sets session state to `stopped`

@@ -142,30 +142,34 @@ describe('QueryLifecycle', () => {
   it('starts and yields messages from the SDK stream', async () => {
     const lifecycle = new QueryLifecycle()
     const stream = lifecycle.start({ initialPrompt: 'hello', launchOptions: makeClaudeLaunchOptions() })
-    const iter = stream[Symbol.asyncIterator]()
 
-    // Call next() first (starts generator, blocks on mock), then emit to resolve
-    const p1 = iter.next()
+    const received: Array<{ kind: string; payload: Record<string, unknown> }> = []
+    const consuming = (async () => {
+      for await (const envelope of stream) {
+        const event = envelope.event as { kind: string; payload: Record<string, unknown> }
+        received.push({ kind: event.kind, payload: event.payload })
+      }
+    })()
+
     await waitForQueryPull()
     emitMessage({ type: 'system', subtype: 'init', session_id: 'abc' })
-    const r1 = await p1
-    expect(r1.done).toBe(false)
-    const event1 = r1.value as { event?: { kind?: string; payload?: { sessionRef?: string } } }
-    expect(event1.event?.kind).toBe('session.initialized')
-    expect(event1.event?.payload?.sessionRef).toBe('abc')
-
-    const p2 = iter.next()
     await waitForQueryPull()
     emitMessage({ type: 'result', subtype: 'success' })
-    const r2 = await p2
-    expect(r2.done).toBe(false)
-    const event2 = r2.value as { event?: { kind?: string; payload?: { outcome?: string } } }
-    expect(event2.event?.kind).toBe('turn.result')
-    expect(event2.event?.payload?.outcome).toBe('success')
 
-    // Clean up
+    // ε.3d.2 — endStream ends the current turn's mock query (done:true)
+    // but the outer lifecycle loop then awaits the queue for the next
+    // turn. stop() breaks the outer loop and lets the consumer finish.
+    await waitForQueryPull()
     endStream()
-    await iter.next() // should return done: true
+    await lifecycle.stop()
+    await consuming
+
+    expect(received.length).toBeGreaterThanOrEqual(2)
+    expect(received[0].kind).toBe('session.initialized')
+    expect(received[0].payload.sessionRef).toBe('abc')
+    const resultEvent = received.find((e) => e.kind === 'turn.result')
+    expect(resultEvent).toBeDefined()
+    expect(resultEvent?.payload.outcome).toBe('success')
   })
 
   it('stop() before start() is idempotent and fast', async () => {
@@ -188,6 +192,14 @@ describe('QueryLifecycle', () => {
       }
     })()
 
+    // ε.3d.2 — wait for the first turn's mock query to actually pull,
+    // so _query is assigned on the lifecycle before we call stop().
+    // Under the per-turn model each turn creates a fresh query; there
+    // is no implicit "long-lived query exists from generator start"
+    // anymore, so a test that wants to verify in-flight close must
+    // explicitly wait for in-flight state.
+    await waitForQueryPull()
+
     await lifecycle.stop()
     await consuming
 
@@ -206,11 +218,20 @@ describe('QueryLifecycle', () => {
     })()
 
     await waitForQueryPull()
+    // ε.3d.2 — under the per-turn model, endStream() ends the current
+    // turn's SDK query (done:true) but the OUTER lifecycle generator
+    // returns to waiting on the queue for the next turn. Explicit
+    // stop() is required to make the lifecycle finish and close the
+    // current-turn query — this matches real production flow where
+    // an upstream consumer decides when the session ends.
     endStream()
+    await lifecycle.stop()
     await consuming
 
     expect(lifecycle.stopped).toBe(true)
-    // Natural completion MUST call close() to prevent fd leaks (spawn EBADF)
+    // mockClose is vi.fn that gets reset inside every createMockQuery()
+    // call. With a single turn in this test the last query is the only
+    // one whose close counter survives; stop() invoked close on it.
     expect(mockClose).toHaveBeenCalledTimes(1)
 
     // Subsequent stop() is idempotent — does NOT call close() again
@@ -233,6 +254,9 @@ describe('QueryLifecycle', () => {
         // consume
       }
     })()
+
+    // ε.3d.2 — same rationale as "stop() during streaming" test.
+    await waitForQueryPull()
 
     await lifecycle.stop()
     await lifecycle.stop()
