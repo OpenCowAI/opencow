@@ -573,6 +573,24 @@ export interface IPCChannels {
   }
   'command:list-managed-sessions': { args: []; return: SessionSnapshot[] }
   'command:get-managed-session': { args: [sessionId: string]; return: SessionSnapshot | null }
+  /**
+   * ε.4 — Pin (or unpin) a session to a specific provider profile.
+   *
+   *   - `profileId: null`  — session follows the current Settings default
+   *     (status-quo behavior). Pre-existing sessions all have this value.
+   *   - `profileId: <id>` — session is pinned; Settings changes no longer
+   *     affect it. Next turn resolves env from the pinned profile.
+   *
+   * Returns `true` on a successful in-memory + DB update, `false` when
+   * the session id is unknown.
+   */
+  'command:set-session-provider-profile': {
+    args: [
+      sessionId: string,
+      profileId: import('./providerProfile').ProviderProfileId | null,
+    ]
+    return: boolean
+  }
   'command:get-session-messages': { args: [sessionId: string]; return: ManagedSessionMessage[] }
   'command:list-session-lifecycle-operations': {
     args: [sessionId: string]

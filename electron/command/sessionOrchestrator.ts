@@ -1486,6 +1486,84 @@ export class SessionOrchestrator {
     }
   }
 
+  // ── Provider-profile binding (ε.4) ──────────────────────────────────
+
+  /**
+   * ε.4 — Pin (or unpin) a session's provider profile.
+   *
+   *   - `profileId: null` → unpin; session follows the current Settings
+   *     default provider on subsequent turns. Next turn's
+   *     resolveTurnOptions() refreshes env from the new default.
+   *   - `profileId: <id>` → pin; session locks to this profile. Next
+   *     turn's resolveTurnOptions() refreshes env from the pinned profile.
+   *     Settings changes no longer affect this session.
+   *
+   * The new value is:
+   *   1. Written onto the in-memory ManagedSession (so an active
+   *      lifecycle's next `resolveTurnOptions` call sees it).
+   *   2. Persisted via ManagedSessionStore (survives restart).
+   *   3. Dispatched as command:session:updated so the renderer's
+   *      session card reflects the new binding immediately.
+   *
+   * Returns false when the session id is unknown (neither active nor
+   * persisted). Zero effect on currently-in-flight turn.
+   */
+  async setSessionProviderProfile(
+    sessionId: string,
+    profileId: import('@shared/providerProfile').ProviderProfileId | null,
+  ): Promise<boolean> {
+    const rt = this.runtimes.get(sessionId)
+    let session = rt?.session ?? null
+
+    if (!session) {
+      const persisted = await this.store.get(sessionId)
+      if (!persisted) {
+        log.warn('setSessionProviderProfile ignored: session not found', { sessionId })
+        return false
+      }
+      // Rehydrate so we can mutate + persist via the same code path.
+      session = ManagedSession.fromInfo(persisted)
+    }
+
+    const previous = session.getProviderProfileId()
+    if (previous === profileId) {
+      log.debug('setSessionProviderProfile noop: value unchanged', {
+        sessionId,
+        profileId: profileId ?? '(null)',
+      })
+      return true
+    }
+
+    session.setProviderProfileId(profileId)
+
+    try {
+      await this.store.save(session.toPersistenceRecord())
+    } catch (err) {
+      // Revert in-memory change so the persisted and runtime states
+      // stay in sync even on store failure.
+      session.setProviderProfileId(previous)
+      log.error('setSessionProviderProfile failed to persist — reverted', {
+        sessionId,
+        error: err instanceof Error ? err.message : String(err),
+      })
+      throw err
+    }
+
+    log.info('Session provider profile updated', {
+      sessionId,
+      from: previous ?? '(default)',
+      to: profileId ?? '(default)',
+      active: !!rt,
+    })
+
+    this.deps.dispatch({
+      type: 'command:session:updated',
+      payload: session.snapshot(),
+    })
+
+    return true
+  }
+
   // ── Session lifecycle ───────────────────────────────────────────────
 
   async stopSession(sessionId: string): Promise<boolean> {

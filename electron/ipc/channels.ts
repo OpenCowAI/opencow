@@ -1053,6 +1053,9 @@ export function registerIPCHandlers(deps: IPCDeps): void {
     registerHandler('command:get-managed-session', (sessionId) =>
       orchestrator.getSession(sessionId)
     )
+    registerHandler('command:set-session-provider-profile', (sessionId, profileId) =>
+      orchestrator.setSessionProviderProfile(sessionId, profileId),
+    )
     registerHandler('command:get-session-messages', async (sessionId) => {
       const full = await orchestrator.getFullSession(sessionId)
       return full?.messages ?? []
