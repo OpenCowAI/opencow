@@ -429,26 +429,34 @@ export async function createAppServices(deps: ServiceFactoryDeps): Promise<AppSe
   orchestrator = new SessionOrchestrator({
     dispatch: (e) => bus.dispatch(e),
     getProxyEnv: () => settingsService.getProxyEnv(),
-    getProviderEnv: async () => {
-      const defaultId = providerService.resolveProfileId()
-      if (!defaultId) {
-        log.warn('getProviderEnv: no default profile configured — session will fail auth')
+    getProviderEnv: async (override) => {
+      // ε.3c: session-bound profile (if any) wins over Settings default.
+      // resolveProfileId already implements this override semantics.
+      const profileId = providerService.resolveProfileId(override)
+      if (!profileId) {
+        log.warn('getProviderEnv: no profile resolved — session will fail auth', {
+          override: override ?? '(none)',
+        })
         return {}
       }
       try {
-        return await providerService.getProviderEnvForProfile(defaultId)
+        return await providerService.getProviderEnvForProfile(profileId)
       } catch (err) {
         // ProfileMisconfiguredError and any downstream failure surfaces
         // here. Re-throw so the orchestrator's start-session path turns
         // it into a visible session error instead of spawning a broken
         // SDK that emits "API Error: fetch failed" as assistant text.
         const message = err instanceof Error ? err.message : String(err)
-        log.error('getProviderEnv failed — session will not spawn', { error: message })
+        log.error('getProviderEnv failed — session will not spawn', {
+          profileId,
+          error: message,
+        })
         throw err
       }
     },
-    getProviderDefaultModel: () => {
-      const profileId = providerService.resolveProfileId()
+    getProviderDefaultModel: (override) => {
+      // ε.3c: pinned session reads model preference from its bound profile.
+      const profileId = providerService.resolveProfileId(override)
       if (!profileId) return undefined
       const profile = providerService.listProfiles().find((p) => p.id === profileId)
       return profile?.preferredModel

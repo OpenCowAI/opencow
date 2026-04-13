@@ -71,8 +71,27 @@ type Dispatch = (event: DataBusEvent) => void
 export interface OrchestratorDeps {
   dispatch: Dispatch
   getProxyEnv: () => Record<string, string>
-  getProviderEnv: () => Promise<Record<string, string>>
-  getProviderDefaultModel: () => string | undefined
+  /**
+   * Resolve the provider env bag for a session spawn.
+   *
+   * ε.3c: Optional `profileId` lets a session that is explicitly pinned
+   * to a provider profile (ManagedSession.getProviderProfileId()) spawn
+   * against that profile regardless of the current Settings default.
+   * When omitted the implementation falls back to the Settings default.
+   */
+  getProviderEnv: (
+    profileId?: import('@shared/providerProfile').ProviderProfileId | null,
+  ) => Promise<Record<string, string>>
+  /**
+   * Resolve the default model for a profile.
+   *
+   * ε.3c: Optional `profileId` lets session spawn look up the model
+   * preferred by the session-bound profile rather than the current
+   * default. When omitted, falls back to the Settings default.
+   */
+  getProviderDefaultModel: (
+    profileId?: import('@shared/providerProfile').ProviderProfileId | null,
+  ) => string | undefined
   /**
    * Returns the current default profile id (synchronous in-memory
    * read). Used to detect mid-session provider switches.
@@ -538,12 +557,23 @@ export class SessionOrchestrator {
     // Model) short-circuits session spawn. The session is transitioned
     // to `error` with the thrown message so the user sees it in the
     // chat view instead of a hung/broken session.
+    //
+    // ε.3c: when the session is pinned (ManagedSession.getProviderProfileId()
+    // returns non-null), spawn against the pinned profile regardless of the
+    // current Settings default. Matches the user's Q1 ask: sessions can
+    // either follow the default OR be explicitly pinned; Settings changes
+    // don't silently hijack a pinned session.
+    const sessionBoundProfileId = session.getProviderProfileId()
     let providerEnv: Record<string, string>
     try {
-      providerEnv = await this.deps.getProviderEnv()
+      providerEnv = await this.deps.getProviderEnv(sessionBoundProfileId)
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
-      log.error('Session spawn aborted: provider env resolution failed', { sessionId, error: message })
+      log.error('Session spawn aborted: provider env resolution failed', {
+        sessionId,
+        profileId: sessionBoundProfileId ?? '(default)',
+        error: message,
+      })
       session.transition({ type: 'turn_error', message })
       this.dispatchSessionTerminal({
         sessionId,
@@ -555,9 +585,14 @@ export class SessionOrchestrator {
     }
     Object.assign(sessionEnv, providerEnv)
 
-    // Record the provider mode active at lifecycle spawn time — used by
-    // sendMessage() to detect mid-session provider switches.
-    if (rt) rt.providerProfileId = this.deps.getActiveProviderProfileId()
+    // ε.3c: Record the *effective* profile id — the one we actually spawned
+    // with — so drift detection and telemetry observe the real binding. For
+    // a pinned session this is the pinned value; for an unpinned session
+    // this captures the Settings default at spawn time (pre-ε.3c semantics).
+    if (rt) {
+      rt.providerProfileId =
+        sessionBoundProfileId ?? this.deps.getActiveProviderProfileId()
+    }
 
     // Layer proxy settings (settings > process.env, already in sessionEnv)
     const settingsProxy = this.deps.getProxyEnv()
@@ -609,7 +644,10 @@ export class SessionOrchestrator {
       sessionEnv,
       options,
       deps: {
-        getProviderDefaultModel: this.deps.getProviderDefaultModel,
+        // ε.3c: pinned sessions resolve their model from the bound profile,
+        // not the Settings default.
+        getProviderDefaultModel: () =>
+          this.deps.getProviderDefaultModel(sessionBoundProfileId),
       },
       logger: log,
     })

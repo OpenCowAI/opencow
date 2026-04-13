@@ -3,6 +3,7 @@
 import { describe, it, expect } from 'vitest'
 import { ManagedSession } from '../../../electron/command/managedSession'
 import type { ManagedSessionConfig, ContentBlock, TaskStartedEvent, HookStatusEvent } from '../../../src/shared/types'
+import { asProviderProfileId } from '../../../src/shared/providerProfile'
 
 function textBlock(text: string): ContentBlock {
   return { type: 'text', text }
@@ -666,5 +667,67 @@ describe('ManagedSession', () => {
     expect(restored.getModel()).toBe('claude-sonnet-4-6')
     expect(restored.getModelOverride()).toBeNull()
     expect(restored.getConfig().model).toBeUndefined()
+  })
+
+  // ── ε.3b + ε.3c — providerProfileId binding ────────────────────────────
+  describe('providerProfileId binding (ε.3b/c)', () => {
+    it('defaults to null (follow Settings default) when config omits it', () => {
+      const session = new ManagedSession(baseConfig)
+      expect(session.getProviderProfileId()).toBeNull()
+      expect(session.snapshot().providerProfileId).toBeNull()
+    })
+
+    it('honours config.providerProfileId at construction', () => {
+      const pinned = asProviderProfileId('prof_abc')
+      const session = new ManagedSession({
+        ...baseConfig,
+        providerProfileId: pinned,
+      })
+      expect(session.getProviderProfileId()).toBe(pinned)
+      expect(session.snapshot().providerProfileId).toBe(pinned)
+    })
+
+    it('setProviderProfileId mutates and updates lastActivity', () => {
+      const session = new ManagedSession(baseConfig)
+      const before = session.snapshot().lastActivity
+      // Small wait to ensure the mutator timestamps monotonically forward.
+      // Using explicit Date.now() check rather than a timer — deterministic.
+      const pinned = asProviderProfileId('prof_xyz')
+      session.setProviderProfileId(pinned)
+      expect(session.getProviderProfileId()).toBe(pinned)
+      expect(session.snapshot().lastActivity).toBeGreaterThanOrEqual(before)
+
+      session.setProviderProfileId(null)
+      expect(session.getProviderProfileId()).toBeNull()
+    })
+
+    it('fromInfo restores providerProfileId from persisted snapshot', () => {
+      const pinned = asProviderProfileId('prof_persisted')
+      const restored = ManagedSession.fromInfo({
+        id: 'ccb-restore-test',
+        engineSessionRef: null,
+        engineState: null,
+        state: 'idle',
+        stopReason: null,
+        origin: { source: 'browser-agent' },
+        projectPath: null,
+        projectId: null,
+        model: null,
+        messages: [],
+        createdAt: 0,
+        lastActivity: 0,
+        activeDurationMs: 0,
+        activeStartedAt: null,
+        totalCostUsd: 0,
+        inputTokens: 0,
+        outputTokens: 0,
+        lastInputTokens: 0,
+        activity: null,
+        error: null,
+        executionContext: null,
+        providerProfileId: pinned,
+      })
+      expect(restored.getProviderProfileId()).toBe(pinned)
+    })
   })
 })
