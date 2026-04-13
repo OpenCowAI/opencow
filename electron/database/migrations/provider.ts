@@ -56,6 +56,7 @@ import * as m052 from './052_add_project_browser_state_policy'
 import * as m053 from './053_create_session_lifecycle_operations'
 import * as m054 from './054_scope_lifecycle_idempotency_by_session'
 import * as m055 from './055_add_lifecycle_proposal_group_key'
+import * as m056 from './056_add_session_provider_profile_id'
 
 /**
  * Compile-time migration provider.
@@ -125,6 +126,7 @@ class CodeMigrationProvider implements MigrationProvider {
       '053_create_session_lifecycle_operations': m053,
       '054_scope_lifecycle_idempotency_by_session': m054,
       '055_add_lifecycle_proposal_group_key': m055,
+      '056_add_session_provider_profile_id': m056,
     }
   }
 }

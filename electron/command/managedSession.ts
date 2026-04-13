@@ -19,6 +19,7 @@ import type {
   EvoseProgressBlock,
   EvoseToolCallBlock,
 } from '../../src/shared/types'
+import type { ProviderProfileId } from '../../src/shared/providerProfile'
 import type { SessionLifecycleEvent } from './sessionStateMachine'
 import { createLogger } from '../platform/logger'
 import { IPC_PROGRESS_CAP_CHARS } from '../conversation/constants'
@@ -143,6 +144,15 @@ export class ManagedSession {
   private _stopReason: SessionStopReason | null = null
   private systemEventIndex = new Map<string, string>()
   private executionContext: SessionExecutionContext | null = null
+  /**
+   * Session-bound provider profile (ε.3b).
+   *
+   *   - `null` — session follows the current Settings default. Matches
+   *     pre-ε.3 behavior.
+   *   - Non-null — pinned to this profile regardless of Settings changes.
+   *     ε.3c will have spawn prefer this value.
+   */
+  private providerProfileId: ProviderProfileId | null = null
 
   constructor(config: ManagedSessionRuntimeConfig) {
     this.sessionId = `ccb-${nanoid(12)}`
@@ -155,11 +165,27 @@ export class ManagedSession {
     this.engineState = engineState
     this.modelOverride = startupModelOverride ?? null
     this.model = null
+    this.providerProfileId = config.providerProfileId ?? null
     const now = Date.now()
     this.createdAt = now
     this.lastActivity = now
     // Initial state is 'creating' which is active
     this.activeStartedAt = now
+  }
+
+  /** ε.3b — the provider profile this session is bound to, or null for "follow default". */
+  getProviderProfileId(): ProviderProfileId | null {
+    return this.providerProfileId
+  }
+
+  /**
+   * ε.3b — pin the session to an explicit profile, or set to null to
+   * re-enable "follow default" behavior. ε.4 UI exposes this via a
+   * per-session "Change provider" action.
+   */
+  setProviderProfileId(id: ProviderProfileId | null): void {
+    this.providerProfileId = id
+    this.lastActivity = Date.now()
   }
 
   get id(): string {
@@ -888,6 +914,7 @@ export class ManagedSession {
       activity: this.activity,
       error: this.error,
       executionContext: this.executionContext ? { ...this.executionContext } : null,
+      providerProfileId: this.providerProfileId,
     }
   }
 
@@ -988,6 +1015,7 @@ export class ManagedSession {
     if (info.executionContext) {
       session.executionContext = { ...info.executionContext }
     }
+    session.providerProfileId = info.providerProfileId
     return session
   }
 }

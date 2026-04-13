@@ -3145,6 +3145,16 @@ export interface ManagedSessionConfig {
   /** Resolved Project ID — set at session creation time, persisted for resume. */
   projectId?: string
   model?: string
+  /**
+   * Provider profile binding (ε.3b).
+   *
+   *   - `null` / omitted — session follows the current Settings default
+   *     provider. Matches pre-ε behavior; used for backward compatibility
+   *     and for users who want "change default → all sessions follow".
+   *   - Non-null — session is pinned to this profile regardless of Settings
+   *     changes. ε.3c changes spawn to prefer this value.
+   */
+  providerProfileId?: import('./providerProfile').ProviderProfileId | null
   maxTurns?: number
   permissionMode?: string
   // ── Browser Agent extensions ──
@@ -3293,6 +3303,13 @@ export interface SessionSnapshot {
   error: string | null
   /** Session runtime execution context; null when not yet initialized (creating phase) */
   executionContext: SessionExecutionContext | null
+  /**
+   * Provider profile binding persisted on the session (ε.3b).
+   *
+   *   - `null` — session follows the current Settings default provider.
+   *   - Non-null — session is pinned to this profile.
+   */
+  providerProfileId: import('./providerProfile').ProviderProfileId | null
 }
 
 /**

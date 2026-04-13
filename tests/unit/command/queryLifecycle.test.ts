@@ -87,6 +87,14 @@ vi.mock('../../../electron/conversation/runtime/claudeRuntimeAdapter', () => ({
 beforeEach(() => {
   __setOpenClaudeModuleLoaderForTest(async () => ({
     query: vi.fn(() => createMockQuery()),
+    // ε.3a — QueryLifecycle routes SDK query through the Session-first-class
+    // API. The mock Session forwards back to createMockQuery so existing
+    // test assertions (mockClose, yieldQueue, emitMessage) keep working
+    // without change.
+    unstable_v2_createSession: vi.fn((_options: Record<string, unknown>) => ({
+      query: (_params: { prompt: AsyncIterable<unknown> }) => createMockQuery(),
+      close: vi.fn(async () => {}),
+    })),
   }))
 })
 

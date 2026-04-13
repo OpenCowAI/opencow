@@ -7,6 +7,10 @@ import type {
   SessionExecutionContext,
   SessionOrigin,
 } from '../../../src/shared/types'
+import {
+  asProviderProfileId,
+  type ProviderProfileId,
+} from '../../../src/shared/providerProfile'
 
 function parseEngineState(raw: string | null): Record<string, unknown> | null {
   if (!raw) return null
@@ -169,7 +173,15 @@ export function managedSessionRowToInfo(row: ManagedSessionTable): ManagedSessio
     executionContext: row.execution_context
       ? (JSON.parse(row.execution_context) as SessionExecutionContext)
       : null,
+    providerProfileId: rowProviderProfileIdToDomain(row.provider_profile_id),
   }
+}
+
+function rowProviderProfileIdToDomain(
+  raw: string | null,
+): ProviderProfileId | null {
+  if (raw === null || raw.length === 0) return null
+  return asProviderProfileId(raw)
 }
 
 export function managedSessionInfoToRow(session: ManagedSessionInfo): ManagedSessionTable {
@@ -203,5 +215,6 @@ export function managedSessionInfoToRow(session: ManagedSessionInfo): ManagedSes
     activity: session.activity,
     error: session.error,
     execution_context: session.executionContext ? JSON.stringify(session.executionContext) : null,
+    provider_profile_id: session.providerProfileId,
   }
 }

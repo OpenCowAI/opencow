@@ -127,6 +127,14 @@ export interface ManagedSessionTable {
   error: string | null
   /** JSON-serialized SessionExecutionContext; null when not yet initialized. Added in migration 035. */
   execution_context: string | null
+  /**
+   * Provider profile bound to this session. Added in migration 056 (ε.3b).
+   *
+   *   - NULL — session follows the current Settings default provider.
+   *   - Non-NULL — session is pinned to this specific profile regardless
+   *     of Settings changes; ε.3c changes spawn to prefer this value.
+   */
+  provider_profile_id: string | null
 }
 
 // ─── Projects ────────────────────────────────────────────────────────────
