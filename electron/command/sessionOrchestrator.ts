@@ -1283,65 +1283,35 @@ export class SessionOrchestrator {
     })
 
     const existing = this.runtimes.get(sessionId)
-    let forceRestart = options.forceRestart
+    const forceRestart = options.forceRestart
 
-    // ── ε.3d.1: Provider drift gate (single funnel) ───────────────────────
+    // ── ε.3d.3: Provider drift gate DELETED ───────────────────────────────
     //
-    // The fast path below reuses the existing SDK lifecycle whose env
-    // (OPENAI_MODEL / ANTHROPIC_BASE_URL / OPENAI_API_KEY / … anything
-    // that came out of `getProviderEnv(profileId)` at spawn time) is
-    // frozen for that lifecycle's lifetime. If the effective profile for
-    // THIS turn differs from the spawn-time profile, feeding the new
-    // message to the old lifecycle serves it via the old provider —
-    // silently.
+    // Previously (ε.3d.1) this path gated the fast-path reuse by comparing
+    // the session's effective profile against the lifecycle's spawn-time
+    // profile; when they differed we tore the lifecycle down and spawned a
+    // fresh one with new env. That protected against serving a mid-session
+    // Settings change via stale env frozen at spawn.
     //
-    // Effective profile = session-pinned id (ManagedSession.providerProfileId,
-    // ε.3b/c) if non-null, else Settings default. The Settings default
-    // path is the normal case and is what the Q1 user story targets:
-    // "I changed default provider → next turn uses new default".
+    // After ε.3d.2 the lifecycle itself refreshes env on every turn via
+    // `resolveTurnOptions()` — each `session.query()` picks up the current
+    // `getProviderEnv(session.getProviderProfileId())` result, which honours
+    // both the session-pinned profile and the current Settings default.
+    // So drift no longer requires kill + respawn; the fast path below is
+    // always safe for provider changes. Deleting the gate removes a
+    // user-visible "Starting..." blip when the user changes default
+    // provider between turns.
     //
-    // Observed bug: session ccb-xunTnZqTG32q (2026-04-14). Turn 1 used
-    // gpt-5.4 via aihubmix; user switched default mid-session in
-    // Settings; turn 2 kept serving via aihubmix because drift check
-    // only lived in sendMessage() — the renderer's idle → resumeSession
-    // path bypassed it and took the fast reuse path. Tool_use ids on
-    // both turns were `call_*` (OpenAI style), confirming the SDK
-    // lifecycle was never restarted.
-    //
-    // Fix: compute effective profile once here, compare against the
-    // captured spawn-time profile on the runtime, and force restart
-    // when they differ. This closes both entry points (sendMessage +
-    // UI-idle-resume) with one check, at the cost of one more field
-    // read per resume call.
-    //
-    // Full architectural fix (delete QueryLifecycle + MessageQueue +
-    // drift entirely; each turn = fresh session.query()) is the ε.3d
-    // completion phase and depends on the SDK-side Session resource
-    // pool landing in ε.1c (otherwise per-turn setup of MCP / tool pool
-    // / hooks / system prompt / capability becomes real overhead).
-    if (!forceRestart && existing) {
-      const sessionBound = existing.session.getProviderProfileId()
-      const effectiveProfileId =
-        sessionBound ?? this.deps.getActiveProviderProfileId()
-      const spawnedProfileId = existing.providerProfileId ?? null
-      if (effectiveProfileId !== spawnedProfileId) {
-        log.info(
-          'resumeSession: provider drift detected, forcing lifecycle restart',
-          {
-            sessionId,
-            spawnedWith: spawnedProfileId,
-            effectiveNow: effectiveProfileId,
-            sessionPinned: sessionBound !== null,
-          },
-        )
-        forceRestart = true
-      }
-    }
+    // The other legitimate restart trigger — native-capability additions
+    // via slash command / skill reference — lives in sendMessage() and
+    // fires `forceRestart: true` explicitly when a lifecycle rebootstrap
+    // is required for tool-pool reasons (not env reasons). That path is
+    // unchanged.
 
-    // Fast path: if the SDK lifecycle is still alive AND the effective
-    // provider hasn't drifted, push to the existing queue instead of
-    // tearing down + rebuilding. Primary entry point from the renderer
-    // for `idle` sessions (renderer routes idle → onResume → resumeSession).
+    // Fast path: if the SDK lifecycle is still alive, push to the existing
+    // queue — the per-turn resolveTurnOptions in QueryLifecycle (ε.3d.2)
+    // will refresh env for this turn. Primary entry point from the
+    // renderer for `idle` sessions (idle → onResume → resumeSession).
     if (!forceRestart && existing && this.pushToActiveSession(sessionId, existing, message)) {
       log.debug('resumeSession fast path: reused active lifecycle', { sessionId })
       return true
