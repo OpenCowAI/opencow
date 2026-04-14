@@ -31,7 +31,7 @@ type SdkSession = {
 }
 type OpenCowAgentModule = {
   query: (params: { prompt: AsyncIterable<unknown>; options?: Record<string, unknown> }) => SdkQuery
-  unstable_v2_createSession: (options: Record<string, unknown>) => SdkSession
+  createSession: (options: Record<string, unknown>) => SdkSession
   getBuiltInTools?: () => unknown[]
 }
 
@@ -162,7 +162,7 @@ export class QueryLifecycle implements SessionLifecycle {
         // per-query rebuild to per-session pooled reuse in SDK ε.1c.
         // Until that lands, each `session.query()` still pays the SDK
         // setup cost — but correctness is not gated on that perf work.
-        const session = sdkMod.unstable_v2_createSession(sdkOptions)
+        const session = sdkMod.createSession(sdkOptions)
         lifecycle._session = session
 
         if (lifecycle._stopped) return
