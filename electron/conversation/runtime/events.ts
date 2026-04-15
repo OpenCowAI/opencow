@@ -118,6 +118,23 @@ export type EngineRuntimeEvent =
       }
     }
   | {
+      /**
+       * Tool result envelope returned by the engine to the model.
+       *
+       * Carries the full structured payload (text + extracted media blocks)
+       * so the persistence/resume path can round-trip the SDK protocol
+       * losslessly. Without this event the model loses the tool's output
+       * on per-turn resume (e.g. browser_screenshot images vanish, the
+       * agent then claims it "didn't see the screenshot").
+       */
+      readonly kind: 'user.tool_result'
+      readonly payload: {
+        readonly toolUseId: string
+        readonly isError: boolean
+        readonly blocks: ConversationContentBlock[]
+      }
+    }
+  | {
       readonly kind: 'turn.usage'
       readonly payload: RuntimeTurnUsage
     }
@@ -236,6 +253,7 @@ export function isTurnScopedRuntimeEventKind(kind: EngineRuntimeEvent['kind']): 
     kind === 'turn.started' ||
     kind === 'assistant.partial' ||
     kind === 'assistant.final' ||
+    kind === 'user.tool_result' ||
     kind === 'turn.usage' ||
     kind === 'tool.progress' ||
     kind === 'turn.result' ||

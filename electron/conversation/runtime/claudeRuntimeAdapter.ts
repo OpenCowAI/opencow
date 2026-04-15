@@ -176,6 +176,67 @@ function parseAssistantBlocks(raw: Record<string, unknown>): EngineRuntimeEvent[
   return events
 }
 
+/**
+ * Parse a `type:'user'` SDKMessage.
+ *
+ * The Claude Agent SDK uses user-role messages for two purposes:
+ *   1. Echoing back the just-sent user prompt — `content` is a string or an
+ *      array of plain text blocks. These are truly informational (OpenCow
+ *      already persisted the user's input via its own command pipeline) and
+ *      are dropped here.
+ *   2. Delivering tool_result blocks back from the engine to the model. These
+ *      are LOAD-BEARING for per-turn resume: without them the persisted
+ *      conversation history loses tool output (e.g. browser_screenshot images),
+ *      and the next turn's model starts blind.
+ *
+ * For each tool_result block we emit a `user.tool_result` runtime event whose
+ * payload includes both the textual content (as a tool_result block) and any
+ * extracted media (image/document) carrying the originating `toolUseId` for
+ * provenance. Lossless round-trip of the SDK protocol is the contract.
+ */
+function parseUserMessage(raw: Record<string, unknown>): EngineRuntimeEvent[] {
+  const messageObj = raw.message as
+    | { content?: string | SDKContentBlock[] }
+    | undefined
+  const content = messageObj?.content
+  if (!Array.isArray(content)) {
+    // Pure prompt echo — nothing actionable for the conversation pipeline.
+    return []
+  }
+
+  const events: EngineRuntimeEvent[] = []
+  for (const block of content) {
+    if (block.type !== 'tool_result') continue
+    const toolUseId = typeof block.tool_use_id === 'string' ? block.tool_use_id : ''
+    if (!toolUseId) {
+      events.push(protocolViolation({
+        reason: 'Malformed tool_result: missing tool_use_id',
+        rawType: 'user',
+        rawSubtype: null,
+      }))
+      continue
+    }
+    // Reuse normalizeContentBlocks to:
+    //   - flatten the tool_result text payload into a ToolResultBlock
+    //   - extract any embedded media as adjacent ImageBlock/DocumentBlock
+    //     stamped with the originating toolUseId
+    // This is the same pipeline used for assistant blocks, so domain shapes
+    // stay symmetric and the renderer's BrowserScreenshotCard provenance
+    // path (block.toolUseId match) lights up automatically.
+    const blocks = toConversationContentBlocks(normalizeContentBlocks([block]))
+    if (blocks.length === 0) continue
+    events.push({
+      kind: 'user.tool_result',
+      payload: {
+        toolUseId,
+        isError: block.is_error === true,
+        blocks,
+      },
+    })
+  }
+  return events
+}
+
 function parsePartialBlocks(raw: Record<string, unknown>): EngineRuntimeEvent {
   const messageObj = raw.message as { content?: SDKContentBlock[] } | undefined
   return {
@@ -212,8 +273,13 @@ const KNOWN_INFORMATIONAL_EVENTS = new Set([
   'auth_status',
   // Tool use summaries
   'tool_use_summary',
-  // User message echoes
-  'user',
+  // NOTE: bare `'user'` is intentionally NOT listed here.
+  // Claude SDK emits `type:'user'` SDKMessages for two distinct purposes:
+  //   1. Echoing back the just-sent user prompt (truly informational)
+  //   2. Delivering tool_result blocks (engine→model feedback — load-bearing
+  //      for per-turn resume; dropping these makes the model lose tool output
+  //      between turns, e.g. browser_screenshot images vanishing).
+  // Branch on `message.content` shape inside adaptClaudeSdkMessage instead.
 ])
 
 export function adaptClaudeSdkMessage(message: SDKMessage): EngineRuntimeEvent[] {
@@ -256,6 +322,10 @@ export function adaptClaudeSdkMessage(message: SDKMessage): EngineRuntimeEvent[]
 
   if (type === 'assistant' && subtype == null) {
     return parseAssistantBlocks(raw)
+  }
+
+  if (type === 'user' && subtype == null) {
+    return parseUserMessage(raw)
   }
 
   if (type === 'result') {

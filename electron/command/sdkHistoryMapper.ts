@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto'
 import type { ContentBlock, ManagedSessionMessage } from '../../src/shared/types'
 
 type SdkTextBlock = { type: 'text'; text: string }
+type SdkThinkingBlock = { type: 'thinking'; thinking: string }
 type SdkImageBlock = {
   type: 'image'
   source: { type: 'base64'; media_type: string; data: string }
@@ -15,7 +16,33 @@ type SdkDocumentBlock = {
     | { type: 'text'; media_type: 'text/plain'; data: string }
   title?: string
 }
-type SdkUserContentBlock = SdkTextBlock | SdkImageBlock | SdkDocumentBlock
+type SdkToolUseBlock = {
+  type: 'tool_use'
+  id: string
+  name: string
+  input: Record<string, unknown>
+}
+type SdkToolResultContentItem =
+  | { type: 'text'; text: string }
+  | {
+      type: 'image'
+      source: { type: 'base64'; media_type: string; data: string }
+    }
+type SdkToolResultBlock = {
+  type: 'tool_result'
+  tool_use_id: string
+  content: string | SdkToolResultContentItem[]
+  is_error?: boolean
+}
+type SdkUserContentBlock =
+  | SdkTextBlock
+  | SdkImageBlock
+  | SdkDocumentBlock
+  | SdkToolResultBlock
+type SdkAssistantContentBlock =
+  | SdkTextBlock
+  | SdkThinkingBlock
+  | SdkToolUseBlock
 
 type SdkHistoryUserMessage = {
   type: 'user'
@@ -56,7 +83,7 @@ type SdkHistoryAssistantMessage = {
       iterations: null
       speed: null
     }
-    content: Array<{ type: 'text'; text: string }>
+    content: SdkAssistantContentBlock[]
     context_management: null
   }
 }
@@ -75,6 +102,21 @@ function buildCommandXml(name: string, userArgs: string): string {
   ].join(' ')
 }
 
+/**
+ * Map persisted user-role blocks back to the SDK's user-message content shape.
+ *
+ * Two block sources land here:
+ *
+ *   1. Real user input — text / image / document / slash_command. These map
+ *      1:1 to SDK user content items.
+ *   2. Engine-emitted tool_result envelopes — a ToolResultBlock followed by
+ *      one or more ImageBlock/DocumentBlock siblings stamped with the same
+ *      `toolUseId` (extracted by `extractMediaFromToolResult`). The Anthropic
+ *      protocol requires those media items to live INSIDE the matching
+ *      `tool_result.content` array, not as siblings — so we fold them back
+ *      here. This keeps OpenCow's persisted shape ergonomic for rendering
+ *      while still emitting the canonical SDK shape for resume.
+ */
 function mapUserContent(blocks: ContentBlock[]): string | SdkUserContentBlock[] | null {
   if (blocks.length === 0) return null
 
@@ -83,6 +125,24 @@ function mapUserContent(blocks: ContentBlock[]): string | SdkUserContentBlock[] 
     .map((block) => block.text)
     .join('')
     .trim()
+
+  // Pre-pass: index media blocks by toolUseId so we can fold them into the
+  // matching tool_result.content during the main pass.
+  const mediaByToolUseId = new Map<string, SdkToolResultContentItem[]>()
+  for (const block of blocks) {
+    if (block.type !== 'image') continue
+    if (!block.toolUseId) continue
+    const list = mediaByToolUseId.get(block.toolUseId) ?? []
+    list.push({
+      type: 'image',
+      source: {
+        type: 'base64',
+        media_type: block.mediaType,
+        data: block.data,
+      },
+    })
+    mediaByToolUseId.set(block.toolUseId, list)
+  }
 
   const mapped: SdkUserContentBlock[] = []
   for (const block of blocks) {
@@ -95,6 +155,9 @@ function mapUserContent(blocks: ContentBlock[]): string | SdkUserContentBlock[] 
         mapped.push({ type: 'text', text: block.expandedText })
         break
       case 'image':
+        // Fold provenance-stamped images into their owning tool_result; only
+        // emit standalone for genuine user-attached images.
+        if (block.toolUseId) break
         mapped.push({
           type: 'image',
           source: {
@@ -113,11 +176,26 @@ function mapUserContent(blocks: ContentBlock[]): string | SdkUserContentBlock[] 
           title: block.title,
         })
         break
+      case 'tool_result': {
+        const media = mediaByToolUseId.get(block.toolUseId) ?? []
+        const textContent = block.content.length > 0
+          ? [{ type: 'text' as const, text: block.content }]
+          : []
+        const content: SdkToolResultContentItem[] = [...textContent, ...media]
+        mapped.push({
+          type: 'tool_result',
+          tool_use_id: block.toolUseId,
+          // Anthropic API accepts string when there is only text and no media;
+          // use string form to minimize payload size in that case.
+          content: media.length === 0 ? block.content : content,
+          ...(block.isError ? { is_error: true } : {}),
+        })
+        break
+      }
       case 'tool_use':
-      case 'tool_result':
       case 'thinking':
-        // These should not appear in managed user messages for normal turns.
-        // Skip silently to keep injected history API-compatible.
+        // These belong on assistant messages — never appear on user-role
+        // messages in a well-formed history. Skip silently.
         break
       default: {
         const _exhaustive: never = block
@@ -133,13 +211,43 @@ function mapUserContent(blocks: ContentBlock[]): string | SdkUserContentBlock[] 
   return mapped
 }
 
-function mapAssistantText(blocks: ContentBlock[]): string | null {
-  const parts = blocks
-    .filter((block): block is Extract<ContentBlock, { type: 'text' }> => block.type === 'text')
-    .map((block) => block.text.trim())
-    .filter((text) => text.length > 0)
-  if (parts.length === 0) return null
-  return parts.join('\n\n')
+/**
+ * Map persisted assistant-role blocks back to the SDK's assistant-message
+ * content shape. Preserves text + thinking + tool_use so per-turn resume
+ * replays the assistant's full intent (without tool_use the model loses the
+ * pairing with the next user-role tool_result and the SDK rejects the history).
+ */
+function mapAssistantContent(blocks: ContentBlock[]): SdkAssistantContentBlock[] {
+  const mapped: SdkAssistantContentBlock[] = []
+  for (const block of blocks) {
+    switch (block.type) {
+      case 'text':
+        if (block.text.length > 0) mapped.push({ type: 'text', text: block.text })
+        break
+      case 'thinking':
+        if (block.thinking.length > 0) mapped.push({ type: 'thinking', thinking: block.thinking })
+        break
+      case 'tool_use':
+        mapped.push({
+          type: 'tool_use',
+          id: block.id,
+          name: block.name,
+          input: block.input,
+        })
+        break
+      case 'image':
+      case 'document':
+      case 'tool_result':
+      case 'slash_command':
+        // Not valid in assistant-role messages.
+        break
+      default: {
+        const _exhaustive: never = block
+        return _exhaustive
+      }
+    }
+  }
+  return mapped
 }
 
 function toSdkUserMessage(
@@ -162,8 +270,8 @@ function toSdkUserMessage(
 function toSdkAssistantMessage(
   message: Extract<ManagedSessionMessage, { role: 'assistant' }>,
 ): SdkHistoryAssistantMessage | null {
-  const text = mapAssistantText(message.content)
-  if (!text) return null
+  const content = mapAssistantContent(message.content)
+  if (content.length === 0) return null
 
   return {
     type: 'assistant',
@@ -196,7 +304,7 @@ function toSdkAssistantMessage(
         iterations: null,
         speed: null,
       },
-      content: [{ type: 'text', text }],
+      content,
       context_management: null,
     },
   }

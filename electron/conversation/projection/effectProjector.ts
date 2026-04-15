@@ -291,6 +291,22 @@ export function applyConversationDomainEffects(params: {
         break
       }
 
+      case 'apply_user_tool_result': {
+        // Persist the engine-emitted user-role tool_result message so
+        // per-turn resume can replay the model's full view of the turn.
+        // Includes both a ToolResultBlock (text payload) and any extracted
+        // media blocks (e.g. browser_screenshot PNG) carrying the originating
+        // toolUseId for context-aware rendering.
+        const blocks = toManagedContentBlocks(effect.payload.blocks)
+        if (blocks.length === 0) break
+        const messageId = ctx.session.addMessage('user', blocks, false)
+        // Queued: tool_result lands between assistant.final (hasToolUse=true)
+        // and the next assistant.partial — coalesce into the same throttle
+        // window so the renderer sees both in one batch.
+        ctx.queueMessageDispatch(messageId)
+        break
+      }
+
       case 'apply_turn_usage': {
         // Pure token accounting — context window tracking is handled separately
         // by context.snapshot events emitted from engine adapters.

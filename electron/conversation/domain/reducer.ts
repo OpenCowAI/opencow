@@ -186,6 +186,18 @@ export function reduceConversationDomainEvent(params: {
       return { state: nextState, effects }
     }
 
+    case 'user.tool_result': {
+      // Tool result is an engine-driven user-role message. It does NOT
+      // leave the streaming phase (assistant.final with hasToolUse already
+      // kept us in `streaming`); it only feeds the persisted history so
+      // per-turn resume can replay the model's view of the world.
+      effects.push({
+        type: 'apply_user_tool_result',
+        payload: event.payload,
+      })
+      return { state: nextState, effects }
+    }
+
     case 'turn.usage': {
       effects.push({
         type: 'apply_turn_usage',

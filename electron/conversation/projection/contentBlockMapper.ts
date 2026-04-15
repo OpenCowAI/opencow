@@ -41,6 +41,7 @@ export function toManagedContentBlocks(blocks: ConversationContentBlock[]): Cont
           mediaType: block.mediaType as ImageMediaType,
           data: block.data,
           sizeBytes: block.sizeBytes,
+          ...(block.toolUseId ? { toolUseId: block.toolUseId } : {}),
         })
         break
       case 'document':

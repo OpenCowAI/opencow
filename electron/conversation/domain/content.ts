@@ -47,6 +47,13 @@ export interface ConversationImageBlock {
   readonly mediaType: ConversationImageMediaType | string
   readonly data: string
   readonly sizeBytes: number
+  /**
+   * Provenance: when this image was extracted from a tool_result payload
+   * (e.g. browser_screenshot), the originating tool_use id. Required for
+   * context-aware rendering (e.g. BrowserScreenshotCard) and for round-tripping
+   * the SDK protocol losslessly through persistence + per-turn resume.
+   */
+  readonly toolUseId?: string
 }
 
 export interface ConversationDocumentBlock {

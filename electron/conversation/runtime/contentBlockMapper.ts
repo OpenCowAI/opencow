@@ -45,6 +45,7 @@ export function toConversationContentBlocks(blocks: ContentBlock[]): Conversatio
           mediaType: block.mediaType,
           data: block.data,
           sizeBytes: block.sizeBytes,
+          ...(block.toolUseId ? { toolUseId: block.toolUseId } : {}),
         } satisfies ConversationImageBlock)
         break
       case 'document':
