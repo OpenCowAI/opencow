@@ -17,31 +17,31 @@ import type { WidgetToolProps } from './WidgetToolRegistry'
 import { parseGenHtmlInput } from '@shared/genHtmlInput'
 
 export function resolveGenHtmlContent(input: Record<string, unknown>): string | null {
-  return parseGenHtmlInput(input).content
+  return parseGenHtmlInput(input).html
 }
 
 export function GenHtmlWidget({ block, isExecuting, isMessageStreaming }: WidgetToolProps): React.JSX.Element {
   const { showContentViewer } = useContentViewerContext()
 
-  const { title, content } = parseGenHtmlInput(block.input)
+  const { title, html } = parseGenHtmlInput(block.input)
 
   // Status priority:
   // 1. Tool is executing (MCP call in flight)        → generating
   // 2. Message still streaming (input being built up) → generating
   //    (Without this, the card shows "error" during the entire input
-  //     streaming phase because isExecuting=false and content is null.)
-  // 3. Content available                              → generated
+  //     streaming phase because isExecuting=false and html is null.)
+  // 3. Markup available                              → generated
   // 4. Otherwise                                      → error
   const status: HtmlCardStatus = (isExecuting || isMessageStreaming)
     ? 'generating'
-    : content
+    : html
       ? 'generated'
       : 'error'
 
   const handleClick = (): void => {
-    if (content) {
+    if (html) {
       showContentViewer({
-        content,
+        content: html,
         fileName: `${title}.html`,
         filePath: '',
         language: 'html',
@@ -52,7 +52,7 @@ export function GenHtmlWidget({ block, isExecuting, isMessageStreaming }: Widget
   return (
     <HtmlFileCard
       title={title}
-      content={content}
+      content={html}
       status={status}
       onClick={handleClick}
     />

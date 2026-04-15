@@ -13,7 +13,13 @@ export const GEN_HTML_DEFAULT_TITLE = 'Generated HTML'
 
 export interface ParsedGenHtmlInput {
   title: string
-  content: string | null
+  /**
+   * Raw HTML markup of the page (null when missing or whitespace-only).
+   * Field name mirrors the tool's input field — input/output/UI/artifact
+   * stay on a single unambiguous identifier so models cannot reinterpret
+   * a generic `content` field as a "page summary".
+   */
+  html: string | null
 }
 
 function nonEmptyString(value: unknown): string | null {
@@ -22,12 +28,17 @@ function nonEmptyString(value: unknown): string | null {
 }
 
 /**
- * Resolve title + content from tool input.
+ * Resolve title + html markup from tool input.
  *
- * `content` is preferred; `html` is accepted as a legacy alias.
+ * The tool schema declares a single `html` field. The legacy `content`
+ * alias was removed: its semantically loaded name caused some models
+ * (notably GPT/Codex) to interpret it as a "page description" and emit
+ * the actual HTML in the (then-secondary) `html` field, which the
+ * preferred-content resolution silently overrode with the description text.
  */
 export function parseGenHtmlInput(input: Record<string, unknown>): ParsedGenHtmlInput {
-  const title = nonEmptyString(input.title) ?? GEN_HTML_DEFAULT_TITLE
-  const content = nonEmptyString(input.content) ?? nonEmptyString(input.html)
-  return { title, content }
+  return {
+    title: nonEmptyString(input.title) ?? GEN_HTML_DEFAULT_TITLE,
+    html: nonEmptyString(input.html),
+  }
 }
