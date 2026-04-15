@@ -118,6 +118,35 @@ export const UserMessage = memo(function UserMessage({ id, content }: { id: stri
 
 const CHAT_LINK_CLASS = '[&_a]:text-[hsl(var(--primary))] [&_a]:underline [&_a]:decoration-[hsl(var(--primary)/0.4)]'
 
+// ---------------------------------------------------------------------------
+// Tool-result user message — engine-emitted machinery, NOT real user input.
+//
+// The Anthropic protocol delivers tool results via user-role messages, but
+// they are part of the assistant's tool flow — not something the user typed.
+// They must render inline, left-aligned, with no chat-bubble wrapper and no
+// `>` prefix.  Each block (ToolResultBlock + provenance-stamped media like
+// browser_screenshot's BrowserScreenshotCard) goes through ContentBlockRenderer
+// directly, mirroring the assistant's container styling for visual continuity.
+// ---------------------------------------------------------------------------
+
+export const ToolResultUserMessage = memo(function ToolResultUserMessage({
+  id,
+  content,
+  sessionId,
+}: {
+  id: string
+  content: ContentBlock[]
+  sessionId?: string
+}) {
+  return (
+    <div data-msg-id={id} data-msg-role="user-tool-result" className="py-0.5 break-words min-w-0">
+      {content.map((block, i) => (
+        <ContentBlockRenderer key={i} block={block} sessionId={sessionId} />
+      ))}
+    </div>
+  )
+})
+
 export const ChatBubbleUserMessage = memo(function ChatBubbleUserMessage({ id, content }: { id: string; content: ContentBlock[] }) {
   const hasRichContent = content.some((b) => b.type === 'slash_command' || b.type === 'image' || b.type === 'document')
   const plainText = hasRichContent ? '' : extractUserText(content)

@@ -4,7 +4,7 @@ import { useEffect, useRef, useCallback, useMemo, useState, startTransition, mem
 import { useTranslation } from 'react-i18next'
 import { Virtuoso, type VirtuosoHandle, type ListRange } from 'react-virtuoso'
 import { ArrowDown, GitCompare } from 'lucide-react'
-import { UserMessage, ChatBubbleUserMessage } from './MessageRenderers'
+import { UserMessage, ChatBubbleUserMessage, ToolResultUserMessage } from './MessageRenderers'
 import { AssistantMessage } from './AssistantMessage'
 import { INCREASE_VIEWPORT_BY, FooterNodeContext, VIRTUOSO_COMPONENTS } from './VirtuosoShell'
 import type { VirtuosoContext, MessageListVariant } from './VirtuosoShell'
@@ -31,7 +31,7 @@ import { useCommandStore, selectSessionMessages } from '@/stores/commandStore'
 import { useSessionInlineDraftCard } from '@/hooks/useSessionInlineDraftCard'
 import type { ManagedSessionMessage, ManagedSessionState, SessionStopReason, UserMessageContent, ContentBlock } from '@shared/types'
 import { truncate as unicodeTruncate } from '@shared/unicode'
-import { extractUserText, getUserMessageDisplayInfo } from './messageDisplayUtils'
+import { extractUserText, getUserMessageDisplayInfo, isToolResultOnlyUserMessage } from './messageDisplayUtils'
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -729,7 +729,12 @@ function SessionMessageList({
       tailMsgId = msg.id
       switch (msg.role) {
         case 'user': {
-          if (getUserMessageDisplayInfo(msg.content).isEmpty) {
+          // Engine-emitted tool_result messages are NOT real user input — render
+          // them inline (left-aligned, no chat bubble) so they visually flow with
+          // the assistant's tool batch instead of pretending the user typed them.
+          if (isToolResultOnlyUserMessage(msg.content)) {
+            element = <ToolResultUserMessage key={msg.id} id={msg.id} content={msg.content} sessionId={sessionId} />
+          } else if (getUserMessageDisplayInfo(msg.content).isEmpty) {
             element = null
             tailMsgId = undefined
           } else {

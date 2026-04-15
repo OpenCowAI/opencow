@@ -75,12 +75,20 @@ const WIDGET_REGISTRY = new Map<string, WidgetRegistration>([
   // ── Native SDK tools ──────────────────────────────────────────────────────
   ['Agent',           { component: TaskExecutionView,    suppressResult: true  }],
   ['Task',            { component: TaskExecutionView,    suppressResult: true  }],
-  ['TodoWrite',       { component: TodoWriteWidget,      suppressResult: false }],
-  ['AskUserQuestion', { component: AskUserQuestionWidget, suppressResult: false }],
-  ['ExitPlanMode',    { component: ExitPlanModeWidget,   suppressResult: false }],
+  // TodoWrite / AskUserQuestion / ExitPlanMode return model-facing nudge
+  // strings ("Todos have been modified successfully…" etc.) that carry zero
+  // human value — the Widget already renders the actually-useful structured
+  // payload (todo list, question, plan). Suppressing the raw text removes
+  // duplicate noise below the pill and unifies Claude / OpenAI rendering
+  // (Claude historically had no persisted tool_result so the noise was
+  // invisible; after the user.tool_result projector landed, both providers
+  // now persist these results and would otherwise display the same nudge).
+  ['TodoWrite',       { component: TodoWriteWidget,      suppressResult: true  }],
+  ['AskUserQuestion', { component: AskUserQuestionWidget, suppressResult: true  }],
+  ['ExitPlanMode',    { component: ExitPlanModeWidget,   suppressResult: true  }],
 
   // ── NativeCapability tools ────────────────────────────────────────────────
-  [NativeCapabilityTools.ASK_USER_QUESTION, { component: AskUserQuestionWidget, suppressResult: false }],
+  [NativeCapabilityTools.ASK_USER_QUESTION, { component: AskUserQuestionWidget, suppressResult: true  }],
   [NativeCapabilityTools.GEN_HTML,          { component: GenHtmlWidget,         suppressResult: false }],
 
   // ── Evose tools ─────────────────────────────────────────────────────────

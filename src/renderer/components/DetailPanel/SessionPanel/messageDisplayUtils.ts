@@ -57,7 +57,13 @@ export function getUserMessageDisplayInfo(content: readonly ContentBlock[]): Use
   const slashNames = joinSlashDisplays(
     content.filter((b): b is SlashCommandBlock => b.type === 'slash_command'),
   )
-  const hasMedia = content.some((b) => b.type === 'image' || b.type === 'document')
+  // Engine-emitted media (extracted from a tool_result, carries `toolUseId`
+  // provenance) is NOT a user attachment.  Treat it as engine machinery so
+  // nav anchors / contextual banners don't claim "(attachment)" for what is
+  // really a tool's screenshot.
+  const hasMedia = content.some(
+    (b) => (b.type === 'image' && !b.toolUseId) || b.type === 'document',
+  )
   const hasSlashCmd = slashNames.length > 0
   const isEmpty = !text && !hasMedia && !hasSlashCmd
 
@@ -67,4 +73,30 @@ export function getUserMessageDisplayInfo(content: readonly ContentBlock[]): Use
   else if (hasMedia) displayText = '(attachment)'
 
   return { text, slashNames, hasMedia, hasSlashCmd, isEmpty, displayText }
+}
+
+/**
+ * True when a user-role message is entirely engine-emitted machinery
+ * (tool_result blocks plus their provenance-stamped media), not real user input.
+ *
+ * Such messages must NOT render through the chat-bubble / CLI user renderer
+ * — they are part of the assistant's tool flow and belong inline, left-aligned,
+ * with no bubble or `>` prefix.
+ */
+export function isToolResultOnlyUserMessage(content: readonly ContentBlock[]): boolean {
+  if (content.length === 0) return false
+  let hasToolResult = false
+  for (const b of content) {
+    if (b.type === 'tool_result') {
+      hasToolResult = true
+      continue
+    }
+    // Provenance-stamped media (extracted from the same tool_result) is
+    // allowed — the toolUseId pins it to engine-emitted output.
+    if (b.type === 'image' && b.toolUseId) continue
+    // Any other block (text, slash_command, document, plain image, …)
+    // means the user typed something — fall back to the regular renderer.
+    return false
+  }
+  return hasToolResult
 }
