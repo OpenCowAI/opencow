@@ -4530,7 +4530,6 @@ export interface SessionLifecycleOperationProposalInput {
   warnings?: string[]
   confirmationMode?: SessionLifecycleOperationConfirmationMode
   idempotencyKey?: string | null
-  userInstruction?: string
 }
 
 /**

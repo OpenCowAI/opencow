@@ -99,6 +99,7 @@ import { HtmlNativeCapability } from '../nativeCapabilities/htmlNativeCapability
 import { InteractionNativeCapability } from '../nativeCapabilities/interaction/interactionNativeCapability'
 import { EvoseNativeCapability } from '../nativeCapabilities/evose/evoseNativeCapability'
 import { ScheduleNativeCapability } from '../nativeCapabilities/scheduleNativeCapability'
+import { LifecycleOperationNativeCapability } from '../nativeCapabilities/lifecycleOperationNativeCapability'
 import { initDatabase } from '../database/db'
 import { focusMainWindow } from '../window/windowManager'
 import { createLogger } from '../platform/logger'
@@ -664,8 +665,15 @@ export async function createAppServices(deps: ServiceFactoryDeps): Promise<AppSe
     scheduleService,
     lifecycleOperationCoordinator,
   }))
+
+  // Lifecycle NativeCapability — entity-agnostic apply/cancel tools that let
+  // the model close the propose→confirm loop from chat ("确定" → apply_lifecycle_operation).
+  // Without these the only path to commit a pending proposal is the UI's Confirm button.
+  nativeCapabilityRegistry.register(new LifecycleOperationNativeCapability({
+    lifecycleOperationCoordinator,
+  }))
   log.info('Service factory phase complete: native capabilities registered', {
-    capabilities: ['browser', 'evose', 'issue', 'project', 'html', 'interaction', 'schedule'],
+    capabilities: ['browser', 'evose', 'issue', 'project', 'html', 'interaction', 'schedule', 'lifecycle'],
   })
 
   const gitService = new GitService({

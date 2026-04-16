@@ -43,6 +43,9 @@ describe('sessionPolicyPlanner', () => {
       { capability: 'projects' },
       { capability: 'schedules' },
       { capability: 'evose' },
+      // `lifecycle` hosts apply/cancel tools for pending proposals — always
+      // enabled alongside issues/schedules so Propose→Confirm can close in chat.
+      { capability: 'lifecycle' },
     ])
   })
 

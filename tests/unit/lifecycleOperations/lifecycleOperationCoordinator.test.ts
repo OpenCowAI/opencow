@@ -337,8 +337,10 @@ describe('LifecycleOperationCoordinator', () => {
         {
           entity: 'issue',
           action: 'create',
+          // Model declared auto_if_user_explicit — the coordinator honors it
+          // directly, without re-validating the user's raw text via regex.
+          // The propose→apply loop is Agentic by trust, not by rules.
           confirmationMode: 'auto_if_user_explicit',
-          userInstruction: '无需确认，直接执行',
           normalizedPayload: {
             sessionId: 'session-1',
             title: 'Auto create',

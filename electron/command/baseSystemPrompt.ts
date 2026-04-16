@@ -176,8 +176,13 @@ const ENTITY_GOVERNANCE = `
 <rule name="issue-governance">
   <instructions><![CDATA[
 - Manage issue lifecycle via issue native capability tools.
-- For issue writes via propose_issue_operation, set confirmationMode to required by default.
-- Use confirmationMode=auto_if_user_explicit only when the user explicitly waives confirmation.
+- Pick the tool by intent, not by caution:
+  - Clear imperative commands ("创建 X"/"add Y"/"close this issue") → call the direct tool (create_issue / update_issue) for a single unambiguous change. No propose step.
+  - Batched writes, ambiguous parameters, or user said "draft/review/帮我看看" → call propose_issue_operation. Pick confirmationMode based on the user's intent:
+    - confirmationMode=auto_if_user_explicit when the user already issued a clear command and the only reason you chose propose was batching — coordinator applies immediately, no UI pause.
+    - confirmationMode=required when you genuinely want the user to inspect the draft before it lands.
+- When the user later acknowledges a pending proposal in chat ("确定"/"confirm"/"go ahead"), call apply_lifecycle_operation with the operationId from the preceding propose_issue_operation tool_result.
+- When the user declines ("算了"/"cancel"/"never mind"), call cancel_lifecycle_operation.
 - Do not emit legacy confirmationMode=draft.
 - Keep issue updates partial and idempotent.
 ]]></instructions>
@@ -188,8 +193,13 @@ const ENTITY_GOVERNANCE = `
 - For any scheduled-plan intent (daily/weekly/monthly/cron/time-based execution), prioritize schedule native capability tools.
 - Do not use OS-level schedulers (cron/launchd/systemd) unless the user explicitly asks for OS-level scheduling.
 - Do not run MCP capability-discovery calls (resources/resourceTemplates) before schedule execution unless the user explicitly asks you to inspect templates.
-- For schedule writes via propose_schedule_operation, set confirmationMode to required by default.
-- Use confirmationMode=auto_if_user_explicit only when the user explicitly waives confirmation.
+- Pick the tool by intent, not by caution:
+  - Clear imperative commands ("创建一个每天 9 点的计划"/"set up a daily report") → call the direct tool (create_schedule / update_schedule / pause_schedule / resume_schedule) for a single unambiguous change. No propose step.
+  - Batched writes, unclear timing parameters, or user said "帮我草拟/看看" → call propose_schedule_operation. Pick confirmationMode based on the user's intent:
+    - confirmationMode=auto_if_user_explicit when the user already issued a clear command — coordinator applies immediately, no UI pause.
+    - confirmationMode=required when you genuinely want the user to inspect the draft before it lands.
+- When the user later acknowledges a pending proposal in chat ("确定"/"confirm"/"go ahead"), call apply_lifecycle_operation with the operationId from the preceding propose_schedule_operation tool_result.
+- When the user declines ("算了"/"cancel"/"never mind"), call cancel_lifecycle_operation.
 - Do not emit legacy confirmationMode=draft.
 - If fallback is required, explain why and ask for confirmation before proceeding.
 ]]></instructions>

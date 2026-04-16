@@ -24,8 +24,6 @@ import type {
   UpdateIssueInput,
 } from '../../../src/shared/types'
 import { SessionLifecycleOperationStore } from '../sessionLifecycleOperationStore'
-import { OperationGovernancePolicy } from './operationGovernancePolicy'
-import { ExplicitNoConfirmDetector } from './explicitNoConfirmDetector'
 import { createLogger } from '../../platform/logger'
 import {
   normalizeScheduleLifecycleProposalPayload,
@@ -46,8 +44,6 @@ export interface LifecycleOperationCoordinatorDeps {
   store: SessionLifecycleOperationStore
   executionDb?: Kysely<Database>
   scheduleService?: ScheduleService
-  governancePolicy?: OperationGovernancePolicy
-  noConfirmDetector?: ExplicitNoConfirmDetector
   dispatch?: (event: DataBusEvent) => void
 }
 
@@ -216,16 +212,12 @@ export class LifecycleOperationCoordinator {
   private readonly store: SessionLifecycleOperationStore
   private readonly executionDb: Kysely<Database>
   private scheduleService: ScheduleService | null
-  private readonly governancePolicy: OperationGovernancePolicy
-  private readonly noConfirmDetector: ExplicitNoConfirmDetector
   private readonly dispatch: ((event: DataBusEvent) => void) | null
 
   constructor(deps: LifecycleOperationCoordinatorDeps) {
     this.store = deps.store
     this.executionDb = deps.executionDb ?? deps.store.getDb()
     this.scheduleService = deps.scheduleService ?? null
-    this.governancePolicy = deps.governancePolicy ?? new OperationGovernancePolicy()
-    this.noConfirmDetector = deps.noConfirmDetector ?? new ExplicitNoConfirmDetector()
     this.dispatch = deps.dispatch ?? null
   }
 
@@ -290,11 +282,18 @@ export class LifecycleOperationCoordinator {
         }
 
         const now = Date.now()
-        const noConfirmDetection = this.noConfirmDetector.detect(proposal.userInstruction)
-        const confirmationMode = this.governancePolicy.resolveConfirmationMode({
-          proposal,
-          noConfirmDetection,
-        })
+        // Trust the model's declared confirmationMode — this is the single
+        // intent signal. Previously a regex-based ExplicitNoConfirmDetector
+        // + OperationGovernancePolicy would override the model's
+        // `auto_if_user_explicit` unless the user's raw text matched one of a
+        // dozen hard-coded phrases ("直接创建", "skip confirmation", …). That
+        // second-guessing was anti-Agentic: the model is a strictly better
+        // intent interpreter than a regex list, and the system prompt
+        // already tells it exactly when to pick each mode. Tools that want
+        // human-in-the-loop review can simply default to `'required'`;
+        // tools that want auto-apply on explicit commands pick
+        // `'auto_if_user_explicit'`. Coordinator just honors it.
+        const confirmationMode = proposal.confirmationMode ?? 'required'
 
         const operation: SessionLifecycleOperation = {
           id: generateId(),

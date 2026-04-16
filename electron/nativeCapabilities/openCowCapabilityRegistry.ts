@@ -50,6 +50,7 @@ export const NATIVE_CAPABILITY_CATEGORIES = [
   'html',
   'interaction',
   'schedules',
+  'lifecycle',
   'evose',
   'repo-analyzer',
 ] as const

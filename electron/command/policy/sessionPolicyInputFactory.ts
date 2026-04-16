@@ -74,6 +74,10 @@ const GENERAL_PURPOSE_NATIVE_TOOLS: StartSessionNativeToolAllowItem[] = [
   { capability: 'projects' },
   { capability: 'schedules' },
   { capability: 'evose' },
+  // Lifecycle — apply/cancel tools for pending issue/schedule proposals.
+  // Always enabled alongside issues + schedules so the Propose→Confirm loop
+  // can close from chat ("确定" / "confirm") and not just via the UI card.
+  { capability: 'lifecycle' },
 ]
 
 /**

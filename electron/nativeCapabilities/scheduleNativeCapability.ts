@@ -512,10 +512,6 @@ export class ScheduleNativeCapability extends BaseNativeCapability {
         'Returns { operations: SessionLifecycleOperationEnvelope[], _sessionEntityHints: { entity, action, entityId, name }[] }. ' +
         'For update/pause/resume/trigger_now actions, target id is required — use entityId from _sessionEntityHints or list_schedules to retrieve it first.',
       schema: {
-        userInstruction: z
-          .string()
-          .optional()
-          .describe('Original user instruction used for explicit no-confirm detection'),
         operations: z
           .array(z.object({
             action: z.enum(['create', 'update', 'pause', 'resume', 'trigger_now']),
@@ -525,7 +521,15 @@ export class ScheduleNativeCapability extends BaseNativeCapability {
             confirmationMode: z
               .string()
               .optional()
-              .describe('Confirmation mode. Prefer "required" or "auto_if_user_explicit"; legacy "draft" is accepted.'),
+              .describe(
+                'How this operation is committed. ' +
+                '`"required"` (default) → operation lands in pending_confirmation; the user must confirm ' +
+                '(either via the UI card or by calling apply_lifecycle_operation after their acknowledgement). ' +
+                '`"auto_if_user_explicit"` → coordinator applies immediately without a pause. Use this when ' +
+                'the user has already given a clear imperative command (e.g. "创建一个 X"/"add a Y"/"set up Z") ' +
+                'and there is no ambiguity. You are the intent interpreter here — pick `auto_if_user_explicit` ' +
+                'whenever the user has unambiguously asked you to act.',
+              ),
             idempotencyKey: z.string().optional(),
           }))
           .min(1)
@@ -560,7 +564,6 @@ export class ScheduleNativeCapability extends BaseNativeCapability {
             warnings: [...(candidate.warnings ?? [])],
             confirmationMode: normalizeConfirmationMode(candidate.confirmationMode),
             idempotencyKey: candidate.idempotencyKey,
-            userInstruction: args.userInstruction,
           }
         })
 
