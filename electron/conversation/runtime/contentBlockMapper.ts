@@ -20,7 +20,13 @@ export function toConversationContentBlocks(blocks: ContentBlock[]): Conversatio
         result.push({ type: 'text', text: block.text } satisfies ConversationTextBlock)
         break
       case 'thinking':
-        result.push({ type: 'thinking', thinking: block.thinking } satisfies ConversationThinkingBlock)
+        result.push({
+          type: 'thinking',
+          thinking: block.thinking,
+          // Preserve signature for Extended Thinking replay — see
+          // ThinkingBlock.signature / ConversationThinkingBlock.signature docs.
+          ...(block.signature ? { signature: block.signature } : {}),
+        } satisfies ConversationThinkingBlock)
         break
       case 'tool_use':
         result.push({

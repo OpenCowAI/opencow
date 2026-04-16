@@ -247,7 +247,11 @@ describe('sdkHistoryMapper', () => {
         id: 'a-thinking',
         role: 'assistant',
         timestamp: 2,
-        content: [{ type: 'thinking', thinking: 'The user wants a daily schedule…' }],
+        content: [
+          // Signature required for the thinking block to survive the mapper —
+          // see the "drops thinking blocks missing a signature" test.
+          { type: 'thinking', thinking: 'The user wants a daily schedule…', signature: 'sig-1' },
+        ],
       },
       {
         id: 'a-tool',
@@ -280,6 +284,70 @@ describe('sdkHistoryMapper', () => {
     expect(merged.stop_reason).toBe('tool_use')
     // First entry's stable id wins after merge.
     expect(merged.id).toBe('a-thinking')
+  })
+
+  it('preserves thinking.signature end-to-end (Extended Thinking replay)', () => {
+    // Anthropic API requires `signature` on every thinking block replayed as
+    // history — without it the API rejects with
+    //   400 messages.N.content.0.thinking.signature: Field required
+    // Repro of that 400: ccb-2IZ4L16u3aIW before the pipeline preservation fix.
+    const messages: ManagedSessionMessage[] = [
+      { id: 'u-0', role: 'user', timestamp: 1, content: [{ type: 'text', text: 'hi' }] },
+      {
+        id: 'a-signed',
+        role: 'assistant',
+        timestamp: 2,
+        content: [
+          {
+            type: 'thinking',
+            thinking: 'let me consider this',
+            // Real Claude signatures are opaque base64 blobs; a short string
+            // suffices for the round-trip assertion here.
+            signature: 'sig-deadbeef',
+          },
+          { type: 'text', text: 'here we go' },
+        ],
+      },
+    ]
+
+    const mapped = mapManagedMessagesToSdkInitialMessages(messages) as Array<{
+      type: string
+      message: { content: Array<{ type: string; signature?: string }> }
+    }>
+
+    const assistant = mapped.find((m) => m.type === 'assistant')!
+    const thinking = assistant.message.content.find((b) => b.type === 'thinking')!
+    expect(thinking.signature).toBe('sig-deadbeef')
+  })
+
+  it('drops thinking blocks missing a signature rather than producing an API 400', () => {
+    // Legacy persisted messages (and partial-streaming snapshots) may have
+    // a `thinking` block with no `signature`. Emitting them on replay would
+    // trigger the 400 above. The mapper must drop them silently — the model
+    // loses visibility into its past reasoning but continues to see
+    // text/tool_use from the turn. Assert: no thinking block in output.
+    const messages: ManagedSessionMessage[] = [
+      {
+        id: 'a-unsigned',
+        role: 'assistant',
+        timestamp: 1,
+        content: [
+          { type: 'thinking', thinking: 'legacy thinking without signature' },
+          { type: 'text', text: 'visible text' },
+        ],
+      },
+    ]
+
+    const mapped = mapManagedMessagesToSdkInitialMessages(messages) as Array<{
+      type: string
+      message: { content: Array<{ type: string }> }
+    }>
+
+    const assistant = mapped[0]!
+    expect(assistant.type).toBe('assistant')
+    expect(assistant.message.content.some((b) => b.type === 'thinking')).toBe(false)
+    // Non-thinking content survives.
+    expect(assistant.message.content.some((b) => b.type === 'text')).toBe(true)
   })
 
   it('maps mixed user content blocks to SDK-compatible structures', () => {

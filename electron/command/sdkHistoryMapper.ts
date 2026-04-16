@@ -4,7 +4,18 @@ import { randomUUID } from 'node:crypto'
 import type { ContentBlock, ManagedSessionMessage } from '../../src/shared/types'
 
 type SdkTextBlock = { type: 'text'; text: string }
-type SdkThinkingBlock = { type: 'thinking'; thinking: string }
+type SdkThinkingBlock = {
+  type: 'thinking'
+  thinking: string
+  /**
+   * Anthropic's cryptographic signature for the extended-thinking block.
+   * REQUIRED by the API when replaying thinking blocks in conversation
+   * history — the absence of this field triggers `400 messages.N.content.0
+   * .thinking.signature: Field required`. Sourced end-to-end from
+   * `ThinkingBlock.signature` at the SDK → OpenCow boundary.
+   */
+  signature: string
+}
 type SdkImageBlock = {
   type: 'image'
   source: { type: 'base64'; media_type: string; data: string }
@@ -255,7 +266,21 @@ function mapAssistantContent(blocks: ContentBlock[]): SdkAssistantContentBlock[]
         if (block.text.length > 0) mapped.push({ type: 'text', text: block.text })
         break
       case 'thinking':
-        if (block.thinking.length > 0) mapped.push({ type: 'thinking', thinking: block.thinking })
+        // Drop thinking blocks that lack a signature. Anthropic requires the
+        // signature to replay thinking as history; a missing signature means
+        // this block either (a) originated from a partial streaming event
+        // that never received the final sig, or (b) predates the signature-
+        // preservation fix in the OpenCow pipeline. Emitting it anyway
+        // produces a 400 for the entire turn. Dropping silently degrades
+        // gracefully — the model loses visibility into its past reasoning
+        // but continues to see text/tool_use from that turn.
+        if (block.thinking.length > 0 && block.signature) {
+          mapped.push({
+            type: 'thinking',
+            thinking: block.thinking,
+            signature: block.signature,
+          })
+        }
         break
       case 'tool_use':
         mapped.push({

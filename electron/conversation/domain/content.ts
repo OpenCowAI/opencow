@@ -25,6 +25,14 @@ export interface ConversationTextBlock {
 export interface ConversationThinkingBlock {
   readonly type: 'thinking'
   readonly thinking: string
+  /**
+   * Cryptographic signature emitted by Claude with every extended-thinking
+   * block. Preserved end-to-end so `sdkHistoryMapper` can round-trip it on
+   * per-turn history replay. See `ThinkingBlock.signature` for the full
+   * rationale (Anthropic API requires it on replay; missing it triggers
+   * `400 messages.N.content.0.thinking.signature: Field required`).
+   */
+  readonly signature?: string
 }
 
 export interface ConversationToolUseBlock {

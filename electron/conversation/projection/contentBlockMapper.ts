@@ -16,7 +16,12 @@ export function toManagedContentBlocks(blocks: ConversationContentBlock[]): Cont
         result.push({ type: 'text', text: block.text })
         break
       case 'thinking':
-        result.push({ type: 'thinking', thinking: block.thinking })
+        result.push({
+          type: 'thinking',
+          thinking: block.thinking,
+          // Preserve signature for Extended Thinking replay — see ThinkingBlock.signature doc.
+          ...(block.signature ? { signature: block.signature } : {}),
+        })
         break
       case 'tool_use':
         result.push({

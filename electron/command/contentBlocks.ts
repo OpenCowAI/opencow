@@ -16,6 +16,17 @@ export interface SDKContentBlock {
   content?: string | ToolResultContentItem[]
   is_error?: boolean
   thinking?: string
+  /**
+   * Cryptographic signature emitted by Claude with every extended-thinking
+   * block. Anthropic's API REQUIRES this field when thinking blocks are sent
+   * back as part of conversation history — without it the API rejects with
+   *
+   *   400 messages.N.content.0.thinking.signature: Field required
+   *
+   * Captured here at the SDK → OpenCow boundary so downstream layers can
+   * preserve it all the way to `sdkHistoryMapper`'s replay output.
+   */
+  signature?: string
   // Image / Document support
   source?: {
     type: string
@@ -187,7 +198,15 @@ export function normalizeContentBlocks(sdkBlocks: SDKContentBlock[]): ContentBlo
         break
       }
       case 'thinking':
-        if (b.thinking) result.push({ type: 'thinking', thinking: b.thinking })
+        if (b.thinking) {
+          // Preserve the cryptographic signature end-to-end — required for
+          // Extended Thinking replay (see `SDKContentBlock.signature` doc).
+          result.push({
+            type: 'thinking',
+            thinking: b.thinking,
+            ...(b.signature ? { signature: b.signature } : {}),
+          })
+        }
         break
     }
   }

@@ -2912,6 +2912,18 @@ export interface ToolResultBlock {
 export interface ThinkingBlock {
   type: 'thinking'
   thinking: string
+  /**
+   * Cryptographic signature emitted by Claude with every extended-thinking
+   * block. MUST be preserved when replaying assistant history back to the
+   * Anthropic API — without it the API rejects with
+   *
+   *   400 messages.N.content.0.thinking.signature: Field required
+   *
+   * Optional only to accommodate partial streaming / legacy persisted
+   * messages predating the signature capture fix; new thinking blocks
+   * produced by the SDK always carry a signature.
+   */
+  signature?: string
 }
 
 export type SlashCommandProviderExecution =
