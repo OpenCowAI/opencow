@@ -6,6 +6,7 @@ import type { UserMessageContent } from '../../src/shared/types'
 import type { SessionLifecycle, SessionLifecycleStartInput } from './sessionLifecycle'
 import type { ClaudeSessionLaunchOptions } from './sessionLaunchOptions'
 import { toSdkOptions } from './sessionLaunchOptions'
+import { mapManagedMessagesToSdkInitialMessages } from './sdkHistoryMapper'
 import { adaptClaudeSdkMessage } from '../conversation/runtime/claudeRuntimeAdapter'
 import {
   createRuntimeEventEnvelope,
@@ -131,6 +132,7 @@ export class QueryLifecycle implements SessionLifecycle {
       this.resolveTurnRef(event)
     const lifecycle = this
     const resolveTurnOptions = input.resolveTurnOptions
+    const getSessionMessages = input.getSessionMessages
     const stream = (async function* () {
       try {
         const sdkMod = await loadSdkModule()
@@ -170,16 +172,50 @@ export class QueryLifecycle implements SessionLifecycle {
         for await (const userMessage of lifecycle.queue) {
           if (lifecycle._stopped) break
 
-          // Resolve overlay for this turn (fresh env / provider / etc.)
-          let turnOverlay: Record<string, unknown> | undefined
+          // Per-turn options overlay.
+          //
+          // (1) env: fresh provider creds / model / base URL, resolved
+          //     per turn so mid-session Settings changes take effect
+          //     without lifecycle respawn. See SessionLifecycleStartInput.
+          //
+          // (2) initialMessages: full session history replay.
+          //     SDK's SessionRuntime does not accumulate mutableMessages
+          //     across session.query() calls (runtime.ts:62-116 has no
+          //     message field; sdkRuntime.ts:345 resets per-call).
+          //     Without host-side replay the model sees only the new
+          //     prompt with no prior context. We trim the trailing entry
+          //     because it is the current user message — QueryEngine
+          //     submitMessage pushes the prompt onto its own
+          //     mutableMessages (QueryEngine.ts:424), so including it in
+          //     initialMessages would duplicate the user turn.
+          //     See plans/per-turn-history-replay.md for the full design.
+          const turnOptions: Record<string, unknown> = {}
+
           if (resolveTurnOptions) {
             try {
               const overlay = await resolveTurnOptions()
               if (overlay.env) {
-                turnOverlay = { env: overlay.env }
+                turnOptions.env = overlay.env
               }
             } catch (err) {
               log.warn('resolveTurnOptions failed — proceeding with session defaults', err)
+            }
+          }
+
+          const allMessages = getSessionMessages()
+          // Drop the trailing user-prompt entry; see rationale above.
+          const historyMessages = allMessages.slice(0, -1)
+          if (historyMessages.length > 0) {
+            const initialMessages = mapManagedMessagesToSdkInitialMessages(
+              historyMessages,
+              // Thread the session's configured model into synthesised
+              // assistant `message.model` fields so replayed history looks
+              // like a genuine transcript. Falls back to the mapper's
+              // default if no model string is configured.
+              { model: options.model },
+            )
+            if (initialMessages.length > 0) {
+              turnOptions.initialMessages = initialMessages
             }
           }
 
@@ -188,7 +224,7 @@ export class QueryLifecycle implements SessionLifecycle {
           })()
           const q = session.query({
             prompt: promptIter,
-            ...(turnOverlay ? { options: turnOverlay } : {}),
+            options: turnOptions,
           })
           lifecycle._query = q
 

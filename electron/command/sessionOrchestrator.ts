@@ -808,10 +808,26 @@ export class SessionOrchestrator {
     // `extra.resume` covers standard resume by engine session ref.
     // `extra.skipAddMessage` covers restart variants where the current user
     // message has already been appended to session history before runSession().
+    //
+    // We drop the trailing entry because, on both resume paths, the current
+    // user prompt was already `addMessage`'d by the caller (resumeSessionInternal
+    // and the engine-switch path both call addMessage before runSession). The
+    // prompt will be re-pushed onto mutableMessages by QueryEngine.submitMessage
+    // (QueryEngine.ts:424), so leaving it in initialMessages would yield a
+    // duplicate trailing user message. This mirrors the per-turn replay logic
+    // in queryLifecycle.ts. See plans/per-turn-history-replay.md §B.3.
     if (extra?.resume || extra?.skipAddMessage) {
-      const initialMessages = mapManagedMessagesToSdkInitialMessages(session.getMessages())
-      if (initialMessages.length > 0) {
-        options.initialMessages = initialMessages
+      const allMessages = session.getMessages()
+      const historyMessages = allMessages.slice(0, -1)
+      if (historyMessages.length > 0) {
+        const sessionModel = session.getModel() ?? undefined
+        const initialMessages = mapManagedMessagesToSdkInitialMessages(
+          historyMessages,
+          { model: sessionModel },
+        )
+        if (initialMessages.length > 0) {
+          options.initialMessages = initialMessages
+        }
       }
     }
 
@@ -1011,6 +1027,10 @@ export class SessionOrchestrator {
             return {}
           }
         },
+        // ε.3d.2 follow-up — per-turn history replay. Every turn, QueryLifecycle
+        // reads this to compute `options.initialMessages` for session.query().
+        // See plans/per-turn-history-replay.md.
+        getSessionMessages: () => session.getMessages(),
       })
       for await (const runtimeEvent of runtimeEventStream) {
         // Hard stop guard: manual stop sets session state to `stopped`

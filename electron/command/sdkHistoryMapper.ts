@@ -52,6 +52,9 @@ type SdkHistoryUserMessage = {
   isMeta?: boolean
 }
 
+/** Anthropic-canonical `stop_reason` values relevant to history replay. */
+type SdkAssistantStopReason = 'tool_use' | 'end_turn' | 'stop_sequence' | 'max_tokens'
+
 type SdkHistoryAssistantMessage = {
   type: 'assistant'
   uuid: string
@@ -62,8 +65,8 @@ type SdkHistoryAssistantMessage = {
     container: null
     model: string
     role: 'assistant'
-    stop_reason: string
-    stop_sequence: string
+    stop_reason: SdkAssistantStopReason
+    stop_sequence: string | null
     type: 'message'
     usage: {
       input_tokens: number
@@ -88,6 +91,17 @@ type SdkHistoryAssistantMessage = {
   }
 }
 
+/**
+ * Fallback model string used when the caller doesn't supply one.
+ *
+ * This is a legitimate Claude API model identifier — NOT the SDK-internal
+ * `'<synthetic>'` sentinel (which `opencow-agent-sdk` uses for locally
+ * synthesised placeholder assistant messages and some normalisation paths
+ * treat specially). Using a real model string keeps the replayed history
+ * indistinguishable from a genuine transcript at the API layer.
+ */
+const DEFAULT_ASSISTANT_MODEL = 'claude-sonnet-4-6'
+
 function toIsoTimestamp(raw: number): string {
   const date = Number.isFinite(raw) ? new Date(raw) : new Date()
   if (Number.isNaN(date.getTime())) return new Date().toISOString()
@@ -100,6 +114,22 @@ function buildCommandXml(name: string, userArgs: string): string {
     `<command-name>/${name}</command-name>`,
     `<command-args>${userArgs}</command-args>`,
   ].join(' ')
+}
+
+/**
+ * Infer `stop_reason` for an assistant message based on its content blocks.
+ *
+ * Anthropic's API requires `stop_reason` to reflect why generation halted —
+ * `'tool_use'` when the turn ended on a tool_use block, `'end_turn'` when
+ * the model produced a final text response. Hardcoding `'stop_sequence'`
+ * (the pre-fix behaviour) is incorrect for both cases and may prime the
+ * API-side pipeline into a wrong branch on history replay.
+ */
+function inferStopReason(content: SdkAssistantContentBlock[]): SdkAssistantStopReason {
+  // If the message carries a tool_use block, the turn ended for tool execution.
+  if (content.some((b) => b.type === 'tool_use')) return 'tool_use'
+  // Otherwise it completed naturally.
+  return 'end_turn'
 }
 
 /**
@@ -250,6 +280,50 @@ function mapAssistantContent(blocks: ContentBlock[]): SdkAssistantContentBlock[]
   return mapped
 }
 
+/**
+ * Reorder an assistant-content array so that thinking blocks come before any
+ * text/tool_use blocks. Anthropic's extended-thinking protocol requires the
+ * thinking block to be the FIRST block of the assistant turn — violating
+ * this ordering can result in the API ignoring the thinking or rejecting the
+ * message entirely.
+ *
+ * This mostly matters after we merge consecutive assistant messages (where
+ * thinking from message N and text/tool_use from message N+1 land in one
+ * combined content array in their originally-persisted order, which may
+ * already be correct but we enforce invariantly).
+ */
+function orderAssistantContent(
+  content: SdkAssistantContentBlock[],
+): SdkAssistantContentBlock[] {
+  const thinking: SdkAssistantContentBlock[] = []
+  const rest: SdkAssistantContentBlock[] = []
+  for (const block of content) {
+    if (block.type === 'thinking') thinking.push(block)
+    else rest.push(block)
+  }
+  if (thinking.length === 0) return content
+  return [...thinking, ...rest]
+}
+
+/**
+ * Stable-id policy for SDK assistant messages.
+ *
+ * Claude Code SDK merges consecutive assistant messages that share a
+ * `message.id` (see `opencow-agent-sdk/src/session/messages.ts` around line
+ * 2257). We want OPPOSITE behaviour: two DIFFERENT OpenCow ManagedSession
+ * messages must produce two SDK messages with DIFFERENT ids so they are not
+ * accidentally merged.
+ *
+ * Previously the mapper used `randomUUID()` — uniqueness was guaranteed but
+ * the ids changed on every replay, breaking any caching that keys on
+ * message.id. Now we use the stable ManagedSessionMessage.id, which is a
+ * short nanoid(8) at source (managedSession.ts) — unique within a session,
+ * stable across replays.
+ */
+function toSdkAssistantMessageId(managedMessageId: string): string {
+  return managedMessageId
+}
+
 function toSdkUserMessage(
   message: Extract<ManagedSessionMessage, { role: 'user' }>,
 ): SdkHistoryUserMessage | null {
@@ -269,22 +343,24 @@ function toSdkUserMessage(
 
 function toSdkAssistantMessage(
   message: Extract<ManagedSessionMessage, { role: 'assistant' }>,
+  model: string,
 ): SdkHistoryAssistantMessage | null {
   const content = mapAssistantContent(message.content)
   if (content.length === 0) return null
 
+  const orderedContent = orderAssistantContent(content)
   return {
     type: 'assistant',
     uuid: randomUUID(),
     timestamp: toIsoTimestamp(message.timestamp),
     requestId: undefined,
     message: {
-      id: randomUUID(),
+      id: toSdkAssistantMessageId(message.id),
       container: null,
-      model: '<synthetic>',
+      model,
       role: 'assistant',
-      stop_reason: 'stop_sequence',
-      stop_sequence: '',
+      stop_reason: inferStopReason(orderedContent),
+      stop_sequence: null,
       type: 'message',
       usage: {
         input_tokens: 0,
@@ -304,15 +380,69 @@ function toSdkAssistantMessage(
         iterations: null,
         speed: null,
       },
-      content,
+      content: orderedContent,
       context_management: null,
     },
   }
 }
 
+/**
+ * Fold adjacent-same-role assistant messages into a single SDK message.
+ *
+ * The Anthropic API requires strict user/assistant alternation; two
+ * consecutive assistant messages are a protocol violation that triggers
+ * either a 400 or silent content loss on the server. This regularly
+ * happens in OpenCow-persisted history because the conversation projector
+ * can produce two ManagedSessionMessage entries for what the model intends
+ * as one turn — e.g. a thinking-only entry followed by a tool_use-only
+ * entry (observed in ccb-2IZ4L16u3aIW, ccb-p-IDyPZVFH4G, ccb-IcC5mfq4EvOA).
+ *
+ * This post-pass detects adjacent `type: 'assistant'` SDK entries produced
+ * by the mapper and merges their content arrays into the first one's
+ * message, dropping the second. The merged `stop_reason` / `id` come from
+ * the first entry's position with content-shape re-inferred to reflect the
+ * combined blocks. Thinking blocks are hoisted to the front to satisfy
+ * extended-thinking protocol requirements.
+ */
+function mergeConsecutiveAssistants(messages: unknown[]): unknown[] {
+  const merged: unknown[] = []
+  for (const msg of messages) {
+    const prev = merged.at(-1) as SdkHistoryAssistantMessage | undefined
+    const curr = msg as { type?: string } | undefined
+    if (
+      curr?.type === 'assistant'
+      && prev?.type === 'assistant'
+    ) {
+      // Combine content arrays; re-order thinking-first; re-infer stop_reason.
+      const combined = orderAssistantContent([
+        ...prev.message.content,
+        ...(msg as SdkHistoryAssistantMessage).message.content,
+      ])
+      prev.message.content = combined
+      prev.message.stop_reason = inferStopReason(combined)
+      // Leave prev.message.id unchanged — the first message's stable id wins.
+      continue
+    }
+    merged.push(msg)
+  }
+  return merged
+}
+
+export interface MapToSdkInitialMessagesOptions {
+  /**
+   * Model identifier used when synthesising the `message.model` field on
+   * assistant-role history entries. If omitted, a legitimate Claude model
+   * string is used as fallback (see DEFAULT_ASSISTANT_MODEL). Callers are
+   * encouraged to pass the session's real model for maximum fidelity.
+   */
+  model?: string
+}
+
 export function mapManagedMessagesToSdkInitialMessages(
   messages: readonly ManagedSessionMessage[],
+  options: MapToSdkInitialMessagesOptions = {},
 ): unknown[] {
+  const model = options.model ?? DEFAULT_ASSISTANT_MODEL
   const initialMessages: unknown[] = []
 
   for (const message of messages) {
@@ -324,9 +454,9 @@ export function mapManagedMessagesToSdkInitialMessages(
       continue
     }
 
-    const mapped = toSdkAssistantMessage(message)
+    const mapped = toSdkAssistantMessage(message, model)
     if (mapped) initialMessages.push(mapped)
   }
 
-  return initialMessages
+  return mergeConsecutiveAssistants(initialMessages)
 }
