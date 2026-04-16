@@ -179,14 +179,92 @@ describe('normalizeContentBlocks', () => {
     expect(normalizeContentBlocks(blocks)).toEqual([])
   })
 
-  it('converts thinking block', () => {
+  it('tags provenance-less thinking without signature as unknown (legacy / non-replayable)', () => {
+    // A thinking block arriving without either a signature or extra_content
+    // provenance is "unknown" — conservative default so the replay path in
+    // sdkHistoryMapper drops it instead of producing an Anthropic 400.
     const blocks: SDKContentBlock[] = [{
       type: 'thinking',
       thinking: 'Let me analyze this...'
     }]
     expect(normalizeContentBlocks(blocks)).toEqual([{
       type: 'thinking',
-      thinking: 'Let me analyze this...'
+      thinking: 'Let me analyze this...',
+      provenance: 'unknown',
+    }])
+  })
+
+  it('infers anthropic provenance from a bare signature (legacy Anthropic data)', () => {
+    // Pre-provenance persisted blocks had `signature` but no `extra_content` —
+    // back-compat shim: a signature alone implies Anthropic origin.
+    // Keeps existing Anthropic sessions replaying cleanly through the new
+    // provenance-aware mapper. See plans/cross-provider-thinking.md §5.3.
+    const blocks: SDKContentBlock[] = [{
+      type: 'thinking',
+      thinking: 'deep thoughts',
+      signature: 'sig-abc',
+    }]
+    expect(normalizeContentBlocks(blocks)).toEqual([{
+      type: 'thinking',
+      thinking: 'deep thoughts',
+      provenance: 'anthropic',
+      signature: 'sig-abc',
+    }])
+  })
+
+  it('extracts codex provenance + encryptedContent from extra_content (Codex reasoning)', () => {
+    // Codex shim stamps reasoning output items with `extra_content.provenance
+    // === 'codex'` + `encryptedContent` (the Responses API replay token).
+    // The normalizer must surface these as first-class fields so downstream
+    // persistence + replay layers don't need to know about `extra_content`.
+    const blocks: SDKContentBlock[] = [{
+      type: 'thinking',
+      thinking: 'reasoning from gpt-5.4',
+      signature: '',
+      extra_content: {
+        provenance: 'codex',
+        encryptedContent: 'ZW5jcnlwdGVkLWJsb2I=',
+      },
+    }]
+    expect(normalizeContentBlocks(blocks)).toEqual([{
+      type: 'thinking',
+      thinking: 'reasoning from gpt-5.4',
+      provenance: 'codex',
+      encryptedContent: 'ZW5jcnlwdGVkLWJsb2I=',
+    }])
+  })
+
+  it('falls back to unknown provenance when extra_content contains an unrecognised string', () => {
+    // Defense in depth: if a future shim (or a bug) stamps
+    // `provenance: 'gemini'` before Gemini is officially supported, an
+    // unchecked cast would leak that literal into the typed domain. The
+    // normalizer must validate against the whitelist and degrade safely
+    // to 'unknown' (which sdkHistoryMapper then drops on replay).
+    const blocks: SDKContentBlock[] = [{
+      type: 'thinking',
+      thinking: 'what if',
+      extra_content: { provenance: 'gemini' },
+    }]
+    expect(normalizeContentBlocks(blocks)).toEqual([{
+      type: 'thinking',
+      thinking: 'what if',
+      provenance: 'unknown',
+    }])
+  })
+
+  it('extracts openai-chat provenance (DeepSeek-R1 / o1 / o3 reasoning)', () => {
+    // chat_completions `reasoning_content` has no replay token — only the
+    // provenance tag is meaningful downstream.
+    const blocks: SDKContentBlock[] = [{
+      type: 'thinking',
+      thinking: 'step by step',
+      signature: '',
+      extra_content: { provenance: 'openai-chat' },
+    }]
+    expect(normalizeContentBlocks(blocks)).toEqual([{
+      type: 'thinking',
+      thinking: 'step by step',
+      provenance: 'openai-chat',
     }])
   })
 

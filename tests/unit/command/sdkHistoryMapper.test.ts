@@ -350,6 +350,130 @@ describe('sdkHistoryMapper', () => {
     expect(assistant.message.content.some((b) => b.type === 'text')).toBe(true)
   })
 
+  it('preserves anthropic-origin thinking with signature on Anthropic replay', () => {
+    // Baseline: explicit `provenance: 'anthropic'` + signature survives
+    // exactly as before. This is the only replayable path for the Anthropic
+    // channel; the remaining three tests exercise the drop paths.
+    const messages: ManagedSessionMessage[] = [
+      {
+        id: 'a-anthropic',
+        role: 'assistant',
+        timestamp: 1,
+        content: [
+          {
+            type: 'thinking',
+            thinking: 'deep thoughts from claude',
+            provenance: 'anthropic',
+            signature: 'sig-anthropic',
+          },
+          { type: 'text', text: 'here' },
+        ],
+      },
+    ]
+
+    const mapped = mapManagedMessagesToSdkInitialMessages(messages) as Array<{
+      type: string
+      message: { content: Array<{ type: string; signature?: string }> }
+    }>
+    const assistant = mapped.find((m) => m.type === 'assistant')!
+    const thinking = assistant.message.content.find((b) => b.type === 'thinking')!
+    expect(thinking.signature).toBe('sig-anthropic')
+  })
+
+  it('drops codex-origin thinking blocks from Anthropic replay', () => {
+    // Codex's `encrypted_content` is NOT an Anthropic signature — replaying
+    // a codex-origin thinking block as Anthropic history would trigger a
+    // 400 on the signature check even if we stuffed the encrypted blob
+    // there. The mapper drops and keeps text/tool_use so the conversation
+    // remains well-formed. Part E (cross-provider-thinking.md §5.5) can
+    // later route codex-origin blocks back to a Codex channel instead.
+    const messages: ManagedSessionMessage[] = [
+      {
+        id: 'a-codex',
+        role: 'assistant',
+        timestamp: 1,
+        content: [
+          {
+            type: 'thinking',
+            thinking: 'reasoning from gpt-5.4',
+            provenance: 'codex',
+            encryptedContent: 'ZW5jcnlwdGVkLWJsb2I=',
+          },
+          { type: 'text', text: 'the answer' },
+        ],
+      },
+    ]
+
+    const mapped = mapManagedMessagesToSdkInitialMessages(messages) as Array<{
+      type: string
+      message: { content: Array<{ type: string }> }
+    }>
+    const assistant = mapped[0]!
+    expect(assistant.message.content.some((b) => b.type === 'thinking')).toBe(false)
+    expect(assistant.message.content.some((b) => b.type === 'text')).toBe(true)
+  })
+
+  it('drops openai-chat-origin thinking blocks from Anthropic replay', () => {
+    // DeepSeek-R1 / o1 / o3 `reasoning_content` carries no replay token at
+    // all (chat_completions discards reasoning on input across the board).
+    // Provenance-tagged 'openai-chat' blocks must therefore be dropped on
+    // any replay channel — including this Anthropic one.
+    const messages: ManagedSessionMessage[] = [
+      {
+        id: 'a-openai-chat',
+        role: 'assistant',
+        timestamp: 1,
+        content: [
+          {
+            type: 'thinking',
+            thinking: 'let me step through',
+            provenance: 'openai-chat',
+          },
+          { type: 'text', text: 'visible answer' },
+        ],
+      },
+    ]
+
+    const mapped = mapManagedMessagesToSdkInitialMessages(messages) as Array<{
+      type: string
+      message: { content: Array<{ type: string }> }
+    }>
+    const assistant = mapped[0]!
+    expect(assistant.message.content.some((b) => b.type === 'thinking')).toBe(false)
+    expect(assistant.message.content.some((b) => b.type === 'text')).toBe(true)
+  })
+
+  it('drops provenance-less + signature-less legacy thinking blocks (unknown origin)', () => {
+    // Defensive: before the provenance fix, some persisted blocks had
+    // neither a signature nor an extra_content tag. The normalizer maps
+    // them to `provenance: 'unknown'`; the mapper drops unknowns rather
+    // than risk a 400. Symmetric with the pre-fix "drop if no signature"
+    // behaviour — zero regression for legacy sessions.
+    const messages: ManagedSessionMessage[] = [
+      {
+        id: 'a-legacy',
+        role: 'assistant',
+        timestamp: 1,
+        content: [
+          {
+            type: 'thinking',
+            thinking: 'legacy pre-provenance thinking',
+            provenance: 'unknown',
+          },
+          { type: 'text', text: 'answer' },
+        ],
+      },
+    ]
+
+    const mapped = mapManagedMessagesToSdkInitialMessages(messages) as Array<{
+      type: string
+      message: { content: Array<{ type: string }> }
+    }>
+    const assistant = mapped[0]!
+    expect(assistant.message.content.some((b) => b.type === 'thinking')).toBe(false)
+    expect(assistant.message.content.some((b) => b.type === 'text')).toBe(true)
+  })
+
   it('maps mixed user content blocks to SDK-compatible structures', () => {
     const messages: ManagedSessionMessage[] = [
       {

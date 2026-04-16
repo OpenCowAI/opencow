@@ -22,17 +22,40 @@ export interface ConversationTextBlock {
   readonly text: string
 }
 
+/**
+ * Which provider produced a given reasoning block. Mirrors
+ * `ThinkingProvenance` in `src/shared/types.ts`; kept as a local alias so the
+ * domain layer doesn't reach into the shared surface.
+ */
+export type ConversationThinkingProvenance =
+  | 'anthropic'
+  | 'codex'
+  | 'openai-chat'
+  | 'unknown'
+
 export interface ConversationThinkingBlock {
   readonly type: 'thinking'
   readonly thinking: string
   /**
+   * Provider that produced this reasoning. Governs replay eligibility:
+   * Anthropic requires `signature`; Codex would require `encryptedContent`;
+   * OpenAI-chat and `'unknown'` are never replayed. See
+   * `plans/cross-provider-thinking.md` and {@link ThinkingProvenance}.
+   */
+  readonly provenance?: ConversationThinkingProvenance
+  /**
    * Cryptographic signature emitted by Claude with every extended-thinking
-   * block. Preserved end-to-end so `sdkHistoryMapper` can round-trip it on
-   * per-turn history replay. See `ThinkingBlock.signature` for the full
-   * rationale (Anthropic API requires it on replay; missing it triggers
-   * `400 messages.N.content.0.thinking.signature: Field required`).
+   * block. Populated only when `provenance === 'anthropic'`. Preserved
+   * end-to-end so `sdkHistoryMapper` can round-trip it on per-turn history
+   * replay — missing it triggers
+   * `400 messages.N.content.0.thinking.signature: Field required`.
    */
   readonly signature?: string
+  /**
+   * Codex Responses API `encrypted_content` blob. Populated only when
+   * `provenance === 'codex'`. Not persisted today (see follow-up plan).
+   */
+  readonly encryptedContent?: string
 }
 
 export interface ConversationToolUseBlock {

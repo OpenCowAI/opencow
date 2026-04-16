@@ -19,8 +19,13 @@ export function toManagedContentBlocks(blocks: ConversationContentBlock[]): Cont
         result.push({
           type: 'thinking',
           thinking: block.thinking,
-          // Preserve signature for Extended Thinking replay — see ThinkingBlock.signature doc.
+          // Carry provenance + any provider-specific replay token so the
+          // persisted managed-message shape round-trips losslessly back into
+          // `sdkHistoryMapper` on resume.
+          // See plans/cross-provider-thinking.md §5.3.
+          ...(block.provenance ? { provenance: block.provenance } : {}),
           ...(block.signature ? { signature: block.signature } : {}),
+          ...(block.encryptedContent ? { encryptedContent: block.encryptedContent } : {}),
         })
         break
       case 'tool_use':

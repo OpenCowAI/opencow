@@ -23,9 +23,13 @@ export function toConversationContentBlocks(blocks: ContentBlock[]): Conversatio
         result.push({
           type: 'thinking',
           thinking: block.thinking,
-          // Preserve signature for Extended Thinking replay — see
-          // ThinkingBlock.signature / ConversationThinkingBlock.signature docs.
+          // Carry provenance + any provider-specific replay token through the
+          // domain layer — `sdkHistoryMapper` uses these to decide whether
+          // the block can be replayed on the current API.
+          // See plans/cross-provider-thinking.md §5.3.
+          ...(block.provenance ? { provenance: block.provenance } : {}),
           ...(block.signature ? { signature: block.signature } : {}),
+          ...(block.encryptedContent ? { encryptedContent: block.encryptedContent } : {}),
         } satisfies ConversationThinkingBlock)
         break
       case 'tool_use':

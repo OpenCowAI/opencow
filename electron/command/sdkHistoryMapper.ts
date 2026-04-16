@@ -266,15 +266,26 @@ function mapAssistantContent(blocks: ContentBlock[]): SdkAssistantContentBlock[]
         if (block.text.length > 0) mapped.push({ type: 'text', text: block.text })
         break
       case 'thinking':
-        // Drop thinking blocks that lack a signature. Anthropic requires the
-        // signature to replay thinking as history; a missing signature means
-        // this block either (a) originated from a partial streaming event
-        // that never received the final sig, or (b) predates the signature-
-        // preservation fix in the OpenCow pipeline. Emitting it anyway
-        // produces a 400 for the entire turn. Dropping silently degrades
-        // gracefully — the model loses visibility into its past reasoning
-        // but continues to see text/tool_use from that turn.
-        if (block.thinking.length > 0 && block.signature) {
+        // Provenance-aware replay: only Anthropic-origin thinking blocks are
+        // replayable on the Anthropic API (this mapper is the Anthropic
+        // channel). Codex's `encrypted_content` and chat-completions
+        // `reasoning_content` are provider-specific and cannot be
+        // round-tripped as Anthropic thinking blocks — the signature is
+        // Anthropic-specific cryptographic proof and cannot be synthesised
+        // from another provider's reasoning output. Dropping non-Anthropic
+        // reasoning is a graceful degradation: the model loses visibility
+        // into that past reasoning but continues to see text / tool_use.
+        //
+        // Legacy fallback: blocks persisted before the provenance fix have
+        // no `provenance` field. If `signature` is present we treat them as
+        // Anthropic-origin (the only path that produced a signature
+        // pre-fix); otherwise drop as `'unknown'`. See
+        // plans/cross-provider-thinking.md §5.3.
+        if (block.thinking.length === 0) break
+        {
+          const provenance = block.provenance ?? (block.signature ? 'anthropic' : 'unknown')
+          if (provenance !== 'anthropic') break
+          if (!block.signature) break
           mapped.push({
             type: 'thinking',
             thinking: block.thinking,

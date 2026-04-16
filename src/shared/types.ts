@@ -2909,9 +2909,39 @@ export interface ToolResultBlock {
   isError?: boolean
 }
 
+/**
+ * Which provider produced a given thinking block. Governs replay policy:
+ *
+ *  - `'anthropic'`   — Extended Thinking; requires `signature` to replay to the
+ *                      Anthropic API, otherwise dropped.
+ *  - `'codex'`       — OpenAI Responses API reasoning item; would require
+ *                      `encryptedContent` to round-trip to Codex. Dropped on
+ *                      Anthropic replay (signature is Anthropic-specific and
+ *                      cannot be synthesised from Codex output).
+ *  - `'openai-chat'` — chat_completions `reasoning_content` (DeepSeek-R1 /
+ *                      o1 / o3 / Kimi-k2-thinking style). Not replayable on
+ *                      any API — chat_completions discards reasoning on input.
+ *  - `'unknown'`     — provenance could not be determined (legacy data
+ *                      without `extra_content.provenance` and no signature).
+ *                      Conservative default: do not replay.
+ *
+ * See `plans/cross-provider-thinking.md` for the full rationale.
+ */
+export type ThinkingProvenance = 'anthropic' | 'codex' | 'openai-chat' | 'unknown'
+
 export interface ThinkingBlock {
   type: 'thinking'
   thinking: string
+  /**
+   * Which provider produced this reasoning. Determines whether — and how —
+   * the block can be replayed. See {@link ThinkingProvenance}.
+   *
+   * Optional only for backwards compatibility with messages persisted before
+   * the cross-provider-thinking fix. Readers that need to decide replay MUST
+   * treat a missing value as `'anthropic'` if `signature` is present, else
+   * `'unknown'`. Writers produced after this fix always populate it.
+   */
+  provenance?: ThinkingProvenance
   /**
    * Cryptographic signature emitted by Claude with every extended-thinking
    * block. MUST be preserved when replaying assistant history back to the
@@ -2919,11 +2949,16 @@ export interface ThinkingBlock {
    *
    *   400 messages.N.content.0.thinking.signature: Field required
    *
-   * Optional only to accommodate partial streaming / legacy persisted
-   * messages predating the signature capture fix; new thinking blocks
-   * produced by the SDK always carry a signature.
+   * Populated only when `provenance === 'anthropic'`.
    */
   signature?: string
+  /**
+   * Codex Responses API `encrypted_content` blob. Required for Codex round-
+   * trip replay in `store: false` mode. Populated only when
+   * `provenance === 'codex'`. Not persisted by default today — see
+   * `plans/cross-provider-thinking.md` §5.5 (Part E, follow-up).
+   */
+  encryptedContent?: string
 }
 
 export type SlashCommandProviderExecution =

@@ -55,9 +55,33 @@ function applySharedSessionOverrides(ctx: EngineBootstrapContext): void {
   // Startup cwd is resolved once by SessionWorkspaceResolver and stored in session config.
   ctx.options.cwd = ctx.config.startupCwd
   if (ctx.resume) ctx.options.resume = ctx.resume
-  const modelOverride = ctx.config.model ?? null
-  if (typeof modelOverride === 'string' && modelOverride.trim().length > 0) {
-    ctx.options.model = modelOverride
+
+  // Model resolution priority (highest → lowest):
+  //   1. `ctx.config.model` — explicit per-session override (set by
+  //      `/model` command at runtime, or by the session creator at
+  //      startup via `modelOverride`).
+  //   2. `ctx.deps.getProviderDefaultModel()` — the session-bound
+  //      provider profile's `preferredModel` (e.g. `gpt-5.4` for an
+  //      AIHubMix profile). Without this branch the profile's model
+  //      only reaches the SDK through `OPENAI_MODEL` env, which means
+  //      `params.model` stays as the SDK's internal fallback guess
+  //      ("claude-sonnet-4-6" for Anthropic family, or requires
+  //      family detection to reach the env) — breaking model-keyed
+  //      behaviour like reasoning-effort resolution for chat_completions
+  //      proxies. See plans/cross-provider-thinking.md §5.7.
+  //
+  // The SDK's own model-setting fallback chain (`OPENAI_MODEL`,
+  // built-in default) still runs if BOTH branches are unset — that
+  // path remains correct for non-profile-bound sessions.
+  const explicit = ctx.config.model?.trim()
+  const profileDefault = ctx.deps.getProviderDefaultModel()?.trim()
+  const resolved = explicit && explicit.length > 0
+    ? explicit
+    : profileDefault && profileDefault.length > 0
+      ? profileDefault
+      : undefined
+  if (resolved) {
+    ctx.options.model = resolved
   }
 }
 
