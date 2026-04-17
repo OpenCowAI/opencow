@@ -4,6 +4,24 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.4.0] - 2026-04-18
+
+### Added
+- Issue and Schedule lifecycle operations (create, update, transition status) can now be reused and operated across any session conversation
+- Session entity hints: created entity IDs are now propagated back to the LLM so follow-up update operations reference the correct entity without re-prompting
+- Provider profiles and SDK capability bridge for first-class session management
+
+### Changed
+- Centralized context limit resolution with model catalog fallback for accurate token-window handling across all engines
+- Filtered LLM filler text blocks between tool calls in the AssistantMessage renderer for cleaner output
+
+### Fixed
+- Markdown ordered list numbering now preserved correctly in preview
+- Execution-context signal ordering and startup idempotency on session start
+- Lifecycle modal payload normalization for consistent draft-card handling
+- Issue update and transition-status proposals now validate entity IDs on the front-end before reaching the coordinator (fail-fast)
+- `skipSelectOnCreate` prevents detail panel from opening when confirming a draft card create
+
 ## [0.3.21] - 2026-04-07
 
 ### Added
