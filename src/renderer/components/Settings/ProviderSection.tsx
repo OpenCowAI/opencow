@@ -13,10 +13,11 @@
  *   - Non-Anthropic-native profile types (Phase D)
  */
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { CheckCircle2, ChevronDown, Loader2, MoreHorizontal, Plus, Star, XCircle } from 'lucide-react'
+import { CheckCircle2, ChevronDown, Loader2, MoreHorizontal, Plus, Trash2, XCircle } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { PillDropdown } from '@/components/ui/PillDropdown'
 import { useSettingsStore } from '@/stores/settingsStore'
 import { getAppAPI } from '@/windowAPI'
 import type {
@@ -32,30 +33,30 @@ import { ProviderProfileForm } from './provider/ProviderProfileForm'
 // ─── Type catalog surfaced in the Add dropdown ───────────────────────
 
 interface TypeGroup {
-  heading: string
-  items: ReadonlyArray<{ type: ProviderType; label: string }>
+  headingKey: 'anthropic' | 'openai' | 'google'
+  items: ReadonlyArray<{ type: ProviderType }>
 }
 
 const TYPE_GROUPS: ReadonlyArray<TypeGroup> = [
   {
-    heading: 'Anthropic',
+    headingKey: 'anthropic',
     items: [
-      { type: 'claude-subscription', label: 'Claude Pro/Max subscription' },
-      { type: 'anthropic-api', label: 'Anthropic API direct' },
-      { type: 'anthropic-compat-proxy', label: 'Anthropic-compatible proxy' },
+      { type: 'claude-subscription' },
+      { type: 'anthropic-api' },
+      { type: 'anthropic-compat-proxy' },
     ],
   },
   {
-    heading: 'OpenAI',
+    headingKey: 'openai',
     items: [
-      { type: 'openai-direct', label: 'OpenAI direct' },
-      { type: 'openai-compat-proxy', label: 'OpenAI-compatible proxy' },
+      { type: 'openai-direct' },
+      { type: 'openai-compat-proxy' },
     ],
   },
   {
-    heading: 'Google',
+    headingKey: 'google',
     items: [
-      { type: 'gemini', label: 'Gemini' },
+      { type: 'gemini' },
     ],
   },
 ]
@@ -220,44 +221,59 @@ export function ProviderSection(): React.JSX.Element {
     [],
   )
 
-  // Close the Add dropdown when clicking outside.
-  useEffect(() => {
-    if (!dropdownOpen) return
-    const onDocClick = () => setDropdownOpen(false)
-    document.addEventListener('click', onDocClick)
-    return () => document.removeEventListener('click', onDocClick)
-  }, [dropdownOpen])
+  const handlePickType = useCallback(
+    (type: ProviderType) => {
+      setDropdownOpen(false)
+      setEditingId(null)
+      setAddingType(type)
+      setFormError(null)
+    },
+    [],
+  )
 
   return (
     <div className="space-y-4">
-      <div className="flex items-start justify-between">
-        <div>
+      <div className="flex items-start justify-between gap-4">
+        {/*
+          `min-w-0` lets the description shrink + wrap instead of
+          forcing the row wider than the container; without it a long
+          Chinese/English description pushed the primary CTA into a
+          narrow column where the button label wrapped to two lines.
+        */}
+        <div className="min-w-0">
           <h3 className="text-sm font-medium mb-1">{t('provider.title')}</h3>
           <p className="text-xs text-[hsl(var(--muted-foreground))]">{t('provider.description')}</p>
         </div>
-        <div className="relative" onClick={(e) => e.stopPropagation()}>
-          <button
-            type="button"
-            onClick={() => setDropdownOpen((open) => !open)}
-            className="flex items-center gap-1 text-xs px-3 py-1.5 rounded-md bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))] hover:opacity-90"
-            aria-haspopup="menu"
-            aria-expanded={dropdownOpen}
-          >
-            <Plus className="h-3.5 w-3.5" aria-hidden="true" />
-            {t('provider.profile.addButton')}
-            <ChevronDown className="h-3.5 w-3.5" aria-hidden="true" />
-          </button>
-          {dropdownOpen && (
-            <AddTypeDropdown
-              onPick={(type) => {
-                setDropdownOpen(false)
-                setEditingId(null)
-                setAddingType(type)
-                setFormError(null)
-              }}
-            />
-          )}
-        </div>
+        {/*
+          Use the shared PillDropdown primitive so the menu inherits
+          the system-wide dropdown enter/exit animation (see
+          `globals.css:696` `dropdown-enter` / `dropdown-exit`). It
+          also handles outside-click / Escape / portal positioning
+          uniformly with every other dropdown in the app.
+        */}
+        <PillDropdown
+          open={dropdownOpen}
+          onOpenChange={setDropdownOpen}
+          position="below"
+          align="right"
+          className="flex-none"
+          dropdownClassName="w-64 py-2"
+          trigger={
+            <button
+              type="button"
+              onClick={() => setDropdownOpen((open) => !open)}
+              className="flex items-center gap-1 text-xs px-3 py-1.5 rounded-md bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))] hover:opacity-90 whitespace-nowrap"
+              aria-haspopup="menu"
+              aria-expanded={dropdownOpen}
+            >
+              <Plus className="h-3.5 w-3.5" aria-hidden="true" />
+              {t('provider.profile.addButton')}
+              <ChevronDown className="h-3.5 w-3.5" aria-hidden="true" />
+            </button>
+          }
+        >
+          <AddTypeMenuContent onPick={handlePickType} />
+        </PillDropdown>
       </div>
 
       {profiles.length === 0 && !addingType && (
@@ -306,7 +322,7 @@ export function ProviderSection(): React.JSX.Element {
       {addingType && (
         <div className="rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--foreground)/0.02)] p-4">
           <h4 className="text-xs font-semibold uppercase tracking-wider text-[hsl(var(--muted-foreground)/0.8)] mb-3">
-            {t('provider.profile.addHeading', { type: addingType })}
+            {t('provider.profile.addHeading', { type: t(`provider.profile.typeLabels.${addingType}`) })}
           </h4>
           <ProviderProfileForm
             mode="create"
@@ -339,6 +355,7 @@ function ProfileRow({
   profile, isDefault, testing, lastTest, onEdit, onRemove, onSetDefault, onTest,
 }: ProfileRowProps): React.JSX.Element {
   const { t } = useTranslation('settings')
+  const [moreMenuOpen, setMoreMenuOpen] = useState(false)
   return (
     <div
       className={cn(
@@ -348,24 +365,20 @@ function ProfileRow({
           : 'border-[hsl(var(--border))] bg-[hsl(var(--foreground)/0.02)]',
       )}
     >
-      <div className="flex-none">
-        {isDefault ? (
-          <Star
-            className="h-4 w-4 text-[hsl(var(--primary))]"
-            fill="currentColor"
-            aria-label={t('provider.profile.defaultBadge')}
-          />
-        ) : (
-          <Star
-            className="h-4 w-4 text-[hsl(var(--muted-foreground)/0.4)] cursor-pointer hover:text-[hsl(var(--muted-foreground))]"
-            onClick={onSetDefault}
-            aria-label={t('provider.profile.setDefault')}
-          />
-        )}
-      </div>
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
           <span className="text-sm font-medium truncate">{profile.name}</span>
+          {isDefault && (
+            // Explicit textual badge beats the previous Star icon: `default`
+            // semantics are unambiguous without hover-to-read a tooltip, and
+            // the primary-tinted pill is consistent with TestStateBadge and
+            // the rest of the settings surface.
+            <span
+              className="inline-flex items-center rounded-full bg-[hsl(var(--primary)/0.12)] px-2 py-0.5 text-[10px] font-medium text-[hsl(var(--primary))]"
+            >
+              {t('provider.profile.defaultBadge')}
+            </span>
+          )}
           <span className="text-[10px] text-[hsl(var(--muted-foreground))] font-mono">
             {profile.credential.type}
           </span>
@@ -374,6 +387,19 @@ function ProfileRow({
         <ProfileRowDetail profile={profile} />
       </div>
       <div className="flex-none flex items-center gap-1">
+        {!isDefault && (
+          // Verb-labelled button replaces the previous "click the greyed-out
+          // star" affordance. Ranked first in the action group because it's
+          // the single most likely action on a non-default row (the rest are
+          // steady-state utilities: test, edit, remove).
+          <button
+            type="button"
+            onClick={onSetDefault}
+            className="text-xs px-2 py-1 rounded-md border border-[hsl(var(--border))] hover:bg-[hsl(var(--foreground)/0.04)]"
+          >
+            {t('provider.profile.setDefault')}
+          </button>
+        )}
         <button
           type="button"
           onClick={onTest}
@@ -389,14 +415,49 @@ function ProfileRow({
         >
           {t('provider.profile.edit')}
         </button>
-        <button
-          type="button"
-          onClick={onRemove}
-          className="text-xs px-2 py-1 rounded-md border border-[hsl(var(--border))] hover:bg-red-500/10 hover:border-red-500/40"
-          aria-label={t('provider.profile.remove')}
+        {/*
+          Ellipsis = "more actions" entry, not a direct destructive
+          action. The previous design wired the ellipsis straight to
+          `onRemove` (window.confirm), which violates the
+          universal "⋯ opens a menu" convention — a user expecting to
+          browse actions ended up in a confirm prompt instead.
+          Wrapping in PillDropdown also gives the menu the system-wide
+          enter/exit animation for free (globals.css `dropdown-enter`).
+        */}
+        <PillDropdown
+          open={moreMenuOpen}
+          onOpenChange={setMoreMenuOpen}
+          position="below"
+          align="right"
+          dropdownClassName="w-36 py-1"
+          trigger={
+            <button
+              type="button"
+              onClick={() => setMoreMenuOpen((o) => !o)}
+              className="text-xs px-2 py-1 rounded-md border border-[hsl(var(--border))] hover:bg-[hsl(var(--foreground)/0.04)]"
+              aria-label={t('provider.profile.moreActions')}
+              aria-haspopup="menu"
+              aria-expanded={moreMenuOpen}
+            >
+              <MoreHorizontal className="h-3.5 w-3.5" aria-hidden="true" />
+            </button>
+          }
         >
-          <MoreHorizontal className="h-3.5 w-3.5" aria-hidden="true" />
-        </button>
+          <div role="menu">
+            <button
+              type="button"
+              onClick={() => {
+                setMoreMenuOpen(false)
+                onRemove()
+              }}
+              className="flex items-center gap-2 w-full text-left text-xs px-3 py-2 rounded-sm text-red-600 hover:bg-red-500/10 cursor-pointer"
+              role="menuitem"
+            >
+              <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
+              {t('provider.profile.remove')}
+            </button>
+          </div>
+        </PillDropdown>
       </div>
     </div>
   )
@@ -452,22 +513,25 @@ function ProfileRowDetail({ profile }: { profile: ProviderProfile }): React.JSX.
   )
 }
 
-interface AddTypeDropdownProps {
+interface AddTypeMenuContentProps {
   onPick: (type: ProviderType) => void
 }
 
-function AddTypeDropdown({ onPick }: AddTypeDropdownProps): React.JSX.Element {
+/**
+ * Grouped provider-type menu items. Positioning, animation, and
+ * outside-click handling are owned by the enclosing `PillDropdown`;
+ * this component renders only the semantic `role="menu"` content.
+ */
+function AddTypeMenuContent({ onPick }: AddTypeMenuContentProps): React.JSX.Element {
+  const { t } = useTranslation('settings')
   return (
-    <div
-      role="menu"
-      className="absolute right-0 top-full mt-1 z-20 w-64 rounded-md border border-[hsl(var(--border))] bg-[hsl(var(--background))] shadow-lg py-2"
-    >
+    <div role="menu">
       {TYPE_GROUPS.map((group) => (
-        <div key={group.heading} className="px-2">
+        <div key={group.headingKey} className="px-2">
           <p className="text-[10px] font-semibold uppercase tracking-wider text-[hsl(var(--muted-foreground)/0.7)] px-2 py-1">
-            {group.heading}
+            {t(`provider.profile.typeGroups.${group.headingKey}`)}
           </p>
-          {group.items.map(({ type, label }) => (
+          {group.items.map(({ type }) => (
             <button
               key={type}
               type="button"
@@ -475,7 +539,7 @@ function AddTypeDropdown({ onPick }: AddTypeDropdownProps): React.JSX.Element {
               className="block w-full text-left text-xs px-2 py-1.5 rounded-sm hover:bg-[hsl(var(--foreground)/0.06)] cursor-pointer"
               role="menuitem"
             >
-              {label}
+              {t(`provider.profile.typeLabels.${type}`)}
             </button>
           ))}
         </div>

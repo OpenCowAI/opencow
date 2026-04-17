@@ -44,14 +44,28 @@
   },
   "provider": {
     "title": "服务商",
-    "description": "配置 OpenCow 可以使用的 LLM 账户。每个 profile 是一个账户；指定一个默认。凭据已加密并存储在本地。",
+    "description": "管理可用的 LLM 账户，凭据加密后仅存储在本地。",
     "profile": {
       "addButton": "添加服务商",
-      "addHeading": "新建 {{type}} profile",
+      "addHeading": "新建 {{type}} 配置",
+      "typeGroups": {
+        "anthropic": "Anthropic",
+        "openai": "OpenAI",
+        "google": "Google"
+      },
+      "typeLabels": {
+        "claude-subscription": "Claude Pro/Max 订阅",
+        "anthropic-api": "Anthropic API 直连",
+        "anthropic-compat-proxy": "Anthropic 兼容代理",
+        "openai-direct": "OpenAI 直连",
+        "openai-compat-proxy": "OpenAI 兼容代理",
+        "gemini": "Gemini"
+      },
       "emptyState": "还没有任何服务商。点击「添加服务商」开始配置。",
       "defaultBadge": "默认",
       "setDefault": "设为默认",
       "edit": "编辑",
+      "moreActions": "更多操作",
       "remove": "删除",
       "confirmRemove": "确定删除服务商「{{name}}」？这会同时清除其凭据。",
       "save": "保存",

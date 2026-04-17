@@ -1294,7 +1294,7 @@ export interface CapabilityMountInfo {
 /** Import provenance record */
 export interface CapabilityImportRecord {
   sourcePath: string
-  sourceOrigin: 'claude-code' | 'plugin' | 'marketplace' | 'template' | 'file' | 'unknown'
+  sourceOrigin: 'claude-code' | 'codex' | 'plugin' | 'marketplace' | 'template' | 'file' | 'unknown'
   sourceHash: string | null
   importedAt: number
 }

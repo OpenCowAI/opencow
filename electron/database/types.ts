@@ -320,7 +320,7 @@ export interface CapabilityImportTable {
   category: string
   name: string
   source_path: string
-  source_origin: string  // 'claude-code' | 'plugin' | 'marketplace' | 'template' | 'file' | 'unknown'
+  source_origin: string  // 'claude-code' | 'codex' | 'plugin' | 'marketplace' | 'template' | 'file' | 'unknown'
   source_hash: string | null
   imported_at: number
   /** Marketplace provenance — added by migration 025 */

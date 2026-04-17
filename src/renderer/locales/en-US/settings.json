@@ -44,14 +44,28 @@
   },
   "provider": {
     "title": "Providers",
-    "description": "Configure the LLM accounts OpenCow can use. Each profile is one account; pick a default. Credentials are encrypted and stored locally.",
+    "description": "Manage available LLM accounts; credentials are encrypted and stored locally.",
     "profile": {
       "addButton": "Add Provider",
       "addHeading": "New {{type}} profile",
+      "typeGroups": {
+        "anthropic": "Anthropic",
+        "openai": "OpenAI",
+        "google": "Google"
+      },
+      "typeLabels": {
+        "claude-subscription": "Claude Pro/Max subscription",
+        "anthropic-api": "Anthropic API direct",
+        "anthropic-compat-proxy": "Anthropic-compatible proxy",
+        "openai-direct": "OpenAI direct",
+        "openai-compat-proxy": "OpenAI-compatible proxy",
+        "gemini": "Gemini"
+      },
       "emptyState": "No providers yet. Click Add Provider to get started.",
       "defaultBadge": "Default",
       "setDefault": "Set as default",
       "edit": "Edit",
+      "moreActions": "More actions",
       "remove": "Remove",
       "confirmRemove": "Remove provider \"{{name}}\"? This will also clear its stored credentials.",
       "save": "Save",

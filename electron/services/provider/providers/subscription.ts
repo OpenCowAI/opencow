@@ -1,30 +1,105 @@
 // SPDX-License-Identifier: Apache-2.0
 
 /**
- * Subscription Auth Provider — OAuth 2.0 PKCE flow for Claude Pro/Max/Team/Enterprise.
+ * Subscription Auth Provider — Claude Pro/Max/Team/Enterprise OAuth 2.0 PKCE.
  *
- * Implements the same OAuth flow as `claude auth login`:
- *   1. Generate PKCE verifier + S256 challenge
- *   2. Start a local HTTP callback server on a random port
- *   3. Open the system browser to claude.com/cai/oauth/authorize
- *   4. Receive the authorization code via localhost redirect
- *   5. Exchange the code for access + refresh tokens
- *   6. Store tokens in CredentialStore
+ * Post-consolidation (plans/anthropic-auth-consolidation.md): the OAuth
+ * wire protocol (PKCE crypto, authorise-URL construction, local callback
+ * listener, token exchange, token refresh) is delegated to
+ * `@opencow-ai/opencow-agent-sdk`. This file owns only the bits that are
+ * NOT part of the OAuth spec and that the CLI-targeted SDK helpers don't
+ * cover cleanly:
+ *
+ *   1. Multi-profile credential storage (`CredentialStore`, keyed by
+ *      `credential:${profile.id}`) — the SDK assumes a single global
+ *      secure-storage slot for CLI use; OpenCow runs N profiles per
+ *      machine, so we persist tokens ourselves.
+ *   2. ProviderAdapter interface — probe / getEnv / getHTTPAuth contract
+ *      shared across all providers in OpenCow.
+ *   3. Cancellation semantics — the IPC flow can be cancelled by the user
+ *      mid-OAuth (close-dialog button); we thread an `AbortController`
+ *      through and race it against the SDK's listener promise.
+ *   4. Custom branded success page — the SDK's default redirect sends the
+ *      browser to `claude.ai/oauth/code/success`; we override with a
+ *      response handler to show OpenCow branding.
  *
  * Token lifecycle:
- *   - Access token: ~8 hours, auto-refreshed before expiry
- *   - Refresh token: long-lived
+ *   - Access token: ~8 hours, proactively refreshed when within 5 min of expiry
+ *   - Refresh token: long-lived, preserved across refreshes (server may omit it)
  */
 
-import { createServer, type Server, type IncomingMessage, type ServerResponse } from 'http'
-import { createHash, randomBytes } from 'crypto'
 import { net, shell } from 'electron'
-import type { HTTPAuthResult, ProviderAdapter, ProviderAdapterStatus, OAuthCredential } from '../types'
-import { OAUTH_CONFIG } from '../types'
+import {
+  AuthCodeListener,
+  buildAuthUrl,
+  generateCodeChallenge,
+  generateCodeVerifier,
+  generateState,
+  getOauthConfig,
+  isOAuthTokenExpired,
+  parseScopes,
+} from '@opencow-ai/opencow-agent-sdk'
+import type { ServerResponse } from 'http'
+import type { HTTPAuthResult, OAuthCredential, ProbeResult, ProviderAdapter, ProviderAdapterStatus } from '../types'
+import { OAUTH_FLOW_TIMINGS } from '../types'
 import { CredentialStore } from '../credentialStore'
 import { createLogger } from '../../../platform/logger'
 
+/**
+ * HTTP-client boundary: the SDK's `exchangeCodeForTokens` and
+ * `refreshOAuthToken` use axios, which Cloudflare flags via TLS
+ * fingerprinting on Anthropic's OAuth token endpoint (403). We
+ * re-implement just those two HTTP calls using Electron's `net.fetch`
+ * (Chromium network stack) to bypass the detection.
+ *
+ * Everything OAuth-spec-related (PKCE, authorise-URL build, local
+ * callback listener, scopes, config) still comes from the SDK — so
+ * protocol updates propagate from one place.
+ *
+ * Follow-up: push an SDK patch that accepts a `fetchFn` injectable
+ * on both helpers, then migrate the two methods below back to the
+ * SDK. Tracked in plans/anthropic-auth-consolidation.md §9.
+ */
+
 const log = createLogger('Auth:Subscription')
+
+/**
+ * Parse + validate a token-endpoint response into an `OAuthCredential`.
+ *
+ * The response body is an opaque JSON blob — every field is
+ * runtime-checked before we construct the typed credential so malformed
+ * or adversarial payloads can't bypass the type system. Subscription
+ * metadata is optional (Anthropic-specific extension).
+ *
+ * When refreshing, the server may omit `refresh_token` — callers pass
+ * `fallbackRefreshToken` so the existing refresh token survives.
+ */
+function parseTokenResponse(
+  raw: Record<string, unknown>,
+  options?: { fallbackRefreshToken?: string },
+): OAuthCredential {
+  const accessToken = typeof raw.access_token === 'string' ? raw.access_token : ''
+  const refreshToken = typeof raw.refresh_token === 'string' ? raw.refresh_token : ''
+  const expiresIn = typeof raw.expires_in === 'number' ? raw.expires_in : 0
+  const scope = typeof raw.scope === 'string' ? raw.scope : undefined
+
+  if (!accessToken) {
+    throw new Error('OAuth token response missing access_token')
+  }
+
+  return {
+    accessToken,
+    refreshToken: refreshToken || options?.fallbackRefreshToken || '',
+    expiresAt: Date.now() + expiresIn * 1000,
+    // `scopes` is required on OAuthCredential — fall back to empty
+    // array when the server omits `scope` (rare but legal per §4.1.4).
+    scopes: scope ? scope.split(' ').filter(Boolean) : [],
+    subscriptionType:
+      typeof raw.subscription_type === 'string' ? raw.subscription_type : undefined,
+    rateLimitTier:
+      typeof raw.rate_limit_tier === 'string' ? raw.rate_limit_tier : undefined,
+  }
+}
 
 export class SubscriptionProvider implements ProviderAdapter {
   private readonly store: CredentialStore
@@ -45,10 +120,9 @@ export class SubscriptionProvider implements ProviderAdapter {
       return { authenticated: false }
     }
 
-    // Check if access token is expired (with buffer)
-    if (this.isTokenExpired(credential)) {
+    if (isOAuthTokenExpired(credential.expiresAt)) {
       try {
-        await this.refreshToken(credential)
+        await this.refreshAndPersist(credential)
         const refreshed = await this.store.getAs<OAuthCredential>(this.credentialKey)
         return {
           authenticated: true,
@@ -95,7 +169,6 @@ export class SubscriptionProvider implements ProviderAdapter {
     try {
       const credential = await this.performOAuthFlow(this.flowAbort.signal)
 
-      // Validate the credential before persisting — catch malformed responses early
       if (!credential.accessToken) {
         log.error('OAuth flow returned credential without accessToken')
         return { authenticated: false, error: 'OAuth completed but no access token received' }
@@ -137,11 +210,7 @@ export class SubscriptionProvider implements ProviderAdapter {
     log.info('Subscription credentials cleared')
   }
 
-  /**
-   * Subscription probe = real checkStatus() — it already talks to
-   * Anthropic's token endpoint when refresh is needed.
-   */
-  async probe(): Promise<import('../types').ProbeResult> {
+  async probe(): Promise<ProbeResult> {
     const status = await this.checkStatus()
     if (status.authenticated) {
       return { ok: true, detail: status.detail?.subscriptionType }
@@ -159,19 +228,18 @@ export class SubscriptionProvider implements ProviderAdapter {
    * Resolve a valid access token, performing proactive refresh if needed.
    *
    * Shared by `getEnv()` (SDK subprocess env vars) and `getHTTPAuth()`
-   * (direct HTTP calls) to ensure consistent token refresh behavior.
+   * (direct HTTP calls).
    *
-   * Note: `checkStatus()` has its own refresh logic with stricter error
-   * semantics (returns unauthenticated on refresh failure), so it does
-   * NOT share this method.
+   * Note: `checkStatus()` has stricter error semantics (returns
+   * `authenticated: false` on refresh failure) so does NOT share this.
    */
   private async resolveAccessToken(): Promise<string | null> {
     const credential = await this.store.getAs<OAuthCredential>(this.credentialKey)
     if (!credential?.accessToken) return null
 
-    if (this.isTokenExpired(credential)) {
+    if (isOAuthTokenExpired(credential.expiresAt)) {
       try {
-        await this.refreshToken(credential)
+        await this.refreshAndPersist(credential)
         const refreshed = await this.store.getAs<OAuthCredential>(this.credentialKey)
         if (refreshed?.accessToken) return refreshed.accessToken
         log.warn('Token refresh completed but accessToken still missing')
@@ -186,176 +254,161 @@ export class SubscriptionProvider implements ProviderAdapter {
   // ── Private: OAuth PKCE Flow ────────────────────────────────────────
 
   private async performOAuthFlow(signal: AbortSignal): Promise<OAuthCredential> {
-    // Step 1: Generate PKCE parameters and a separate CSRF state token.
-    // IMPORTANT: verifier and state serve different security purposes and MUST be independent:
-    //   - verifier: PKCE proof (only used in token exchange, never exposed in URLs)
-    //   - state: CSRF protection (echoed in callback URL, verified to prevent forgery)
-    const verifier = randomBytes(32).toString('base64url')
-    const challenge = createHash('sha256').update(verifier).digest('base64url')
-    const state = randomBytes(16).toString('base64url')
+    // 1. PKCE verifier + S256 challenge + independent CSRF state.
+    //    `verifier` is used only in the token exchange (never in URLs);
+    //    `state` is echoed by the authorisation server back to our
+    //    callback and MUST match to prevent code-injection attacks.
+    const verifier = generateCodeVerifier()
+    const challenge = await generateCodeChallenge(verifier)
+    const state = generateState()
 
-    // Step 2: Start local callback server
-    const { server, port, codePromise } = await this.createCallbackServer(signal)
-    const redirectUri = this.buildRedirectUri(port)
+    // 2. Start the local callback listener. SDK binds to IPv6 `::` with
+    //    dual-stack, so browsers resolving `localhost` to either `::1`
+    //    or `127.0.0.1` both reach the server.
+    const listener = new AuthCodeListener()
+    const port = await listener.start()
+    const redirectUri = `http://localhost:${port}/callback`
+
+    // 3. Build the authorise URL. `loginWithClaudeAi: true` routes to
+    //    `claude.com/cai/oauth/authorize` (the consumer subscription
+    //    flow), which 307-redirects to `claude.ai/oauth/authorize`.
+    const authUrl = buildAuthUrl({
+      codeChallenge: challenge,
+      state,
+      port,
+      isManual: false,
+      loginWithClaudeAi: true,
+    })
+
+    // If abort fires while listener is waiting, close it — that triggers
+    // rejection in `listener.waitForAuthorization` so the await unblocks.
+    const onAbort = () => {
+      log.info('Abort fired during OAuth flow; closing listener')
+      listener.close()
+    }
+    signal.addEventListener('abort', onAbort, { once: true })
 
     try {
-      // Step 3: Open browser for authorization
-      const authUrl = this.buildAuthUrl(port, challenge, state)
       log.info('OAuth flow started', { port, redirectUri })
-      await shell.openExternal(authUrl)
 
-      // Step 4: Wait for callback with authorization code (respects abort)
-      log.info('Waiting for browser callback...')
-      const callback = await this.withAbortableTimeout(
-        codePromise,
-        OAUTH_CONFIG.flowTimeoutMs,
-        `OAuth flow timed out — browser callback not received on ${redirectUri}`,
-        signal
-      )
-      log.info('OAuth callback received, verifying state...')
-
-      // Verify CSRF state matches to prevent authorization code injection attacks
-      if (callback.state !== state) {
-        throw new Error('OAuth state mismatch — possible CSRF attack')
-      }
-
-      // Step 5: Exchange code for tokens
-      log.info('CSRF state verified, exchanging code for tokens...')
-      return await this.exchangeCodeForTokens({
-        code: callback.code,
-        verifier,
-        port,
-        state: callback.state,
+      // 4. Race: (a) listener resolves with code, (b) user aborts, (c) timeout.
+      const codePromise = listener.waitForAuthorization(state, async () => {
+        await shell.openExternal(authUrl)
       })
+      const code = await this.withAbortableTimeout(
+        codePromise,
+        OAUTH_FLOW_TIMINGS.flowTimeoutMs,
+        `OAuth flow timed out — browser callback not received on ${redirectUri}`,
+        signal,
+      )
+
+      log.info('OAuth callback received, exchanging code for tokens...')
+
+      // 5. Exchange code for tokens via Chromium network stack (see note
+      //    at top of file — axios+TLS-fingerprint triggers Cloudflare 403).
+      const tokenResponse = await this.exchangeCodeForTokensViaNetFetch({
+        code,
+        state,
+        verifier,
+        redirectUri,
+      })
+
+      // 6. Serve the custom OpenCow-branded success page to the browser
+      //    (overrides SDK's default 302 → claude.ai success URL).
+      const scopes = parseScopes(tokenResponse.scope)
+      listener.handleSuccessRedirect(scopes, (res: ServerResponse) => {
+        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
+        res.end(this.buildResultPage(true, 'Your Claude subscription has been connected to OpenCow.'))
+      })
+
+      // 7. Assemble the persisted credential. The token-exchange response
+      //    doesn't include subscription_type / rate_limit_tier — those
+      //    come from `/api/oauth/profile`. Skipping that optional RTT
+      //    here keeps the login path quick; `checkStatus()` or the first
+      //    refresh backfills those fields when the SDK exposes a
+      //    Cloudflare-safe profile fetcher (follow-up, see top-of-file).
+      return {
+        accessToken: tokenResponse.access_token,
+        refreshToken: tokenResponse.refresh_token,
+        expiresAt: Date.now() + tokenResponse.expires_in * 1000,
+        scopes,
+      }
     } finally {
-      server.close()
+      signal.removeEventListener('abort', onAbort)
+      listener.close()
       log.info('Callback server closed')
     }
   }
 
-  private async createCallbackServer(signal: AbortSignal): Promise<{
-    server: Server
-    port: number
-    codePromise: Promise<{ code: string; state: string }>
-  }> {
-    let resolveCode: (value: { code: string; state: string }) => void
-    let rejectCode: (reason: Error) => void
-
-    const codePromise = new Promise<{ code: string; state: string }>((resolve, reject) => {
-      resolveCode = resolve
-      rejectCode = reject
-    })
-
-    // If abort fires before callback arrives, reject the code promise and close the server
-    const onAbort = () => rejectCode(new Error('Login cancelled'))
-    signal.addEventListener('abort', onAbort, { once: true })
-    // Clean up abort listener when code promise settles
-    codePromise.finally(() => signal.removeEventListener('abort', onAbort))
-
-    const server = createServer((req: IncomingMessage, res: ServerResponse) => {
-      log.info(`Callback server received request: ${req.method} ${req.url}`)
-
-      if (!req.url?.startsWith('/callback')) {
-        log.warn(`Unexpected request path (not /callback): ${req.url}`)
-        res.writeHead(404)
-        res.end()
-        return
-      }
-
-      const url = new URL(req.url, 'http://127.0.0.1')
-      const code = url.searchParams.get('code')
-      const state = url.searchParams.get('state')
-      const error = url.searchParams.get('error')
-
-      if (error) {
-        log.warn(`OAuth authorization denied by server: ${error}`)
-        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
-        res.end(this.buildResultPage(false, `Authorization denied: ${error}`))
-        rejectCode(new Error(`OAuth error: ${error}`))
-        return
-      }
-
-      if (!code || !state) {
-        log.warn('OAuth callback missing code or state parameter')
-        res.writeHead(400, { 'Content-Type': 'text/html; charset=utf-8' })
-        res.end(this.buildResultPage(false, 'Missing authorization code'))
-        rejectCode(new Error('Missing code or state in OAuth callback'))
-        return
-      }
-
-      log.info('OAuth callback received with authorization code')
-      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
-      res.end(this.buildResultPage(true, 'Your Claude subscription has been connected to OpenCow.'))
-      resolveCode({ code, state })
-    })
-
-    // Listen on random port bound to IPv4 loopback.
-    // MUST match the redirect URI which uses 127.0.0.1 (not localhost).
-    await new Promise<void>((resolve, reject) => {
-      server.on('listening', resolve)
-      server.on('error', reject)
-      server.listen(0, '127.0.0.1')
-    })
-
-    const address = server.address()
-    const port = typeof address === 'object' && address ? address.port : 0
-
-    if (port === 0) {
-      server.close()
-      throw new Error('Failed to bind callback server to a port')
-    }
-
-    log.info(`Callback server listening on 127.0.0.1:${port}`)
-    return { server, port, codePromise }
-  }
+  // ── Private: Token Refresh ──────────────────────────────────────────
 
   /**
-   * Build the OAuth authorization URL.
+   * Refresh the access token via the Chromium network stack (see
+   * top-of-file note), then persist to the profile-scoped store.
    *
-   * IMPORTANT: The redirect_uri uses `127.0.0.1` (not `localhost`) to guarantee
-   * the browser connects via IPv4 — matching the callback server bind address.
-   * On modern macOS (Sonoma+), `localhost` may resolve to `::1` (IPv6 first),
-   * causing the redirect to fail if the server only listens on IPv4.
-   * RFC 8252 §7.3 explicitly allows `http://127.0.0.1` for native app OAuth.
+   * Server may omit `refresh_token` on refresh (access-token rotation
+   * only); we fall back to the existing one so the next expiry isn't
+   * terminal. Subscription metadata likewise falls through when the
+   * response omits it.
    */
-  private buildAuthUrl(port: number, challenge: string, state: string): string {
-    const url = new URL(OAUTH_CONFIG.authorizeUrl)
-    url.searchParams.set('code', 'true')
-    url.searchParams.set('client_id', OAUTH_CONFIG.clientId)
-    url.searchParams.set('response_type', 'code')
-    url.searchParams.set('redirect_uri', this.buildRedirectUri(port))
-    url.searchParams.set('scope', OAUTH_CONFIG.scopes.join(' '))
-    url.searchParams.set('code_challenge', challenge)
-    url.searchParams.set('code_challenge_method', 'S256')
-    url.searchParams.set('state', state)
-    return url.toString()
+  private async refreshAndPersist(credential: OAuthCredential): Promise<void> {
+    log.info('Refreshing OAuth access token')
+
+    const response = await net.fetch(getOauthConfig().TOKEN_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        grant_type: 'refresh_token',
+        refresh_token: credential.refreshToken,
+        client_id: getOauthConfig().CLIENT_ID,
+      }),
+    })
+
+    if (!response.ok) {
+      const body = await response.text()
+      throw new Error(`Token refresh failed (${response.status}): ${body}`)
+    }
+
+    const data = (await response.json()) as Record<string, unknown>
+    const parsed = parseTokenResponse(data, {
+      fallbackRefreshToken: credential.refreshToken,
+    })
+
+    await this.store.updateAs<OAuthCredential>(this.credentialKey, {
+      ...parsed,
+      subscriptionType: parsed.subscriptionType ?? credential.subscriptionType,
+      rateLimitTier: parsed.rateLimitTier ?? credential.rateLimitTier,
+    })
+    log.info('Token refreshed successfully')
   }
 
-  /** Canonical redirect URI — shared between authorize URL and token exchange. */
-  private buildRedirectUri(port: number): string {
-    return `http://127.0.0.1:${port}/callback`
-  }
+  // ── Private: Token Exchange ─────────────────────────────────────────
 
-  private async exchangeCodeForTokens(params: {
+  /**
+   * POST the authorization code to Anthropic's token endpoint via
+   * Electron's `net.fetch`. Body shape mirrors `OAuth 2.0 RFC 6749 §4.1.3`
+   * plus Anthropic's extension: `state` is echoed so the server can
+   * correlate with the authorise step.
+   */
+  private async exchangeCodeForTokensViaNetFetch(params: {
     code: string
-    verifier: string
-    port: number
     state: string
-  }): Promise<OAuthCredential> {
-    const { code, verifier, port, state } = params
-
-    // Use Electron's net.fetch (Chromium network stack) to avoid Cloudflare
-    // bot detection that blocks Node.js fetch due to TLS fingerprint differences.
-    // NOTE: We send `state` as a compatibility field because current upstream
-    // OAuth implementations may enforce stricter request validation.
-    const redirectUri = this.buildRedirectUri(port)
-    const response = await net.fetch(OAUTH_CONFIG.tokenUrl, {
+    verifier: string
+    redirectUri: string
+  }): Promise<{
+    access_token: string
+    refresh_token: string
+    expires_in: number
+    scope?: string
+  }> {
+    const { code, state, verifier, redirectUri } = params
+    const response = await net.fetch(getOauthConfig().TOKEN_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         code,
         grant_type: 'authorization_code',
-        client_id: OAUTH_CONFIG.clientId,
+        client_id: getOauthConfig().CLIENT_ID,
         redirect_uri: redirectUri,
         code_verifier: verifier,
         state,
@@ -375,85 +428,31 @@ export class SubscriptionProvider implements ProviderAdapter {
       expiresIn: data.expires_in,
       scope: data.scope,
     })
-    return this.parseTokenResponse(data)
-  }
 
-  // ── Private: Token Refresh ──────────────────────────────────────────
-
-  private async refreshToken(credential: OAuthCredential): Promise<void> {
-    log.info('Refreshing OAuth access token')
-
-    // Use Electron's net.fetch (Chromium network stack) — same reason as above.
-    const response = await net.fetch(OAUTH_CONFIG.tokenUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        grant_type: 'refresh_token',
-        refresh_token: credential.refreshToken,
-        client_id: OAUTH_CONFIG.clientId,
-      }),
-    })
-
-    if (!response.ok) {
-      const body = await response.text()
-      throw new Error(`Token refresh failed (${response.status}): ${body}`)
-    }
-
-    const data = (await response.json()) as Record<string, unknown>
-    const refreshed = this.parseTokenResponse(data, {
-      fallbackRefreshToken: credential.refreshToken,
-    })
-
-    await this.store.updateAs(this.credentialKey, refreshed)
-    log.info('Token refreshed successfully')
-  }
-
-  // ── Private: Helpers ────────────────────────────────────────────────
-
-  private isTokenExpired(credential: OAuthCredential): boolean {
-    return Date.now() >= credential.expiresAt - OAUTH_CONFIG.refreshBufferMs
-  }
-
-  /**
-   * Parse a raw OAuth token response into a type-safe OAuthCredential.
-   *
-   * Performs **runtime validation** of all fields — no unsafe casts.
-   * Accepts the opaque `Record<string, unknown>` from `response.json()` and
-   * returns a fully validated credential or throws.
-   *
-   * @param raw         The raw JSON response body.
-   * @param options.fallbackRefreshToken  When refreshing tokens, the server may
-   *   omit refresh_token. Pass the existing token to preserve it.
-   */
-  private parseTokenResponse(
-    raw: Record<string, unknown>,
-    options?: { fallbackRefreshToken?: string },
-  ): OAuthCredential {
-    const accessToken = typeof raw.access_token === 'string' ? raw.access_token : ''
-    const refreshToken = typeof raw.refresh_token === 'string' ? raw.refresh_token : ''
-    const expiresIn = typeof raw.expires_in === 'number' ? raw.expires_in : 0
-    const scope = typeof raw.scope === 'string' ? raw.scope : undefined
+    const accessToken = typeof data.access_token === 'string' ? data.access_token : ''
+    const refreshToken = typeof data.refresh_token === 'string' ? data.refresh_token : ''
+    const expiresIn = typeof data.expires_in === 'number' ? data.expires_in : 0
+    const scope = typeof data.scope === 'string' ? data.scope : undefined
 
     if (!accessToken) {
       throw new Error('OAuth token response missing access_token')
     }
 
     return {
-      accessToken,
-      refreshToken: refreshToken || options?.fallbackRefreshToken || '',
-      expiresAt: Date.now() + expiresIn * 1000,
-      scopes: scope?.split(' ') ?? [...OAUTH_CONFIG.scopes],
-      // Capture subscription metadata if present (Anthropic extension fields)
-      subscriptionType: typeof raw.subscription_type === 'string' ? raw.subscription_type : undefined,
-      rateLimitTier: typeof raw.rate_limit_tier === 'string' ? raw.rate_limit_tier : undefined,
+      access_token: accessToken,
+      refresh_token: refreshToken,
+      expires_in: expiresIn,
+      scope,
     }
   }
+
+  // ── Private: Helpers ────────────────────────────────────────────────
 
   private withAbortableTimeout<T>(
     promise: Promise<T>,
     ms: number,
     timeoutMessage: string,
-    signal: AbortSignal
+    signal: AbortSignal,
   ): Promise<T> {
     return new Promise<T>((resolve, reject) => {
       const timer = setTimeout(() => reject(new Error(timeoutMessage)), ms)

@@ -285,5 +285,22 @@ describe('StateRepository', () => {
       const record = await repo.getImport('skill', 'future-origin')
       expect(record?.sourceOrigin).toBe('unknown')
     })
+
+    it('keeps codex source_origin as-is', async () => {
+      await db
+        .insertInto('capability_import')
+        .values({
+          category: 'skill',
+          name: 'codex-origin',
+          source_path: '/tmp/codex-origin.md',
+          source_origin: 'codex',
+          source_hash: null,
+          imported_at: Date.now(),
+        })
+        .execute()
+
+      const record = await repo.getImport('skill', 'codex-origin')
+      expect(record?.sourceOrigin).toBe('codex')
+    })
   })
 })

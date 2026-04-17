@@ -163,14 +163,23 @@ export type ProbeResult =
   | { ok: true; detail?: string }
   | { ok: false; reason: 'unauthenticated' | 'network' | 'unsupported' | 'error'; message: string }
 
-// ── OAuth Constants ─────────────────────────────────────────────────
+// ── OAuth Flow Timings ──────────────────────────────────────────────
+//
+// OAuth *wire* constants (client_id, authorize URL, token URL, scopes)
+// live in `@opencow-ai/opencow-agent-sdk`'s `getOauthConfig()` +
+// `CLAUDE_AI_OAUTH_SCOPES` — the SDK is the single source of truth
+// for the Anthropic OAuth protocol. This file only keeps **timings**
+// that are OpenCow's own orchestration policy:
+//
+//   - refreshBufferMs: proactive-refresh lead time (stricter than the
+//     SDK's built-in 1-minute default — we want 5 to absorb clock drift
+//     and network latency on the electron-vite dev restart)
+//   - flowTimeoutMs: how long to wait for the browser callback before
+//     giving up the OAuth dance. Driven by UX: 3 minutes is long enough
+//     for the user to complete login + MFA without being intrusive,
+//     short enough to make "I closed the browser tab" recoverable.
 
-export const OAUTH_CONFIG = {
-  clientId: '9d1c250a-e61b-44d9-88ed-5944d1962f5e',
-  // Align with current Claude production OAuth routing (same as free-code baseline).
-  authorizeUrl: 'https://claude.com/cai/oauth/authorize',
-  tokenUrl: 'https://platform.claude.com/v1/oauth/token',
-  scopes: ['user:inference', 'user:profile', 'user:mcp_servers', 'user:sessions:claude_code', 'user:file_upload'],
+export const OAUTH_FLOW_TIMINGS = {
   /** Buffer before actual expiry to trigger proactive refresh (5 minutes). */
   refreshBufferMs: 5 * 60 * 1000,
   /** Timeout for the entire OAuth browser flow (3 minutes). */
