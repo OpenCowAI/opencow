@@ -216,7 +216,8 @@
       "express-rate-limit": "^8.2.2",
       "flatted": "^3.4.2",
       "undici@<7": "^6.24.0",
-      "path-to-regexp@>=8.0.0 <8.4.0": "^8.4.0"
+      "path-to-regexp@>=8.0.0 <8.4.0": "^8.4.0",
+      "protobufjs": "^7.5.5"
     }
   },
   "devDependencies": {
