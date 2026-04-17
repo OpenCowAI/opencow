@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import type { SessionSnapshot } from './types'
-import { getContextLimit } from './modelContextLimits'
+import { resolveContextLimit } from './contextLimitResolver'
 
 /**
  * Resolved context window display state, ready for UI consumption.
@@ -25,13 +25,14 @@ export interface ContextDisplayState {
  * Resolution priority:
  *
  *   **usedTokens** (per-turn context window consumption):
- *     1. `contextState.usedTokens`  — runtime per-turn data from turn.usage or context.snapshot
- *     2. `lastInputTokens`          — DB-persisted value (survives process restart)
+ *     1. `contextState.usedTokens`  — normalized runtime occupancy snapshot
+ *     2. `0`                        — never fall back to legacy persisted tokens
  *
  *   **limitTokens** (maximum context window):
- *     1. `contextState.limitTokens`  — provider-reported dynamic limit (runtime)
+ *     1. `contextState.limitTokens`  — runtime authoritative limit
  *     2. `contextLimitOverride`      — provider-reported limit from turn.result (runtime cache)
- *     3. Static model metadata       — via getContextLimit() (fallback)
+ *     3. `catalog context_window`    — model catalog fallback
+ *     4. Static model metadata       — last fallback
  *
  *   **estimated**:
  *     `true` when contextState is absent or has non-authoritative confidence.
@@ -43,22 +44,15 @@ export interface ContextDisplayState {
 export function resolveContextDisplayState(session: SessionSnapshot): ContextDisplayState {
   const contextState = session.contextState ?? null
 
-  // usedTokens: prefer runtime state, fall back to DB-persisted value
-  const usedTokens = contextState?.usedTokens ?? session.lastInputTokens
+  // usedTokens: only normalized runtime occupancy is valid.
+  const usedTokens = contextState?.usedTokens ?? 0
 
-  // limitTokens: three-tier fallback
-  //   1. contextState.limitTokens   — authoritative runtime value
-  //   2. contextLimitOverride       — provider-reported dynamic limit from turn.result
-  //   3. static model metadata      — hardcoded per engine/model defaults
-  const dynamicLimit =
-    session.contextLimitOverride != null && session.contextLimitOverride > 0
-      ? session.contextLimitOverride
-      : null
-  const staticLimit = getContextLimit({
-    engineKind: session.engineKind,
+  const limitResolution = resolveContextLimit({
     model: session.model,
+    contextState,
+    contextLimitOverride: session.contextLimitOverride,
   })
-  const limitTokens = contextState?.limitTokens ?? dynamicLimit ?? staticLimit
+  const limitTokens = limitResolution.limitTokens
 
   // estimated: authoritative only when contextState explicitly says so
   const estimated = contextState

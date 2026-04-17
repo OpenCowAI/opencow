@@ -16,6 +16,7 @@ import { ContentViewerProvider } from '../../../src/renderer/components/DetailPa
 import { TaskEventsProvider } from '../../../src/renderer/components/DetailPanel/SessionPanel/TaskWidgets'
 import { AskUserQuestionProvider } from '../../../src/renderer/components/DetailPanel/SessionPanel/AskUserQuestionWidgets'
 import type { ManagedSessionMessage, ContentBlock } from '../../../src/shared/types'
+import { NativeCapabilityTools } from '../../../src/shared/nativeCapabilityToolNames'
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -130,6 +131,13 @@ describe('isBatchableToolMessage', () => {
     expect(isBatchableToolMessage(makeWidgetToolMsg('Task', 'a1'))).toBe(false)
     expect(isBatchableToolMessage(makeWidgetToolMsg('TodoWrite', 'a2'))).toBe(false)
     expect(isBatchableToolMessage(makeWidgetToolMsg('AskUserQuestion', 'a3'))).toBe(false)
+  })
+
+  it('returns false for schedule lifecycle proposal tool messages', () => {
+    expect(isBatchableToolMessage(makeToolOnlyMsg(
+      NativeCapabilityTools.SCHEDULE_PROPOSE_OPERATION,
+      'a1'
+    ))).toBe(false)
   })
 
   it('returns false for Evose agent/workflow tool messages', () => {

@@ -155,6 +155,57 @@ When the user asks what you know about them, their preferences, or their backgro
 - If no <opencow-memory> section exists or it is empty, say you haven't learned enough about them yet
 </knowledge-boundary>`
 
-const BASE_SYSTEM_PROMPT = TASK_APPROACH + BROWSER_TOOL_PREFERENCE + INTERACTION_PREFERENCE_DESKTOP + KNOWLEDGE_BOUNDARY
+/**
+ * Core entity governance for P1 native operations.
+ *
+ * Kept intentionally abstract and protocol-oriented:
+ * - route first, then execute
+ * - entity boundaries remain explicit (Issue vs Schedule)
+ * - write operations default to confirmation unless user waives it
+ */
+const ENTITY_GOVERNANCE = `
+<entity-governance>
+<rule name="entity-router">
+  <instructions><![CDATA[
+- Classify the primary target entity before any write action: issue or schedule.
+- Use the corresponding native capability path first.
+- Do not merge cross-entity writes into one operation; split into ordered steps.
+]]></instructions>
+</rule>
 
-const BASE_SYSTEM_PROMPT_IM = TASK_APPROACH + BROWSER_TOOL_PREFERENCE + INTERACTION_PREFERENCE_IM + KNOWLEDGE_BOUNDARY
+<rule name="issue-governance">
+  <instructions><![CDATA[
+- Manage issue lifecycle via issue native capability tools.
+- Pick the tool by intent, not by caution:
+  - Clear imperative commands ("创建 X"/"add Y"/"close this issue") → call the direct tool (create_issue / update_issue) for a single unambiguous change. No propose step.
+  - Batched writes, ambiguous parameters, or user said "draft/review/帮我看看" → call propose_issue_operation. Pick confirmationMode based on the user's intent:
+    - confirmationMode=auto_if_user_explicit when the user already issued a clear command and the only reason you chose propose was batching — coordinator applies immediately, no UI pause.
+    - confirmationMode=required when you genuinely want the user to inspect the draft before it lands.
+- When the user later acknowledges a pending proposal in chat ("确定"/"confirm"/"go ahead"), call apply_lifecycle_operation with the operationId from the preceding propose_issue_operation tool_result.
+- When the user declines ("算了"/"cancel"/"never mind"), call cancel_lifecycle_operation.
+- Do not emit legacy confirmationMode=draft.
+- Keep issue updates partial and idempotent.
+]]></instructions>
+</rule>
+
+<rule name="schedule-governance">
+  <instructions><![CDATA[
+- For any scheduled-plan intent (daily/weekly/monthly/cron/time-based execution), prioritize schedule native capability tools.
+- Do not use OS-level schedulers (cron/launchd/systemd) unless the user explicitly asks for OS-level scheduling.
+- Do not run MCP capability-discovery calls (resources/resourceTemplates) before schedule execution unless the user explicitly asks you to inspect templates.
+- Pick the tool by intent, not by caution:
+  - Clear imperative commands ("创建一个每天 9 点的计划"/"set up a daily report") → call the direct tool (create_schedule / update_schedule / pause_schedule / resume_schedule) for a single unambiguous change. No propose step.
+  - Batched writes, unclear timing parameters, or user said "帮我草拟/看看" → call propose_schedule_operation. Pick confirmationMode based on the user's intent:
+    - confirmationMode=auto_if_user_explicit when the user already issued a clear command — coordinator applies immediately, no UI pause.
+    - confirmationMode=required when you genuinely want the user to inspect the draft before it lands.
+- When the user later acknowledges a pending proposal in chat ("确定"/"confirm"/"go ahead"), call apply_lifecycle_operation with the operationId from the preceding propose_schedule_operation tool_result.
+- When the user declines ("算了"/"cancel"/"never mind"), call cancel_lifecycle_operation.
+- Do not emit legacy confirmationMode=draft.
+- If fallback is required, explain why and ask for confirmation before proceeding.
+]]></instructions>
+</rule>
+</entity-governance>`
+
+const BASE_SYSTEM_PROMPT = TASK_APPROACH + BROWSER_TOOL_PREFERENCE + INTERACTION_PREFERENCE_DESKTOP + KNOWLEDGE_BOUNDARY + ENTITY_GOVERNANCE
+
+const BASE_SYSTEM_PROMPT_IM = TASK_APPROACH + BROWSER_TOOL_PREFERENCE + INTERACTION_PREFERENCE_IM + KNOWLEDGE_BOUNDARY + ENTITY_GOVERNANCE

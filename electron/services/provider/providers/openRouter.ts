@@ -20,7 +20,6 @@
  */
 
 import type {
-  CodexAuthConfig,
   HTTPAuthResult,
   ProviderAdapter,
   ProviderAdapterStatus,
@@ -36,13 +35,15 @@ const OPENROUTER_BASE_URL = 'https://openrouter.ai/api'
 
 export class OpenRouterProvider implements ProviderAdapter {
   private readonly store: CredentialStore
+  private readonly credentialKey: string
 
-  constructor(store: CredentialStore) {
+  constructor(store: CredentialStore, credentialKey: string = 'openrouter') {
     this.store = store
+    this.credentialKey = credentialKey
   }
 
   async checkStatus(): Promise<ProviderAdapterStatus> {
-    const credential = await this.store.get('openrouter')
+    const credential = await this.store.getAs<OpenRouterCredential>(this.credentialKey)
     if (!credential?.apiKey) {
       return { authenticated: false }
     }
@@ -50,7 +51,7 @@ export class OpenRouterProvider implements ProviderAdapter {
   }
 
   async getEnv(): Promise<Record<string, string>> {
-    const credential = await this.store.get('openrouter')
+    const credential = await this.store.getAs<OpenRouterCredential>(this.credentialKey)
     if (!credential?.apiKey) return {}
 
     const baseUrl = credential.baseUrl?.trim() || OPENROUTER_BASE_URL
@@ -77,19 +78,19 @@ export class OpenRouterProvider implements ProviderAdapter {
       credential.baseUrl = baseUrl.trim()
     }
 
-    await this.store.update('openrouter', credential)
+    await this.store.updateAs(this.credentialKey, credential)
     log.info('OpenRouter credentials saved', { hasCustomBaseUrl: !!credential.baseUrl })
     return { authenticated: true }
   }
 
   async getCredential(): Promise<import('@shared/types').ProviderCredentialInfo | null> {
-    const credential = await this.store.get('openrouter')
+    const credential = await this.store.getAs<OpenRouterCredential>(this.credentialKey)
     if (!credential?.apiKey) return null
     return { apiKey: credential.apiKey, baseUrl: credential.baseUrl }
   }
 
   async getHTTPAuth(): Promise<HTTPAuthResult | null> {
-    const credential = await this.store.get('openrouter')
+    const credential = await this.store.getAs<OpenRouterCredential>(this.credentialKey)
     if (!credential?.apiKey) return null
     return {
       apiKey: credential.apiKey,
@@ -98,19 +99,22 @@ export class OpenRouterProvider implements ProviderAdapter {
     }
   }
 
-  async getCodexAuthConfig(): Promise<CodexAuthConfig | null> {
-    const credential = await this.store.get('openrouter')
-    if (!credential?.apiKey) return null
-    return {
-      apiKey: credential.apiKey,
-      // Keep the same OpenRouter default base URL used by this adapter.
-      // Codex SDK will pass it as `openai_base_url` at runtime.
-      baseUrl: credential.baseUrl?.trim() || OPENROUTER_BASE_URL,
-    }
+  async logout(): Promise<void> {
+    await this.store.removeAt(this.credentialKey)
+    log.info('OpenRouter credentials cleared')
   }
 
-  async logout(): Promise<void> {
-    await this.store.remove('openrouter')
-    log.info('OpenRouter credentials cleared')
+  async probe(): Promise<import('../types').ProbeResult> {
+    const credential = await this.store.getAs<OpenRouterCredential>(this.credentialKey)
+    if (!credential?.apiKey) {
+      return { ok: false, reason: 'unauthenticated', message: 'No API key stored' }
+    }
+    const { probeUpstream } = await import('./probe')
+    const baseUrl = credential.baseUrl?.trim() || OPENROUTER_BASE_URL
+    return probeUpstream({
+      url: `${baseUrl.replace(/\/+$/, '')}/v1/models`,
+      headers: { Authorization: `Bearer ${credential.apiKey}` },
+      logLabel: `OpenRouter (${baseUrl})`,
+    })
   }
 }

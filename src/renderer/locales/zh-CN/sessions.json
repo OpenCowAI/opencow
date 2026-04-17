@@ -245,6 +245,35 @@
     "fileDropHint": "松手附加文件",
     "fileDropHintSub": "支持图片、PDF 和文本文件"
   },
+  "lifecycleOperation": {
+    "status": {
+      "pendingConfirmation": "待确认",
+      "applying": "执行中",
+      "applied": "已完成",
+      "failed": "失败",
+      "cancelled": "已取消"
+    },
+    "editFields": "编辑字段",
+    "confirming": "确认中...",
+    "applying": "执行中...",
+    "preview": {
+      "targetId": "目标 ID",
+      "schedule": "计划",
+      "task": "任务",
+      "timezone": "时区",
+      "description": "描述",
+      "status": "状态",
+      "priority": "优先级",
+      "labels": "标签"
+    },
+    "error": {
+      "missingSession": "操作缺少会话上下文，请重新生成草稿。",
+      "crossSession": "该草稿属于其他会话，请在当前会话重新生成。",
+      "crossSessionReadonly": "该草稿属于其他会话，无法在当前会话确认。",
+      "confirmTimeout": "确认超时，请重试。",
+      "rejectTimeout": "取消超时，请重试。"
+    }
+  },
   "taskWidget": {
     "state": {
       "launching": "启动中…",

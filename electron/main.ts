@@ -25,7 +25,7 @@ import { WeixinBotManager } from './services/weixinBot/weixinBotManager'
 import { WeixinAdapter } from './services/weixinBot/weixinAdapter'
 import { IMBridgeManager } from './services/messaging'
 import { setMainWindow, getMainWindow } from './window/windowManager'
-import { NativeCapabilityRegistry } from './nativeCapabilities/registry'
+import { OpenCowCapabilityRegistry } from './nativeCapabilities/openCowCapabilityRegistry'
 import { PendingQuestionRegistry } from './nativeCapabilities/interaction/pendingQuestionRegistry'
 import { initShellEnvironment } from './platform/shellPath'
 import { dataPaths, isDev, ensureCapabilityDirs } from './platform/dataPaths'
@@ -133,7 +133,7 @@ const settingsService = new SettingsService(dataPaths.settings)
 let svc: AppServices | null = null
 
 // Non-database services (available before whenReady)
-const nativeCapabilityRegistry = new NativeCapabilityRegistry()
+const nativeCapabilityRegistry = new OpenCowCapabilityRegistry()
 const pendingQuestionRegistry = new PendingQuestionRegistry()
 
 // Sources — hookSource uses lazy `shouldSkip` predicate (orchestrator isn't created yet).
@@ -141,8 +141,7 @@ const pendingQuestionRegistry = new PendingQuestionRegistry()
 // because hookSource.start() runs after orchestrator creation (Phase 2).
 const hookSource = new HookSource((e) => bus.dispatch(e), {
   eventsLog: dataPaths.eventsLog,
-  // Skip only managed sessions that already emit SDK hooks (Claude).
-  // Codex managed sessions still rely on hook-log ingestion for Inbox/Webhook flows.
+  // Skip managed sessions that already emit SDK hooks directly into DataBus.
   shouldSkip: (event) => svc?.orchestrator?.shouldSkipHookSourceEvent(event.sessionId) ?? false,
 })
 const statsSource = new StatsSource((e) => bus.dispatch(e))
@@ -499,6 +498,7 @@ app.whenReady().then(async () => {
     marketplaceService, repoSourceRegistry, gitService, memoryService,
     issueProviderService, issueSyncEngine,
     changeQueueStore, changeQueueService, pushEngine, issueCommentService, syncLogStore,
+    lifecycleOperationCoordinator,
   } = svc
 
   // Wire up TrayIssueService for issue-centric tray popover data
@@ -548,6 +548,7 @@ app.whenReady().then(async () => {
     issueCommentService,
     syncLogStore,
     changeQueueStore,
+    lifecycleOperationCoordinator,
     getProxyFetch: () => proxyFetchFactory.getStandardFetch(),
     onQuit: requestQuit,
     updateChecker,

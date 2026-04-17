@@ -200,13 +200,71 @@ describe('adaptClaudeSdkMessage', () => {
     expect(events).toHaveLength(0)
   })
 
-  it('silently drops user-type messages', () => {
-    const events = adaptClaudeSdkMessage({
+  it('silently drops pure user prompt-echo messages (string or text-only)', () => {
+    // String content — pure echo of the just-sent prompt.
+    expect(adaptClaudeSdkMessage({
+      type: 'user',
+      message: { content: 'hello' },
+    } as never)).toHaveLength(0)
+
+    // Array of text-only blocks — also a pure echo, no tool_result envelope.
+    expect(adaptClaudeSdkMessage({
       type: 'user',
       message: { content: [{ type: 'text', text: 'hello' }] },
+    } as never)).toHaveLength(0)
+  })
+
+  it('emits user.tool_result with extracted media for browser_screenshot replay', () => {
+    // Bug repro: the browser_screenshot tool returns its PNG via a user-role
+    // tool_result block in MCP native shape (data + mimeType).  Previously the
+    // adapter dropped the entire user message so the image never reached
+    // persistence — and on the next turn the model would say it had not seen
+    // the screenshot.
+    const events = adaptClaudeSdkMessage({
+      type: 'user',
+      message: {
+        content: [
+          {
+            type: 'tool_result',
+            tool_use_id: 'tool-shot',
+            content: [
+              { type: 'image', data: 'iVBORw0KGgo=', mimeType: 'image/png' },
+            ],
+          },
+        ],
+      },
     } as never)
 
-    expect(events).toHaveLength(0)
+    expect(events).toHaveLength(1)
+    const event = events[0]!
+    expect(event.kind).toBe('user.tool_result')
+    if (event.kind !== 'user.tool_result') return
+    expect(event.payload.toolUseId).toBe('tool-shot')
+    expect(event.payload.isError).toBe(false)
+    // ToolResultBlock + provenance-stamped ImageBlock (toolUseId carried
+    // end-to-end so renderer's BrowserScreenshotCard can light up).
+    expect(event.payload.blocks).toEqual([
+      { type: 'tool_result', toolUseId: 'tool-shot', content: '' },
+      {
+        type: 'image',
+        mediaType: 'image/png',
+        data: 'iVBORw0KGgo=',
+        sizeBytes: Math.ceil((12 * 3) / 4),
+        toolUseId: 'tool-shot',
+      },
+    ])
+  })
+
+  it('flags malformed tool_result missing tool_use_id as protocol.violation', () => {
+    const events = adaptClaudeSdkMessage({
+      type: 'user',
+      message: {
+        content: [{ type: 'tool_result', content: 'orphan' }],
+      },
+    } as never)
+
+    expect(events).toHaveLength(1)
+    expect(events[0]!.kind).toBe('protocol.violation')
   })
 
   it('gracefully ignores unknown event types (forward-compatible)', () => {

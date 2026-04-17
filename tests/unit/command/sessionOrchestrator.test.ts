@@ -9,10 +9,10 @@ import { createTestDb } from '../../helpers/testDb'
 import { SessionOrchestrator } from '../../../electron/command/sessionOrchestrator'
 import type { OrchestratorDeps } from '../../../electron/command/sessionOrchestrator'
 import { ManagedSessionStore } from '../../../electron/services/managedSessionStore'
-import {
-  __resetCodexSdkLoaderForTest,
-  __setCodexSdkLoaderForTest,
-} from '../../../electron/command/codexQueryLifecycle'
+import { __setOpenClaudeModuleLoaderForTest } from '../../../electron/command/queryLifecycle'
+// Codex engine removed — stub test helpers
+const __resetCodexSdkLoaderForTest = (): void => {}
+const __setCodexSdkLoaderForTest = (_loader: unknown): void => {}
 import type { StartSessionInput, DataBusEvent, ManagedSessionInfo } from '../../../src/shared/types'
 import type { Database } from '../../../electron/database/types'
 import type { CapabilityCenter } from '../../../electron/services/capabilityCenter'
@@ -27,7 +27,69 @@ vi.mock('electron', () => ({
 const mockClose = vi.fn()
 let pendingNextResolvers: Array<(v: IteratorResult<unknown>) => void> = []
 
-vi.mock('@anthropic-ai/claude-agent-sdk', () => ({
+function installClaudeQueryMock(): void {
+  mockClose.mockReset()
+  pendingNextResolvers = []
+
+  const queryMock = vi.fn(() => {
+    pendingNextResolvers = []
+
+    const generator = {
+      next: () =>
+        new Promise<IteratorResult<unknown>>((resolve) => {
+          pendingNextResolvers.push(resolve)
+        }),
+      return: () => {
+        for (const resolve of pendingNextResolvers) {
+          resolve({ value: undefined, done: true })
+        }
+        pendingNextResolvers = []
+        return Promise.resolve({ value: undefined, done: true as const })
+      },
+      throw: (e: unknown) => Promise.reject(e),
+      [Symbol.asyncIterator]: () => generator,
+      close: () => {
+        mockClose()
+        // Resolve all pending next() calls to unblock the for-await loop
+        for (const resolve of pendingNextResolvers) {
+          resolve({ value: undefined, done: true })
+        }
+        pendingNextResolvers = []
+      },
+      interrupt: () => Promise.resolve(),
+      setPermissionMode: () => Promise.resolve(),
+      setModel: () => Promise.resolve(),
+      setMaxThinkingTokens: () => Promise.resolve(),
+      initializationResult: () => Promise.resolve({}),
+      supportedCommands: () => Promise.resolve([]),
+      supportedModels: () => Promise.resolve([]),
+      mcpServerStatus: () => Promise.resolve([]),
+      accountInfo: () => Promise.resolve({}),
+      rewindFiles: () => Promise.resolve({ canRewind: false }),
+      reconnectMcpServer: () => Promise.resolve(),
+      toggleMcpServer: () => Promise.resolve(),
+      setMcpServers: () => Promise.resolve({}),
+      streamInput: () => Promise.resolve(),
+      stopTask: () => Promise.resolve(),
+    }
+
+    return generator
+  })
+
+  __setOpenClaudeModuleLoaderForTest(async () => ({
+    query: queryMock,
+    createSession: vi.fn((_options: Record<string, unknown>) => ({
+      query: (params: {
+        prompt: AsyncIterable<unknown>
+        options?: Record<string, unknown>
+      }) => queryMock(params),
+      close: vi.fn(async () => {}),
+    })),
+  }))
+}
+
+/*
+vi.mock('../../../electron/integrations/opencowSdkCompat', () => ({
   query: vi.fn(() => {
     pendingNextResolvers = []
 
@@ -73,6 +135,7 @@ vi.mock('@anthropic-ai/claude-agent-sdk', () => ({
     return generator
   })
 }))
+*/
 
 
 const codexMocks = vi.hoisted(() => {
@@ -125,7 +188,7 @@ function makeDeps(
     getCodexAuthConfig: async (_engineKind) => null,
     getProviderDefaultModel: (_engineKind) => undefined,
     getProviderDefaultReasoningEffort: (_engineKind) => undefined,
-    getActiveProviderMode: (_engineKind) => null,
+    getActiveProviderProfileId: () => null,
     getCommandDefaults: () => ({
       maxTurns: 10,
       permissionMode: 'default' as const,
@@ -201,8 +264,7 @@ describe('SessionOrchestrator.startSession — idempotency', () => {
     __setCodexSdkLoaderForTest(
       async () => ({ Codex: codexMocks.mockCodexCtor as unknown as typeof import('@openai/codex-sdk').Codex }),
     )
-    mockClose.mockReset()
-    pendingNextResolvers = []
+    installClaudeQueryMock()
     codexMocks.state.turnPlans = []
     codexMocks.mockCodexRunStreamed.mockClear()
     codexMocks.mockCodexStartThread.mockClear()
@@ -211,6 +273,7 @@ describe('SessionOrchestrator.startSession — idempotency', () => {
   })
 
   afterEach(async () => {
+    __setOpenClaudeModuleLoaderForTest(null)
     __resetCodexSdkLoaderForTest()
     await closeDb()
     await rm(tmpDir, { recursive: true, force: true })
@@ -307,481 +370,6 @@ describe('SessionOrchestrator.startSession — idempotency', () => {
     expect(withExecutionContext).toBeTruthy()
     expect(withExecutionContext?.payload.executionContext?.cwd).toBe(homedir())
   })
-
-  it('supports starting a codex-managed session', async () => {
-    codexMocks.state.turnPlans.push([
-      { type: 'thread.started', thread_id: 'codex-thread-1' },
-      { type: 'item.completed', item: { type: 'agent_message', text: 'codex-response' } },
-      { type: 'turn.completed', usage: { input_tokens: 1, cached_input_tokens: 0, output_tokens: 1 } },
-    ])
-
-    const sessionId = await orchestrator.startSession({
-      prompt: 'run with codex',
-      engineKind: 'codex',
-    })
-
-    let info = await orchestrator.getSession(sessionId)
-    for (let i = 0; i < 10 && info?.engineSessionRef == null; i++) {
-      await new Promise((resolve) => setTimeout(resolve, 0))
-      info = await orchestrator.getSession(sessionId)
-    }
-    expect(info?.engineKind).toBe('codex')
-    expect(info?.engineSessionRef).toBe('codex-thread-1')
-
-    await orchestrator.stopSession(sessionId)
-  })
-
-  it('uses command.defaultEngine when startSession input omits engineKind', async () => {
-    deps = makeDeps(db, tmpDir, 'codex')
-    orchestrator = new SessionOrchestrator(deps)
-
-    codexMocks.state.turnPlans.push([
-      { type: 'thread.started', thread_id: 'codex-thread-default' },
-      { type: 'item.completed', item: { type: 'agent_message', text: 'default-engine-response' } },
-      { type: 'turn.completed', usage: { input_tokens: 1, cached_input_tokens: 0, output_tokens: 1 } },
-    ])
-
-    const sessionId = await orchestrator.startSession({ prompt: 'use default engine' })
-    let info = await orchestrator.getSession(sessionId)
-    for (let i = 0; i < 10 && info?.engineSessionRef == null; i++) {
-      await new Promise((resolve) => setTimeout(resolve, 0))
-      info = await orchestrator.getSession(sessionId)
-    }
-    expect(info?.engineKind).toBe('codex')
-    expect(info?.engineSessionRef).toBe('codex-thread-default')
-
-    await orchestrator.stopSession(sessionId)
-  })
-
-  it('passes provider-resolved codex auth config into Codex SDK constructor options', async () => {
-    deps = {
-      ...makeDeps(db, tmpDir, 'codex'),
-      getCodexAuthConfig: async (_engineKind) => ({
-        apiKey: 'codex-test-key',
-        baseUrl: 'https://codex-gateway.example/v1',
-      }),
-    }
-    orchestrator = new SessionOrchestrator(deps)
-
-    codexMocks.state.turnPlans.push([
-      { type: 'thread.started', thread_id: 'codex-thread-auth' },
-      { type: 'item.completed', item: { type: 'agent_message', text: 'auth-configured' } },
-      { type: 'turn.completed', usage: { input_tokens: 1, cached_input_tokens: 0, output_tokens: 1 } },
-    ])
-
-    const sessionId = await orchestrator.startSession({ prompt: 'use provider auth mapping' })
-    let info = await orchestrator.getSession(sessionId)
-    for (let i = 0; i < 10 && info?.engineSessionRef == null; i++) {
-      await new Promise((resolve) => setTimeout(resolve, 0))
-      info = await orchestrator.getSession(sessionId)
-    }
-
-    expect(info?.engineKind).toBe('codex')
-    expect(codexMocks.mockCodexCtor).toHaveBeenCalledWith(
-      expect.objectContaining({
-        apiKey: 'codex-test-key',
-        baseUrl: 'https://codex-gateway.example/v1',
-        env: expect.any(Object),
-      }),
-    )
-
-    await orchestrator.stopSession(sessionId)
-  })
-
-  it('applies codex provider default model when session model is omitted', async () => {
-    deps = {
-      ...makeDeps(db, tmpDir, 'codex'),
-      getProviderDefaultModel: (engineKind) =>
-        engineKind === 'codex' ? 'gpt-5' : undefined,
-    }
-    orchestrator = new SessionOrchestrator(deps)
-
-    codexMocks.state.turnPlans.push([
-      { type: 'thread.started', thread_id: 'codex-thread-default-model' },
-      { type: 'item.completed', item: { type: 'agent_message', text: 'model-default' } },
-      { type: 'turn.completed', usage: { input_tokens: 1, cached_input_tokens: 0, output_tokens: 1 } },
-    ])
-
-    const sessionId = await orchestrator.startSession({ prompt: 'use provider default model' })
-    let info = await orchestrator.getSession(sessionId)
-    for (let i = 0; i < 10 && info?.engineSessionRef == null; i++) {
-      await new Promise((resolve) => setTimeout(resolve, 0))
-      info = await orchestrator.getSession(sessionId)
-    }
-
-    expect(info?.engineKind).toBe('codex')
-    expect(codexMocks.mockCodexStartThread).toHaveBeenCalledWith(
-      expect.objectContaining({
-        model: 'gpt-5',
-      }),
-    )
-
-    await orchestrator.stopSession(sessionId)
-  })
-
-  it('applies codex provider default reasoning effort when configured', async () => {
-    deps = {
-      ...makeDeps(db, tmpDir, 'codex'),
-      getProviderDefaultReasoningEffort: (engineKind) =>
-        engineKind === 'codex' ? 'high' : undefined,
-    }
-    orchestrator = new SessionOrchestrator(deps)
-
-    codexMocks.state.turnPlans.push([
-      { type: 'thread.started', thread_id: 'codex-thread-default-reasoning' },
-      { type: 'item.completed', item: { type: 'agent_message', text: 'reasoning-default' } },
-      { type: 'turn.completed', usage: { input_tokens: 1, cached_input_tokens: 0, output_tokens: 1 } },
-    ])
-
-    const sessionId = await orchestrator.startSession({ prompt: 'use provider default reasoning effort' })
-    let info = await orchestrator.getSession(sessionId)
-    for (let i = 0; i < 10 && info?.engineSessionRef == null; i++) {
-      await new Promise((resolve) => setTimeout(resolve, 0))
-      info = await orchestrator.getSession(sessionId)
-    }
-
-    expect(info?.engineKind).toBe('codex')
-    expect(codexMocks.mockCodexStartThread).toHaveBeenCalledWith(
-      expect.objectContaining({
-        modelReasoningEffort: 'high',
-      }),
-    )
-
-    await orchestrator.stopSession(sessionId)
-  })
-
-  it('does not reuse persisted Claude runtime model after engine drift switch to codex', async () => {
-    deps = {
-      ...makeDeps(db, tmpDir, 'codex'),
-      getProviderDefaultModel: (engineKind) =>
-        engineKind === 'codex' ? 'gpt-5' : undefined,
-    }
-    orchestrator = new SessionOrchestrator(deps)
-
-    const persistedSession = makePersistedSession({
-      id: 'ccb-persisted-engine-drift',
-      engineKind: 'claude',
-      engineSessionRef: 'claude-thread-legacy',
-      model: 'claude-sonnet-4-6',
-      state: 'idle',
-    })
-    await deps.store.save(persistedSession)
-
-    codexMocks.state.turnPlans.push([
-      { type: 'thread.started', thread_id: 'codex-thread-after-drift' },
-      { type: 'item.completed', item: { type: 'agent_message', text: 'engine-switched' } },
-      { type: 'turn.completed', usage: { input_tokens: 1, cached_input_tokens: 0, output_tokens: 1 } },
-    ])
-
-    const accepted = await orchestrator.sendMessage(persistedSession.id, 'continue after default engine switch')
-    expect(accepted).toBe(true)
-
-    for (let i = 0; i < 20 && codexMocks.mockCodexStartThread.mock.calls.length === 0; i++) {
-      await new Promise((resolve) => setTimeout(resolve, 10))
-    }
-
-    expect(codexMocks.mockCodexResumeThread).not.toHaveBeenCalled()
-    expect(codexMocks.mockCodexStartThread).toHaveBeenCalled()
-    const threadOptions = codexMocks.mockCodexStartThread.mock.calls.at(-1)?.[0] as
-      | { model?: string }
-      | undefined
-    expect(threadOptions?.model).toBe('gpt-5')
-    expect(threadOptions?.model).not.toBe('claude-sonnet-4-6')
-
-    const info = await orchestrator.getSession(persistedSession.id)
-    expect(info?.engineKind).toBe('codex')
-    expect(info?.model).toBe('gpt-5')
-    expect(info?.model).not.toBe('claude-sonnet-4-6')
-  })
-
-  it('injects capability prompt into codex first-turn system prefix when CapabilityCenter is configured', async () => {
-    const buildCapabilityPlan = vi.fn().mockResolvedValue(createCapabilityPlan())
-    deps = {
-      ...makeDeps(db, tmpDir, 'codex'),
-      capabilityCenter: {
-        buildCapabilityPlan,
-      } as unknown as CapabilityCenter,
-    }
-    orchestrator = new SessionOrchestrator(deps)
-
-    codexMocks.state.turnPlans.push([
-      { type: 'thread.started', thread_id: 'codex-thread-capability-prompt' },
-      { type: 'item.completed', item: { type: 'agent_message', text: 'capability-injected' } },
-      { type: 'turn.completed', usage: { input_tokens: 1, cached_input_tokens: 0, output_tokens: 1 } },
-    ])
-
-    const userPrompt = 'please update docs'
-    const sessionId = await orchestrator.startSession({
-      prompt: userPrompt,
-      engineKind: 'codex',
-    })
-    let info = await orchestrator.getSession(sessionId)
-    for (let i = 0; i < 10 && info?.engineSessionRef == null; i++) {
-      await new Promise((resolve) => setTimeout(resolve, 0))
-      info = await orchestrator.getSession(sessionId)
-    }
-
-    expect(buildCapabilityPlan).toHaveBeenCalled()
-    expect(codexMocks.mockCodexRunStreamed).toHaveBeenCalled()
-    const [firstPromptArg] = codexMocks.mockCodexRunStreamed.mock.calls[0]
-    expect(firstPromptArg).toContain('<skill name="docs-sync">')
-    expect(firstPromptArg).toContain(userPrompt)
-
-    await orchestrator.stopSession(sessionId)
-  })
-
-  it('passes codex activated skill names from slash blocks into capability plan builder', async () => {
-    const buildCapabilityPlan = vi.fn().mockResolvedValue(createCapabilityPlan())
-    deps = {
-      ...makeDeps(db, tmpDir, 'codex'),
-      capabilityCenter: {
-        buildCapabilityPlan,
-      } as unknown as CapabilityCenter,
-    }
-    orchestrator = new SessionOrchestrator(deps)
-
-    codexMocks.state.turnPlans.push([
-      { type: 'thread.started', thread_id: 'codex-thread-activated-skill' },
-      { type: 'item.completed', item: { type: 'agent_message', text: 'done' } },
-      { type: 'turn.completed', usage: { input_tokens: 1, cached_input_tokens: 0, output_tokens: 1 } },
-    ])
-
-    const sessionId = await orchestrator.startSession({
-      prompt: [
-        { type: 'text', text: 'please use this skill' },
-        {
-          type: 'slash_command',
-          name: 'docs-sync',
-          category: 'skill',
-          label: 'docs-sync',
-          expandedText: 'Sync docs before output',
-        },
-      ],
-      engineKind: 'codex',
-    })
-    let info = await orchestrator.getSession(sessionId)
-    for (let i = 0; i < 10 && info?.engineSessionRef == null; i++) {
-      await new Promise((resolve) => setTimeout(resolve, 0))
-      info = await orchestrator.getSession(sessionId)
-    }
-
-    expect(buildCapabilityPlan).toHaveBeenCalledWith(
-      expect.objectContaining({
-        request: expect.objectContaining({
-          session: expect.objectContaining({
-            engineKind: 'codex',
-          }),
-          activation: expect.objectContaining({
-            explicitSkillNames: ['docs-sync'],
-          }),
-        }),
-      }),
-    )
-
-    await orchestrator.stopSession(sessionId)
-  })
-
-  it('passes evose native allowlist to codex bridge when prompt activates an evose skill', async () => {
-    const buildCapabilityPlan = vi.fn().mockResolvedValue(createCapabilityPlan())
-    const bridgeRegisterSession = vi.fn().mockResolvedValue(undefined)
-    const bridgeUnregisterSession = vi.fn().mockResolvedValue(undefined)
-
-    deps = {
-      ...makeDeps(db, tmpDir, 'codex'),
-      capabilityCenter: {
-        buildCapabilityPlan,
-      } as unknown as CapabilityCenter,
-      nativeCapabilityRegistry: {} as never,
-      codexNativeBridgeManager: {
-        registerSession: bridgeRegisterSession,
-        unregisterSession: bridgeUnregisterSession,
-      } as never,
-    }
-    orchestrator = new SessionOrchestrator(deps)
-
-    codexMocks.state.turnPlans.push([
-      { type: 'thread.started', thread_id: 'codex-thread-evose-allowlist' },
-      { type: 'item.completed', item: { type: 'agent_message', text: 'done' } },
-      { type: 'turn.completed', usage: { input_tokens: 1, cached_input_tokens: 0, output_tokens: 1 } },
-    ])
-
-    const sessionId = await orchestrator.startSession({
-      prompt: [
-        {
-          type: 'slash_command',
-          name: 'evose:agent_github_iab8p2',
-          category: 'skill',
-          label: 'Agent - Github',
-          execution: {
-            nativeRequirements: [{ capability: 'evose' }],
-            providerExecution: {
-              provider: 'evose',
-              appId: 'agent_github_iab8p2',
-              appType: 'agent',
-              gatewayTool: 'evose_run_agent',
-            },
-          },
-          expandedText: 'Use this capability to run Evose Agent "Agent - Github".',
-        },
-      ],
-      engineKind: 'codex',
-    })
-    let info = await orchestrator.getSession(sessionId)
-    for (let i = 0; i < 10 && info?.engineSessionRef == null; i++) {
-      await new Promise((resolve) => setTimeout(resolve, 0))
-      info = await orchestrator.getSession(sessionId)
-    }
-
-    expect(bridgeRegisterSession).toHaveBeenCalledWith(
-      expect.objectContaining({
-        nativeToolAllowlist: expect.arrayContaining([{ capability: 'evose' }]),
-      }),
-    )
-
-    await orchestrator.stopSession(sessionId)
-  })
-
-  it('merges capability/custom/bridge MCP servers into codex config and unregisters bridge session', async () => {
-    const nodeCmd = process.execPath
-    const buildCapabilityPlan = vi.fn().mockResolvedValue(
-      createCapabilityPlan({
-        mcpServers: {
-          docs: { command: nodeCmd, args: ['capability-docs.js'] },
-          cap_only: { command: nodeCmd, args: ['capability-only.js'] },
-        },
-      }),
-    )
-    const bridgeRegisterSession = vi.fn().mockResolvedValue({
-      [MCP_SERVER_BASE_NAME]: { command: nodeCmd, args: ['bridge-mcp.js'] },
-    })
-    const bridgeUnregisterSession = vi.fn().mockResolvedValue(undefined)
-
-    deps = {
-      ...makeDeps(db, tmpDir, 'codex'),
-      capabilityCenter: {
-        buildCapabilityPlan,
-      } as unknown as CapabilityCenter,
-      nativeCapabilityRegistry: {} as never,
-      codexNativeBridgeManager: {
-        registerSession: bridgeRegisterSession,
-        unregisterSession: bridgeUnregisterSession,
-      } as never,
-    }
-    orchestrator = new SessionOrchestrator(deps)
-
-    codexMocks.state.turnPlans.push([
-      { type: 'thread.started', thread_id: 'codex-thread-mcp-merge' },
-      { type: 'item.completed', item: { type: 'agent_message', text: 'merged-mcp' } },
-      { type: 'turn.completed', usage: { input_tokens: 1, cached_input_tokens: 0, output_tokens: 1 } },
-    ])
-
-    const sessionId = await orchestrator.startSession({
-      prompt: 'merge mcp servers',
-      engineKind: 'codex',
-      customMcpServers: {
-        docs: { command: nodeCmd, args: ['custom-docs.js'] },
-        custom_only: { command: nodeCmd, args: ['custom-only.js'] },
-      },
-    })
-    let info = await orchestrator.getSession(sessionId)
-    for (let i = 0; i < 10 && info?.engineSessionRef == null; i++) {
-      await new Promise((resolve) => setTimeout(resolve, 0))
-      info = await orchestrator.getSession(sessionId)
-    }
-
-    expect(bridgeRegisterSession).toHaveBeenCalledWith(
-      expect.objectContaining({
-        session: expect.objectContaining({ sessionId }),
-        nativeToolAllowlist: expect.arrayContaining([
-          { capability: 'browser' },
-          { capability: 'html' },
-        ]),
-        activeMcpServerNames: expect.any(Set),
-      }),
-    )
-
-    const bridgeCallArg = bridgeRegisterSession.mock.calls[0]?.[0] as
-      | { activeMcpServerNames?: ReadonlySet<string> }
-      | undefined
-    expect(bridgeCallArg?.activeMcpServerNames?.has('docs')).toBe(true)
-    expect(bridgeCallArg?.activeMcpServerNames?.has('cap_only')).toBe(true)
-    expect(bridgeCallArg?.activeMcpServerNames?.has('custom_only')).toBe(true)
-
-    expect(codexMocks.mockCodexCtor).toHaveBeenCalledWith(
-      expect.objectContaining({
-        config: expect.objectContaining({
-          mcp_servers: expect.objectContaining({
-            docs: { command: nodeCmd, args: ['custom-docs.js'] },
-            cap_only: { command: nodeCmd, args: ['capability-only.js'] },
-            custom_only: { command: nodeCmd, args: ['custom-only.js'] },
-            [MCP_SERVER_BASE_NAME]: { command: nodeCmd, args: ['bridge-mcp.js'] },
-          }),
-        }),
-      }),
-    )
-
-    await orchestrator.stopSession(sessionId)
-    expect(bridgeUnregisterSession).toHaveBeenCalledWith(sessionId)
-  })
-
-  it('keeps capability MCP server when bridge registration is skipped by name collision', async () => {
-    const nodeCmd = process.execPath
-    const buildCapabilityPlan = vi.fn().mockResolvedValue(
-      createCapabilityPlan({
-        mcpServers: {
-          [MCP_SERVER_BASE_NAME]: { command: nodeCmd, args: ['capability-owned-server.js'] },
-        },
-      }),
-    )
-    const bridgeRegisterSession = vi.fn().mockResolvedValue(undefined)
-    const bridgeUnregisterSession = vi.fn().mockResolvedValue(undefined)
-
-    deps = {
-      ...makeDeps(db, tmpDir, 'codex'),
-      capabilityCenter: {
-        buildCapabilityPlan,
-      } as unknown as CapabilityCenter,
-      nativeCapabilityRegistry: {} as never,
-      codexNativeBridgeManager: {
-        registerSession: bridgeRegisterSession,
-        unregisterSession: bridgeUnregisterSession,
-      } as never,
-    }
-    orchestrator = new SessionOrchestrator(deps)
-
-    codexMocks.state.turnPlans.push([
-      { type: 'thread.started', thread_id: 'codex-thread-mcp-collision' },
-      { type: 'item.completed', item: { type: 'agent_message', text: 'collision-ok' } },
-      { type: 'turn.completed', usage: { input_tokens: 1, cached_input_tokens: 0, output_tokens: 1 } },
-    ])
-
-    const sessionId = await orchestrator.startSession({
-      prompt: 'collision case',
-      engineKind: 'codex',
-    })
-    let info = await orchestrator.getSession(sessionId)
-    for (let i = 0; i < 10 && info?.engineSessionRef == null; i++) {
-      await new Promise((resolve) => setTimeout(resolve, 0))
-      info = await orchestrator.getSession(sessionId)
-    }
-
-    const bridgeCallArg = bridgeRegisterSession.mock.calls[0]?.[0] as
-      | { activeMcpServerNames?: ReadonlySet<string> }
-      | undefined
-    expect(bridgeCallArg?.activeMcpServerNames?.has(MCP_SERVER_BASE_NAME)).toBe(true)
-    expect(codexMocks.mockCodexCtor).toHaveBeenCalledWith(
-      expect.objectContaining({
-        config: expect.objectContaining({
-          mcp_servers: expect.objectContaining({
-            [MCP_SERVER_BASE_NAME]: { command: nodeCmd, args: ['capability-owned-server.js'] },
-          }),
-        }),
-      }),
-    )
-
-    await orchestrator.stopSession(sessionId)
-    expect(bridgeUnregisterSession).toHaveBeenCalledWith(sessionId)
-  })
 })
 
 describe('SessionOrchestrator.stopSession — deterministic cleanup', () => {
@@ -799,8 +387,7 @@ describe('SessionOrchestrator.stopSession — deterministic cleanup', () => {
     __setCodexSdkLoaderForTest(
       async () => ({ Codex: codexMocks.mockCodexCtor as unknown as typeof import('@openai/codex-sdk').Codex }),
     )
-    mockClose.mockReset()
-    pendingNextResolvers = []
+    installClaudeQueryMock()
     codexMocks.state.turnPlans = []
     codexMocks.mockCodexRunStreamed.mockClear()
     codexMocks.mockCodexStartThread.mockClear()
@@ -809,25 +396,56 @@ describe('SessionOrchestrator.stopSession — deterministic cleanup', () => {
   })
 
   afterEach(async () => {
+    __setOpenClaudeModuleLoaderForTest(null)
     __resetCodexSdkLoaderForTest()
     await closeDb()
     await rm(tmpDir, { recursive: true, force: true })
   })
 
   it('calls lifecycle.stop() which invokes query.close()', async () => {
+    let queryCreated = false
+    let closeCalled = 0
+    const queryMock = vi.fn(() => {
+      queryCreated = true
+      let pendingNextResolve: ((v: IteratorResult<unknown>) => void) | null = null
+      const generator = {
+        next: () =>
+          new Promise<IteratorResult<unknown>>((resolve) => {
+            pendingNextResolve = resolve
+          }),
+        return: () => Promise.resolve({ value: undefined, done: true as const }),
+        throw: (e: unknown) => Promise.reject(e),
+        [Symbol.asyncIterator]: () => generator,
+        close: () => {
+          closeCalled += 1
+          pendingNextResolve?.({ value: undefined, done: true })
+          pendingNextResolve = null
+        },
+      }
+      return generator
+    })
+
+    __setOpenClaudeModuleLoaderForTest(async () => ({
+      query: queryMock,
+      createSession: vi.fn((_options: Record<string, unknown>) => ({
+        query: (params: {
+          prompt: AsyncIterable<unknown>
+          options?: Record<string, unknown>
+        }) => queryMock(params),
+        close: vi.fn(async () => {}),
+      })),
+    }))
+
     const id = await orchestrator.startSession({ prompt: 'test' })
 
-    // Wait until QueryLifecycle has started and issued at least one next() pull.
-    // Without this, stopSession may race before lifecycle.start() is reached,
-    // making close() legitimately unnecessary for this particular timing.
-    for (let i = 0; i < 500 && pendingNextResolvers.length === 0; i++) {
+    for (let i = 0; i < 200 && !queryCreated; i++) {
       await new Promise((resolve) => setTimeout(resolve, 1))
     }
-    expect(pendingNextResolvers.length).toBeGreaterThan(0)
+    expect(queryCreated).toBe(true)
 
     await orchestrator.stopSession(id)
 
-    expect(mockClose).toHaveBeenCalledTimes(1)
+    expect(closeCalled).toBe(1)
   })
 
   it('removes session from active map after stop', async () => {
@@ -956,7 +574,7 @@ describe('SessionOrchestrator.handleSessionError — transient spawn errors', ()
     __setCodexSdkLoaderForTest(
       async () => ({ Codex: codexMocks.mockCodexCtor as unknown as typeof import('@openai/codex-sdk').Codex }),
     )
-    mockClose.mockReset()
+    installClaudeQueryMock()
     codexMocks.state.turnPlans = []
     codexMocks.mockCodexRunStreamed.mockClear()
     codexMocks.mockCodexStartThread.mockClear()
@@ -966,6 +584,7 @@ describe('SessionOrchestrator.handleSessionError — transient spawn errors', ()
 
   afterEach(async () => {
     await orchestrator.shutdown()
+    __setOpenClaudeModuleLoaderForTest(null)
     __resetCodexSdkLoaderForTest()
     await closeDb()
     await rm(tmpDir, { recursive: true, force: true })
@@ -992,7 +611,7 @@ describe('SessionOrchestrator.handleSessionError — transient spawn errors', ()
   })
 })
 
-describe('SessionOrchestrator.sendMessage — provider mode drift detection', () => {
+describe('SessionOrchestrator.sendMessage — provider profile changes', () => {
   let orchestrator: SessionOrchestrator
   let deps: OrchestratorDeps
   let tmpDir: string
@@ -1006,13 +625,13 @@ describe('SessionOrchestrator.sendMessage — provider mode drift detection', ()
     activeProviderMode = 'openrouter'
     deps = {
       ...makeDeps(db, tmpDir),
-      getActiveProviderMode: (_engineKind) => activeProviderMode as ReturnType<OrchestratorDeps['getActiveProviderMode']>,
+      getActiveProviderProfileId: () => activeProviderMode as ReturnType<OrchestratorDeps['getActiveProviderProfileId']>,
     }
     orchestrator = new SessionOrchestrator(deps)
     __setCodexSdkLoaderForTest(
       async () => ({ Codex: codexMocks.mockCodexCtor as unknown as typeof import('@openai/codex-sdk').Codex }),
     )
-    mockClose.mockReset()
+    installClaudeQueryMock()
     codexMocks.state.turnPlans = []
     codexMocks.mockCodexRunStreamed.mockClear()
     codexMocks.mockCodexStartThread.mockClear()
@@ -1021,13 +640,14 @@ describe('SessionOrchestrator.sendMessage — provider mode drift detection', ()
   })
 
   afterEach(async () => {
+    __setOpenClaudeModuleLoaderForTest(null)
     await orchestrator.shutdown()
     __resetCodexSdkLoaderForTest()
     await closeDb()
     await rm(tmpDir, { recursive: true, force: true })
   })
 
-  it('forces lifecycle restart when provider mode changes between messages', async () => {
+  it('does not restart lifecycle when provider mode changes between messages (per-turn env refresh)', async () => {
     const sessionId = await orchestrator.startSession({
       prompt: 'Fix the bug',
       origin: { source: 'issue', issueId: 'issue-drift-1' },
@@ -1053,20 +673,20 @@ describe('SessionOrchestrator.sendMessage — provider mode drift detection', ()
     // Simulate user switching provider mode mid-session
     activeProviderMode = 'custom'
 
+    const dispatchCountBefore = (deps.dispatch as ReturnType<typeof vi.fn>).mock.calls.length
     const result = await orchestrator.sendMessage(sessionId, 'Continue with new provider')
     expect(result).toBe(true)
 
-    // Verify that a 'creating' state was dispatched (indicating lifecycle restart)
-    const creatingEvents = (deps.dispatch as ReturnType<typeof vi.fn>).mock.calls
+    // Provider changes are handled by per-turn resolveTurnOptions; no restart.
+    const creatingEventsAfter = (deps.dispatch as ReturnType<typeof vi.fn>).mock.calls
+      .slice(dispatchCountBefore)
       .map(([event]: [DataBusEvent]) => event)
       .filter((event): event is Extract<DataBusEvent, { type: 'command:session:updated' }> =>
         event.type === 'command:session:updated'
       )
       .filter((event) => event.payload.state === 'creating')
 
-    // At least 1 creating event from the sendMessage restart path
-    // (initial startSession uses session:created, not session:updated)
-    expect(creatingEvents.length).toBeGreaterThanOrEqual(1)
+    expect(creatingEventsAfter).toHaveLength(0)
   })
 
   it('does not restart when provider mode has not changed', async () => {
@@ -1105,5 +725,136 @@ describe('SessionOrchestrator.sendMessage — provider mode drift detection', ()
       .filter((event) => event.payload.state === 'creating')
 
     expect(creatingEventsAfter).toHaveLength(0)
+  })
+
+  it('injects initialMessages when forced resume restart has engine session ref', async () => {
+    const now = Date.now()
+    const persistedSession = makePersistedSession({
+      id: 'ccb-persisted-history-seed',
+      state: 'idle',
+      engineKind: 'claude',
+      engineSessionRef: 'claude-history-ref',
+      messages: [
+        {
+          id: 'u-1',
+          role: 'user',
+          timestamp: now - 2_000,
+          content: [{ type: 'text', text: 'previous user' }],
+        },
+        {
+          id: 'a-1',
+          role: 'assistant',
+          timestamp: now - 1_000,
+          content: [{ type: 'text', text: 'previous assistant' }],
+        },
+      ],
+    })
+    await deps.store.save(persistedSession)
+
+    let capturedOptions: Record<string, unknown> | undefined
+    const queryMock = vi.fn((params: { options?: Record<string, unknown> }) => {
+      capturedOptions = params.options
+      return {
+        async *[Symbol.asyncIterator]() {
+          // no-op stream
+        },
+        close() {
+          // no-op
+        },
+      }
+    })
+
+    __setOpenClaudeModuleLoaderForTest(async () => ({
+      query: queryMock,
+      createSession: vi.fn((_options: Record<string, unknown>) => ({
+        query: (params: {
+          prompt: AsyncIterable<unknown>
+          options?: Record<string, unknown>
+        }) => queryMock(params),
+        close: vi.fn(async () => {}),
+      })),
+    }))
+
+    const resumed = await orchestrator.sendMessage(persistedSession.id, 'resume with history')
+    expect(resumed).toBe(true)
+
+    for (let i = 0; i < 20 && !capturedOptions; i++) {
+      await new Promise((resolve) => setTimeout(resolve, 10))
+    }
+
+    const initialMessages = capturedOptions?.initialMessages as unknown[] | undefined
+    expect(Array.isArray(initialMessages)).toBe(true)
+    expect((initialMessages ?? []).length).toBeGreaterThan(1)
+
+    __setOpenClaudeModuleLoaderForTest(null)
+  })
+
+  it('injects initialMessages when restart uses skipAddMessage path (no resume ref)', async () => {
+    const now = Date.now()
+    const persistedSession = makePersistedSession({
+      id: 'ccb-persisted-history-seed-skip-add',
+      state: 'idle',
+      engineKind: 'claude',
+      engineSessionRef: null,
+      messages: [
+        {
+          id: 'u-1',
+          role: 'user',
+          timestamp: now - 2_000,
+          content: [{ type: 'text', text: 'old user' }],
+        },
+        {
+          id: 'a-1',
+          role: 'assistant',
+          timestamp: now - 1_000,
+          content: [{ type: 'text', text: 'old assistant' }],
+        },
+      ],
+    })
+    await deps.store.save(persistedSession)
+
+    let capturedOptions: Record<string, unknown> | undefined
+    const queryMock = vi.fn((params: { options?: Record<string, unknown> }) => {
+      capturedOptions = params.options
+      return {
+        async *[Symbol.asyncIterator]() {
+          // no-op stream
+        },
+        close() {
+          // no-op
+        },
+      }
+    })
+
+    __setOpenClaudeModuleLoaderForTest(async () => ({
+      query: queryMock,
+      createSession: vi.fn((_options: Record<string, unknown>) => ({
+        query: (params: {
+          prompt: AsyncIterable<unknown>
+          options?: Record<string, unknown>
+        }) => queryMock(params),
+        close: vi.fn(async () => {}),
+      })),
+    }))
+
+    const resumed = await (orchestrator as unknown as {
+      resumeSessionInternal: (
+        sessionId: string,
+        message: string,
+        options: { forceRestart: boolean },
+      ) => Promise<boolean>
+    }).resumeSessionInternal(persistedSession.id, 'restart without resume ref', { forceRestart: true })
+
+    expect(resumed).toBe(true)
+
+    for (let i = 0; i < 20 && !capturedOptions; i++) {
+      await new Promise((resolve) => setTimeout(resolve, 10))
+    }
+
+    const initialMessages = capturedOptions?.initialMessages as unknown[] | undefined
+    expect(Array.isArray(initialMessages)).toBe(true)
+    expect((initialMessages ?? []).length).toBeGreaterThan(1)
+
+    __setOpenClaudeModuleLoaderForTest(null)
   })
 })

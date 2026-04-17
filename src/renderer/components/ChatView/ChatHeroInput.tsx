@@ -14,14 +14,13 @@ import type { SessionControlProps } from '@/components/ui/StopButtonPopover'
 import { FILE_INPUT_ACCEPT } from '@/lib/attachmentUtils'
 import { registerChatInputFocus, unregisterChatInputFocus } from '@/lib/chatInputRegistry'
 import { cn } from '@/lib/utils'
-import type { AIEngineKind, UserMessageContent } from '@shared/types'
+import type { UserMessageContent } from '@shared/types'
 import { ATTACHMENT_LIMITS } from '@shared/types'
 
 interface ChatHeroInputProps {
   onSend: (message: UserMessageContent) => Promise<boolean>
   disabled?: boolean
   placeholder?: string
-  engineKind?: AIEngineKind
   /** When provided, the send button transforms to a stop action during active processing */
   sessionControl?: SessionControlProps
   /** Registers this instance as the Chat tab's active focus target. */
@@ -43,7 +42,6 @@ export function ChatHeroInput({
   onSend,
   disabled = false,
   placeholder,
-  engineKind,
   sessionControl,
   registerAsChatTabInput = false,
 }: ChatHeroInputProps): React.JSX.Element {
@@ -69,7 +67,6 @@ export function ChatHeroInput({
     editable: !disabled,
     ariaLabel: t('chatHero.inputAria'),
     onSubmit: onSend,
-    engineKind,
   })
 
   useEffect(() => {

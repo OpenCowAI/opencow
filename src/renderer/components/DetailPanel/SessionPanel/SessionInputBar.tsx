@@ -15,7 +15,7 @@ import { registerSessionInputFocus, unregisterSessionInputFocus } from '../../..
 import { useProjectScope } from '@/contexts/ProjectScopeContext'
 import { useContextFilesEditorSync } from '@/hooks/useContextFilesEditorSync'
 import { FILE_INPUT_ACCEPT } from '@/lib/attachmentUtils'
-import type { AIEngineKind, UserMessageContent } from '@shared/types'
+import type { UserMessageContent } from '@shared/types'
 import { ATTACHMENT_LIMITS } from '@shared/types'
 import type { SlashItem } from '@shared/slashItems'
 
@@ -23,8 +23,6 @@ interface SessionInputBarProps {
   onSend: (message: UserMessageContent) => Promise<boolean>
   disabled: boolean
   placeholder?: string
-  /** Optional session engine kind for engine-aware slash command filtering. */
-  engineKind?: AIEngineKind
   /** Cache key for persisting draft content across issue switches (e.g. issueId) */
   cacheKey?: string
   /** When provided, the send button transforms to a stop action during active processing */
@@ -43,7 +41,7 @@ export interface SessionInputBarHandle {
  * SessionInputBar's props (onSend, disabled, placeholder, etc.) only change
  * at state transitions (idle → streaming, streaming → idle), NOT on every chunk.
  */
-export const SessionInputBar = memo(forwardRef<SessionInputBarHandle, SessionInputBarProps>(function SessionInputBar({ onSend, disabled, placeholder, engineKind, cacheKey, sessionControl }: SessionInputBarProps, ref): React.JSX.Element {
+export const SessionInputBar = memo(forwardRef<SessionInputBarHandle, SessionInputBarProps>(function SessionInputBar({ onSend, disabled, placeholder, cacheKey, sessionControl }: SessionInputBarProps, ref): React.JSX.Element {
   const { t } = useTranslation('sessions')
   const { t: tCommon } = useTranslation('common')
   const { projectPath } = useProjectScope()
@@ -70,7 +68,6 @@ export const SessionInputBar = memo(forwardRef<SessionInputBarHandle, SessionInp
     ariaLabel: t('sessionInput.inputAria'),
     onSubmit: onSend,
     cacheKey,
-    engineKind,
   })
 
   /* -- Expose addAttachments to parent (for console-wide file drop zone) -- */

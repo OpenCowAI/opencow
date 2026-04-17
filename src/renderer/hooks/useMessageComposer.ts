@@ -15,7 +15,7 @@ import { useSlashSuggestion } from './useSlashSuggestion'
 import { useFileSearch } from './useFileSearch'
 import { createFileMentionRenderer } from '../extensions/fileMentionSuggestion'
 import type { SlashItem } from '@shared/slashItems'
-import type { AIEngineKind, UserMessageContent, FileEntry } from '@shared/types'
+import type { UserMessageContent, FileEntry } from '@shared/types'
 import { ATTACHMENT_LIMITS } from '@shared/types'
 import { extractEditorSegments } from '../lib/extractEditorSegments'
 import type { EditorSegment } from '@shared/editorSegments'
@@ -63,11 +63,6 @@ export interface UseMessageComposerOptions {
    * same key (e.g. issueId).
    */
   cacheKey?: string
-  /**
-   * Optional explicit engine override for slash command filtering/telemetry.
-   * When omitted, falls back to settings.command.defaultEngine.
-   */
-  engineKind?: AIEngineKind
 }
 
 export interface MessageComposerDragHandlers {
@@ -147,11 +142,7 @@ export function useMessageComposer(options: UseMessageComposerOptions): MessageC
     initialAttachments,
     onSubmit,
     cacheKey,
-    engineKind,
   } = options
-
-  const defaultEngine = useSettingsStore((s) => s.settings?.command.defaultEngine ?? 'claude')
-  const effectiveEngineKind: AIEngineKind = engineKind ?? defaultEngine
 
   /* -- Project scope (for slash command expansion) -- */
   const { projectPath } = useProjectScope()
@@ -269,7 +260,7 @@ export function useMessageComposer(options: UseMessageComposerOptions): MessageC
 
   /* -- Slash commands (shared hook) -- */
 
-  const slash = useSlashSuggestion({ engineKind: effectiveEngineKind })
+  const slash = useSlashSuggestion()
   const slashSuggestion = slash.suggestion
 
   /* -- File mention (@) -- delegated to useFileSearch hook */
@@ -502,7 +493,6 @@ export function useMessageComposer(options: UseMessageComposerOptions): MessageC
       const result = await onSubmit(content)
       if (builtinSlashNames.length > 0) {
         log.info('builtin slash pass-through dispatched', {
-          engineKind: effectiveEngineKind,
           commands: builtinSlashNames,
           accepted: result !== false,
         })
@@ -538,7 +528,6 @@ export function useMessageComposer(options: UseMessageComposerOptions): MessageC
       log.error('Submit failed', err)
       if (builtinSlashNames.length > 0) {
         log.warn('builtin slash pass-through failed to dispatch', {
-          engineKind: effectiveEngineKind,
           commands: builtinSlashNames,
           error: err instanceof Error ? err.message : String(err),
         })
@@ -550,7 +539,7 @@ export function useMessageComposer(options: UseMessageComposerOptions): MessageC
         editor.commands.focus()
       }
     }
-  }, [editor, pendingAttachments, isSending, onSubmit, cacheKey, effectiveEngineKind])
+  }, [editor, pendingAttachments, isSending, onSubmit, cacheKey])
 
   // Keep the ref in sync on every render
   submitRef.current = submit

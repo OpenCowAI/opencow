@@ -33,14 +33,7 @@ import { resolvePlugins, resolveCapabilityDirs } from '../capabilities/pluginRes
 import { resolveClaudeCodePaths } from '../capabilities/paths'
 import { resolveDistributionTargetType } from './distributionTargets'
 import { ClaudeGovernanceDriver } from './governance/claudeGovernanceDriver'
-import { CodexGovernanceDriver } from './governance/codexGovernanceDriver'
 import type { EngineGovernanceDriver } from './governance/engineGovernanceDriver'
-import {
-  resolveCodexConfigPath,
-  resolveCodexSkillFilePath,
-  resolveCodexSkillsDir,
-} from './governance/codexPaths'
-import { extractMcpServersFromToml } from './governance/tomlPatch'
 
 const log = createLogger('ImportPipeline')
 
@@ -129,7 +122,6 @@ export function inferCapabilityCategory(context: {
 
 export type ImportSourceType =
   | 'claude-code'
-  | 'codex'
   | 'plugin'
   | 'marketplace'
   | 'template'
@@ -169,7 +161,7 @@ export interface ImportTarget {
   projectPath?: string
 }
 
-type GovernanceEngineKind = 'claude' | 'codex'
+type GovernanceEngineKind = 'claude'
 
 // ─── ImportPipeline ─────────────────────────────────────────────────────
 
@@ -196,9 +188,6 @@ export class ImportPipeline {
       switch (sourceType) {
         case 'claude-code':
           items = await this.discoverFromEngineSource('claude', projectPath)
-          break
-        case 'codex':
-          items = await this.discoverFromEngineSource('codex', projectPath)
           break
         case 'plugin':
           items = await this.discoverFromPlugins()
@@ -276,13 +265,6 @@ export class ImportPipeline {
     return {
       claude: new ClaudeGovernanceDriver({
         discover: async ({ projectPath }) => this.discoverFromClaudeCode(projectPath),
-        importItem: async ({ item, target }) => this.importSingleItem(item, target),
-        publish: async () => { throw unsupportedOpError('publish') },
-        unpublish: async () => { throw unsupportedOpError('unpublish') },
-        detectDrift: async () => { throw unsupportedOpError('detect-drift') },
-      }),
-      codex: new CodexGovernanceDriver({
-        discover: async ({ projectPath }) => this.discoverFromCodex(projectPath),
         importItem: async ({ item, target }) => this.importSingleItem(item, target),
         publish: async () => { throw unsupportedOpError('publish') },
         unpublish: async () => { throw unsupportedOpError('unpublish') },
@@ -525,31 +507,10 @@ export class ImportPipeline {
    *
    * Self-adaptive based on sourcePath format:
    *   - "/path/.claude.json" → extract from Claude Code config (contains mcpServers object)
-   *   - "/path/.codex/config.toml#mcp_servers.server_name" → extract from Codex config
    *   - "/path/my-server.json" → direct JSON file (from file import)
    */
   private async importMCPServerItem(item: ImportableItem, target: ImportTarget): Promise<void> {
     log.debug(`[mcp-server:${item.name}] Extracting from ${item.sourcePath}`)
-
-    const codexHashIdx = item.sourcePath.indexOf('#mcp_servers.')
-    if (codexHashIdx !== -1) {
-      const tomlPath = item.sourcePath.slice(0, codexHashIdx)
-      const configToml = await safeReadFile(tomlPath)
-      if (!configToml) throw new Error(`Codex config not readable: ${tomlPath}`)
-
-      const mcpServers = extractMcpServersFromToml(configToml)
-      const serverConfig = mcpServers[item.name]
-      if (!isPlainObject(serverConfig)) {
-        throw new Error(`MCP server "${item.name}" not found in codex config`)
-      }
-
-      const normalized: Record<string, unknown> = {
-        name: item.name,
-        serverConfig: serverConfig as Record<string, unknown>,
-      }
-      await this.store.saveConfig(target.scope, 'mcp-server', item.name, normalized, target.projectPath)
-      return
-    }
 
     const jsonContent = await safeReadJson(item.sourcePath)
 
@@ -675,11 +636,9 @@ export class ImportPipeline {
    * so the UI reflects that the capability already exists in that engine.
    */
   private async recordDistributionIfImportedFromEngine(item: ImportableItem, target: ImportTarget): Promise<void> {
-    if (item.sourceType !== 'claude-code' && item.sourceType !== 'codex') return
+    if (item.sourceType !== 'claude-code') return
 
-    const targetType = item.sourceType === 'codex'
-      ? resolveDistributionTargetType({ engineKind: 'codex', scope: item.sourceScope })
-      : resolveDistributionTargetType({ engineKind: 'claude', scope: item.sourceScope })
+    const targetType = resolveDistributionTargetType({ engineKind: 'claude', scope: item.sourceScope })
 
     // Compute content hash from the stored copy (not the source file, which may
     // differ by the time we read it again — the store copy is the authoritative one).
@@ -890,75 +849,6 @@ export class ImportPipeline {
           sourceScope,
         })
       }
-    }
-
-    return items
-  }
-
-  // ── Codex discovery ───────────────────────────────────────────
-
-  private async discoverFromCodex(projectPath?: string): Promise<ImportableItem[]> {
-    const existsCache = await this.buildExistsCache(projectPath)
-
-    const globalItems = await this.scanCodexScope({
-      sourceScope: 'global',
-      existsCache,
-    })
-
-    const projectItems = projectPath
-      ? await this.scanCodexScope({
-          sourceScope: 'project',
-          projectPath,
-          existsCache,
-        })
-      : []
-
-    return [...globalItems, ...projectItems]
-  }
-
-  private async scanCodexScope(params: {
-    sourceScope: 'global' | 'project'
-    projectPath?: string
-    existsCache: Set<string>
-  }): Promise<ImportableItem[]> {
-    const items: ImportableItem[] = []
-    const { sourceScope, existsCache, projectPath } = params
-
-    const skillsDir = resolveCodexSkillsDir({ scope: sourceScope, projectPath })
-    const skillEntries = await safeDirEntries(skillsDir)
-    for (const entry of skillEntries) {
-      if (!entry.isDir) continue
-      const skillFile = resolveCodexSkillFilePath({ scope: sourceScope, projectPath, name: entry.name })
-      const content = await safeReadFile(skillFile)
-      if (!content) continue
-      const { attributes } = parseFrontmatter(content)
-      items.push({
-        name: entry.name,
-        category: 'skill',
-        description: (attributes['description'] as string) ?? '',
-        sourcePath: skillFile,
-        sourceType: 'codex',
-        alreadyImported: existsCache.has(`skill:${entry.name}`),
-        sourceScope,
-        isBundle: true,
-      })
-    }
-
-    const codexConfigPath = resolveCodexConfigPath({ scope: sourceScope, projectPath })
-    const configToml = await safeReadFile(codexConfigPath)
-    if (!configToml) return items
-
-    const mcpServers = extractMcpServersFromToml(configToml)
-    for (const [serverName] of Object.entries(mcpServers)) {
-      items.push({
-        name: serverName,
-        category: 'mcp-server',
-        description: `MCP Server from ${sourceScope === 'project' ? 'project' : 'global'} codex config`,
-        sourcePath: `${codexConfigPath}#mcp_servers.${serverName}`,
-        sourceType: 'codex',
-        alreadyImported: existsCache.has(`mcp-server:${serverName}`),
-        sourceScope,
-      })
     }
 
     return items
@@ -1305,6 +1195,5 @@ function shouldSkipEntry(entry: { name: string; isDir: boolean; isFile: boolean 
 
 function sourceTypeToEngineKind(sourceType: ImportSourceType): GovernanceEngineKind | null {
   if (sourceType === 'claude-code') return 'claude'
-  if (sourceType === 'codex') return 'codex'
   return null
 }

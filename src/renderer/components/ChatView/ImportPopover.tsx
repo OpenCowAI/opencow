@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect, useCallback, useLayoutEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import { createPortal } from 'react-dom'
-import { Download, Monitor, FileUp, Cpu } from 'lucide-react'
+import { Download, Monitor, FileUp } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { surfaceProps } from '@/lib/surface'
 import { useModalAnimation } from '@/hooks/useModalAnimation'
@@ -23,8 +23,7 @@ const VIEWPORT_MARGIN = 8 // px gap from viewport edges
  * Renders its own trigger button and manages open/close state internally.
  * When open, shows a dropdown menu with import sources:
  *   1. "Claude Code CLI" — discovers from ~/.claude/ + project .claude/
- *   2. "Codex CLI" — discovers from ~/.agents + ~/.codex + project equivalents
- *   3. "Local File" — opens native file picker, then shows ImportDialog with results
+ *   2. "Local File" — opens native file picker, then shows ImportDialog with results
  *
  * Selecting a source closes the popover and opens ImportDialog with the
  * chosen sourceType pre-set.
@@ -47,13 +46,6 @@ export function ImportPopover(): React.JSX.Element {
 
   const handleSelectClaudeCode = useCallback(() => {
     setSourceType('claude-code')
-    setPendingFilePaths(null)
-    setOpen(false)
-    setDialogOpen(true)
-  }, [])
-
-  const handleSelectCodex = useCallback(() => {
-    setSourceType('codex')
     setPendingFilePaths(null)
     setOpen(false)
     setDialogOpen(true)
@@ -192,28 +184,6 @@ export function ImportPopover(): React.JSX.Element {
               </p>
               <p className="text-[11px] leading-relaxed text-[hsl(var(--muted-foreground)/0.7)] mt-0.5">
                 {t('capabilityCenter.importSourceClaudeDesc')}
-              </p>
-            </div>
-          </button>
-
-          {/* Divider */}
-          <div className="mx-3 my-1 border-t border-[hsl(var(--border)/0.4)]" />
-
-          {/* Codex CLI */}
-          <button
-            role="menuitem"
-            onClick={handleSelectCodex}
-            className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-[hsl(var(--foreground)/0.04)] focus:bg-[hsl(var(--foreground)/0.04)] outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[hsl(var(--ring))] transition-colors"
-          >
-            <div className="p-2 rounded-lg bg-cyan-500/10 shrink-0">
-              <Cpu className="h-4 w-4 text-cyan-600 dark:text-cyan-400" aria-hidden="true" />
-            </div>
-            <div className="flex-1 min-w-0 text-left">
-              <p className="text-sm font-medium text-[hsl(var(--foreground))]">
-                {t('capabilityCenter.importSourceCodex')}
-              </p>
-              <p className="text-[11px] leading-relaxed text-[hsl(var(--muted-foreground)/0.7)] mt-0.5">
-                {t('capabilityCenter.importSourceCodexDesc')}
               </p>
             </div>
           </button>

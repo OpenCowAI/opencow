@@ -16,9 +16,9 @@
  *     caller (main.ts) needs for IPC, event wiring, startup, and shutdown.
  */
 
-import { dirname, join } from 'path'
+import { dirname } from 'path'
+import { mkdir } from 'fs/promises'
 import { existsSync } from 'fs'
-import { copyFile, mkdir } from 'fs/promises'
 import { InboxService } from '../services/inboxService'
 import { InboxStore } from '../services/inboxStore'
 import { IssueService } from '../services/issueService'
@@ -27,10 +27,10 @@ import { IssueStore } from '../services/issueStore'
 import { IssueViewService } from '../services/issueViewService'
 import { IssueViewStore } from '../services/issueViewStore'
 import { SessionOrchestrator } from '../command/sessionOrchestrator'
-import { CodexNativeBridgeManager } from '../command/codexNativeBridgeManager'
 import { ManagedSessionStore } from '../services/managedSessionStore'
 import { CredentialStore } from '../services/provider/credentialStore'
 import { ProviderService } from '../services/provider/providerService'
+import { runProviderMigration } from '../services/provider/migration'
 import { BrowserStore } from '../browser/browserStore'
 import { BrowserService } from '../browser/browserService'
 import { TerminalService } from '../terminal/terminalService'
@@ -58,12 +58,13 @@ import { PushEngine } from '../services/issue-sync/pushEngine'
 import { SyncLogStore } from '../services/issue-sync/syncLogStore'
 import { IssueCommentStore } from '../services/issueCommentStore'
 import { IssueCommentService } from '../services/issueCommentService'
+import { SessionLifecycleOperationStore } from '../services/sessionLifecycleOperationStore'
+import { LifecycleOperationCoordinator } from '../services/lifecycleOperations'
 import { createMemoryStorage } from '../memory/storage'
 import { MemoryService } from '../memory/memoryService'
 import { MAX_SESSION_CONTENT_LENGTH } from '../memory/constants'
 import { prepareExtractionContent } from '../memory/contentPreparer'
 import { HeadlessLLMClientImpl } from '../llm/headlessLLMClient'
-import { resolveActiveEngine } from '../llm/resolveActiveEngine'
 import { GitCommandExecutor } from '../services/git/gitCommandExecutor'
 import { EvoseService } from '../services/evoseService'
 import { ScheduleStore } from '../services/scheduleStore'
@@ -98,13 +99,14 @@ import { HtmlNativeCapability } from '../nativeCapabilities/htmlNativeCapability
 import { InteractionNativeCapability } from '../nativeCapabilities/interaction/interactionNativeCapability'
 import { EvoseNativeCapability } from '../nativeCapabilities/evose/evoseNativeCapability'
 import { ScheduleNativeCapability } from '../nativeCapabilities/scheduleNativeCapability'
+import { LifecycleOperationNativeCapability } from '../nativeCapabilities/lifecycleOperationNativeCapability'
 import { initDatabase } from '../database/db'
 import { focusMainWindow } from '../window/windowManager'
 import { createLogger } from '../platform/logger'
 import { buildEventSubscriptionPolicy } from '../events/eventSubscriptionPolicy'
 import type { DataBus } from '../core/dataBus'
 import type { SettingsService } from '../services/settingsService'
-import type { NativeCapabilityRegistry } from '../nativeCapabilities/registry'
+import type { OpenCowCapabilityRegistry } from '../nativeCapabilities/openCowCapabilityRegistry'
 import type { PendingQuestionRegistry } from '../nativeCapabilities/interaction/pendingQuestionRegistry'
 import type { ProxyFetchFactory } from '../network'
 import type { DataPaths } from '../platform/dataPaths'
@@ -121,7 +123,7 @@ export interface ServiceFactoryDeps {
   proxyFetchFactory: ProxyFetchFactory
   dataPaths: DataPaths
   appSettings: AppSettings
-  nativeCapabilityRegistry: NativeCapabilityRegistry
+  nativeCapabilityRegistry: OpenCowCapabilityRegistry
   pendingQuestionRegistry: PendingQuestionRegistry
 }
 
@@ -157,6 +159,7 @@ export interface AppServices {
   pushEngine: PushEngine
   issueCommentService: IssueCommentService
   syncLogStore: SyncLogStore
+  lifecycleOperationCoordinator: LifecycleOperationCoordinator
 }
 
 // ── Factory ──────────────────────────────────────────────────────────────────
@@ -202,6 +205,11 @@ export async function createAppServices(deps: ServiceFactoryDeps): Promise<AppSe
   const pipelineStore = new PipelineStore(database.db)
   const executionStore = new ExecutionStore(database.db)
   const managedSessionStore = new ManagedSessionStore(database.db)
+  const sessionLifecycleOperationStore = new SessionLifecycleOperationStore(database.db)
+  const lifecycleOperationCoordinator = new LifecycleOperationCoordinator({
+    store: sessionLifecycleOperationStore,
+    dispatch: (e) => bus.dispatch(e),
+  })
 
   // Forward-declare for circular references (schedule engine ↔ services)
   // eslint-disable-next-line prefer-const
@@ -283,24 +291,38 @@ export async function createAppServices(deps: ServiceFactoryDeps): Promise<AppSe
   // Avoids circular dependency: IssueService is created before Phase 2 modules.
   issueService.setChangeQueueService(changeQueueService)
 
-  const claudeCredentialStore = new CredentialStore(dataPaths.credentials)
-  const codexCredentialsPath = join(dataPaths.root, 'credentials-codex.enc')
-  if (!existsSync(codexCredentialsPath) && existsSync(dataPaths.credentials)) {
-    try {
-      await copyFile(dataPaths.credentials, codexCredentialsPath)
-      log.info('Seeded codex credential store from legacy shared credential file')
-    } catch (err) {
-      log.warn('Failed to seed codex credential store from legacy file', err)
-    }
+  const providerCredentialStore = new CredentialStore(dataPaths.credentials)
+
+  // Phase B.7 cutover — silent one-shot migration. Detects any
+  // pre-Phase-A / Phase A / Phase B-preview settings shape, moves
+  // credentials into profile-scoped slots, deletes legacy files, and
+  // stamps schemaVersion: 1. Runs every boot but short-circuits when
+  // the stamp is present.
+  const legacyCodexCredentialStore = existsSync(dataPaths.legacyCodexCredentials)
+    ? new CredentialStore(dataPaths.legacyCodexCredentials)
+    : null
+  try {
+    await runProviderMigration({
+      settingsService,
+      mainCredentialStore: providerCredentialStore,
+      legacyCodexCredentialStore,
+      legacyCodexCredentialsPath: dataPaths.legacyCodexCredentials,
+    })
+  } catch (err) {
+    log.error('Provider migration failed — Settings UI may be empty until this resolves', err)
   }
-  const codexCredentialStore = new CredentialStore(codexCredentialsPath)
+
   const providerService = new ProviderService({
     dispatch: (e) => bus.dispatch(e),
-    credentialStoreByEngine: {
-      claude: claudeCredentialStore,
-      codex: codexCredentialStore,
-    },
+    credentialStore: providerCredentialStore,
     getProviderSettings: () => settingsService.getProviderSettings(),
+    updateProviderSettings: async (patch) => {
+      const current = await settingsService.load()
+      const nextProvider = { ...current.provider, ...patch }
+      const saved = await settingsService.update({ ...current, provider: nextProvider })
+      bus.dispatch({ type: 'settings:updated', payload: saved })
+      return nextProvider
+    },
     focusApp: focusMainWindow,
   })
 
@@ -405,24 +427,46 @@ export async function createAppServices(deps: ServiceFactoryDeps): Promise<AppSe
     })
     .catch((err) => log.warn('Toggle migration skipped due to error', err))
 
-  // nativeCapabilityRegistry is created at module level, so it's available here.
-  // No lazy getter needed — the registry instance exists before orchestrator creation.
-  const codexNativeBridgeManager = new CodexNativeBridgeManager(nativeCapabilityRegistry)
   orchestrator = new SessionOrchestrator({
     dispatch: (e) => bus.dispatch(e),
     getProxyEnv: () => settingsService.getProxyEnv(),
-    getProviderEnv: (engineKind) => providerService.getProviderEnv(engineKind),
-    getCodexAuthConfig: (engineKind) => providerService.getCodexAuthConfig(engineKind),
-    getProviderDefaultModel: (engineKind) =>
-      settingsService.getProviderSettings().byEngine[engineKind]?.defaultModel,
-    getProviderDefaultReasoningEffort: (engineKind) =>
-      settingsService.getProviderSettings().byEngine[engineKind]?.defaultReasoningEffort,
-    getActiveProviderMode: (engineKind) =>
-      settingsService.getProviderSettings().byEngine[engineKind]?.activeMode ?? null,
+    getProviderEnv: async (override) => {
+      // ε.3c: session-bound profile (if any) wins over Settings default.
+      // resolveProfileId already implements this override semantics.
+      const profileId = providerService.resolveProfileId(override)
+      if (!profileId) {
+        log.warn('getProviderEnv: no profile resolved — session will fail auth', {
+          override: override ?? '(none)',
+        })
+        return {}
+      }
+      try {
+        return await providerService.getProviderEnvForProfile(profileId)
+      } catch (err) {
+        // ProfileMisconfiguredError and any downstream failure surfaces
+        // here. Re-throw so the orchestrator's start-session path turns
+        // it into a visible session error instead of spawning a broken
+        // SDK that emits "API Error: fetch failed" as assistant text.
+        const message = err instanceof Error ? err.message : String(err)
+        log.error('getProviderEnv failed — session will not spawn', {
+          profileId,
+          error: message,
+        })
+        throw err
+      }
+    },
+    getProviderDefaultModel: (override) => {
+      // ε.3c: pinned session reads model preference from its bound profile.
+      const profileId = providerService.resolveProfileId(override)
+      if (!profileId) return undefined
+      const profile = providerService.listProfiles().find((p) => p.id === profileId)
+      return profile?.preferredModel
+    },
+    getActiveProviderProfileId: () =>
+      providerService.resolveProfileId(),
     getCommandDefaults: () => settingsService.getCommandDefaults(),
     store: managedSessionStore,
     nativeCapabilityRegistry,
-    codexNativeBridgeManager,
     browserService,
     pendingQuestionRegistry,
     capabilityCenter,
@@ -564,6 +608,7 @@ export async function createAppServices(deps: ServiceFactoryDeps): Promise<AppSe
     notificationEmitter,
     dispatch: (e) => bus.dispatch(e),
   })
+  lifecycleOperationCoordinator.setScheduleService(scheduleService)
 
   // ── Phase 0.7: NativeCapabilities — OpenCow built-in abilities ──────────────
   nativeCapabilityRegistry.register(
@@ -591,6 +636,7 @@ export async function createAppServices(deps: ServiceFactoryDeps): Promise<AppSe
     issueService,
     issueProviderService,
     adapterRegistry,
+    lifecycleOperationCoordinator,
   }))
 
   // Project NativeCapability — exposes Project read-only queries as MCP tools to Claude.
@@ -615,9 +661,19 @@ export async function createAppServices(deps: ServiceFactoryDeps): Promise<AppSe
 
   // Schedule NativeCapability — exposes Schedule CRUD + pause/resume as MCP tools to Claude.
   // Enables conversational schedule management: "Create a daily report at 9am".
-  nativeCapabilityRegistry.register(new ScheduleNativeCapability({ scheduleService }))
+  nativeCapabilityRegistry.register(new ScheduleNativeCapability({
+    scheduleService,
+    lifecycleOperationCoordinator,
+  }))
+
+  // Lifecycle NativeCapability — entity-agnostic apply/cancel tools that let
+  // the model close the propose→confirm loop from chat ("确定" → apply_lifecycle_operation).
+  // Without these the only path to commit a pending proposal is the UI's Confirm button.
+  nativeCapabilityRegistry.register(new LifecycleOperationNativeCapability({
+    lifecycleOperationCoordinator,
+  }))
   log.info('Service factory phase complete: native capabilities registered', {
-    capabilities: ['browser', 'evose', 'issue', 'project', 'html', 'interaction', 'schedule'],
+    capabilities: ['browser', 'evose', 'issue', 'project', 'html', 'interaction', 'schedule', 'lifecycle'],
   })
 
   const gitService = new GitService({
@@ -634,12 +690,10 @@ export async function createAppServices(deps: ServiceFactoryDeps): Promise<AppSe
   // HeadlessLLMClient: engine-agnostic single-turn text generation for memory extraction.
   // Uses Vercel AI SDK (@ai-sdk/anthropic, @ai-sdk/openai) — no SDK subprocess needed.
   const headlessClient = new HeadlessLLMClientImpl({
-    resolveAuth: () => {
-      const engine = resolveActiveEngine(
-        settingsService.getProviderSettings(),
-        settingsService.getCommandDefaults().defaultEngine,
-      )
-      return providerService.resolveHTTPAuth(engine)
+    resolveAuth: async () => {
+      const profileId = providerService.resolveProfileId()
+      if (!profileId) throw new Error('No default provider profile configured')
+      return providerService.resolveHTTPAuthForProfile(profileId)
     },
     getFetch: () => proxyFetchFactory.getStandardFetch(),
   })
@@ -697,5 +751,6 @@ export async function createAppServices(deps: ServiceFactoryDeps): Promise<AppSe
     pushEngine,
     issueCommentService,
     syncLogStore,
+    lifecycleOperationCoordinator,
   }
 }

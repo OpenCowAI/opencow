@@ -59,4 +59,20 @@ describe('MarkdownContent', () => {
     expect(screen.getByText('item 1')).toBeInTheDocument()
     expect(screen.getByText('item 2')).toBeInTheDocument()
   })
+
+  it('preserves ordered list start index across split lists', () => {
+    const md = [
+      '1. first',
+      '',
+      'continuation paragraph',
+      '',
+      '2. second',
+      '3. third',
+    ].join('\n')
+
+    const { container } = render(<MarkdownContent content={md} />)
+    const olList = container.querySelectorAll('ol')
+    expect(olList.length).toBeGreaterThan(1)
+    expect(olList[1]).toHaveAttribute('start', '2')
+  })
 })

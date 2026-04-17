@@ -43,18 +43,55 @@
     }
   },
   "provider": {
-    "title": "Provider",
-    "description": "Configure provider connections separately for Claude and Codex engines. Credentials are encrypted and stored locally.",
-    "engineScope": "Engine Scope",
-    "defaultEngine": "Default Session Engine",
-    "defaultEngineHint": "Used by default for new sessions. You can still override it per session.",
-    "engines": {
-      "claude": "Claude Engine",
-      "codex": "Codex Engine"
-    },
-    "configTitles": {
-      "claude": "Claude Configuration",
-      "codex": "Codex Configuration"
+    "title": "Providers",
+    "description": "Manage available LLM accounts; credentials are encrypted and stored locally.",
+    "profile": {
+      "addButton": "Add Provider",
+      "addHeading": "New {{type}} profile",
+      "typeGroups": {
+        "anthropic": "Anthropic",
+        "openai": "OpenAI",
+        "google": "Google"
+      },
+      "typeLabels": {
+        "claude-subscription": "Claude Pro/Max subscription",
+        "anthropic-api": "Anthropic API direct",
+        "anthropic-compat-proxy": "Anthropic-compatible proxy",
+        "openai-direct": "OpenAI direct",
+        "openai-compat-proxy": "OpenAI-compatible proxy",
+        "gemini": "Gemini"
+      },
+      "emptyState": "No providers yet. Click Add Provider to get started.",
+      "defaultBadge": "Default",
+      "setDefault": "Set as default",
+      "edit": "Edit",
+      "moreActions": "More actions",
+      "remove": "Remove",
+      "confirmRemove": "Remove provider \"{{name}}\"? This will also clear its stored credentials.",
+      "save": "Save",
+      "saving": "Saving…",
+      "cancel": "Cancel",
+      "close": "Close",
+      "loginSubscription": "Sign in with Claude",
+      "nameLabel": "Name",
+      "apiKeyLabel": "API Key",
+      "apiKeyKeepHint": "(leave blank to keep existing)",
+      "baseUrlLabel": "Base URL",
+      "authStyleLabel": "Auth Style",
+      "preferredModelLabel": "Model",
+      "preferredModelOptional": "(optional)",
+      "preferredModelRecommended": "(required — see placeholder for a recommendation)",
+      "subscriptionHint": "Clicking Sign in will open your browser for Claude OAuth. No key is stored locally — only the OAuth tokens issued by Anthropic.",
+      "test": "Test",
+      "testing": "Testing…",
+      "testOk": "OK",
+      "testOkTitle": "Connection verified in {{ms}} ms",
+      "testFail": {
+        "unauthenticated": "No credentials",
+        "network": "Network error",
+        "unsupported": "Unsupported type",
+        "error": "Error"
+      }
     },
     "modes": {
       "subscription": "Claude Subscription",
@@ -180,10 +217,7 @@
   },
   "command": {
     "title": "Chat",
-    "description": "Default parameters for new AI sessions (Max Turns currently applies to Claude sessions only).",
-    "defaultEngine": "Default Engine",
-    "engineClaude": "Claude",
-    "engineCodex": "Codex",
+    "description": "Default parameters for new AI sessions.",
     "maxTurns": "Max Turns",
     "permissionMode": "Permission Mode",
     "bypassPermissions": "Bypass Permissions (Default)",

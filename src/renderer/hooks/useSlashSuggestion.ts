@@ -7,7 +7,6 @@ import { useSlashCommands } from './useSlashCommands'
 import { createSlashCommandRenderer } from '../extensions/slashCommandSuggestion'
 import { filterSlashItems } from '@shared/slashItems'
 import type { SlashItem } from '@shared/slashItems'
-import type { AIEngineKind } from '@shared/types'
 import { buildSlashMentionInsertContent } from '../lib/slashMentionContent'
 
 // ─── Types ──────────────────────────────────────────────────────────────────
@@ -19,10 +18,6 @@ export interface UseSlashSuggestionReturn {
   allItems: SlashItem[]
   /** Whether the Capability Center snapshot is still loading */
   loading: boolean
-}
-
-export interface UseSlashSuggestionOptions {
-  engineKind?: AIEngineKind
 }
 
 // ─── Hook ───────────────────────────────────────────────────────────────────
@@ -38,8 +33,8 @@ export interface UseSlashSuggestionOptions {
  * Used by `useMessageComposer` (Console) and `useNoteEditor` (Notes) to
  * avoid duplicating slash command setup logic.
  */
-export function useSlashSuggestion(options?: UseSlashSuggestionOptions): UseSlashSuggestionReturn {
-  const slash = useSlashCommands(options?.engineKind ?? 'claude')
+export function useSlashSuggestion(): UseSlashSuggestionReturn {
+  const slash = useSlashCommands()
 
   // Stable renderer reference — created once per hook instance
   const rendererRef = useRef(createSlashCommandRenderer())

@@ -3,10 +3,21 @@
 import { describe, expect, it } from 'vitest'
 import { buildSessionPolicyInput } from '../../../electron/command/policy/sessionPolicyInputFactory'
 
+const GENERAL_PURPOSE_ALLOW = [
+  { capability: 'browser' },
+  { capability: 'html' },
+  { capability: 'interaction' },
+  { capability: 'issues' },
+  { capability: 'projects' },
+  { capability: 'schedules' },
+  { capability: 'evose' },
+  { capability: 'lifecycle' },
+] as const
+
 describe('buildSessionPolicyInput', () => {
   // ── General-purpose origins (agent, issue): browser default-on ─────
 
-  it('applies browser and html native tools for agent origin by default', () => {
+  it('applies general-purpose native capability allowlist for agent origin by default', () => {
     const policy = buildSessionPolicyInput({
       origin: { source: 'agent' },
     })
@@ -15,13 +26,13 @@ describe('buildSessionPolicyInput', () => {
       tools: {
         native: {
           mode: 'allowlist',
-          allow: [{ capability: 'browser' }, { capability: 'html' }],
+          allow: [...GENERAL_PURPOSE_ALLOW],
         },
       },
     })
   })
 
-  it('applies browser and html native tools for issue origin by default', () => {
+  it('applies general-purpose native capability allowlist for issue origin by default', () => {
     const policy = buildSessionPolicyInput({
       origin: { source: 'issue', issueId: 'issue-1' },
     })
@@ -30,7 +41,7 @@ describe('buildSessionPolicyInput', () => {
       tools: {
         native: {
           mode: 'allowlist',
-          allow: [{ capability: 'browser' }, { capability: 'html' }],
+          allow: [...GENERAL_PURPOSE_ALLOW],
         },
       },
     })
@@ -136,8 +147,7 @@ describe('buildSessionPolicyInput', () => {
 
   // ── Default case: other general-purpose origins get browser ─────────
 
-  it('applies browser and html defaults for origins that fall through to default case', () => {
-    // schedule, telegram, discord, etc. — any non-specialised, non-creator origin
+  it('applies lifecycle defaults for schedule origin', () => {
     const policy = buildSessionPolicyInput({
       origin: { source: 'schedule', scheduleId: 'sched-1' },
     })
@@ -146,7 +156,22 @@ describe('buildSessionPolicyInput', () => {
       tools: {
         native: {
           mode: 'allowlist',
-          allow: [{ capability: 'browser' }, { capability: 'html' }],
+          allow: [...GENERAL_PURPOSE_ALLOW],
+        },
+      },
+    })
+  })
+
+  it('applies general-purpose defaults for generic origins that fall through to default case', () => {
+    const policy = buildSessionPolicyInput({
+      origin: { source: 'telegram', botId: 'bot-1', chatId: 'chat-1' },
+    })
+
+    expect(policy).toEqual({
+      tools: {
+        native: {
+          mode: 'allowlist',
+          allow: [...GENERAL_PURPOSE_ALLOW],
         },
       },
     })
@@ -186,18 +211,19 @@ describe('buildSessionPolicyInput', () => {
       ],
     })
 
-    // issue origin defaults include browser + html; evose is appended from slash command
+    // General-purpose defaults already include evose; slash activation should
+    // still wire explicit skill activation without mutating the base allowlist.
     expect(policy).toEqual({
       tools: {
         native: {
           mode: 'allowlist',
-          allow: [{ capability: 'browser' }, { capability: 'html' }, { capability: 'evose' }],
+          allow: [...GENERAL_PURPOSE_ALLOW],
         },
       },
       capabilities: {
         skill: {
           explicit: ['evose:agent_github_iab8p2'],
-          implicitQuery: '请调用 evose app',
+          implicitQuery: undefined,
         },
       },
     })

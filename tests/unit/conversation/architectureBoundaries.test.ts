@@ -21,6 +21,7 @@ describe('conversation architecture boundaries', () => {
     for (const file of DOMAIN_FILES) {
       const content = readFileSync(file, 'utf8')
       expect(content.includes('@anthropic-ai/claude-agent-sdk')).toBe(false)
+      expect(content.includes('@opencow-ai/opencow-agent-sdk')).toBe(false)
       expect(content.includes('@openai/codex-sdk')).toBe(false)
     }
   })
@@ -29,6 +30,7 @@ describe('conversation architecture boundaries', () => {
     for (const file of PROJECTION_FILES) {
       const content = readFileSync(file, 'utf8')
       expect(content.includes('@anthropic-ai/claude-agent-sdk')).toBe(false)
+      expect(content.includes('@opencow-ai/opencow-agent-sdk')).toBe(false)
       expect(content.includes('@openai/codex-sdk')).toBe(false)
     }
   })
@@ -40,6 +42,5 @@ describe('conversation architecture boundaries', () => {
     expect(existsSync('electron/command/handlers/handleResult.ts')).toBe(false)
     expect(existsSync('electron/command/handlers/handlePartialMessage.ts')).toBe(false)
     expect(existsSync('electron/command/codex/codexTurnProjector.ts')).toBe(false)
-    expect(existsSync('electron/conversation/runtime/codex/codexTurnProjector.ts')).toBe(true)
   })
 })

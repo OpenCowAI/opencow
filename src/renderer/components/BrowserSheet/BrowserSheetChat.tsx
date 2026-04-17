@@ -34,7 +34,7 @@ import { ConnectedContentViewer } from '../DetailPanel/SessionPanel/ConnectedCon
 import { SessionStateIndicator } from '../DetailPanel/SessionStatusCard'
 import { useSessionMessages } from '@/hooks/useSessionMessages'
 import { useMessageQueue } from '@/hooks/useMessageQueue'
-import type { AIEngineKind, BrowserSource, BrowserPageInfoPayload, ManagedSessionState, UserMessageContent } from '@shared/types'
+import type { BrowserSource, BrowserPageInfoPayload, ManagedSessionState, UserMessageContent } from '@shared/types'
 import { getAppAPI } from '@/windowAPI'
 
 // ─── System Prompt (standalone mode only) ────────────────────────────────
@@ -88,9 +88,8 @@ function useAgentSessionData(agentSessionId: string | null): {
   state: ManagedSessionState | null
   activity: string | null
   error: string | null
-  engineKind: AIEngineKind | undefined
 } {
-  // Narrow selectors: extract only the 4 fields actually used, so unrelated
+  // Narrow selectors: extract only the 3 fields actually used, so unrelated
   // metadata changes (tokens, cost, duration) in the SessionSnapshot don't
   // trigger re-renders of the entire BrowserSheetChat tree.
   const sessionState = useCommandStore((s) =>
@@ -102,9 +101,6 @@ function useAgentSessionData(agentSessionId: string | null): {
   const sessionError = useCommandStore((s) =>
     agentSessionId ? (s.sessionById[agentSessionId]?.error ?? null) : null,
   )
-  const sessionEngineKind = useCommandStore((s) =>
-    agentSessionId ? (s.sessionById[agentSessionId]?.engineKind ?? undefined) : undefined,
-  )
   // Optimistic fallback: overlay's agentState covers the gap between
   // command:start-session IPC and command:session:created DataBus event.
   const optimisticState = useBrowserOverlayStore(
@@ -115,7 +111,6 @@ function useAgentSessionData(agentSessionId: string | null): {
     state: sessionState ?? optimisticState,
     activity: sessionActivity,
     error: sessionError,
-    engineKind: sessionEngineKind as AIEngineKind | undefined,
   }
 }
 
@@ -131,7 +126,7 @@ export function BrowserSheetChat({ source }: BrowserSheetChatProps): React.JSX.E
   const pageInfo       = useBrowserOverlayStore((s) => s.browserOverlay?.pageInfo ?? null)
 
   // ── Session data: canonical source is commandStore, with optimistic fallback ──
-  const { state: agentState, activity: agentActivity, error: agentError, engineKind: agentEngineKind } =
+  const { state: agentState, activity: agentActivity, error: agentError } =
     useAgentSessionData(agentSessionId)
 
   // ── Messages: read from canonical commandStore (survives overlay lifecycle) ──
@@ -293,7 +288,6 @@ export function BrowserSheetChat({ source }: BrowserSheetChatProps): React.JSX.E
         <SessionInputBar
           onSend={handleSendOrQueue}
           disabled={false}
-          engineKind={agentEngineKind}
           placeholder={
             isLinkedSession
               ? t('browser.agent.continueSession')

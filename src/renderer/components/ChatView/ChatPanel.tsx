@@ -320,6 +320,9 @@ function ChatPanelActive({ agent }: { agent: AgentSessionHandle }): React.JSX.El
       controlsMaxW={null}
       controlsClassName="px-3"
       pausedPlaceholder={t('agentChat.continueConversation')}
+      sessionDraftFooterConfig={{
+        strategy: 'lifecycle-tool-result-only',
+      }}
       registerAsChatTabInput
     />
   )

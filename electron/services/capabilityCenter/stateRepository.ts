@@ -576,8 +576,7 @@ function resolveProjectId(projectId?: string): string {
 
 function distributionTargetTypeRank(targetType: string): number {
   if (targetType.startsWith('claude-code-')) return 0
-  if (targetType.startsWith('codex-')) return 1
-  return 2
+  return 1
 }
 
 // ─── Row Mappers (validate at the DB boundary) ─────────────────────────

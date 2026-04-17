@@ -3,9 +3,7 @@
 import { createSessionLifecycle, type SessionLifecycle } from './sessionLifecycle'
 import {
   isIMPlatformSource,
-  type AIEngineKind,
   type ApiProvider,
-  type CodexReasoningEffort,
   type CommandDefaults,
   type ContentBlock,
   type DataBusEvent,
@@ -15,7 +13,6 @@ import {
   type SessionOrigin,
   type SessionSnapshot,
   type StartSessionNativeToolAllowItem,
-  type StartSessionPolicy,
   type SessionStopReason,
   type StartSessionInput,
   type UserMessageContent,
@@ -24,12 +21,15 @@ import { getOriginIssueId } from '../../src/shared/types'
 import { ManagedSession } from './managedSession'
 import { ManagedSessionStore } from '../services/managedSessionStore'
 import { buildSDKHooks } from '../hooks/buildSDKHooks'
-import { resolveExecutionContext } from './resolveExecutionContext'
+import { ExecutionContextCoordinator } from './executionContextCoordinator'
 import type { GitCommandExecutor } from '../services/git/gitCommandExecutor'
-import type { NativeCapabilityRegistry } from '../nativeCapabilities/registry'
-import type { NativeCapabilityToolContext, NativeToolDescriptor } from '../nativeCapabilities/types'
-import { toClaudeToolDefinitions } from '../nativeCapabilities/claudeToolAdapter'
-import { createSdkMcpServer } from '@anthropic-ai/claude-agent-sdk'
+import type { OpenCowCapabilityRegistry } from '../nativeCapabilities/openCowCapabilityRegistry'
+import { toCapabilityAllowlist } from '../nativeCapabilities/openCowCapabilityRegistry'
+import type { NativeToolDescriptor } from '../nativeCapabilities/types'
+import type { OpenCowSessionContext } from '../nativeCapabilities/openCowSessionContext'
+import { toInlineTool, type SdkTool } from '@opencow-ai/opencow-agent-sdk'
+import { toSdkCommand } from '../services/capabilityCenter/sdkCommandAdapter'
+import { toSdkAgentDefinition } from '../services/capabilityCenter/sdkAgentAdapter'
 import type { BrowserService } from '../browser/browserService'
 import type { PendingQuestionRegistry } from '../nativeCapabilities/interaction/pendingQuestionRegistry'
 import type { CapabilityCenter } from '../services/capabilityCenter'
@@ -42,25 +42,26 @@ import { SessionContext } from './sessionContext'
 import { getBaseSystemPrompt } from './baseSystemPrompt'
 import { getIdentityPrompt } from './identityPrompt'
 import { composeSystemPrompt, type SystemPromptLayers } from './systemPromptComposer'
+import { createProviderNativeSystemPrompt } from './systemPromptTransport'
 import { EngineCapabilityRuntime } from './engineCapabilityRuntime'
-import type { CodexNativeBridgeManager } from './codexNativeBridgeManager'
-import { mergeCodexMcpServers } from './codexMcpConfigBuilder'
 import { ConversationEventPipeline } from '../conversation/pipeline'
 import {
   EngineBootstrapRegistry,
-  type CodexAuthConfig,
 } from './engineBootstrapOptions'
 import {
   SessionWorkspaceResolver,
 } from './sessionWorkspaceResolver'
+import { mapManagedMessagesToSdkInitialMessages } from './sdkHistoryMapper'
 import {
   applyClaudeSessionPolicy,
 } from './enginePolicy'
-import { type SessionLaunchOptions, toSdkOptions } from './sessionLaunchOptions'
+import {
+  applySessionLaunchOptionPatch,
+  type SessionLaunchOptions,
+} from './sessionLaunchOptions'
 import type { SessionRuntime, SessionCompletionCallback, SessionCompletionResult } from './sessionRuntime'
 import { planSessionPolicy } from './policy/sessionPolicyPlanner'
 import { decideSessionReconfiguration } from './policy/sessionReconfigurationCoordinator'
-import { buildConversationSummary } from './conversationSummary'
 import { dispatchSessionTerminal as dispatchSessionTerminalEvent } from './sessionTerminalDispatcher'
 
 const log = createLogger('Orchestrator')
@@ -70,16 +71,36 @@ type Dispatch = (event: DataBusEvent) => void
 export interface OrchestratorDeps {
   dispatch: Dispatch
   getProxyEnv: () => Record<string, string>
-  getProviderEnv: (engineKind: AIEngineKind) => Promise<Record<string, string>>
-  getCodexAuthConfig: (engineKind: AIEngineKind) => Promise<CodexAuthConfig | null>
-  getProviderDefaultModel: (engineKind: AIEngineKind) => string | undefined
-  getProviderDefaultReasoningEffort: (engineKind: AIEngineKind) => CodexReasoningEffort | undefined
-  /** Returns the current active provider mode for the given engine (synchronous in-memory read). */
-  getActiveProviderMode: (engineKind: AIEngineKind) => ApiProvider | null
+  /**
+   * Resolve the provider env bag for a session spawn.
+   *
+   * ε.3c: Optional `profileId` lets a session that is explicitly pinned
+   * to a provider profile (ManagedSession.getProviderProfileId()) spawn
+   * against that profile regardless of the current Settings default.
+   * When omitted the implementation falls back to the Settings default.
+   */
+  getProviderEnv: (
+    profileId?: import('@shared/providerProfile').ProviderProfileId | null,
+  ) => Promise<Record<string, string>>
+  /**
+   * Resolve the default model for a profile.
+   *
+   * ε.3c: Optional `profileId` lets session spawn look up the model
+   * preferred by the session-bound profile rather than the current
+   * default. When omitted, falls back to the Settings default.
+   */
+  getProviderDefaultModel: (
+    profileId?: import('@shared/providerProfile').ProviderProfileId | null,
+  ) => string | undefined
+  /**
+   * Returns the current default profile id (synchronous in-memory
+   * read). Used to detect mid-session provider switches.
+   */
+  getActiveProviderProfileId: () => import('@shared/providerProfile').ProviderProfileId | null
   getCommandDefaults: () => CommandDefaults
   store: ManagedSessionStore
-  /** Optional NativeCapabilityRegistry — injects OpenCow built-in native capability tools into sessions. */
-  nativeCapabilityRegistry?: NativeCapabilityRegistry
+  /** Optional OpenCowCapabilityRegistry — injects OpenCow built-in native capability tools into sessions. */
+  nativeCapabilityRegistry?: OpenCowCapabilityRegistry
   /**
    * Optional BrowserService reference — used to release per-session browser
    * views when a session finishes, freeing WebContentsView resources.
@@ -103,11 +124,6 @@ export interface OrchestratorDeps {
    * When absent, execution context is created with gitBranch=null.
    */
   gitCommandExecutor?: GitCommandExecutor
-  /**
-   * Optional CodexNativeBridgeManager — bridges OpenCow native capabilities
-   * into Codex via a stdio MCP command process.
-   */
-  codexNativeBridgeManager?: CodexNativeBridgeManager
   /** Optional EngineBootstrapRegistry — engine-specific lifecycle option policy. */
   engineBootstrapRegistry?: EngineBootstrapRegistry
   /** Optional memory context provider — injects persistent memories into system prompt. */
@@ -200,9 +216,7 @@ export interface SessionStartOptions extends StartSessionInput {
    *
    * Unlike `customMcpServers` (which requires engine-specific MCP server config),
    * this accepts raw NativeToolDescriptor[] and lets SessionOrchestrator handle
-   * engine-appropriate injection:
-   * - Claude: creates an in-process MCP server via createSdkMcpServer()
-   * - Codex:  registers tools with CodexNativeBridgeManager's HTTP bridge
+   * engine-appropriate injection (creates in-process inline tools via toInlineTool).
    *
    * Used by RepoAnalyzer for per-analysis sandboxed tools.
    */
@@ -331,12 +345,9 @@ export class SessionOrchestrator {
 
   async startSession(input: SessionStartOptions): Promise<string> {
     const origin: SessionOrigin = input.origin ?? { source: 'agent' }
-    const defaultEngine = this.deps.getCommandDefaults().defaultEngine
-    const engineKind: AIEngineKind = input.engineKind ?? defaultEngine
     const resolvedWorkspace = await this.workspaceResolver.resolve(input.workspace)
     log.info('startSession requested', {
       origin: origin.source,
-      engineKind,
       projectId: resolvedWorkspace.projectId,
       workspaceScope: resolvedWorkspace.scope,
       hasCustomMcpServers: !!(input.customMcpServers && Object.keys(input.customMcpServers).length > 0),
@@ -415,7 +426,6 @@ export class SessionOrchestrator {
     const session = new ManagedSession({
       prompt: input.prompt,
       origin,
-      engineKind,
       startupCwd: resolvedWorkspace.cwd,
       projectPath: resolvedWorkspace.projectPath ?? undefined,
       projectId: resolvedWorkspace.projectId ?? undefined,
@@ -429,7 +439,7 @@ export class SessionOrchestrator {
       customMcpServers: input.customMcpServers,
     })
 
-    const lifecycle = createSessionLifecycle(engineKind)
+    const lifecycle = createSessionLifecycle()
     const tempId = session.id
 
     // Broadcast creation
@@ -447,7 +457,7 @@ export class SessionOrchestrator {
       lifecycleDone: Promise.resolve(),
       pipeline: null,
       policy: null,
-      providerMode: null,
+      providerProfileId: null,
       spawnErrorCount: 0,
       onComplete: input.onComplete,
       completionFired: false,
@@ -477,7 +487,6 @@ export class SessionOrchestrator {
     log.info('Session created and lifecycle started', {
       sessionId: tempId,
       origin: session.origin.source,
-      engineKind,
     })
     return tempId
   }
@@ -507,10 +516,7 @@ export class SessionOrchestrator {
     }
 
     const config = session.getConfig()
-    const engineKind: AIEngineKind = config.engineKind ?? 'claude'
-    const isClaudeEngine = engineKind === 'claude'
     const policyPlan = planSessionPolicy({
-      engineKind,
       origin: config.origin,
       policy: config.policy,
       prompt: initialPrompt,
@@ -520,7 +526,6 @@ export class SessionOrchestrator {
     if (rt) rt.policy = sessionPolicy
     log.debug('Session lifecycle bootstrapping', {
       sessionId,
-      engineKind,
       resume: !!extra?.resume,
       origin: session.origin.source,
     })
@@ -537,7 +542,7 @@ export class SessionOrchestrator {
     // Electron injects runtime-internal env vars (ELECTRON_*, NODE_OPTIONS with
     // --require for asar support, NODE_PATH pointing to Electron modules, etc.)
     // that must NOT leak into child processes — they can cause native binaries
-    // (Codex) and their Node.js subprocesses (MCP servers) to crash silently.
+    // and their Node.js subprocesses (MCP servers) to crash silently.
     const removedEnvKeys = sanitizeChildProcessEnv(sessionEnv)
     if (removedEnvKeys.length > 0) {
       log.info(`Sanitized ${removedEnvKeys.length} Electron-specific env vars from session env: ${removedEnvKeys.join(', ')}`)
@@ -547,13 +552,47 @@ export class SessionOrchestrator {
       log.warn('node binary was not found at startup — session will likely fail with ENOENT')
     }
 
-    // Layer provider credentials (highest priority — overrides any system-level tokens)
-    const providerEnv = await this.deps.getProviderEnv(engineKind)
+    // Layer provider credentials (highest priority — overrides any system-level tokens).
+    // A throw here (e.g. ProfileMisconfiguredError: profile has no
+    // Model) short-circuits session spawn. The session is transitioned
+    // to `error` with the thrown message so the user sees it in the
+    // chat view instead of a hung/broken session.
+    //
+    // ε.3c: when the session is pinned (ManagedSession.getProviderProfileId()
+    // returns non-null), spawn against the pinned profile regardless of the
+    // current Settings default. Matches the user's Q1 ask: sessions can
+    // either follow the default OR be explicitly pinned; Settings changes
+    // don't silently hijack a pinned session.
+    const sessionBoundProfileId = session.getProviderProfileId()
+    let providerEnv: Record<string, string>
+    try {
+      providerEnv = await this.deps.getProviderEnv(sessionBoundProfileId)
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      log.error('Session spawn aborted: provider env resolution failed', {
+        sessionId,
+        profileId: sessionBoundProfileId ?? '(default)',
+        error: message,
+      })
+      session.transition({ type: 'turn_error', message })
+      this.dispatchSessionTerminal({
+        sessionId,
+        session,
+        terminalEvent: 'error',
+        error: message,
+      })
+      return
+    }
     Object.assign(sessionEnv, providerEnv)
 
-    // Record the provider mode active at lifecycle spawn time — used by
-    // sendMessage() to detect mid-session provider switches.
-    if (rt) rt.providerMode = this.deps.getActiveProviderMode(engineKind)
+    // ε.3c: Record the *effective* profile id — the one we actually spawned
+    // with — so drift detection and telemetry observe the real binding. For
+    // a pinned session this is the pinned value; for an unpinned session
+    // this captures the Settings default at spawn time (pre-ε.3c semantics).
+    if (rt) {
+      rt.providerProfileId =
+        sessionBoundProfileId ?? this.deps.getActiveProviderProfileId()
+    }
 
     // Layer proxy settings (settings > process.env, already in sessionEnv)
     const settingsProxy = this.deps.getProxyEnv()
@@ -563,17 +602,40 @@ export class SessionOrchestrator {
     }
 
     const defaults = this.deps.getCommandDefaults()
-    const options: SessionLaunchOptions = {
+    const baseOptions = {
       maxTurns: config.maxTurns ?? defaults.maxTurns,
       includePartialMessages: true,
       permissionMode: config.permissionMode ?? defaults.permissionMode,
       allowDangerouslySkipPermissions: true,
       env: sessionEnv,
     }
+    const options: SessionLaunchOptions = {
+      ...baseOptions,
+      systemPromptPayload: createProviderNativeSystemPrompt(''),
+    }
+
+    const executionContextCoordinator = new ExecutionContextCoordinator({
+      sessionId,
+      session,
+      projectPath: config.projectPath ?? null,
+      gitExecutor: this.deps.gitCommandExecutor ?? null,
+      dispatch: this.deps.dispatch,
+      persistSession: () => this.store.save(session.toPersistenceRecord()),
+    })
+
+    const notifyExecutionContextCwd = (params: {
+      cwd: string
+      source: 'startup' | 'runtime' | 'hook' | 'external'
+      occurredAtMs?: number
+    }): void => {
+      executionContextCoordinator.notify(params)
+    }
+    if (rt) {
+      rt.executionContextSignalHandler = (signal) => notifyExecutionContextCwd(signal)
+    }
 
     const modelOverride = session.getModelOverride()
     await this.engineBootstrapRegistry.apply({
-      engineKind,
       config: {
         ...config,
         ...(modelOverride ? { model: modelOverride } : {}),
@@ -582,9 +644,10 @@ export class SessionOrchestrator {
       sessionEnv,
       options,
       deps: {
-        getProviderDefaultModel: this.deps.getProviderDefaultModel,
-        getProviderDefaultReasoningEffort: this.deps.getProviderDefaultReasoningEffort,
-        getCodexAuthConfig: this.deps.getCodexAuthConfig,
+        // ε.3c: pinned sessions resolve their model from the bound profile,
+        // not the Settings default.
+        getProviderDefaultModel: () =>
+          this.deps.getProviderDefaultModel(sessionBoundProfileId),
       },
       logger: log,
     })
@@ -612,14 +675,12 @@ export class SessionOrchestrator {
       session: config.systemPrompt,
     }
 
-    if (isClaudeEngine) {
-      // Claude-specific runtime policy lives in enginePolicy.ts.
-      applyClaudeSessionPolicy({
-        options,
-        builtinToolsEnabled: sessionPolicy.tools.builtin.enabled,
-        logger: log,
-      })
-    }
+    // Claude-specific runtime policy lives in enginePolicy.ts.
+    applyClaudeSessionPolicy({
+      options,
+      builtinToolsEnabled: sessionPolicy.tools.builtin.enabled,
+      logger: log,
+    })
 
     // ── Per-session infrastructure (replaces closure variables) ──
     const timers = new SessionTimerScope()
@@ -639,15 +700,10 @@ export class SessionOrchestrator {
 
         // Resolve initial execution context (branch, worktree) from the session's cwd.
         // Fire-and-forget — failure is non-fatal (executionContext stays null).
-        resolveExecutionContext(config.startupCwd, config.projectPath ?? null, this.deps.gitCommandExecutor ?? null)
-          .then((ctx) => {
-            session.initExecutionContext(ctx)
-            this.deps.dispatch({ type: 'command:session:updated', payload: session.snapshot() })
-            this.store.save(session.toPersistenceRecord()).catch((err) =>
-              log.error(`Failed to persist initial execution context for ${sessionId}`, err),
-            )
-          })
-          .catch((err) => log.error(`Failed to resolve initial execution context for ${sessionId}`, err))
+        notifyExecutionContextCwd({
+          cwd: config.startupCwd,
+          source: 'startup',
+        })
       },
       onResultReceived: () => {
         // ── Immediate completion notification ──────────────────────────────
@@ -679,40 +735,25 @@ export class SessionOrchestrator {
           }, 0)
         }
       },
+      onExecutionContextSignal: (signal) => notifyExecutionContextCwd(signal),
     })
 
     // ── Capability & prompt injection ───────────────────────────────────────
     let hookCleanup: (() => void) | undefined
     let activeMcpServerNames: ReadonlySet<string> | undefined
 
-    // Built-in observational hooks (Claude only). Capability hooks are merged later by runtime.
-    let hooks: ReturnType<typeof buildSDKHooks> | undefined
-    if (isClaudeEngine) {
-      hooks = buildSDKHooks(
-        (e) => this.deps.dispatch(e),
-        sessionId,
-        (newCwd) => {
-          resolveExecutionContext(newCwd, config.projectPath ?? null, this.deps.gitCommandExecutor ?? null)
-            .then((ctx) => {
-              if (session.updateExecutionContext(ctx)) {
-                this.deps.dispatch({ type: 'command:session:updated', payload: session.snapshot() })
-                this.store.save(session.toPersistenceRecord()).catch((err) =>
-                  log.error(`Failed to persist execution context update for ${sessionId}`, err),
-                )
-              }
-            })
-            .catch((err) => log.error(`Failed to resolve execution context change for ${sessionId}`, err))
-        },
-      )
-    }
+    // Built-in observational hooks. Capability hooks are merged later by runtime.
+    let hooks: ReturnType<typeof buildSDKHooks> | undefined = buildSDKHooks(
+      (e) => this.deps.dispatch(e),
+      sessionId,
+      (signal) => notifyExecutionContextCwd(signal),
+    )
 
     const capabilityOutput = await this.capabilityRuntime.apply({
-      engineKind,
       planInput: {
         projectId: config.projectId,
         request: {
           session: {
-            engineKind,
             agentName: config.agentName,
           },
           policy: {
@@ -730,9 +771,7 @@ export class SessionOrchestrator {
     })
 
     promptLayers = capabilityOutput.promptLayers
-    if (Object.keys(capabilityOutput.optionPatch).length > 0) {
-      Object.assign(options, capabilityOutput.optionPatch)
-    }
+    applySessionLaunchOptionPatch(options, capabilityOutput.optionPatch)
     if (capabilityOutput.hooks) {
       hooks = capabilityOutput.hooks
     }
@@ -759,98 +798,146 @@ export class SessionOrchestrator {
     }
 
     // Per-session custom tools (engine-agnostic NativeToolDescriptor[]).
-    // Injected as in-process MCP server (Claude) or via HTTP bridge (Codex).
+    // Injected as in-process MCP server.
     const customTools = this.runtimes.get(sessionId)?.customTools
 
-    if (isClaudeEngine) {
-      // Per-session custom MCP servers (marketplace analysis tools, etc.)
-      // Applied after capability servers so custom servers take precedence.
-      if (config.customMcpServers && Object.keys(config.customMcpServers).length > 0) {
-        options.mcpServers = { ...(options.mcpServers ?? {}), ...config.customMcpServers }
+    // Full-restart path (new SDK query instance):
+    // seed SDK mutableMessages with persisted history so context is preserved
+    // across query() calls in the in-process runtime.
+    //
+    // `extra.resume` covers standard resume by engine session ref.
+    // `extra.skipAddMessage` covers restart variants where the current user
+    // message has already been appended to session history before runSession().
+    //
+    // We drop the trailing entry because, on both resume paths, the current
+    // user prompt was already `addMessage`'d by the caller (resumeSessionInternal
+    // and the engine-switch path both call addMessage before runSession). The
+    // prompt will be re-pushed onto mutableMessages by QueryEngine.submitMessage
+    // (QueryEngine.ts:424), so leaving it in initialMessages would yield a
+    // duplicate trailing user message. This mirrors the per-turn replay logic
+    // in queryLifecycle.ts. See plans/per-turn-history-replay.md §B.3.
+    if (extra?.resume || extra?.skipAddMessage) {
+      const allMessages = session.getMessages()
+      const historyMessages = allMessages.slice(0, -1)
+      if (historyMessages.length > 0) {
+        const sessionModel = session.getModel() ?? undefined
+        const initialMessages = mapManagedMessagesToSdkInitialMessages(
+          historyMessages,
+          { model: sessionModel },
+        )
+        if (initialMessages.length > 0) {
+          options.initialMessages = initialMessages
+        }
       }
+    }
 
-      // Per-session custom tool descriptors → in-process MCP server
-      if (customTools && customTools.tools.length > 0) {
-        const claudeTools = toClaudeToolDefinitions(customTools.tools)
-        const mcpServerConfig = createSdkMcpServer({
-          name: customTools.name,
-          version: '1.0.0',
-          tools: claudeTools,
-        })
-        options.mcpServers = { ...(options.mcpServers ?? {}), [customTools.name]: mcpServerConfig }
+    // Per-session custom MCP servers (marketplace analysis tools, etc.)
+    // Applied after capability servers so custom servers take precedence.
+    if (config.customMcpServers && Object.keys(config.customMcpServers).length > 0) {
+      options.mcpServers = { ...(options.mcpServers ?? {}), ...config.customMcpServers }
+    }
+
+    // Phase 1B.11: build the OpenCowSessionContext once and reuse it for
+    // both the per-session custom tools path and the native capability path
+    // below. The relay reference and OpenCow domain fields are session-scoped
+    // — capabilities access them via `ctx.sessionContext.relay` /
+    // `ctx.sessionContext.projectId` etc. through the SDK CapabilityToolContext.
+    const claudeOpenCowSessionContext: OpenCowSessionContext = {
+      sessionId,
+      cwd: config.startupCwd ?? config.projectPath ?? process.cwd(),
+      // Session-wide abort signal placeholder — per-call abort still flows
+      // via MCP `extra.signal` (wired by the SDK toMcpServer adapter, Phase
+      // 1B.7). Session-wide abort wiring is a follow-up cleanup item.
+      abortSignal: new AbortController().signal,
+      projectId: config.projectId ?? null,
+      issueId: getOriginIssueId(config.origin),
+      originSource: config.origin.source,
+      ...(config.projectPath !== undefined && { projectPath: config.projectPath }),
+      ...(config.startupCwd !== undefined && { startupCwd: config.startupCwd }),
+      relay,
+    }
+
+    // Phase 1B.11b: collect SDK inline tools from BOTH per-session custom
+    // tools AND the native capability allowlist into a single SdkTool[].
+    // The model sees these as bare descriptor names (no `mcp__server__`
+    // transport-layer prefix). This avoids the dual MCP SDK module instance
+    // class-identity bug that bit the Phase 1B.11 MCP exit path: SdkTool is
+    // a plain data shape (`{name, description, inputSchema, execute}`),
+    // not an instance of any SDK-internal class, so cross-bundle / cross-
+    // module-cache transit cannot break it.
+    const inlineNativeTools: SdkTool[] = []
+
+    if (customTools && customTools.tools.length > 0) {
+      for (const descriptor of customTools.tools) {
+        inlineNativeTools.push(
+          toInlineTool({
+            descriptor,
+            sessionContext: claudeOpenCowSessionContext,
+          }),
+        )
       }
+    }
 
-      // Compose final system prompt after all layer adjustments.
-      options.systemPrompt = composeSystemPrompt(promptLayers)
+    // Compose final system prompt after all layer adjustments.
+    options.systemPromptPayload = createProviderNativeSystemPrompt(composeSystemPrompt(promptLayers))
 
-      // Built-in native capability tools (after injection plan + allowlist merge).
-      if (this.deps.nativeCapabilityRegistry) {
-        const toolContext: NativeCapabilityToolContext = {
-          session: {
-            sessionId,
-            projectId: config.projectId ?? null,
-            issueId: getOriginIssueId(config.origin),
-            originSource: config.origin.source,
-            projectPath: config.projectPath,
-            startupCwd: config.startupCwd,
+    // Built-in native capability tools (after injection plan + allowlist merge).
+    if (this.deps.nativeCapabilityRegistry) {
+      const nativeToolPolicy = sessionPolicy.tools.native
+      if (nativeToolPolicy.mode === 'allowlist') {
+        const inlineTools = this.deps.nativeCapabilityRegistry.getInlineToolsForSession({
+          allowlist: toCapabilityAllowlist(nativeToolPolicy.allow),
+          sessionContext: claudeOpenCowSessionContext,
+          hostEnvironment: {
+            activeMcpServerNames: activeMcpServerNames
+              ? [...activeMcpServerNames]
+              : [],
           },
-          relay,
-          activeMcpServerNames,
-        }
-        const nativeToolPolicy = sessionPolicy.tools.native
-        const serverConfig = nativeToolPolicy.mode === 'allowlist'
-          ? this.deps.nativeCapabilityRegistry.createMcpServerConfigForAllowlist(nativeToolPolicy.allow, toolContext)
-          : undefined
-        if (serverConfig) {
-          options.mcpServers = { ...(options.mcpServers ?? {}), ...serverConfig.mcpServers }
-        }
-      }
-
-      if (hooks) {
-        options.hooks = hooks
-      }
-    } else {
-      const mergedWithCustom = mergeCodexMcpServers({
-        baseConfig: options.codexConfig,
-        overlays: [config.customMcpServers],
-      })
-
-      // Built-in native capability tools via Codex stdio bridge.
-      let finalCodexConfig = mergedWithCustom.config
-      if (this.deps.codexNativeBridgeManager) {
-        const bridgeServer = await this.deps.codexNativeBridgeManager.registerSession({
-          session: {
-            sessionId,
-            projectId: config.projectId ?? null,
-            issueId: getOriginIssueId(config.origin),
-            originSource: config.origin.source,
-            projectPath: config.projectPath,
-            startupCwd: config.startupCwd,
-          },
-          relay,
-          nativeToolAllowlist: sessionPolicy.tools.native.mode === 'allowlist'
-            ? sessionPolicy.tools.native.allow
-            : [],
-          activeMcpServerNames: mergedWithCustom.activeServerNames.size > 0
-            ? mergedWithCustom.activeServerNames
-            : activeMcpServerNames,
-          additionalTools: customTools?.tools,
         })
-        if (bridgeServer) {
-          finalCodexConfig = mergeCodexMcpServers({
-            baseConfig: mergedWithCustom.config,
-            overlays: [bridgeServer],
-          }).config
+        inlineNativeTools.push(...inlineTools)
+      }
+    }
+
+    if (inlineNativeTools.length > 0) {
+      options.tools = [
+        ...(Array.isArray(options.tools) ? options.tools : []),
+        ...inlineNativeTools,
+      ]
+    }
+
+    // Phase 1B.11d: convert OpenCow's marketplace/project/global skills
+    // into SDK Command shapes and pass them via Options.commands so the
+    // SDK's built-in SkillTool can catalog, delta-emit, and dispatch them.
+    // This replaces the old system-prompt-injection path where skills were
+    // pasted as static <skill> XML segments via promptSegmentBuilder.ts.
+    if (this.deps.capabilityCenter) {
+      try {
+        const snapshot = await this.deps.capabilityCenter.getSnapshot(config.projectId)
+        const eligibleSkills = snapshot.skills.filter(
+          (s) => s.enabled && s.eligibility.eligible,
+        )
+        const eligibleCommands = snapshot.commands.filter(
+          (c) => c.enabled && c.eligibility.eligible,
+        )
+        if (eligibleSkills.length > 0 || eligibleCommands.length > 0) {
+          options.commands = [
+            ...eligibleCommands.map(toSdkCommand),
+            ...eligibleSkills.map(toSdkCommand),
+          ]
         }
+        const eligibleAgents = snapshot.agents.filter(
+          (a) => a.enabled && a.eligibility.eligible,
+        )
+        if (eligibleAgents.length > 0) {
+          options.agents = eligibleAgents.map(toSdkAgentDefinition)
+        }
+      } catch (err) {
+        log.warn('Failed to convert marketplace skills/agents to SDK commands', err)
       }
+    }
 
-      if (finalCodexConfig) {
-        options.codexConfig = finalCodexConfig
-      }
-
-      // Codex SDK currently has no direct equivalent to Claude's systemPrompt/tool hooks,
-      // so we pass a composed prompt that the Codex lifecycle prepends on first turn.
-      options.codexSystemPrompt = composeSystemPrompt(promptLayers)
+    if (hooks) {
+      options.hooks = hooks
     }
 
     // Conversation V3 pipeline state (runtime -> domain -> projection)
@@ -861,10 +948,24 @@ export class SessionOrchestrator {
 
     // ── Pre-flight summary (single log for the entire request payload) ────
     const startTime = Date.now()
+    // Redacted env snapshot: names + boolean presence of each var, NEVER
+    // the values. Auth tokens and URLs are both sensitive by product
+    // policy (a misconfigured proxy URL is a supply-chain exposure).
+    // This is the single source of truth for "what exactly did we ask
+    // the SDK to use?" — invaluable for triaging `fetch failed` reports.
+    const envSummary: Record<string, string> = {}
+    for (const [key, value] of Object.entries(sessionEnv)) {
+      if (!/^(CLAUDE|ANTHROPIC|OPENAI|GEMINI|GITHUB|BEDROCK|VERTEX)_/.test(key)) continue
+      if (key.includes('KEY') || key.includes('TOKEN')) {
+        envSummary[key] = value ? `present (${value.length} chars)` : 'empty'
+      } else {
+        envSummary[key] = value ?? ''
+      }
+    }
     log.info('Session pre-flight summary', {
       sessionId,
-      engineKind,
       model: options.model ?? 'default',
+      providerEnv: envSummary,
       promptLayers: {
         identity: !!promptLayers.identity,
         context: promptLayers.context?.length ?? 0,
@@ -873,9 +974,14 @@ export class SessionOrchestrator {
         session: promptLayers.session?.length ?? 0,
         capability: promptLayers.capability?.length ?? 0,
       },
-      systemPromptLength: (options.systemPrompt ?? options.codexSystemPrompt ?? '').length,
+      systemPromptTransport: options.systemPromptPayload.transport,
+      systemPromptLength: options.systemPromptPayload.text.length,
       messageCount: session.getMessages().length,
       mcpServerCount: Object.keys(options.mcpServers ?? {}).length,
+      // Phase 1B.11b: native + custom capabilities now flow via inline tools
+      // (Options.tools?: SdkTool[]) instead of an MCP server. Track the count
+      // here so the pre-flight log captures it for diagnostics.
+      inlineToolCount: Array.isArray(options.tools) ? options.tools.length : 0,
       hasHooks: !!options.hooks,
       maxTurns: options.maxTurns,
     })
@@ -894,7 +1000,34 @@ export class SessionOrchestrator {
         return
       }
 
-      const runtimeEventStream = lifecycle.start(initialPrompt, toSdkOptions(options))
+      const runtimeEventStream = lifecycle.start({
+        initialPrompt,
+        launchOptions: options,
+        callbacks: undefined,
+        // ε.3d.2 — per-turn env refresh. Every turn calls this resolver
+        // before invoking `session.query()`, so mid-session Settings
+        // changes (default provider / credentials / model) propagate on
+        // the NEXT user message without lifecycle kill + respawn. The
+        // lookup honours session-pinned profile (ε.3c) first.
+        resolveTurnOptions: async () => {
+          const sessionBound = session.getProviderProfileId()
+          try {
+            const env = await this.deps.getProviderEnv(sessionBound)
+            return { env }
+          } catch (err) {
+            log.warn('resolveTurnOptions: provider env refresh failed — keeping spawn-time env', {
+              sessionId,
+              profileId: sessionBound ?? '(default)',
+              error: err instanceof Error ? err.message : String(err),
+            })
+            return {}
+          }
+        },
+        // ε.3d.2 follow-up — per-turn history replay. Every turn, QueryLifecycle
+        // reads this to compute `options.initialMessages` for session.query().
+        // See plans/per-turn-history-replay.md.
+        getSessionMessages: () => session.getMessages(),
+      })
       for await (const runtimeEvent of runtimeEventStream) {
         // Hard stop guard: manual stop sets session state to `stopped`
         // synchronously, but the runtime stream may still yield buffered
@@ -918,21 +1051,17 @@ export class SessionOrchestrator {
       streamEndedCleanly = true
       log.info('Session lifecycle completed', {
         sessionId,
-        engineKind,
         finalState: session.getState(),
         totalMessages: session.getMessages().length,
         durationMs: Date.now() - startTime,
+        error: session.snapshot().error,
       })
     } finally {
-      if (!isClaudeEngine && this.deps.codexNativeBridgeManager) {
-        await this.deps.codexNativeBridgeManager.unregisterSession(sessionId).catch((err) => {
-          log.warn(`Failed to unregister Codex native bridge session ${sessionId}`, err)
-        })
-      }
       const rtCleanup = this.runtimes.get(sessionId)
       if (rtCleanup) {
         rtCleanup.pipeline = null
         rtCleanup.policy = null
+        rtCleanup.executionContextSignalHandler = undefined
       }
       hookCleanup?.()  // v3.1 #31: cleanup signal listeners
 
@@ -1014,8 +1143,6 @@ export class SessionOrchestrator {
       sessionId,
       hasRuntime: !!rt,
       sessionState: rt?.session.getState() ?? 'no-runtime',
-      sessionEngine: rt?.session.getEngineKind() ?? 'unknown',
-      defaultEngine: this.deps.getCommandDefaults().defaultEngine,
     })
 
     // MCP ask_user_question is blocking — route answer to PendingQuestionRegistry
@@ -1080,26 +1207,16 @@ export class SessionOrchestrator {
         return await this.resumeSessionInternal(sessionId, content, { forceRestart: true })
       }
 
-      // 2. Provider mode drift: SDK subprocess env is frozen at spawn. If the
-      //    user switched provider mode mid-session, force a lifecycle restart
-      //    to pick up fresh credentials.
-      const engineKind = rt.session.getEngineKind()
-      const currentMode = this.deps.getActiveProviderMode(engineKind)
-      const sessionMode = rt.providerMode ?? null
-      if (currentMode !== sessionMode) {
-        log.info('sendMessage: provider mode drift detected, restarting lifecycle', {
-          sessionId,
-          from: sessionMode,
-          to: currentMode,
-        })
-        return await this.resumeSessionInternal(sessionId, content, { forceRestart: true })
-      }
-
-      // 3. Engine kind drift: user switched default engine since this session started.
-      //    Pattern identical to provider mode drift above.
-      if (this.detectAndApplyEngineDrift(rt.session)) {
-        return await this.resumeSessionInternal(sessionId, content, { forceRestart: true })
-      }
+      // 2. Provider drift: SDK lifecycle env is frozen at spawn. If the
+      //    effective profile for this turn differs from what we spawned
+      //    with, restart the lifecycle so fresh credentials + model +
+      //    base URL take effect.
+      //
+      //    Effective = session-pinned (ε.3b/c) if set, else Settings
+      //    default. Drift detection is moved to the single funnel
+      //    (resumeSessionInternal) below, so both sendMessage and the
+      //    UI-driven idle → resumeSession paths honour it. See the
+      //    detailed rationale comment there.
     }
 
     // Active session with live lifecycle — push to SDK queue directly.
@@ -1179,25 +1296,38 @@ export class SessionOrchestrator {
     log.debug('resumeSessionInternal entered', {
       sessionId,
       forceRestart: options.forceRestart,
-      defaultEngine: this.deps.getCommandDefaults().defaultEngine,
     })
 
     const existing = this.runtimes.get(sessionId)
-    let forceRestart = options.forceRestart
+    const forceRestart = options.forceRestart
 
-    // ── Engine drift check (must run BEFORE the fast path) ────────────────
-    // The fast path pushes messages into the existing lifecycle queue, which
-    // would silently bypass engine switching. Detect drift first; if the
-    // engine changed, skip the fast path and fall through to full restart.
-    if (existing && !forceRestart && this.detectAndApplyEngineDrift(existing.session)) {
-      log.info('resumeSessionInternal: engine drift detected, skipping fast path for full restart', { sessionId })
-      forceRestart = true
-    }
+    // ── ε.3d.3: Provider drift gate DELETED ───────────────────────────────
+    //
+    // Previously (ε.3d.1) this path gated the fast-path reuse by comparing
+    // the session's effective profile against the lifecycle's spawn-time
+    // profile; when they differed we tore the lifecycle down and spawned a
+    // fresh one with new env. That protected against serving a mid-session
+    // Settings change via stale env frozen at spawn.
+    //
+    // After ε.3d.2 the lifecycle itself refreshes env on every turn via
+    // `resolveTurnOptions()` — each `session.query()` picks up the current
+    // `getProviderEnv(session.getProviderProfileId())` result, which honours
+    // both the session-pinned profile and the current Settings default.
+    // So drift no longer requires kill + respawn; the fast path below is
+    // always safe for provider changes. Deleting the gate removes a
+    // user-visible "Starting..." blip when the user changes default
+    // provider between turns.
+    //
+    // The other legitimate restart trigger — native-capability additions
+    // via slash command / skill reference — lives in sendMessage() and
+    // fires `forceRestart: true` explicitly when a lifecycle rebootstrap
+    // is required for tool-pool reasons (not env reasons). That path is
+    // unchanged.
 
-    // Fast path: if the SDK process is still alive (multi-turn wait mode),
-    // push to the existing queue instead of the expensive kill → restart cycle.
-    // This is the primary entry point from the renderer for `idle` sessions
-    // (the renderer routes idle → onResume → resumeSession).
+    // Fast path: if the SDK lifecycle is still alive, push to the existing
+    // queue — the per-turn resolveTurnOptions in QueryLifecycle (ε.3d.2)
+    // will refresh env for this turn. Primary entry point from the
+    // renderer for `idle` sessions (idle → onResume → resumeSession).
     if (!forceRestart && existing && this.pushToActiveSession(sessionId, existing, message)) {
       log.debug('resumeSession fast path: reused active lifecycle', { sessionId })
       return true
@@ -1219,18 +1349,14 @@ export class SessionOrchestrator {
       session = ManagedSession.fromInfo(persisted)
     }
 
-    // Engine kind drift check — covers persisted sessions restored from store
-    // (no active runtime). Idempotent: no-op if already applied above.
-    const engineSwitched = this.detectAndApplyEngineDrift(session)
-
     const engineSessionRef = session.getEngineRef()
-    if (!engineSessionRef && !forceRestart && !engineSwitched) {
+    if (!engineSessionRef && !forceRestart) {
       log.warn('resumeSession failed: missing engine session ref', { sessionId })
       return false
     }
 
     // Create fresh lifecycle (one-shot, never reused)
-    const lifecycle = createSessionLifecycle(session.getEngineKind())
+    const lifecycle = createSessionLifecycle()
 
     session.addMessage('user', userContentToBlocks(message))
     session.transition({ type: 'resume_session' })
@@ -1258,7 +1384,7 @@ export class SessionOrchestrator {
       lifecycleDone: Promise.resolve(),
       pipeline: null,
       policy: null,
-      providerMode: null,
+      providerProfileId: null,
       spawnErrorCount: existing?.spawnErrorCount ?? 0,
       completionFired: false,
     }
@@ -1276,47 +1402,6 @@ export class SessionOrchestrator {
   }
 
   // ── Engine drift helpers ─────────────────────────────────────────────
-
-  /**
-   * Detect and apply engine kind drift: if the session's engine differs from
-   * the current default, switch it in-place and dispatch UI updates.
-   *
-   * @returns `true` if an engine switch was performed.
-   */
-  private detectAndApplyEngineDrift(session: ManagedSession): boolean {
-    const currentDefaultEngine = this.deps.getCommandDefaults().defaultEngine
-    const sessionEngine = session.getEngineKind()
-    if (sessionEngine === currentDefaultEngine) return false
-
-    const messageCount = session.getMessages().length
-    log.info('engine kind drift detected, switching engine', {
-      sessionId: session.id,
-      origin: session.origin.source,
-      from: sessionEngine,
-      to: currentDefaultEngine,
-      messageCount,
-    })
-    const summary = buildConversationSummary({
-      messages: session.getMessages(),
-      fromEngine: sessionEngine,
-    })
-    session.switchEngine({
-      newEngine: currentDefaultEngine,
-      contextSummary: summary,
-      originalContext: session.getConfig().contextSystemPrompt,
-    })
-    log.info('engine switch applied', {
-      sessionId: session.id,
-      newEngine: currentDefaultEngine,
-      summaryLength: summary.length,
-      hasOriginalContext: !!session.getConfig().contextSystemPrompt,
-    })
-
-    // Dispatch snapshot + system event so renderer updates immediately
-    this.dispatchSessionUpdate(session)
-    this.dispatchLastSystemEvent(session)
-    return true
-  }
 
   // ── Dispatch helpers ──────────────────────────────────────────────────
 
@@ -1385,6 +1470,84 @@ export class SessionOrchestrator {
         payload: { sessionId: session.id, origin: session.origin, message: lastMsg },
       })
     }
+  }
+
+  // ── Provider-profile binding (ε.4) ──────────────────────────────────
+
+  /**
+   * ε.4 — Pin (or unpin) a session's provider profile.
+   *
+   *   - `profileId: null` → unpin; session follows the current Settings
+   *     default provider on subsequent turns. Next turn's
+   *     resolveTurnOptions() refreshes env from the new default.
+   *   - `profileId: <id>` → pin; session locks to this profile. Next
+   *     turn's resolveTurnOptions() refreshes env from the pinned profile.
+   *     Settings changes no longer affect this session.
+   *
+   * The new value is:
+   *   1. Written onto the in-memory ManagedSession (so an active
+   *      lifecycle's next `resolveTurnOptions` call sees it).
+   *   2. Persisted via ManagedSessionStore (survives restart).
+   *   3. Dispatched as command:session:updated so the renderer's
+   *      session card reflects the new binding immediately.
+   *
+   * Returns false when the session id is unknown (neither active nor
+   * persisted). Zero effect on currently-in-flight turn.
+   */
+  async setSessionProviderProfile(
+    sessionId: string,
+    profileId: import('@shared/providerProfile').ProviderProfileId | null,
+  ): Promise<boolean> {
+    const rt = this.runtimes.get(sessionId)
+    let session = rt?.session ?? null
+
+    if (!session) {
+      const persisted = await this.store.get(sessionId)
+      if (!persisted) {
+        log.warn('setSessionProviderProfile ignored: session not found', { sessionId })
+        return false
+      }
+      // Rehydrate so we can mutate + persist via the same code path.
+      session = ManagedSession.fromInfo(persisted)
+    }
+
+    const previous = session.getProviderProfileId()
+    if (previous === profileId) {
+      log.debug('setSessionProviderProfile noop: value unchanged', {
+        sessionId,
+        profileId: profileId ?? '(null)',
+      })
+      return true
+    }
+
+    session.setProviderProfileId(profileId)
+
+    try {
+      await this.store.save(session.toPersistenceRecord())
+    } catch (err) {
+      // Revert in-memory change so the persisted and runtime states
+      // stay in sync even on store failure.
+      session.setProviderProfileId(previous)
+      log.error('setSessionProviderProfile failed to persist — reverted', {
+        sessionId,
+        error: err instanceof Error ? err.message : String(err),
+      })
+      throw err
+    }
+
+    log.info('Session provider profile updated', {
+      sessionId,
+      from: previous ?? '(default)',
+      to: profileId ?? '(default)',
+      active: !!rt,
+    })
+
+    this.deps.dispatch({
+      type: 'command:session:updated',
+      payload: session.snapshot(),
+    })
+
+    return true
   }
 
   // ── Session lifecycle ───────────────────────────────────────────────
@@ -1508,8 +1671,6 @@ export class SessionOrchestrator {
     const fallbackIssueId = getOriginIssueId(session.origin) ?? undefined
 
     const spawnCategory = classifySpawnError(err)
-    let snap: SessionSnapshot
-
     if (spawnCategory === 'process_corrupted') {
       // EBADF: file descriptor leak in the Electron process.
       // NOT retryable — will fail again with the same error every time.
@@ -1520,7 +1681,7 @@ export class SessionOrchestrator {
         message: `Session process failed (${code}). Please restart OpenCow to recover.`,
       })
       this.runtimes.delete(sessionId)
-      snap = this.dispatchSessionTerminal({
+      this.dispatchSessionTerminal({
         sessionId,
         session,
         terminalEvent: 'error',
@@ -1539,7 +1700,8 @@ export class SessionOrchestrator {
         // Clear operational fields since the lifecycle is dead.
         rt.pipeline = null
         rt.policy = null
-        snap = this.dispatchSessionTerminal({
+        rt.executionContextSignalHandler = undefined
+        this.dispatchSessionTerminal({
           sessionId,
           session,
           terminalEvent: 'idle',
@@ -1553,7 +1715,7 @@ export class SessionOrchestrator {
           message: `Session process failed (${code}) after ${count} retries. Please restart OpenCow.`,
         })
         this.runtimes.delete(sessionId)
-        snap = this.dispatchSessionTerminal({
+        this.dispatchSessionTerminal({
           sessionId,
           session,
           terminalEvent: 'error',
@@ -1567,7 +1729,7 @@ export class SessionOrchestrator {
         message: err instanceof Error ? err.message : String(err),
       })
       this.runtimes.delete(sessionId)
-      snap = this.dispatchSessionTerminal({
+      this.dispatchSessionTerminal({
         sessionId,
         session,
         terminalEvent: 'error',
@@ -1698,14 +1860,31 @@ export class SessionOrchestrator {
   /**
    * HookSource skip policy for managed sessions.
    *
-   * Only Claude managed sessions should be skipped because Claude emits
-   * authoritative SDK hooks directly into DataBus. Codex does not provide
-   * equivalent SDK hooks, so its hook-log events must continue flowing.
+   * Managed sessions emit authoritative SDK hooks directly into DataBus,
+   * so we skip hook-log events for them to avoid duplicates.
    */
   shouldSkipHookSourceEvent(sessionId: string): boolean {
-    const rt = this.findActiveRuntime(sessionId)
-    if (!rt) return false
-    return rt.session.getEngineKind() === 'claude'
+    return this.findActiveRuntime(sessionId) !== null
+  }
+
+  /**
+   * Feed execution-context signal from external runtime sources (e.g. hook logs).
+   *
+   * Allows any external signal producer (hook bus, adapters, future runtime bridges)
+   * to push cwd updates into the same per-session ExecutionContextCoordinator pipeline
+   * used by startup/runtime callbacks.
+   */
+  ingestExecutionContextSignal(
+    sessionRef: string,
+    signal: { cwd: string; source: 'external' | 'hook'; occurredAtMs?: number },
+  ): void {
+    const rt = this.findActiveRuntime(sessionRef)
+    if (!rt) return
+    rt.executionContextSignalHandler?.({
+      cwd: signal.cwd,
+      source: signal.source,
+      occurredAtMs: signal.occurredAtMs,
+    })
   }
 
   private findActiveRuntime(sessionRef: string): SessionRuntime | null {
@@ -1756,12 +1935,6 @@ export class SessionOrchestrator {
       )
     )
 
-    if (this.deps.codexNativeBridgeManager) {
-      await this.deps.codexNativeBridgeManager.dispose().catch((err) => {
-        log.warn('Failed to dispose Codex native bridge manager during shutdown', err)
-      })
-    }
-
     this.runtimes.clear()
     log.info('SessionOrchestrator shutdown completed', {
       durationMs: Date.now() - startedAt,
@@ -1803,7 +1976,7 @@ function mergeNativeAllowlists(
 // ── Electron env sanitization ─────────────────────────────────────────
 //
 // Electron injects runtime-internal env vars that can silently break child
-// processes — especially native binaries (Codex) and their Node.js
+// processes — especially native binaries and their Node.js
 // subprocesses (MCP servers).
 //
 // Known problematic categories:

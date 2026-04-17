@@ -81,13 +81,20 @@ const invokeChannels: (keyof IPCChannels)[] = [
   'command:list-managed-sessions',
   'command:get-managed-session',
   'command:get-session-messages',
+  'command:list-session-lifecycle-operations',
+  'command:confirm-session-lifecycle-operation',
+  'command:reject-session-lifecycle-operation',
+  'command:mark-session-lifecycle-operation-applied',
   'command:delete-session',
   // Provider
   'provider:get-status',
-  'provider:login',
-  'provider:cancel-login',
-  'provider:logout',
   'provider:get-credential',
+  'provider:list-profiles',
+  'provider:create-profile',
+  'provider:update-profile',
+  'provider:remove-profile',
+  'provider:set-default-profile',
+  'provider:test-profile',
   // Webhooks
   'webhook:test',
   // Messaging — unified IM

@@ -25,7 +25,7 @@ import type { WebhookService } from '../services/webhooks/webhookService'
 import type { TelegramBotManager } from '../services/telegramBot/telegramBotManager'
 import type { TimeResolver } from '../services/schedule/timeResolver'
 import type { RetryScheduler } from '../services/schedule/retryScheduler'
-import type { NativeCapabilityRegistry } from '../nativeCapabilities/registry'
+import type { OpenCowCapabilityRegistry } from '../nativeCapabilities/openCowCapabilityRegistry'
 import type { CapabilityCenter } from '../services/capabilityCenter'
 import type { BrowserService } from '../browser/browserService'
 import type { TerminalService } from '../terminal/terminalService'
@@ -57,7 +57,7 @@ export interface ShutdownDeps {
   pushEngine: import('../services/issue-sync/pushEngine').PushEngine | null
 
   // Async disposal targets (awaited in order)
-  nativeCapabilityRegistry: NativeCapabilityRegistry
+  nativeCapabilityRegistry: OpenCowCapabilityRegistry
   capabilityCenter: CapabilityCenter | null
   browserService: BrowserService | null
   terminalService: TerminalService | null

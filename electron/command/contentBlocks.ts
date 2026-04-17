@@ -1,6 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 
-import type { ContentBlock, DocumentMediaType, ImageMediaType } from '../../src/shared/types'
+import type {
+  ContentBlock,
+  DocumentMediaType,
+  ImageMediaType,
+  ThinkingProvenance,
+} from '../../src/shared/types'
 
 /**
  * SDK content block shape (loosely typed — the SDK doesn't export strict types).
@@ -16,6 +21,25 @@ export interface SDKContentBlock {
   content?: string | ToolResultContentItem[]
   is_error?: boolean
   thinking?: string
+  /**
+   * Cryptographic signature emitted by Claude with every extended-thinking
+   * block. Anthropic's API REQUIRES this field when thinking blocks are sent
+   * back as part of conversation history — without it the API rejects with
+   *
+   *   400 messages.N.content.0.thinking.signature: Field required
+   *
+   * Captured here at the SDK → OpenCow boundary so downstream layers can
+   * preserve it all the way to `sdkHistoryMapper`'s replay output.
+   */
+  signature?: string
+  /**
+   * Structured carrier for provider-specific fields on translated thinking
+   * blocks (see {@link SDKThinkingExtraContent}). The contract with the two
+   * shims in `opencow-agent-sdk` is enforced at normalisation time:
+   * unrecognised `provenance` values fall through to `'unknown'`, so the
+   * type system never sees a leaked string.
+   */
+  extra_content?: SDKThinkingExtraContent
   // Image / Document support
   source?: {
     type: string
@@ -23,6 +47,41 @@ export interface SDKContentBlock {
     data?: string
   }
   title?: string
+}
+
+/**
+ * Known thinking-block provenances, mirrored from `ThinkingProvenance` and
+ * used as a validation whitelist at the SDK boundary. A runtime check here
+ * prevents a future shim from leaking an unrecognised `provenance` string
+ * (e.g. `'gemini'`) into the typed domain — unknowns fall through to
+ * `'unknown'` and are dropped on replay rather than mis-classified.
+ */
+const KNOWN_THINKING_PROVENANCES = new Set<ThinkingProvenance>([
+  'anthropic',
+  'codex',
+  'openai-chat',
+  'unknown',
+])
+
+function isThinkingProvenance(value: unknown): value is ThinkingProvenance {
+  return typeof value === 'string' && (KNOWN_THINKING_PROVENANCES as Set<string>).has(value)
+}
+
+/**
+ * Structured carrier for provider-specific fields stamped onto `thinking`
+ * blocks by the two shims. This is the **contract** between
+ * `opencow-agent-sdk`'s provider adapters and OpenCow's SDK-boundary
+ * normalizer — not a free-form escape hatch. See
+ * `plans/cross-provider-thinking.md` §5.3.
+ */
+interface SDKThinkingExtraContent {
+  /** Provider that produced this reasoning. */
+  provenance?: string
+  /** Codex Responses API `encrypted_content`; populated only when `provenance === 'codex'`. */
+  encryptedContent?: string
+  // Anthropic SDK's extra_content is an open bag; we acknowledge but don't
+  // consume other keys at this boundary.
+  [key: string]: unknown
 }
 
 /**
@@ -187,7 +246,36 @@ export function normalizeContentBlocks(sdkBlocks: SDKContentBlock[]): ContentBlo
         break
       }
       case 'thinking':
-        if (b.thinking) result.push({ type: 'thinking', thinking: b.thinking })
+        if (b.thinking) {
+          // Preserve the cryptographic signature + provenance end-to-end:
+          //   - `signature` is required for Anthropic Extended Thinking replay
+          //     (see `SDKContentBlock.signature` doc).
+          //   - `provenance` (via `extra_content`) tells the sdkHistoryMapper
+          //     whether this block can be replayed on the current provider's
+          //     API. See `plans/cross-provider-thinking.md` §5.3.
+          const extra = b.extra_content
+          // Validate the provenance string against the known whitelist —
+          // unchecked cast would let a future shim silently poison the
+          // domain type. Unknown strings fall through to 'unknown' below.
+          const extraProvenance = isThinkingProvenance(extra?.provenance)
+            ? extra.provenance
+            : undefined
+          const extraEncryptedContent =
+            typeof extra?.encryptedContent === 'string' ? extra.encryptedContent : undefined
+          // Legacy fallback: pre-provenance persisted blocks used `signature`
+          // as an implicit Anthropic marker. Keep that inference for back-compat
+          // so old sessions keep replaying correctly; the plan's recommendation
+          // explicitly prefers this over a DB migration.
+          const provenance: ThinkingProvenance =
+            extraProvenance ?? (b.signature ? 'anthropic' : 'unknown')
+          result.push({
+            type: 'thinking',
+            thinking: b.thinking,
+            provenance,
+            ...(b.signature ? { signature: b.signature } : {}),
+            ...(extraEncryptedContent ? { encryptedContent: extraEncryptedContent } : {}),
+          })
+        }
         break
     }
   }

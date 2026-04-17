@@ -28,6 +28,7 @@ function shouldRecoverStreamingFromAwaitingInput(kind: ConversationDomainEventEn
     kind !== 'engine.diagnostic' &&
     kind !== 'turn.usage' &&
     kind !== 'context.snapshot' &&
+    kind !== 'execution_context.signal' &&
     kind !== 'system.task_notification'
   )
 }
@@ -185,6 +186,18 @@ export function reduceConversationDomainEvent(params: {
       return { state: nextState, effects }
     }
 
+    case 'user.tool_result': {
+      // Tool result is an engine-driven user-role message. It does NOT
+      // leave the streaming phase (assistant.final with hasToolUse already
+      // kept us in `streaming`); it only feeds the persisted history so
+      // per-turn resume can replay the model's view of the world.
+      effects.push({
+        type: 'apply_user_tool_result',
+        payload: event.payload,
+      })
+      return { state: nextState, effects }
+    }
+
     case 'turn.usage': {
       effects.push({
         type: 'apply_turn_usage',
@@ -197,6 +210,17 @@ export function reduceConversationDomainEvent(params: {
       effects.push({
         type: 'apply_context_snapshot',
         payload: event.payload,
+      })
+      return { state: nextState, effects }
+    }
+
+    case 'execution_context.signal': {
+      effects.push({
+        type: 'apply_execution_context_signal',
+        payload: {
+          ...event.payload,
+          occurredAtMs: eventEnvelope.occurredAtMs,
+        },
       })
       return { state: nextState, effects }
     }

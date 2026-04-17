@@ -98,29 +98,51 @@ interface ParsedMcpName {
 }
 
 /**
- * Parses an MCP-prefixed tool name into its structural parts.
+ * Parses a capability tool name into its structural parts.
  *
- * Format:  `mcp__{server}__{tool_name}`
- * Example: `mcp__opencow-capabilities__browser_navigate`
- *            → { server: 'opencow-capabilities', category: 'browser',
- *                action: 'navigate', toolName: 'browser_navigate' }
+ * Accepts BOTH forms (Phase 1B.11b dual support):
  *
- * Returns `null` for native (non-MCP) tool names like 'Read', 'Bash'.
+ *   1. MCP-prefixed (legacy / persisted older sessions):
+ *      `mcp__{server}__{tool_name}`
+ *      Example: `mcp__opencow-capabilities__browser_navigate`
+ *
+ *   2. Bare snake_case (current — Phase 1B.11b inline tool exit):
+ *      `{category}_{action}` (lowercase, must contain at least one `_`)
+ *      Example: `browser_navigate`
+ *
+ * Both forms produce the same structural result:
+ *   { server: 'opencow-capabilities', category: 'browser',
+ *     action: 'navigate', toolName: 'browser_navigate' }
+ *
+ * Returns `null` for SDK-native (non-capability) tool names like 'Read',
+ * 'Bash'. Native tools are PascalCase or single-segment, so we use a
+ * heuristic: bare names that don't start with an uppercase letter AND
+ * contain a `_` are treated as capability tools; everything else falls
+ * through to native handling (icon registry direct lookup, raw display
+ * name).
  */
 function parseMcpToolName(rawName: string): ParsedMcpName | null {
-  // Split on __ yields exactly ['mcp', server, toolName] for valid MCP names.
   const parts = rawName.split('__')
-  if (parts.length !== 3 || parts[0] !== 'mcp') return null
 
-  const server = parts[1]
-  const toolName = parts[2]
+  // Form 1: MCP-prefixed.
+  if (parts.length === 3 && parts[0] === 'mcp') {
+    return parseToolNameSegment(parts[2]!, parts[1]!)
+  }
 
+  // Form 2: bare snake_case capability name (Phase 1B.11b).
+  if (parts.length === 1 && /^[a-z][a-z0-9_]*$/.test(rawName) && rawName.includes('_')) {
+    return parseToolNameSegment(rawName, 'opencow-capabilities')
+  }
+
+  return null
+}
+
+function parseToolNameSegment(toolName: string, server: string): ParsedMcpName {
   // Convention: toolName = {category}_{action...}
   const separatorIdx = toolName.indexOf('_')
   if (separatorIdx === -1) {
     return { server, category: toolName, action: '', toolName }
   }
-
   const category = toolName.slice(0, separatorIdx)
   const action = toolName.slice(separatorIdx + 1)
   return { server, category, action, toolName }

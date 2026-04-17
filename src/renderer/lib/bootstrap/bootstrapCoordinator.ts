@@ -84,8 +84,7 @@ async function runCriticalBootstrapStage(): Promise<void> {
   const locale = resolveLocale(state.settings?.language, state.systemLocale)
   applyLocale(locale)
 
-  const providerEngine = state.settings?.command.defaultEngine ?? 'claude'
-  void settingsStore.loadProviderStatus({ engineKind: providerEngine, syncGlobal: true })
+  void settingsStore.loadProviderStatus()
     .catch((error: unknown) => {
       log.error('Failed to load provider status during bootstrap', error)
     })
@@ -104,6 +103,19 @@ export function ensureBootstrapDataLoaded(): Promise<void> {
   inFlightBootstrap = runCriticalBootstrapStage()
     .catch((error: unknown) => {
       log.error('Failed to load critical bootstrap state', error)
+      // Prevent false onboarding lock: when critical bootstrap fails, recover
+      // onboarding state directly instead of leaving the default {completed:false}.
+      return getAppAPI()['get-onboarding-state']()
+        .then((onboarding) => {
+          useAppStore.getState().setOnboarding(onboarding)
+          log.warn('Recovered onboarding state from fallback IPC after bootstrap failure', {
+            completed: onboarding.completed,
+            hooksInstalled: onboarding.hooksInstalled,
+          })
+        })
+        .catch((fallbackError: unknown) => {
+          log.error('Failed to recover onboarding state after bootstrap failure', fallbackError)
+        })
     })
     .finally(() => {
       loadSupplementaryData()

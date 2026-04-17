@@ -15,7 +15,7 @@ export type GovernanceOperation =
   | 'detect-drift'
 
 export interface EngineGovernanceDriver {
-  readonly engineKind: 'claude' | 'codex'
+  readonly engineKind: 'claude'
 
   supports(category: ManagedCapabilityCategory, op: GovernanceOperation): boolean
 

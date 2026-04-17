@@ -28,10 +28,12 @@ import { shouldSuppressResult } from './WidgetToolRegistry'
 import {
   IssueResultCard,
   IssueListResultCard,
+  LifecycleOperationResultCard,
   ProjectResultCard,
   ProjectListResultCard,
   parseIssueData,
   parseIssueListData,
+  parseLifecycleOperationData,
   parseProjectData,
   parseProjectListData,
   BrowserNavigateCard,
@@ -52,6 +54,7 @@ import {
 
 interface ToolResultBlockViewProps {
   block: ToolResultBlock
+  sessionId?: string
 }
 
 // ─── Result Card Registry ───────────────────────────────────────────────────
@@ -60,7 +63,7 @@ interface ToolResultBlockViewProps {
  * Render function: parses raw tool_result content → rich card JSX,
  * or null if parsing fails (caller falls through to raw text).
  */
-type ResultCardRenderer = (content: string) => React.JSX.Element | null
+type ResultCardRenderer = (content: string, sessionId?: string) => React.JSX.Element | null
 
 /**
  * Create a type-safe renderer from a parser + card component pair.
@@ -95,6 +98,14 @@ const RESULT_CARD_REGISTRY = new Map<string, ResultCardRenderer>([
   [NativeCapabilityTools.ISSUE_CREATE, createResultCardRenderer(parseIssueData, IssueResultCard)],
   [NativeCapabilityTools.ISSUE_UPDATE, createResultCardRenderer(parseIssueData, IssueResultCard)],
   [NativeCapabilityTools.ISSUE_LIST,   createResultCardRenderer(parseIssueListData, IssueListResultCard)],
+  [NativeCapabilityTools.ISSUE_PROPOSE_OPERATION, (content, sessionId) => {
+    try {
+      const data = parseLifecycleOperationData(content)
+      return <LifecycleOperationResultCard data={data} currentSessionId={sessionId} />
+    } catch {
+      return null
+    }
+  }],
 
   // ── Project tools ─────────────────────────────────────────────────────────
   [NativeCapabilityTools.PROJECT_GET,  createResultCardRenderer(parseProjectData, ProjectResultCard)],
@@ -112,6 +123,14 @@ const RESULT_CARD_REGISTRY = new Map<string, ResultCardRenderer>([
   [NativeCapabilityTools.BROWSER_SNAPSHOT,  createResultCardRenderer(parseBrowserSnapshot, BrowserSnapshotCard)],
   [NativeCapabilityTools.BROWSER_REF_CLICK, createResultCardRenderer(parseBrowserSnapshot, BrowserSnapshotCard)],
   [NativeCapabilityTools.BROWSER_REF_TYPE,  createResultCardRenderer(parseBrowserSnapshot, BrowserSnapshotCard)],
+  [NativeCapabilityTools.SCHEDULE_PROPOSE_OPERATION, (content, sessionId) => {
+    try {
+      const data = parseLifecycleOperationData(content)
+      return <LifecycleOperationResultCard data={data} currentSessionId={sessionId} />
+    } catch {
+      return null
+    }
+  }],
 ])
 
 // ─── Constants ──────────────────────────────────────────────────────────────
@@ -120,7 +139,7 @@ const COLLAPSE_THRESHOLD = 20
 
 // ─── Component ──────────────────────────────────────────────────────────────
 
-export const ToolResultBlockView = memo(function ToolResultBlockView({ block }: ToolResultBlockViewProps): React.JSX.Element {
+export const ToolResultBlockView = memo(function ToolResultBlockView({ block, sessionId }: ToolResultBlockViewProps): React.JSX.Element {
   // Resolve originating tool lifecycle via Context (O(1) Map lookup)
   const toolInfo = useToolLifecycle(block.toolUseId)
 
@@ -131,7 +150,7 @@ export const ToolResultBlockView = memo(function ToolResultBlockView({ block }: 
   if (toolInfo && block.content && !block.isError) {
     const renderer = RESULT_CARD_REGISTRY.get(toolInfo.name)
     if (renderer) {
-      const card = renderer(block.content)
+      const card = renderer(block.content, sessionId)
       if (card) return card
       // Parse failed → fall through to raw text
     }

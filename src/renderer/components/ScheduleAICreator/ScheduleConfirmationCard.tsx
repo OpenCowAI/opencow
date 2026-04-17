@@ -41,10 +41,14 @@ export interface ScheduleConfirmationCardProps {
   /** Called when user wants to edit — parent opens ScheduleFormModal. */
   onEdit?: (schedule: ParsedScheduleOutput) => void
   /**
-   * Externally-created schedule — set by the parent when the schedule was created
-   * via ScheduleFormModal (Edit flow) rather than the card's own Create button.
+   * Externally-created schedule reference.
+   *
+   * Keep this as a minimal ref model (id only) so callers can restore created
+   * state without fabricating full Schedule entities.
    */
-  createdSchedule?: Schedule | null
+  createdScheduleRef?: { id: string } | null
+  /** Optional container class override for placement differences across contexts. */
+  className?: string
 }
 
 // ─── Component ──────────────────────────────────────────────────────────────
@@ -55,17 +59,18 @@ export const ScheduleConfirmationCard = memo(function ScheduleConfirmationCard({
   onDiscard,
   onNavigate,
   onEdit,
-  createdSchedule: externalCreatedSchedule
+  createdScheduleRef: externalCreatedScheduleRef,
+  className,
 }: ScheduleConfirmationCardProps): React.JSX.Element {
   const { t } = useTranslation('schedule')
 
   const [cardState, setCardState] = useState<CardState>('preview')
-  const [internalCreatedSchedule, setInternalCreatedSchedule] = useState<Schedule | null>(null)
+  const [internalCreatedScheduleId, setInternalCreatedScheduleId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
-  // Merge internal + external created schedule (external comes from ScheduleFormModal flow)
-  const createdSchedule = externalCreatedSchedule ?? internalCreatedSchedule
-  const isCreated = cardState === 'created' || !!externalCreatedSchedule
+  // Merge internal + external created refs (external comes from parent-managed flows).
+  const createdScheduleId = externalCreatedScheduleRef?.id ?? internalCreatedScheduleId
+  const isCreated = cardState === 'created' || !!createdScheduleId
   const isCreating = cardState === 'creating'
   const isDiscarded = cardState === 'discarded'
 
@@ -76,7 +81,7 @@ export const ScheduleConfirmationCard = memo(function ScheduleConfirmationCard({
     setError(null)
     try {
       const created = await onConfirm(schedule)
-      setInternalCreatedSchedule(created)
+      setInternalCreatedScheduleId(created.id)
       setCardState('created')
     } catch (err) {
       setError(err instanceof Error ? err.message : t('aiCreator.card.createFailed'))
@@ -102,7 +107,7 @@ export const ScheduleConfirmationCard = memo(function ScheduleConfirmationCard({
 
   if (isDiscarded) {
     return (
-      <div className="ml-4 mt-2 max-w-md rounded-xl border border-[hsl(var(--border)/0.3)] bg-[hsl(var(--card)/0.5)] p-3 opacity-50">
+      <div className={cn('ml-4 mt-2 max-w-md rounded-xl border border-[hsl(var(--border)/0.3)] bg-[hsl(var(--card)/0.5)] p-3 opacity-50', className)}>
         <span className="text-xs text-[hsl(var(--muted-foreground))] line-through">
           {schedule.name}
         </span>
@@ -121,7 +126,8 @@ export const ScheduleConfirmationCard = memo(function ScheduleConfirmationCard({
         'ml-4 mt-2 max-w-md rounded-xl border overflow-hidden transition-colors',
         isCreated
           ? 'border-green-500/30 bg-[hsl(var(--card))]'
-          : 'border-[hsl(var(--border)/0.5)] bg-[hsl(var(--card))]'
+          : 'border-[hsl(var(--border)/0.5)] bg-[hsl(var(--card))]',
+        className,
       )}
       role="region"
       aria-label={t('aiCreator.card.confirmationAria')}
@@ -184,7 +190,7 @@ export const ScheduleConfirmationCard = memo(function ScheduleConfirmationCard({
         <div>
           {isCreated ? (
             <button
-              onClick={() => createdSchedule && onNavigate?.(createdSchedule.id)}
+              onClick={() => createdScheduleId && onNavigate?.(createdScheduleId)}
               className="inline-flex items-center gap-1 text-[11px] text-[hsl(var(--primary))] hover:underline"
             >
               <ExternalLink className="w-3 h-3" aria-hidden />

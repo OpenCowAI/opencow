@@ -13,9 +13,11 @@
 
 import type { ManagedSession } from './managedSession'
 import type { SessionLifecycle } from './sessionLifecycle'
+import type { SessionExecutionContextSignal } from './sessionLifecycle'
 import type { ConversationEventPipeline } from '../conversation/pipeline'
 import type { NativeToolDescriptor } from '../nativeCapabilities/types'
-import type { ApiProvider, StartSessionPolicy, SessionStopReason } from '../../src/shared/types'
+import type { StartSessionPolicy, SessionStopReason } from '../../src/shared/types'
+import type { ProviderProfileId } from '../../src/shared/providerProfile'
 
 // ── Completion tracking ──────────────────────────────────────────────────────
 
@@ -39,11 +41,21 @@ export interface SessionRuntime {
   /** Session-scoped capability policy snapshot taken at spawn time. */
   policy: StartSessionPolicy | null
 
-  /** Provider mode frozen at lifecycle spawn — used to detect mid-session provider drift. */
-  providerMode: ApiProvider | null
+  /** Provider profile frozen at lifecycle spawn — used to detect mid-session provider drift. */
+  providerProfileId: ProviderProfileId | null
 
   /** Consecutive transient spawn-error count — reset on successful stream start. */
   spawnErrorCount: number
+
+  /**
+   * Session-scoped execution-context signal sink.
+   *
+   * Owned by SessionOrchestrator.runSession() and wired into the per-session
+   * ExecutionContextCoordinator. Exposed on runtime so external signal sources
+   * (e.g. hookSource events) can feed cwd updates into the same
+   * monotonic update pipeline.
+   */
+  executionContextSignalHandler?: (signal: SessionExecutionContextSignal) => void
 
   // ── Completion tracking (replaces 3 Maps/Sets) ─────────────────────────
 

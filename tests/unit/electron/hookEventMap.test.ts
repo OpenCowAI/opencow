@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, it, vi } from 'vitest'
-import type { HookInput } from '@anthropic-ai/claude-agent-sdk'
+import type { HookInput } from '@opencow-ai/opencow-agent-sdk'
 import { buildSDKHooks } from '../../../electron/hooks/buildSDKHooks'
 import {
   HOOK_EVENT_TYPE_MAP,

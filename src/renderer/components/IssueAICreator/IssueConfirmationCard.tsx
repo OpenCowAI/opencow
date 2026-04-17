@@ -41,10 +41,14 @@ export interface IssueConfirmationCardProps {
   /** Called when user wants to edit — parent opens IssueFormModal. */
   onEdit?: (issue: ParsedIssueOutput) => void
   /**
-   * Externally-created issue — set by the parent when the issue was created
-   * via IssueFormModal (Edit flow) rather than the card's own Create button.
+   * Externally-created issue reference.
+   *
+   * Keep this as a minimal ref model (id only) so callers can restore created
+   * state without fabricating full Issue entities.
    */
-  createdIssue?: Issue | null
+  createdIssueRef?: { id: string } | null
+  /** Optional container class override for placement differences across contexts. */
+  className?: string
 }
 
 // ─── Component ──────────────────────────────────────────────────────────────
@@ -55,17 +59,18 @@ export const IssueConfirmationCard = memo(function IssueConfirmationCard({
   onDiscard,
   onNavigate,
   onEdit,
-  createdIssue: externalCreatedIssue
+  createdIssueRef: externalCreatedIssueRef,
+  className,
 }: IssueConfirmationCardProps): React.JSX.Element {
   const { t } = useTranslation('issues')
 
   const [cardState, setCardState] = useState<CardState>('preview')
-  const [internalCreatedIssue, setInternalCreatedIssue] = useState<Issue | null>(null)
+  const [internalCreatedIssueId, setInternalCreatedIssueId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
-  // Merge internal + external created issue (external comes from IssueFormModal flow)
-  const createdIssue = externalCreatedIssue ?? internalCreatedIssue
-  const isCreated = cardState === 'created' || !!externalCreatedIssue
+  // Merge internal + external created refs (external comes from parent-managed flows).
+  const createdIssueId = externalCreatedIssueRef?.id ?? internalCreatedIssueId
+  const isCreated = cardState === 'created' || !!createdIssueId
   const isCreating = cardState === 'creating'
   const isDiscarded = cardState === 'discarded'
 
@@ -76,7 +81,7 @@ export const IssueConfirmationCard = memo(function IssueConfirmationCard({
     setError(null)
     try {
       const created = await onConfirm(issue)
-      setInternalCreatedIssue(created)
+      setInternalCreatedIssueId(created.id)
       setCardState('created')
     } catch (err) {
       setError(err instanceof Error ? err.message : t('aiCreator.card.createFailed'))
@@ -102,7 +107,7 @@ export const IssueConfirmationCard = memo(function IssueConfirmationCard({
 
   if (isDiscarded) {
     return (
-      <div className="ml-4 mt-2 max-w-md rounded-xl border border-[hsl(var(--border)/0.3)] bg-[hsl(var(--card)/0.5)] p-3 opacity-50">
+      <div className={cn('ml-4 mt-2 max-w-md rounded-xl border border-[hsl(var(--border)/0.3)] bg-[hsl(var(--card)/0.5)] p-3 opacity-50', className)}>
         <span className="text-xs text-[hsl(var(--muted-foreground))] line-through">
           {issue.title}
         </span>
@@ -121,7 +126,8 @@ export const IssueConfirmationCard = memo(function IssueConfirmationCard({
         'ml-4 mt-2 max-w-md rounded-xl border overflow-hidden transition-colors',
         isCreated
           ? 'border-green-500/30 bg-[hsl(var(--card))]'
-          : 'border-[hsl(var(--border)/0.5)] bg-[hsl(var(--card))]'
+          : 'border-[hsl(var(--border)/0.5)] bg-[hsl(var(--card))]',
+        className,
       )}
       role="region"
       aria-label={t('aiCreator.card.confirmationAria')}
@@ -192,7 +198,7 @@ export const IssueConfirmationCard = memo(function IssueConfirmationCard({
         <div>
           {isCreated ? (
             <button
-              onClick={() => createdIssue && onNavigate?.(createdIssue.id)}
+              onClick={() => createdIssueId && onNavigate?.(createdIssueId)}
               className="inline-flex items-center gap-1 text-[11px] text-[hsl(var(--primary))] hover:underline"
             >
               <ExternalLink className="w-3 h-3" aria-hidden />

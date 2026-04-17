@@ -7,6 +7,7 @@ import type { ConversationDomainEffect } from '../domain/effects'
 import { toManagedContentBlocks } from './contentBlockMapper'
 import { resolveContextLimitOverride } from './contextUsage'
 import { registerEvoseRelayForProjection } from './evoseRelay'
+import { normalizeContextSnapshot } from './contextSignalNormalizer'
 import { terminalizeSession } from './terminalization'
 
 const log = createLogger('ConversationEffectProjector')
@@ -174,8 +175,9 @@ export function applyConversationDomainEffects(params: {
         if (effect.payload.model) {
           ctx.session.setModel(effect.payload.model)
         }
-        ctx.session.transition({ type: 'engine_initialized' })
-        ctx.onStreamStarted()
+        if (ctx.notifyStreamStartedOnce()) {
+          ctx.session.transition({ type: 'engine_initialized' })
+        }
         ctx.dispatchSessionUpdated()
         break
       }
@@ -219,8 +221,7 @@ export function applyConversationDomainEffects(params: {
           ctx.session.setActivity(activity)
         }
 
-        // Codex emits MCP tool_call items as partial updates while the tool is
-        // running. Register Evose relay at partial time so SSE chunks can be
+        // Register Evose relay at partial time so SSE chunks can be
         // consumed immediately, instead of waiting for assistant.final (which
         // may arrive only after tool completion).
         if (streamingMessageId) {
@@ -290,6 +291,22 @@ export function applyConversationDomainEffects(params: {
         break
       }
 
+      case 'apply_user_tool_result': {
+        // Persist the engine-emitted user-role tool_result message so
+        // per-turn resume can replay the model's full view of the turn.
+        // Includes both a ToolResultBlock (text payload) and any extracted
+        // media blocks (e.g. browser_screenshot PNG) carrying the originating
+        // toolUseId for context-aware rendering.
+        const blocks = toManagedContentBlocks(effect.payload.blocks)
+        if (blocks.length === 0) break
+        const messageId = ctx.session.addMessage('user', blocks, false)
+        // Queued: tool_result lands between assistant.final (hasToolUse=true)
+        // and the next assistant.partial — coalesce into the same throttle
+        // window so the renderer sees both in one batch.
+        ctx.queueMessageDispatch(messageId)
+        break
+      }
+
       case 'apply_turn_usage': {
         // Pure token accounting — context window tracking is handled separately
         // by context.snapshot events emitted from engine adapters.
@@ -299,16 +316,24 @@ export function applyConversationDomainEffects(params: {
       }
 
       case 'apply_context_snapshot': {
-        const changed = ctx.session.applyContextSnapshot({
-          usedTokens: effect.payload.usedTokens,
-          limitTokens: effect.payload.limitTokens,
-          source: effect.payload.source,
-          confidence: effect.payload.confidence,
-          updatedAtMs: effect.payload.updatedAtMs ?? Date.now(),
+        const normalized = normalizeContextSnapshot({
+          snapshot: effect.payload,
+          occurredAtMs: Date.now(),
         })
+        if (!normalized) break
+        const changed = ctx.session.applyContextSnapshot(normalized)
         if (changed) {
           ctx.throttle.scheduleSession()   // throttled: coalesce O(n) getInfo()
         }
+        break
+      }
+
+      case 'apply_execution_context_signal': {
+        ctx.onExecutionContextSignal({
+          cwd: effect.payload.cwd,
+          source: 'runtime',
+          occurredAtMs: effect.payload.occurredAtMs,
+        })
         break
       }
 

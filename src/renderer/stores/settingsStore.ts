@@ -3,14 +3,6 @@
 /**
  * settingsStore — Application settings and AI provider status.
  *
- * Combines the former SettingsSlice and ProviderSlice into one store
- * because they share a mutual dependency: setSettings reads
- * providerStatusByEngine, and setProviderStatus reads settings
- * to resolve the default engine.
- *
- * Completely independent of all other stores — no cross-store reads
- * or writes.
- *
  * Populated by:
  *   - bootstrapCoordinator (setSettings, setProviderStatus, setSystemLocale)
  *   - DataBus settings:updated / provider:status events in useAppBootstrap
@@ -20,7 +12,6 @@
 import { create } from 'zustand'
 import { createLogger } from '@/lib/logger'
 import type {
-  AIEngineKind,
   AppSettings,
   ProviderStatus,
 } from '@shared/types'
@@ -38,15 +29,7 @@ interface SetProviderStatusInput {
   status: ProviderStatus | null
 }
 
-interface SetProviderStatusForEngineInput {
-  engineKind: AIEngineKind
-  status: ProviderStatus | null
-  syncGlobal?: boolean
-}
-
 interface LoadProviderStatusInput {
-  engineKind: AIEngineKind
-  syncGlobal?: boolean
   force?: boolean
   maxAgeMs?: number
 }
@@ -68,10 +51,8 @@ export interface SettingsStore {
 
   // Provider state
   providerStatus: ProviderStatus | null
-  providerStatusByEngine: Record<AIEngineKind, ProviderStatus | null>
   setProviderStatus: (input: SetProviderStatusInput) => void
-  setProviderStatusForEngine: (input: SetProviderStatusForEngineInput) => void
-  loadProviderStatus: (input: LoadProviderStatusInput) => Promise<ProviderStatus | null>
+  loadProviderStatus: (input?: LoadProviderStatusInput) => Promise<ProviderStatus | null>
 
   // Reset
   reset: () => void
@@ -80,10 +61,6 @@ export interface SettingsStore {
 // ─── Helpers ──────────────────────────────────────────────────────────
 
 const log = createLogger('SettingsStore')
-
-function resolveDefaultProviderEngine(settings: AppSettings | null): AIEngineKind {
-  return settings?.command.defaultEngine ?? 'claude'
-}
 
 /**
  * Module-level mutable state for debounced settings persistence.
@@ -125,26 +102,14 @@ const initialState = {
   settingsModalTab: null as SettingsTab | null,
   systemLocale: 'en-US',
   providerStatus: null as ProviderStatus | null,
-  providerStatusByEngine: {
-    claude: null,
-    codex: null,
-  } as Record<AIEngineKind, ProviderStatus | null>,
 }
 
 // ─── Store ────────────────────────────────────────────────────────────
 
 export const useSettingsStore = create<SettingsStore>((set, get) => ({
-  // Settings slice
   ...initialState,
 
-  setSettings: (settings) =>
-    set((s) => {
-      const defaultEngine = resolveDefaultProviderEngine(settings)
-      return {
-        settings,
-        providerStatus: s.providerStatusByEngine[defaultEngine] ?? null,
-      }
-    }),
+  setSettings: (settings) => set({ settings }),
   setSystemLocale: (locale) => set({ systemLocale: locale }),
   openSettingsModal: (tab) => set({ settingsModalOpen: true, settingsModalTab: tab ?? null }),
   closeSettingsModal: () => {
@@ -153,49 +118,22 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
   },
   updateSettings: async (settings) => {
     // Optimistic update — apply immediately to avoid theme flicker
-    set((s) => {
-      const defaultEngine = resolveDefaultProviderEngine(settings)
-      return {
-        settings,
-        providerStatus: s.providerStatusByEngine[defaultEngine] ?? null,
-      }
-    })
+    set({ settings })
     // Debounced IPC write to avoid excessive disk writes on rapid input
     debouncedPersistSettings(settings)
   },
 
-  // Provider slice
-  setProviderStatus: ({ status }) =>
-    set((s) => {
-      const defaultEngine = resolveDefaultProviderEngine(s.settings)
-      primeProviderStatusCache({ engineKind: defaultEngine, status })
-      return {
-        providerStatus: status,
-        providerStatusByEngine: {
-          ...s.providerStatusByEngine,
-          [defaultEngine]: status,
-        },
-      }
-    }),
-  setProviderStatusForEngine: ({ engineKind, status, syncGlobal }) =>
-    set((s) => {
-      const shouldSyncGlobal = syncGlobal ?? engineKind === resolveDefaultProviderEngine(s.settings)
-      primeProviderStatusCache({ engineKind, status })
-      return {
-        providerStatusByEngine: {
-          ...s.providerStatusByEngine,
-          [engineKind]: status,
-        },
-        ...(shouldSyncGlobal ? { providerStatus: status } : {}),
-      }
-    }),
-  loadProviderStatus: async ({ engineKind, syncGlobal, force = false, maxAgeMs }) => {
+  setProviderStatus: ({ status }) => {
+    primeProviderStatusCache({ status })
+    set({ providerStatus: status })
+  },
+  loadProviderStatus: async ({ force = false, maxAgeMs } = {}) => {
     try {
-      const status = await queryProviderStatus({ engineKind, force, maxAgeMs })
-      get().setProviderStatusForEngine({ engineKind, status, syncGlobal })
+      const status = await queryProviderStatus({ force, maxAgeMs })
+      get().setProviderStatus({ status })
       return status
     } catch (error: unknown) {
-      log.error('Failed to load provider status', { engineKind, error })
+      log.error('Failed to load provider status', { error })
       return null
     }
   },

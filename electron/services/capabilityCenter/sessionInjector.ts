@@ -12,7 +12,6 @@
 import type {
   DocumentCapabilityEntry,
   CapabilitySnapshot,
-  AIEngineKind,
   StartSessionNativeToolAllowItem,
 } from '@shared/types'
 import type { StateRepository } from './stateRepository'
@@ -24,23 +23,17 @@ import { resolveDistributionTargetType } from './distributionTargets'
 import {
   resolveSkillActivationDecisions,
   resolveSkillActivationPolicy,
-  type ImplicitSkillMatchPolicy,
   type SkillActivationDecision,
   type SkillActivationSource,
 } from './skillActivationEngine'
 import {
   buildRulePromptSegment,
-  buildSkillPromptSegment,
-  type SkillPromptSegment,
 } from './promptSegmentBuilder'
-import { allocateWithinBudget, type BudgetCandidate } from './promptBudgetAllocator'
+// Phase 1B.11d: budget allocator import removed (skill prompt segments no longer built here)
 
 const log = createLogger('SessionInjector')
 
-const DEFAULT_MAX_SKILL_CHARS_BY_ENGINE: Readonly<Record<AIEngineKind, number>> = {
-  claude: 80_000,
-  codex: 24_000,
-}
+const DEFAULT_MAX_SKILL_CHARS = 80_000
 
 /**
  * SDK-ready MCP server config — opaque record passed directly to the SDK.
@@ -97,7 +90,6 @@ export interface PlanSummary {
 
 export interface CapabilityPlanRequest {
   session: {
-    engineKind: AIEngineKind
     agentName?: string
   }
   activation?: {
@@ -106,7 +98,7 @@ export interface CapabilityPlanRequest {
   }
   policy?: {
     maxSkillChars?: number
-    implicit?: Partial<ImplicitSkillMatchPolicy>
+    implicit?: Partial<{ enabled: boolean }>
   }
 }
 
@@ -116,11 +108,11 @@ export async function buildCapabilityPlan(params: {
   request: CapabilityPlanRequest
 }): Promise<CapabilityPlan> {
   const { snapshot, stateRepo, request } = params
-  const { engineKind, agentName } = request.session
-  const maxSkillChars = request.policy?.maxSkillChars ?? DEFAULT_MAX_SKILL_CHARS_BY_ENGINE[engineKind]
+  const { agentName } = request.session
+  const maxSkillChars = request.policy?.maxSkillChars ?? DEFAULT_MAX_SKILL_CHARS
 
   let skills = snapshot.skills.filter((entry) => entry.enabled && entry.eligibility.eligible)
-  const distributionResult = await filterDistributedSkills(skills, stateRepo, engineKind)
+  const distributionResult = await filterDistributedSkills(skills, stateRepo)
   skills = distributionResult.skills
 
   const agent = agentName
@@ -160,39 +152,18 @@ export async function buildCapabilityPlan(params: {
     activationDecisions.map((decision) => [decision.skillName, decision]),
   )
 
-  const skillSegments = skills.map((skill) => {
-    const decision = decisionsBySkillName.get(skill.name)
-    if (!decision) {
-      throw new Error(`Missing activation decision for skill "${skill.name}"`)
-    }
-    return buildSkillPromptSegment(skill, decision)
-  })
-
-  const budgetCandidates: Array<BudgetCandidate<SkillPromptSegment>> = skillSegments.map((segment, index) => ({
-    id: segment.id,
-    order: index,
-    priority: toSkillSegmentPriority(segment.source, segment.mode),
-    charCost: segment.charCost,
-    payload: segment,
-  }))
-
-  const budgetResult = allocateWithinBudget(budgetCandidates, maxSkillChars)
-  const selectedSkillSegments = budgetResult.selected.map((candidate) => candidate.payload)
-  const skippedByBudget = budgetResult.dropped.map((candidate) => candidate.payload.skillName)
-
-  if (skippedByBudget.length > 0) {
-    log.info(
-      `Skill prompt budget reached (${budgetResult.usedChars}/${budgetResult.maxChars} chars); skipped=[${skippedByBudget.join(', ')}]`,
-    )
-  }
+  // Phase 1B.11d: skill prompt segments removed from capabilityPrompt.
+  // Skills are now surfaced via SDK's built-in SkillTool (Options.commands)
+  // which handles catalog, delta-emit, and activation. Injecting skill
+  // body into the static system prompt was the old "山寨" path — it
+  // double-injected content (once here, once via SkillTool) and wasted
+  // tokens. Only rules remain in capabilityPrompt.
+  const skippedByBudget: string[] = []
 
   const rules = snapshot.rules.filter((entry) => entry.enabled && entry.eligibility.eligible)
   const ruleSegments = rules.map((rule) => buildRulePromptSegment(rule))
 
-  const capabilityPrompt = [
-    ...selectedSkillSegments.map((segment) => segment.content),
-    ...ruleSegments.map((segment) => segment.content),
-  ].join('\n\n')
+  const capabilityPrompt = ruleSegments.map((segment) => segment.content).join('\n\n')
 
   const agentPrompt = agent?.body ?? null
 
@@ -231,14 +202,11 @@ export async function buildCapabilityPlan(params: {
     mcpServers[mcp.name] = sdkConfig
   }
 
-  const selectedSkillNameSet = new Set(selectedSkillSegments.map((segment) => segment.skillName))
-
-  // Collect native tool requirements ONLY from budget-selected skills.
-  // A skill that was dropped by the budget allocator has no prompt in the
-  // system message — Claude cannot see or invoke it, so registering its
-  // native tools would be a resource waste and a logical inconsistency.
-  const selectedSkills = skills.filter((s) => selectedSkillNameSet.has(s.name))
-  const nativeRequirements = collectNativeRequirementsFromSkills(selectedSkills, decisionsBySkillName)
+  // Phase 1B.11d: nativeRequirements collected from ALL eligible skills (no
+  // budget filtering — skills are no longer prompt-injected, so budget doesn't
+  // control visibility). This preserves the EvoseSkillProvider bridge: Evose
+  // skills declare nativeRequirements that add evose tools to the allowlist.
+  const nativeRequirements = collectNativeRequirementsFromSkills(skills, decisionsBySkillName)
 
   return {
     capabilityPrompt,
@@ -248,7 +216,7 @@ export async function buildCapabilityPlan(params: {
     nativeRequirements,
     totalChars: capabilityPrompt.length + (agentPrompt?.length ?? 0),
     summary: {
-      skills: selectedSkillSegments.map((segment) => segment.skillName),
+      skills: skills.map((s) => s.name),
       agent: agent?.name ?? null,
       rules: rules.map((rule) => rule.name),
       hooks: enabledHooks.map((hook) => hook.name),
@@ -259,7 +227,7 @@ export async function buildCapabilityPlan(params: {
         skillName: decision.skillName,
         mode: decision.mode,
         source: decision.source,
-        selected: selectedSkillNameSet.has(decision.skillName),
+        selected: decision.mode === 'full',
         reason: decision.reason,
         score: decision.score,
         threshold: decision.threshold,
@@ -271,17 +239,16 @@ export async function buildCapabilityPlan(params: {
 async function filterDistributedSkills(
   skills: DocumentCapabilityEntry[],
   stateRepo: StateRepository,
-  engineKind: AIEngineKind,
 ): Promise<{ skills: DocumentCapabilityEntry[]; skippedDistributed: string[] }> {
   const projectSkillNames = skills.filter((skill) => skill.scope === 'project').map((skill) => skill.name)
   const globalSkillNames = skills.filter((skill) => skill.scope === 'global').map((skill) => skill.name)
 
   const [projectDistributions, globalDistributions] = await Promise.all([
     stateRepo.batchGetDistributions('skill', projectSkillNames, {
-      targetTypes: [mapScopeToTarget('project', engineKind)],
+      targetTypes: [mapScopeToTarget('project')],
     }),
     stateRepo.batchGetDistributions('skill', globalSkillNames, {
-      targetTypes: [mapScopeToTarget('global', engineKind)],
+      targetTypes: [mapScopeToTarget('global')],
     }),
   ])
 
@@ -308,33 +275,10 @@ function resolveAgentSkillNames(agent: DocumentCapabilityEntry | null): Set<stri
   return new Set(values)
 }
 
-function toSkillSegmentPriority(
-  source: SkillActivationSource,
-  mode: SkillPromptSegment['mode'],
-): number {
-  const base = (() => {
-    switch (source) {
-      case 'always':
-        return 100
-      case 'agent':
-        return 90
-      case 'explicit':
-        return 80
-      case 'implicit':
-        return 70
-      default:
-        return 10
-    }
-  })()
+// Phase 1B.11d: toSkillSegmentPriority deleted (skill prompt segments removed)
 
-  return mode === 'full' ? base + 5 : base
-}
-
-function mapScopeToTarget(scope: 'global' | 'project', engineKind: AIEngineKind): string {
-  if (engineKind === 'claude') {
-    return resolveDistributionTargetType({ scope, engineKind: 'claude' })
-  }
-  return resolveDistributionTargetType({ scope, engineKind: 'codex' })
+function mapScopeToTarget(scope: 'global' | 'project'): string {
+  return resolveDistributionTargetType({ scope, engineKind: 'claude' })
 }
 
 /**
@@ -381,63 +325,8 @@ function collectNativeRequirementsFromSkills(
   return out
 }
 
-/**
- * Lightweight check: resolve native requirements from skills that would be
- * implicitly activated by the given plain-text query.
- *
- * This is the reconfiguration counterpart to the full `buildCapabilityPlan`
- * pipeline. It runs only the implicit skill matching portion against skills
- * that declare `metadata.nativeRequirements`, then returns the aggregated
- * requirements.
- *
- * Use case: when `sendMessage()` pushes a follow-up message to a reused IM
- * session (WeChat, Telegram, etc.), the explicit reconfiguration check
- * (`decideSessionReconfiguration`) only catches slash-command requirements.
- * This function catches plain-text references to skills like Evose apps,
- * enabling the orchestrator to restart the lifecycle when the current session
- * lacks the required native tools.
- *
- * Excludes `always`-on skills since their requirements are guaranteed to be
- * present from session creation.
- */
-export function resolveImplicitNativeRequirements(params: {
-  snapshot: CapabilitySnapshot
-  implicitQuery: string
-}): StartSessionNativeToolAllowItem[] {
-  const { snapshot, implicitQuery } = params
-
-  // Filter for enabled, eligible skills that declare native requirements
-  // and are NOT always-on (those are already active from session creation).
-  const candidates = snapshot.skills.filter((entry) => {
-    if (!entry.enabled || !entry.eligibility.eligible) return false
-    if (entry.metadata?.['always'] === true) return false
-    const reqs = entry.metadata?.['nativeRequirements']
-    return Array.isArray(reqs) && reqs.length > 0
-  })
-
-  if (candidates.length === 0) return []
-
-  const policy = resolveSkillActivationPolicy()
-  const decisions = resolveSkillActivationDecisions(
-    candidates,
-    {
-      explicitSkillNames: new Set(),
-      agentSkillNames: new Set(),
-      implicitQuery,
-    },
-    policy,
-  )
-
-  // Only consider skills activated via implicit matching — explicit and agent
-  // activations are already handled by the existing reconfiguration paths.
-  const implicitFullDecisions = new Map<string, SkillActivationDecision>()
-  for (const d of decisions) {
-    if (d.mode === 'full' && d.source === 'implicit') {
-      implicitFullDecisions.set(d.skillName, d)
-    }
-  }
-
-  if (implicitFullDecisions.size === 0) return []
-
-  return collectNativeRequirementsFromSkills(candidates, implicitFullDecisions)
-}
+// Phase 1B.11d: resolveImplicitNativeRequirements deleted.
+// Implicit keyword matching has been removed — skill activation is now
+// model-driven via the SDK's built-in SkillTool. All native capabilities
+// are exposed by default (commit d03bac05), so the nativeRequirements
+// bridge is no longer needed to "unlock" tools from implicit skill matches.

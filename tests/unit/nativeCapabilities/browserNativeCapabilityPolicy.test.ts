@@ -2,6 +2,8 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { NativeCapabilityToolContext } from '../../../electron/nativeCapabilities/types'
+import type { OpenCowSessionContext } from '../../../electron/nativeCapabilities/openCowSessionContext'
+import type { ToolProgressRelay } from '../../../electron/utils/toolProgressRelay'
 
 const { mockGetMainWindow } = vi.hoisted(() => ({
   mockGetMainWindow: vi.fn(() => ({}) as never),
@@ -13,28 +15,65 @@ vi.mock('../../../electron/window/windowManager', () => ({
 
 import { BrowserNativeCapability } from '../../../electron/nativeCapabilities/browser/browserNativeCapability'
 
+function makeRelay(): ToolProgressRelay {
+  return {
+    register: vi.fn(),
+    unregister: vi.fn(),
+    emit: vi.fn(),
+    flush: vi.fn(),
+  } as unknown as ToolProgressRelay
+}
+
+function makeSessionContext(params: {
+  projectId: string | null
+  issueId?: string | null
+  projectPath?: string | undefined
+  startupCwd?: string
+}): OpenCowSessionContext {
+  return {
+    sessionId: 'session-1',
+    cwd: params.startupCwd ?? params.projectPath ?? '/tmp',
+    abortSignal: new AbortController().signal,
+    projectId: params.projectId,
+    issueId: params.issueId ?? null,
+    originSource: 'agent',
+    ...(params.projectPath !== undefined ? { projectPath: params.projectPath } : {}),
+    ...(params.startupCwd !== undefined ? { startupCwd: params.startupCwd } : {}),
+    relay: makeRelay(),
+  }
+}
+
 function makeContext(params: {
   projectId: string | null
   issueId?: string | null
-  projectPath?: string | null
+  projectPath?: string | undefined
   startupCwd?: string
 }): NativeCapabilityToolContext {
   return {
-    session: {
-      sessionId: 'session-1',
-      projectId: params.projectId,
-      issueId: params.issueId ?? null,
-      originSource: 'agent',
-      projectPath: params.projectPath,
-      startupCwd: params.startupCwd,
-    },
-    relay: {
-      register: vi.fn(),
-      unregister: vi.fn(),
-      emit: vi.fn(),
-      flush: vi.fn(),
-    } as unknown as NativeCapabilityToolContext['relay'],
+    sessionContext: makeSessionContext(params),
+    hostEnvironment: { activeMcpServerNames: [] },
   }
+}
+
+/**
+ * Phase 1B.11 helper: invoke a descriptor's execute with the new SDK shape.
+ */
+async function executeTool(
+  ctx: NativeCapabilityToolContext,
+  tool: { execute: (input: never) => Promise<unknown> },
+  args: Record<string, unknown>,
+) {
+  return (tool.execute as (input: {
+    args: Record<string, unknown>
+    sessionContext: OpenCowSessionContext
+    toolUseId: string
+    abortSignal: AbortSignal
+  }) => Promise<unknown>)({
+    args,
+    sessionContext: ctx.sessionContext,
+    toolUseId: 'browser-policy-test',
+    abortSignal: new AbortController().signal,
+  })
 }
 
 describe('BrowserNativeCapability default policy', () => {
@@ -70,13 +109,11 @@ describe('BrowserNativeCapability default policy', () => {
       bus: { dispatch: busDispatch } as never,
     })
 
-    const tools = capability.getToolDescriptors(makeContext({ projectId: null }))
+    const ctx = makeContext({ projectId: null })
+    const tools = capability.getToolDescriptors(ctx)
     const navigateTool = tools.find((t) => t.name === 'browser_navigate')
     expect(navigateTool).toBeTruthy()
-    await navigateTool!.execute({
-      args: { url: 'https://example.com' },
-      context: {},
-    })
+    await executeTool(ctx, navigateTool!, { url: 'https://example.com' })
 
     expect(resolveStateBinding).toHaveBeenCalledWith({
       source: { type: 'chat-session', sessionId: 'session-1' },
@@ -99,13 +136,11 @@ describe('BrowserNativeCapability default policy', () => {
       resolveProjectBrowserStatePolicy: vi.fn().mockResolvedValue('shared-project'),
     })
 
-    const tools = capability.getToolDescriptors(makeContext({ projectId: 'project-1' }))
+    const ctx = makeContext({ projectId: 'project-1' })
+    const tools = capability.getToolDescriptors(ctx)
     const navigateTool = tools.find((t) => t.name === 'browser_navigate')
     expect(navigateTool).toBeTruthy()
-    await navigateTool!.execute({
-      args: { url: 'https://example.com' },
-      context: {},
-    })
+    await executeTool(ctx, navigateTool!, { url: 'https://example.com' })
 
     expect(resolveStateBinding).toHaveBeenCalledWith({
       source: { type: 'chat-session', sessionId: 'session-1' },
@@ -128,13 +163,11 @@ describe('BrowserNativeCapability default policy', () => {
       resolveProjectBrowserStatePolicy: vi.fn().mockResolvedValue('isolated-session'),
     })
 
-    const tools = capability.getToolDescriptors(makeContext({ projectId: 'project-1' }))
+    const ctx = makeContext({ projectId: 'project-1' })
+    const tools = capability.getToolDescriptors(ctx)
     const navigateTool = tools.find((t) => t.name === 'browser_navigate')
     expect(navigateTool).toBeTruthy()
-    await navigateTool!.execute({
-      args: { url: 'https://example.com' },
-      context: {},
-    })
+    await executeTool(ctx, navigateTool!, { url: 'https://example.com' })
 
     expect(resolveStateBinding).toHaveBeenCalledWith({
       source: { type: 'chat-session', sessionId: 'session-1' },
@@ -157,13 +190,11 @@ describe('BrowserNativeCapability default policy', () => {
       resolveProjectBrowserStatePolicy: vi.fn().mockResolvedValue('isolated-issue'),
     })
 
-    const tools = capability.getToolDescriptors(makeContext({ projectId: 'project-1', issueId: 'issue-1' }))
+    const ctx = makeContext({ projectId: 'project-1', issueId: 'issue-1' })
+    const tools = capability.getToolDescriptors(ctx)
     const navigateTool = tools.find((t) => t.name === 'browser_navigate')
     expect(navigateTool).toBeTruthy()
-    await navigateTool!.execute({
-      args: { url: 'https://example.com' },
-      context: {},
-    })
+    await executeTool(ctx, navigateTool!, { url: 'https://example.com' })
 
     expect(resolveStateBinding).toHaveBeenCalledWith({
       source: { type: 'issue-session', issueId: 'issue-1', sessionId: 'session-1' },
@@ -186,13 +217,11 @@ describe('BrowserNativeCapability default policy', () => {
       resolveProjectBrowserStatePolicy: vi.fn().mockResolvedValue('isolated-issue'),
     })
 
-    const tools = capability.getToolDescriptors(makeContext({ projectId: 'project-1' }))
+    const ctx = makeContext({ projectId: 'project-1' })
+    const tools = capability.getToolDescriptors(ctx)
     const navigateTool = tools.find((t) => t.name === 'browser_navigate')
     expect(navigateTool).toBeTruthy()
-    await navigateTool!.execute({
-      args: { url: 'https://example.com' },
-      context: {},
-    })
+    await executeTool(ctx, navigateTool!, { url: 'https://example.com' })
 
     expect(resolveStateBinding).toHaveBeenCalledWith({
       source: { type: 'chat-session', sessionId: 'session-1' },
@@ -214,23 +243,19 @@ describe('BrowserNativeCapability default policy', () => {
       bus: { dispatch: busDispatch } as never,
     })
 
-    const tools = capability.getToolDescriptors(
-      makeContext({
-        projectId: 'project-1',
-        projectPath: '/workspace/project-1',
-        startupCwd: '/workspace/project-1/packages/app',
-      }),
-    )
+    const ctx = makeContext({
+      projectId: 'project-1',
+      projectPath: '/workspace/project-1',
+      startupCwd: '/workspace/project-1/packages/app',
+    })
+    const tools = capability.getToolDescriptors(ctx)
     const uploadTool = tools.find((t) => t.name === 'browser_upload')
     expect(uploadTool).toBeTruthy()
     expect(uploadTool!.name).toBe('browser_upload')
 
-    await uploadTool!.execute({
-      args: {
-        target: { kind: 'css', selector: '#file' },
-        files: ['fixtures/avatar.png'],
-      },
-      context: {},
+    await executeTool(ctx, uploadTool!, {
+      target: { kind: 'css', selector: '#file' },
+      files: ['fixtures/avatar.png'],
     })
 
     expect(resolveStateBinding).toHaveBeenCalledTimes(1)

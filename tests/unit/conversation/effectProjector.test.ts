@@ -26,6 +26,8 @@ function makeContext(params: { engineKind: 'claude' | 'codex' }) {
     origin: { source: 'issue' },
     addMessage: vi.fn(() => 'assistant-new-1'),
     getLastMessageRef: vi.fn(() => ({ id: 'assistant-new-1', role: 'assistant' })),
+    setEngineSessionRef: vi.fn(),
+    setModel: vi.fn(),
     recordTurnUsage: vi.fn(),
     getEngineKind: vi.fn(() => params.engineKind),
     applyContextSnapshot: vi.fn(() => true),
@@ -61,10 +63,13 @@ function makeContext(params: { engineKind: 'claude' | 'codex' }) {
     buffer: { isActive: false, begin: vi.fn(), updateBlocks: vi.fn(), setActiveToolUseId: vi.fn(), appendToolProgress: vi.fn(), getSnapshot: vi.fn(() => null), finalize: vi.fn(() => null), clear: vi.fn() },
     stream: { finalizeStreaming: vi.fn(() => null), beginStreaming: vi.fn(), isStreaming: false, streamingMessageId: null },
     relay: { clear: vi.fn() },
+    onStreamStarted: vi.fn(),
     onResultReceived: vi.fn(),
+    onExecutionContextSignal: vi.fn(),
     persistSession: vi.fn(() => Promise.resolve()),
     sessionId: 'session-1',
     isSessionAlive: vi.fn(() => true),
+    notifyStreamStartedOnce: vi.fn(() => true),
   } as unknown as SessionContext & {
     session: typeof session
     dispatchSessionUpdated: ReturnType<typeof vi.fn>
@@ -99,6 +104,7 @@ describe('applyConversationDomainEffects', () => {
       {
         type: 'apply_context_snapshot',
         payload: {
+          metricKind: 'context_occupancy',
           usedTokens: 1024,
           limitTokens: 272000,
           remainingTokens: 270976,
@@ -113,6 +119,7 @@ describe('applyConversationDomainEffects', () => {
     applyConversationDomainEffects({ effects, ctx })
 
     expect(ctx.session.applyContextSnapshot).toHaveBeenCalledWith({
+      metricKind: 'context_occupancy',
       usedTokens: 1024,
       limitTokens: 272000,
       source: 'codex.token_count',
@@ -127,6 +134,7 @@ describe('applyConversationDomainEffects', () => {
       {
         type: 'apply_context_snapshot',
         payload: {
+          metricKind: 'context_occupancy',
           usedTokens: 90000,
           limitTokens: null,
           remainingTokens: null,
@@ -140,6 +148,7 @@ describe('applyConversationDomainEffects', () => {
     applyConversationDomainEffects({ effects, ctx })
 
     expect(ctx.session.applyContextSnapshot).toHaveBeenCalledWith({
+      metricKind: 'context_occupancy',
       usedTokens: 90000,
       limitTokens: null,
       source: 'claude.assistant_usage',
@@ -252,5 +261,62 @@ describe('applyConversationDomainEffects', () => {
     const [relayKey] = relayRegister.mock.calls[0] ?? []
     expect(relayKey).toBe('evose_run_agent:92226822732779520')
     expect(sessionSetActiveToolUseId).toHaveBeenCalledWith(expect.any(String), 'tool-evose-1')
+  })
+
+  it('forwards apply_execution_context_signal to session context callback', () => {
+    const ctx = makeContext({ engineKind: 'codex' })
+
+    const effects: ConversationDomainEffect[] = [
+      {
+        type: 'apply_execution_context_signal',
+        payload: {
+          cwd: '/tmp/opencow-worktree',
+          source: 'runtime.tool',
+          toolUseId: 'cmd-1',
+          toolName: 'Bash',
+          occurredAtMs: 1_777_000_000_000,
+        },
+      },
+    ]
+
+    applyConversationDomainEffects({ effects, ctx })
+
+    expect(ctx.onExecutionContextSignal).toHaveBeenCalledWith({
+      cwd: '/tmp/opencow-worktree',
+      source: 'runtime',
+      occurredAtMs: 1_777_000_000_000,
+    })
+  })
+
+  it('applies session.initialized startup side-effects only once per lifecycle', () => {
+    const ctx = makeContext({ engineKind: 'codex' })
+    ctx.notifyStreamStartedOnce = vi
+      .fn()
+      .mockReturnValueOnce(true)
+      .mockReturnValueOnce(false) as never
+
+    const effects: ConversationDomainEffect[] = [
+      {
+        type: 'apply_session_initialized',
+        payload: {
+          sessionRef: 'thread-1',
+          model: 'gpt-5.3-codex',
+        },
+      },
+      {
+        type: 'apply_session_initialized',
+        payload: {
+          sessionRef: 'thread-1',
+          model: 'gpt-5.3-codex',
+        },
+      },
+    ]
+
+    applyConversationDomainEffects({ effects, ctx })
+
+    expect(ctx.notifyStreamStartedOnce).toHaveBeenCalledTimes(2)
+    expect(ctx.session.transition).toHaveBeenCalledTimes(1)
+    expect(ctx.session.transition).toHaveBeenCalledWith({ type: 'engine_initialized' })
+    expect(ctx.dispatchSessionUpdated).toHaveBeenCalledTimes(2)
   })
 })

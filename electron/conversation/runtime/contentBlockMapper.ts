@@ -20,7 +20,17 @@ export function toConversationContentBlocks(blocks: ContentBlock[]): Conversatio
         result.push({ type: 'text', text: block.text } satisfies ConversationTextBlock)
         break
       case 'thinking':
-        result.push({ type: 'thinking', thinking: block.thinking } satisfies ConversationThinkingBlock)
+        result.push({
+          type: 'thinking',
+          thinking: block.thinking,
+          // Carry provenance + any provider-specific replay token through the
+          // domain layer — `sdkHistoryMapper` uses these to decide whether
+          // the block can be replayed on the current API.
+          // See plans/cross-provider-thinking.md §5.3.
+          ...(block.provenance ? { provenance: block.provenance } : {}),
+          ...(block.signature ? { signature: block.signature } : {}),
+          ...(block.encryptedContent ? { encryptedContent: block.encryptedContent } : {}),
+        } satisfies ConversationThinkingBlock)
         break
       case 'tool_use':
         result.push({
@@ -45,6 +55,7 @@ export function toConversationContentBlocks(blocks: ContentBlock[]): Conversatio
           mediaType: block.mediaType,
           data: block.data,
           sizeBytes: block.sizeBytes,
+          ...(block.toolUseId ? { toolUseId: block.toolUseId } : {}),
         } satisfies ConversationImageBlock)
         break
       case 'document':

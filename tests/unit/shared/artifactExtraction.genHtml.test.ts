@@ -26,30 +26,46 @@ function assistantToolUseMessage(
 }
 
 describe('gen_html artifact extraction', () => {
-  it('extracts HTML artifact from legacy html alias', () => {
+  it('extracts HTML artifact from the canonical `html` field', () => {
     const artifacts = extractAllArtifacts([
       assistantToolUseMessage('tool-1', 1000, {
-        title: 'Legacy Alias',
+        title: 'Hello Page',
         html: '<!doctype html><html><body>hello</body></html>',
       }),
     ])
 
     expect(artifacts).toHaveLength(1)
-    expect(artifacts[0]?.title).toBe('Legacy Alias.html')
+    expect(artifacts[0]?.title).toBe('Hello Page.html')
     expect(artifacts[0]?.mimeType).toBe('text/html')
     expect(artifacts[0]?.content).toBe('<!doctype html><html><body>hello</body></html>')
   })
 
-  it('prefers content over html alias when both exist', () => {
+  it('ignores any stray `content` field on a tool_use input — only `html` is read', () => {
+    // Repro: GPT-5.4 historically emitted both fields; `content` carried a
+    // textual page summary while `html` carried the real markup. The
+    // canonical extraction must always pick `html`, never the description.
     const artifacts = extractAllArtifacts([
       assistantToolUseMessage('tool-2', 1000, {
-        title: 'Preferred Content',
-        content: '<html><body>from-content</body></html>',
-        html: '<html><body>from-alias</body></html>',
+        title: 'AI Agent 简介',
+        content: '一个简单的 AI Agent 介绍页面，概述定义、能力、典型场景与注意事项。',
+        html: '<!doctype html><html><body><h1>AI Agent</h1></body></html>',
       }),
     ])
 
     expect(artifacts).toHaveLength(1)
-    expect(artifacts[0]?.content).toBe('<html><body>from-content</body></html>')
+    expect(artifacts[0]?.content).toBe(
+      '<!doctype html><html><body><h1>AI Agent</h1></body></html>',
+    )
+  })
+
+  it('skips tool_use blocks where the html field is missing', () => {
+    // Only the dropped legacy field present — should not produce an artifact.
+    const artifacts = extractAllArtifacts([
+      assistantToolUseMessage('tool-3', 1000, {
+        title: 'No HTML',
+        content: 'just a description',
+      }),
+    ])
+    expect(artifacts).toHaveLength(0)
   })
 })

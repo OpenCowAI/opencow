@@ -79,8 +79,14 @@ export interface InboxMessageTable {
 export interface ManagedSessionTable {
   id: string
   sdk_session_id: string | null
-  /** Engine kind for this session row — 'claude' by default; 'codex' for Codex sessions. */
-  engine_kind: string
+  /**
+   * Engine kind for this session row. Column is retained as TEXT NOT NULL
+   * for backward compat (migration 036); application writes a constant
+   * 'claude'. Narrowed here to block any new code from reading another
+   * value. Future migration will drop the column; see
+   * docs/proposals/2026-04-12-provider-management-redesign.md §4.3.
+   */
+  engine_kind: 'claude'
   /** Engine-specific serialized checkpoint/thread state. */
   engine_state_json: string | null
   state: string // ManagedSessionState
@@ -121,6 +127,14 @@ export interface ManagedSessionTable {
   error: string | null
   /** JSON-serialized SessionExecutionContext; null when not yet initialized. Added in migration 035. */
   execution_context: string | null
+  /**
+   * Provider profile bound to this session. Added in migration 056 (ε.3b).
+   *
+   *   - NULL — session follows the current Settings default provider.
+   *   - Non-NULL — session is pinned to this specific profile regardless
+   *     of Settings changes; ε.3c changes spawn to prefer this value.
+   */
+  provider_profile_id: string | null
 }
 
 // ─── Projects ────────────────────────────────────────────────────────────
@@ -149,7 +163,8 @@ export interface ProjectClaudeMappingTable {
 export interface ProjectExternalMappingTable {
   id: string
   project_id: string
-  engine_kind: string
+  /** See ManagedSessionTable.engine_kind — narrowed to constant 'claude'. */
+  engine_kind: 'claude'
   external_project_ref: string
   discovered_at: number
 }
@@ -294,7 +309,7 @@ export interface CapabilityStateTable {
 export interface CapabilityDistributionTable {
   category: string
   name: string
-  target_type: string    // 'claude-code-global' | 'claude-code-project' | 'codex-global' | 'codex-project'
+  target_type: string    // 'claude-code-global' | 'claude-code-project'
   target_path: string
   strategy: string       // 'copy' | 'symlink'
   content_hash: string
@@ -430,6 +445,28 @@ export interface IssueSyncLogTable {
   duration_ms: number | null
 }
 
+export interface SessionLifecycleOperationTable {
+  id: string
+  session_id: string
+  tool_use_id: string
+  proposal_group_key: string
+  operation_index: number
+  entity: string
+  action: string
+  normalized_payload_json: string
+  summary_json: string
+  warnings_json: string
+  confirmation_mode: string
+  state: string
+  idempotency_key: string | null
+  result_snapshot_json: string | null
+  error_code: string | null
+  error_message: string | null
+  created_at: number
+  updated_at: number
+  applied_at: number | null
+}
+
 // ─── Database schema ─────────────────────────────────────────────────────
 
 export interface Database {
@@ -438,6 +475,7 @@ export interface Database {
   issue_change_queue: IssueChangeQueueTable
   issue_comments: IssueCommentTable
   issue_sync_logs: IssueSyncLogTable
+  session_lifecycle_operations: SessionLifecycleOperationTable
   custom_labels: CustomLabelTable
   inbox_messages: InboxMessageTable
   managed_sessions: ManagedSessionTable

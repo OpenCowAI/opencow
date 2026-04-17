@@ -107,7 +107,6 @@ export function ReviewChatPanel({
     editable: !isInputDisabled,
     ariaLabel: 'Review chat input',
     onSubmit: handleSubmit,
-    engineKind: review.session?.engineKind,
   })
 
   // ── Slash command popover (click-triggered) ──

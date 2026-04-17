@@ -262,6 +262,7 @@ const NON_BATCHABLE_TOOLS = new Set([
   ...WIDGET_TOOL_NAMES,
   NativeCapabilityTools.ISSUE_CREATE,
   NativeCapabilityTools.ISSUE_UPDATE,
+  NativeCapabilityTools.SCHEDULE_PROPOSE_OPERATION,
 ])
 
 /**

@@ -60,6 +60,7 @@ export class ManagedSessionStore {
           activity: row.activity,
           error: row.error,
           execution_context: row.execution_context,
+          provider_profile_id: row.provider_profile_id,
         })
       )
       .execute()

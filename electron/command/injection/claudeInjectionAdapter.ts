@@ -2,21 +2,15 @@
 
 import { createLogger } from '../../platform/logger'
 import { ClaudeCodeAdapter } from '../../services/capabilityCenter/claudeCodeAdapter'
-import type { SessionLaunchOptions } from '../sessionLaunchOptions'
-import type { EngineInjectionAdapter, EngineInjectionRequest, EngineInjectionResult } from './types'
+import type { ClaudeSessionLaunchOptionPatch, ClaudeSessionLaunchOptions } from '../sessionLaunchOptions'
+import type { ClaudeEngineInjectionAdapter, ClaudeEngineInjectionRequest, EngineInjectionResult } from './types'
 
 const log = createLogger('ClaudeInjectionAdapter')
 
-export class ClaudeInjectionAdapter implements EngineInjectionAdapter {
-  readonly engineKind = 'claude' as const
-
+export class ClaudeInjectionAdapter implements ClaudeEngineInjectionAdapter {
   private readonly claudeAdapter = new ClaudeCodeAdapter()
 
-  inject(request: EngineInjectionRequest): EngineInjectionResult {
-    if (request.engineKind !== 'claude') {
-      throw new Error(`ClaudeInjectionAdapter cannot handle engine=${request.engineKind}`)
-    }
-
+  inject(request: ClaudeEngineInjectionRequest): EngineInjectionResult {
     const nextPromptLayers = { ...request.promptLayers }
     if (request.plan.agentPrompt) {
       nextPromptLayers.session = request.plan.agentPrompt
@@ -32,7 +26,7 @@ export class ClaudeInjectionAdapter implements EngineInjectionAdapter {
       hooks = ClaudeCodeAdapter.mergeHooks(request.builtInHooks ?? {}, translated.hooks)
     }
 
-    const optionPatch: Partial<SessionLaunchOptions> = {}
+    const optionPatch: ClaudeSessionLaunchOptionPatch = {}
     if (Object.keys(translated.mcpServers).length > 0) {
       optionPatch.mcpServers = {
         ...(request.options.mcpServers ?? {}),

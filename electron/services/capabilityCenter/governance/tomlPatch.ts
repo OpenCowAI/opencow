@@ -39,7 +39,7 @@ export function extractMcpServersFromToml(content: string): Record<string, TomlO
   return result
 }
 
-export function upsertManagedCodexMcpServer(params: {
+export function upsertManagedMcpServer(params: {
   existingContent?: string | null
   name: string
   serverConfig: TomlObject
@@ -54,7 +54,7 @@ export function upsertManagedCodexMcpServer(params: {
   const existing = mcpServers[params.name]
   const marker = markers[params.name]
   if (existing != null && marker !== markerFor(params.name)) {
-    throw new Error(`Codex MCP server "${params.name}" already exists and is not managed by OpenCow`)
+    throw new Error(`MCP server "${params.name}" already exists and is not managed by OpenCow`)
   }
 
   mcpServers[params.name] = removeUndefined(params.serverConfig)
@@ -62,7 +62,7 @@ export function upsertManagedCodexMcpServer(params: {
   return stringifyTomlConfig(root)
 }
 
-export function removeManagedCodexMcpServer(params: {
+export function removeManagedMcpServer(params: {
   existingContent?: string | null
   name: string
 }): {

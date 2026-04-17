@@ -1,33 +1,22 @@
 // SPDX-License-Identifier: Apache-2.0
 
 /**
- * SessionLaunchOptions — strongly-typed replacement for the `Record<string, unknown>`
- * options bag that flows through the session launch pipeline.
- *
- * Previously, `runSession()` built an untyped `Record<string, unknown>` that was
- * mutated by engine bootstrappers, policies, and capability injection.  Typos in
- * property names were silent, and the reader had no way to discover which fields
- * existed without tracing every mutation site.
- *
- * This type captures **every** property that any pipeline stage may read or write.
- * At the SDK boundary (`lifecycle.start()`), the typed object is converted to
- * `Record<string, unknown>` via `toSdkOptions()`.
- *
- * The type is intentionally flat (no discriminated union on engineKind) because
- * the mutation stages are engine-agnostic — they set Claude-only or Codex-only
- * fields conditionally, and the SDK ignores unknown keys.
+ * SessionLaunchOptions — strongly-typed options bag for the session launch
+ * pipeline. At the SDK boundary (`lifecycle.start()`), the typed object is
+ * converted to `Record<string, unknown>` via `toSdkOptions()`.
  */
 
-import type { SpawnOptions, SpawnedProcess } from '@anthropic-ai/claude-agent-sdk'
+import type { SpawnOptions, SpawnedProcess } from '@opencow-ai/opencow-agent-sdk'
 import type { RuntimeCanUseTool } from './enginePolicy'
 import type { SDKHookMap } from '../services/capabilityCenter/claudeCodeAdapter'
-import type { CodexConfigObject } from './codexMcpConfigBuilder'
-import type { CodexReasoningEffort } from '../../src/shared/types'
+import type {
+  ProviderNativeSystemPrompt,
+  SystemPromptTransportPayload,
+} from './systemPromptTransport'
 
 // ── Main type ───────────────────────────────────────────────────────────────
 
 export interface SessionLaunchOptions {
-  // ── Shared (all engines) ────────────────────────────────────────────────
   maxTurns: number
   includePartialMessages: boolean
   permissionMode: string
@@ -36,27 +25,54 @@ export interface SessionLaunchOptions {
   cwd?: string
   resume?: string
   model?: string
-
-  // ── Claude-specific ─────────────────────────────────────────────────────
+  systemPromptPayload: ProviderNativeSystemPrompt
+  initialMessages?: unknown[]
   pathToClaudeCodeExecutable?: string
   spawnClaudeCodeProcess?: (opts: SpawnOptions) => SpawnedProcess
   tools?: unknown[]
   disallowedTools?: string[]
   canUseTool?: RuntimeCanUseTool
   mcpServers?: Record<string, unknown>
-  systemPrompt?: string
   hooks?: SDKHookMap
+  /**
+   * Phase 1B.11d — host-provided skill commands for SDK's built-in SkillTool.
+   */
+  commands?: unknown[]
+  /**
+   * Phase 1B.11d — host-provided agent definitions for SDK's built-in AgentTool.
+   */
+  agents?: unknown[]
+}
 
-  // ── Codex-specific ──────────────────────────────────────────────────────
-  codexModelReasoningEffort?: CodexReasoningEffort
-  codexSandboxMode?: string
-  codexApprovalPolicy?: string
-  codexSkipGitRepoCheck?: boolean
-  codexPathOverride?: string
-  codexApiKey?: string
-  codexBaseUrl?: string
-  codexConfig?: CodexConfigObject
-  codexSystemPrompt?: string
+// Keep the old name as an alias during migration (some files import it)
+export type ClaudeSessionLaunchOptions = SessionLaunchOptions
+
+/**
+ * Capability-injection option patch. Produced by engine-specific injection
+ * adapters and merged into the launch options during orchestrator pre-flight.
+ */
+export interface SessionLaunchOptionPatch {
+  mcpServers?: Record<string, unknown>
+}
+
+// Keep the old name as an alias during migration
+export type ClaudeSessionLaunchOptionPatch = SessionLaunchOptionPatch
+
+/**
+ * Apply engine-scoped patch fields into typed launch options.
+ */
+export function applySessionLaunchOptionPatch(
+  options: SessionLaunchOptions,
+  patch: SessionLaunchOptionPatch,
+): void {
+  if (Object.keys(patch).length === 0) return
+
+  if (patch.mcpServers && Object.keys(patch.mcpServers).length > 0) {
+    options.mcpServers = {
+      ...(options.mcpServers ?? {}),
+      ...patch.mcpServers,
+    }
+  }
 }
 
 // ── SDK boundary conversion ─────────────────────────────────────────────────
@@ -64,12 +80,24 @@ export interface SessionLaunchOptions {
 /**
  * Convert the typed SessionLaunchOptions to the untyped Record<string, unknown>
  * required by the SDK's `lifecycle.start()` and `sdkQuery()`.
- *
- * This is the ONLY place where type safety is intentionally relaxed.
  */
 export function toSdkOptions(options: SessionLaunchOptions): Record<string, unknown> {
-  // Spread creates a shallow copy — safe because the SDK should not mutate.
   const raw: Record<string, unknown> = { ...options }
+
+  const payload = options.systemPromptPayload as SystemPromptTransportPayload | undefined
+  if (
+    !payload
+    || typeof payload !== 'object'
+    || typeof payload.transport !== 'string'
+    || typeof payload.text !== 'string'
+  ) {
+    throw new Error('Invalid session launch options: systemPromptPayload is required and must include transport/text')
+  }
+
+  raw.systemPromptTransport = payload.transport
+  raw.systemPrompt = payload.text
+  delete raw.systemPromptPayload
+
   // Remove undefined keys to keep the SDK payload clean.
   for (const key of Object.keys(raw)) {
     if (raw[key] === undefined) delete raw[key]

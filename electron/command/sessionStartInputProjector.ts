@@ -114,7 +114,6 @@ const startSessionPolicySchema = z.object({
 const startSessionInputSchema = z.object({
   prompt: userMessageContentSchema,
   origin: sessionOriginSchema.optional(),
-  engineKind: z.enum(['claude', 'codex']).optional(),
   workspace: z.discriminatedUnion('scope', [
     z.object({
       scope: z.literal('project'),

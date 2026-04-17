@@ -22,6 +22,7 @@ import type { SessionTimerScope } from './sessionTimerScope'
 import type { StreamState } from './streamState'
 import type { ToolProgressRelay } from '../utils/toolProgressRelay'
 import type { DataBusEvent } from '../../src/shared/types'
+import type { SessionExecutionContextSignal } from './sessionLifecycle'
 import { DispatchThrottle } from './dispatchThrottle'
 import { StreamingMessageBuffer } from './streamingMessageBuffer'
 
@@ -52,6 +53,8 @@ export interface SessionContextParams {
    * the gap.
    */
   onResultReceived: () => void
+  /** Optional runtime signal bridge for execution-context updates (cwd). */
+  onExecutionContextSignal?: (signal: SessionExecutionContextSignal) => void
 }
 
 export class SessionContext {
@@ -67,6 +70,8 @@ export class SessionContext {
   readonly persistSession: () => Promise<void>
   readonly onStreamStarted: () => void
   readonly onResultReceived: () => void
+  readonly onExecutionContextSignal: (signal: SessionExecutionContextSignal) => void
+  private streamStartNotified = false
 
   /**
    * Message IDs queued for dispatch on the next throttle flush.
@@ -100,6 +105,7 @@ export class SessionContext {
     this.persistSession = params.persistSession
     this.onStreamStarted = params.onStreamStarted
     this.onResultReceived = params.onResultReceived
+    this.onExecutionContextSignal = params.onExecutionContextSignal ?? (() => {})
 
     this.throttle = new DispatchThrottle({
       onFlushMessage: () => {
@@ -136,6 +142,20 @@ export class SessionContext {
       },
       onFlushSession: () => this.dispatchSessionUpdated(),
     })
+  }
+
+  /**
+   * Invoke stream-start callback at most once per SessionContext lifecycle.
+   *
+   * Some runtimes may emit repeated `session.initialized` events across turns.
+   * Startup execution-context resolution must remain a one-shot operation to
+   * avoid re-applying stale startup cwd over newer runtime cwd signals.
+   */
+  notifyStreamStartedOnce(): boolean {
+    if (this.streamStartNotified) return false
+    this.streamStartNotified = true
+    this.onStreamStarted()
+    return true
   }
 
   /**

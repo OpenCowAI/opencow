@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react'
+import { createPortal } from 'react-dom'
 import { useTranslation } from 'react-i18next'
 import { X, Check, Tag, ImagePlus, Plus, Pencil, Trash2, ChevronDown } from 'lucide-react'
 import { EditorContent } from '@tiptap/react'
@@ -58,6 +59,8 @@ export interface IssueFormModalProps {
   onCreated?: (issue: Issue) => void
   /** Override z-index for nested modal scenarios (default: 50). */
   zIndex?: number
+  /** When true, skip calling selectIssue after creation (e.g. from draft confirmation cards). */
+  skipSelectOnCreate?: boolean
 }
 
 const STATUS_OPTIONS: { value: IssueStatus; labelKey: string }[] = [
@@ -131,18 +134,24 @@ export function IssueFormModal(props: IssueFormModalProps): React.JSX.Element {
       })
   }, [props.issueId, props.defaultProjectId])
 
-  return (
-    <ProjectScopeProvider projectPath={projectPath} projectId={projectId ?? undefined}>
-      {props.issueId && isLoading ? (
-        <IssueFormLoadingOverlay onClose={props.onClose} zIndex={props.zIndex} />
-      ) : (
+  const modalNode = props.issueId && isLoading
+    ? <IssueFormLoadingOverlay onClose={props.onClose} zIndex={props.zIndex} />
+    : (
         <IssueFormContent
           {...props}
           issue={props.issueId ? fetchedIssue : null}
           projectId={projectId}
           setProjectId={setProjectId}
         />
-      )}
+      )
+
+  if (typeof document === 'undefined') {
+    return <></>
+  }
+
+  return (
+    <ProjectScopeProvider projectPath={projectPath} projectId={projectId ?? undefined}>
+      {createPortal(modalNode, document.body)}
     </ProjectScopeProvider>
   )
 }
@@ -209,6 +218,7 @@ function IssueFormContent({
   defaultValues,
   onCreated,
   zIndex,
+  skipSelectOnCreate,
   issue,
   projectId,
   setProjectId,
@@ -567,7 +577,8 @@ function IssueFormContent({
         const newIssue = await createIssue(input, {
           onCreated: (created) => {
             // Select before list reload to avoid transient row highlight flicker.
-            selectIssue(created.id)
+            // Skip when called from draft confirmation cards to avoid opening the detail panel.
+            if (!skipSelectOnCreate) selectIssue(created.id)
           },
         })
         onCreated?.(newIssue)

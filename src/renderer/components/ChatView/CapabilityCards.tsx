@@ -220,30 +220,16 @@ function DistributionBadge({ capability }: { capability?: CapabilityEntry }): Re
   if (targetTypes.length === 0) return null
 
   const hasClaude = targetTypes.some((targetType) => targetType.startsWith('claude-code-'))
-  const hasCodex = targetTypes.some((targetType) => targetType.startsWith('codex-'))
-  if (!hasClaude && !hasCodex) return null
+  if (!hasClaude) return null
 
   // Avoid redundant badges:
-  // when a capability is imported from one engine and only published to that same engine,
-  // OriginBadge already conveys equivalent information (e.g. "Claude Code", "Codex").
+  // when a capability is imported from Claude Code and only published to Claude Code,
+  // OriginBadge already conveys equivalent information.
   const sourceOrigin = capability?.importInfo?.sourceOrigin
-  if (hasClaude !== hasCodex) {
-    if (hasClaude && sourceOrigin === 'claude-code') return null
-    if (hasCodex && sourceOrigin === 'codex') return null
-  }
+  if (sourceOrigin === 'claude-code') return null
 
-  let label: string
-  let badgeClass: string
-  if (hasClaude && hasCodex) {
-    label = t('capabilityCenter.distribution.both')
-    badgeClass = 'bg-indigo-500/10 text-indigo-600 dark:text-indigo-400'
-  } else if (hasClaude) {
-    label = t('capabilityCenter.distribution.claude')
-    badgeClass = 'bg-blue-500/10 text-blue-600 dark:text-blue-400'
-  } else {
-    label = t('capabilityCenter.distribution.codex')
-    badgeClass = 'bg-cyan-500/10 text-cyan-600 dark:text-cyan-400'
-  }
+  const label = t('capabilityCenter.distribution.claude')
+  const badgeClass = 'bg-blue-500/10 text-blue-600 dark:text-blue-400'
 
   return (
     <span

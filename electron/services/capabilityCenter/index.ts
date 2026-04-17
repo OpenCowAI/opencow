@@ -28,7 +28,6 @@ import type { Database } from '../../database/types'
 import type { DataBus } from '../../core/dataBus'
 import { createLogger } from '../../platform/logger'
 import type {
-  AIEngineKind,
   ManagedCapabilityCategory,
   CapabilitySnapshot,
   CapabilityDiagnostic,
@@ -115,7 +114,7 @@ export class CapabilityCenter {
 
   /**
    * Session-local dedup: tracks scopes already auto-imported in this process lifetime.
-   * Key: `'global:claude'`, `'global:codex'`, `'project:<id>:claude'`, `'project:<id>:codex'`
+   * Key: `'global:claude'`, `'project:<id>:claude'`
    * Prevents redundant re-import on every getSnapshot() call.
    */
   private readonly autoImportedScopes = new Set<string>()
@@ -271,7 +270,7 @@ export class CapabilityCenter {
     request: CapabilityPlanRequest
   }): Promise<CapabilityPlan> {
     log.info(
-      `Building capability plan: engine=${params.request.session.engineKind}, projectId=${params.projectId ?? '(none)'}, agent=${params.request.session.agentName ?? '(default)'}`,
+      `Building capability plan: projectId=${params.projectId ?? '(none)'}, agent=${params.request.session.agentName ?? '(default)'}`,
     )
     const snapshot = await this.getSnapshot(params.projectId)
     log.info(
@@ -434,10 +433,8 @@ export class CapabilityCenter {
   }
 
   /** Detect drifted distributions (source modified since last publish) */
-  async detectDrift(params?: { engineKind?: AIEngineKind }): Promise<CapabilityDriftReport[]> {
-    const drifts = await this.distributionPipeline.detectDrift({
-      engineKind: params?.engineKind,
-    })
+  async detectDrift(): Promise<CapabilityDriftReport[]> {
+    const drifts = await this.distributionPipeline.detectDrift()
     return drifts.map((d) => ({
       category: d.category,
       name: d.name,
@@ -449,10 +446,8 @@ export class CapabilityCenter {
   }
 
   /** Sync all drifted distributions */
-  async syncAll(params?: { engineKind?: AIEngineKind }): Promise<{ synced: string[]; errors: string[] }> {
-    const result = await this.distributionPipeline.syncAll({
-      engineKind: params?.engineKind,
-    })
+  async syncAll(): Promise<{ synced: string[]; errors: string[] }> {
+    const result = await this.distributionPipeline.syncAll()
     if (result.synced.length > 0) {
       this.notifyChange()
     }
@@ -469,7 +464,7 @@ export class CapabilityCenter {
   ): Promise<CapabilityImportableItem[]> {
     const projectPath = await this.resolveProjectPathFromId(projectId)
     const items = await this.importPipeline.discoverImportable(
-      sourceType as 'claude-code' | 'codex' | 'plugin' | 'marketplace' | 'template' | 'file',
+      sourceType as 'claude-code' | 'plugin' | 'marketplace' | 'template' | 'file',
       projectPath,
       filePaths,
     )
@@ -495,7 +490,7 @@ export class CapabilityCenter {
     const result = await this.importPipeline.importItems(
       items.map((item) => ({
         ...item,
-        sourceType: item.sourceType as 'claude-code' | 'codex' | 'plugin' | 'marketplace' | 'template' | 'file',
+        sourceType: item.sourceType as 'claude-code' | 'plugin' | 'marketplace' | 'template' | 'file',
       })),
       { scope, projectPath },
     )
@@ -685,23 +680,19 @@ export class CapabilityCenter {
    *
    * Sources:
    * - Claude Code: `~/.claude/`, `{project}/.claude/`
-   * - Codex: `~/.agents/skills`, `~/.codex/config.toml`,
-   *          `{project}/.agents/skills`, `{project}/.codex/config.toml`
    */
   async autoImport(projectId?: string): Promise<void> {
     const projectPath = await this.resolveProjectPathFromId(projectId)
     await this.autoImportFromSource('claude-code', projectId, projectPath)
-    await this.autoImportFromSource('codex', projectId, projectPath)
   }
 
   private async autoImportFromSource(
-    sourceType: 'claude-code' | 'codex',
+    sourceType: 'claude-code',
     projectId?: string,
     projectPath?: string,
   ): Promise<void> {
     const scopePrefix = projectId ? `project:${projectId}` : 'global'
-    const engineKey = sourceType === 'codex' ? 'codex' : 'claude'
-    const scopeKey = `${scopePrefix}:${engineKey}`
+    const scopeKey = `${scopePrefix}:claude`
     if (this.autoImportedScopes.has(scopeKey)) return
 
     try {

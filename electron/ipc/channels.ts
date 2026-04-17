@@ -23,6 +23,7 @@ import type { BrowserService } from '../browser/browserService'
 import type { ScheduleService } from '../services/schedule/scheduleService'
 import type { TerminalService } from '../terminal/terminalService'
 import type { TrayManager } from '../tray'
+import type { LifecycleOperationCoordinator } from '../services/lifecycleOperations'
 import type {
   IPCChannels,
   IPCEventChannels,
@@ -148,6 +149,7 @@ export interface IPCDeps {
   issueCommentService?: import('../services/issueCommentService').IssueCommentService
   syncLogStore?: import('../services/issue-sync/syncLogStore').SyncLogStore
   changeQueueStore?: import('../services/issue-sync/changeQueueStore').ChangeQueueStore
+  lifecycleOperationCoordinator?: LifecycleOperationCoordinator
 }
 
 /* ------------------------------------------------------------------ */
@@ -731,8 +733,6 @@ export function registerIPCHandlers(deps: IPCDeps): void {
     const validTargets = new Set([
       'claude-code-global',
       'claude-code-project',
-      'codex-global',
-      'codex-project',
     ])
     if (!validTargets.has(params.target)) {
       throw new Error(`Unsupported capability target: ${params.target}`)
@@ -744,9 +744,9 @@ export function registerIPCHandlers(deps: IPCDeps): void {
       const cc = deps.capabilityCenter!
       const projectPath = await cc.resolveProjectPathFromId(params.projectId)
       if (!projectPath) throw new Error(`Project not found: ${params.projectId}`)
-      return { type: params.target as 'claude-code-project' | 'codex-project', projectPath }
+      return { type: params.target as 'claude-code-project', projectPath }
     }
-    return { type: params.target as 'claude-code-global' | 'codex-global' }
+    return { type: params.target as 'claude-code-global' }
   }
 
   if (deps.capabilityCenter) {
@@ -799,12 +799,12 @@ export function registerIPCHandlers(deps: IPCDeps): void {
       await cc.unpublish({ category: params.category, name: params.name, target: await resolveDistTarget(params) })
     })
 
-    registerHandler('capability:sync', async (params) => {
-      return cc.syncAll(params)
+    registerHandler('capability:sync', async () => {
+      return cc.syncAll()
     })
 
-    registerHandler('capability:detect-drift', async (params) => {
-      return cc.detectDrift(params)
+    registerHandler('capability:detect-drift', async () => {
+      return cc.detectDrift()
     })
 
     // M5: structured form save (backend handles serialization)
@@ -946,14 +946,6 @@ export function registerIPCHandlers(deps: IPCDeps): void {
       const updated = await settingsService.update(settings)
       const evoseSettingsChanged = isEvoseSettingsChanged(oldSettings, updated)
 
-      // Detect default engine change — log for debugging engine drift scenarios
-      if (oldSettings.command.defaultEngine !== updated.command.defaultEngine) {
-        log.info('Default engine changed in settings', {
-          from: oldSettings.command.defaultEngine,
-          to: updated.command.defaultEngine,
-        })
-      }
-
       // Detect language change → rebuild menu + update tray locale
       if (oldSettings.language !== updated.language) {
         const locale = resolveLocale(updated.language, app.getLocale())
@@ -992,19 +984,26 @@ export function registerIPCHandlers(deps: IPCDeps): void {
   // --- Provider handlers ---
   if (deps.providerService) {
     const providerService = deps.providerService
-    registerHandler('provider:get-status', (engineKind) => providerService.getStatus(engineKind ?? 'claude'))
-    registerHandler('provider:login', (engineKind, mode, params) =>
-      providerService.login(engineKind, mode, params))
-    registerHandler('provider:cancel-login', async (engineKind, mode) => {
-      await providerService.cancelLogin(engineKind, mode)
-      return true
+    registerHandler('provider:get-status', async () => {
+      const profileId = providerService.resolveProfileId()
+      if (!profileId) return { state: 'unauthenticated', profileId: null } as const
+      return providerService.getStatusForProfile(profileId)
     })
-    registerHandler('provider:logout', async (engineKind, mode) => {
-      await providerService.logout(engineKind, mode)
-      return true
-    })
-    registerHandler('provider:get-credential', (engineKind, mode) =>
-      providerService.getCredential(engineKind, mode))
+    registerHandler('provider:get-credential', (profileId) =>
+      providerService.getCredentialForProfile(profileId))
+    // Profile CRUD
+    registerHandler('provider:list-profiles', async () =>
+      providerService.listProfiles())
+    registerHandler('provider:create-profile', (input) =>
+      providerService.createProfile(input))
+    registerHandler('provider:update-profile', (id, patch) =>
+      providerService.updateProfile(id, patch))
+    registerHandler('provider:remove-profile', (id) =>
+      providerService.removeProfile(id))
+    registerHandler('provider:set-default-profile', (id) =>
+      providerService.setDefaultProfile(id))
+    registerHandler('provider:test-profile', (id) =>
+      providerService.testProfile(id))
   }
 
   // --- Command handlers ---
@@ -1054,9 +1053,63 @@ export function registerIPCHandlers(deps: IPCDeps): void {
     registerHandler('command:get-managed-session', (sessionId) =>
       orchestrator.getSession(sessionId)
     )
+    registerHandler('command:set-session-provider-profile', (sessionId, profileId) =>
+      orchestrator.setSessionProviderProfile(sessionId, profileId),
+    )
     registerHandler('command:get-session-messages', async (sessionId) => {
       const full = await orchestrator.getFullSession(sessionId)
       return full?.messages ?? []
+    })
+    registerHandler('command:list-session-lifecycle-operations', async (sessionId) => {
+      if (!deps.lifecycleOperationCoordinator) return []
+      return deps.lifecycleOperationCoordinator.listSessionOperations({ sessionId })
+    })
+    registerHandler('command:confirm-session-lifecycle-operation', async (sessionId, operationId) => {
+      const startedAt = Date.now()
+      log.info('IPC lifecycle confirm requested', { sessionId, operationId })
+      if (!deps.lifecycleOperationCoordinator) {
+        log.warn('IPC lifecycle confirm failed: coordinator unavailable', { sessionId, operationId })
+        return {
+          ok: false,
+          code: 'invalid_state',
+          operation: null,
+        }
+      }
+      const result = await deps.lifecycleOperationCoordinator.confirmOperation({ sessionId, operationId })
+      log.info('IPC lifecycle confirm completed', {
+        sessionId,
+        operationId,
+        ok: result.ok,
+        code: result.code,
+        durationMs: Date.now() - startedAt,
+      })
+      return result
+    })
+    registerHandler('command:reject-session-lifecycle-operation', async (sessionId, operationId) => {
+      if (!deps.lifecycleOperationCoordinator) {
+        return {
+          ok: false,
+          code: 'invalid_state',
+          operation: null,
+        }
+      }
+      return deps.lifecycleOperationCoordinator.rejectOperation({ sessionId, operationId })
+    })
+    registerHandler('command:mark-session-lifecycle-operation-applied', async (sessionId, operationId, input) => {
+      if (!deps.lifecycleOperationCoordinator) {
+        return {
+          ok: false,
+          code: 'invalid_state',
+          operation: null,
+        }
+      }
+      return deps.lifecycleOperationCoordinator.markOperationAppliedExternally({
+        sessionId,
+        operationId,
+        source: input.source,
+        entityRef: input.entityRef,
+        note: input.note,
+      })
     })
     registerHandler('command:delete-session', (sessionId) =>
       orchestrator.deleteSession(sessionId)

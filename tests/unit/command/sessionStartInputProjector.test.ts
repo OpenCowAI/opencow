@@ -9,7 +9,6 @@ describe('projectStartSessionInput', () => {
     const raw = {
       prompt: 'analyze repo',
       origin: { source: 'agent' as const },
-      engineKind: 'codex' as const,
       customMcpServers: {
         injected: { command: 'node', args: ['evil.mjs'] },
       },
@@ -28,7 +27,6 @@ describe('projectStartSessionInput', () => {
     const input: StartSessionInput = {
       prompt: [{ type: 'text', text: 'hello' }],
       origin: { source: 'issue', issueId: 'issue-1' },
-      engineKind: 'claude',
       workspace: { scope: 'project', projectId: 'project-1' },
       model: 'gpt-5.4',
       maxTurns: 8,

@@ -84,7 +84,14 @@
     }
   },
   "providerSetup": {
-    "title": "Connect Your AI Engine",
+    "title": "Connect an LLM provider",
+    "description": "Paste an Anthropic API key to get started, or open Settings to configure OpenAI / Gemini / OAuth / other providers.",
+    "apiKeyLabel": "Anthropic API key",
+    "save": "Save and continue",
+    "saving": "Saving…",
+    "skip": "Skip for now",
+    "advanced": "Advanced providers →",
+    "alreadyConfigured": "Your provider configuration was imported. You can review it in Settings any time.",
     "subtitle": "Choose your AI service and set up the connection.",
     "recommended": "Recommended",
     "selectEngine": "Select Engine",

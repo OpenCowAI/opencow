@@ -66,17 +66,15 @@ export function StatusBar(): React.JSX.Element {
 
   const isAuthed = providerStatus?.state === 'authenticated'
   const isAuthenticating = providerStatus?.state === 'authenticating'
-  const modeKey = providerStatus?.mode ? (PROVIDER_MODE_KEYS[providerStatus.mode] ?? null) : null
-  const modeLabel = modeKey ? t(`statusBar.providerModes.${modeKey}`) : null
 
-  // Build combined "Engine · Provider" display label
-  const defaultEngine = settings?.command?.defaultEngine ?? 'claude'
-  const engineLabel = t(`statusBar.engineNames.${defaultEngine}`)
-  const displayLabel = (() => {
-    if (!modeLabel) return engineLabel
-    if (modeLabel === engineLabel) return engineLabel // avoid "Claude · Claude"
-    return `${engineLabel} · ${modeLabel}`
-  })()
+  // Display the active profile's name when available. Falls back to
+  // the engine label when no profile is configured (fresh install).
+  const profiles = settings?.provider.profiles ?? []
+  const activeProfile = providerStatus?.profileId
+    ? profiles.find((p) => p.id === providerStatus.profileId) ?? null
+    : null
+  const engineLabel = t('statusBar.engineNames.claude')
+  const displayLabel = activeProfile?.name ?? engineLabel
 
   const authTitle = isAuthed
     ? t('statusBar.providerVia', { mode: displayLabel })

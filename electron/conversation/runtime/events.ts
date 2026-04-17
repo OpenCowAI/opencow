@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 
-import type { AIEngineKind } from '../../../src/shared/types'
 import type { ConversationContentBlock } from '../domain/content'
 
 export interface RuntimeTurnUsage {
@@ -27,7 +26,7 @@ export interface RuntimeTurnRef {
 export type RuntimeDiagnosticSeverity = 'info' | 'warning' | 'error'
 
 export interface RuntimeDiagnosticPayload {
-  /** Engine-specific machine-readable code, e.g. "codex.long_thread_compaction_advisory". */
+  /** Engine-specific machine-readable code. */
   readonly code: string
   readonly severity: RuntimeDiagnosticSeverity
   readonly message: string
@@ -53,8 +52,17 @@ export interface RuntimeResultPayload {
 }
 
 export type RuntimeContextSnapshotConfidence = 'authoritative' | 'estimated'
+export type RuntimeContextMetricKind = 'context_occupancy' | 'token_usage_total'
 
 export interface RuntimeContextSnapshotPayload {
+  /**
+   * Semantic meaning of `usedTokens`.
+   *
+   * - `context_occupancy`: current context-window occupancy (UI-displayable).
+   * - `token_usage_total`: cumulative/per-turn token accounting (NOT displayable
+   *   as context-window occupancy without additional normalization).
+   */
+  readonly metricKind: RuntimeContextMetricKind
   readonly usedTokens: number
   /**
    * Context window limit in tokens.
@@ -67,11 +75,22 @@ export interface RuntimeContextSnapshotPayload {
   readonly remainingTokens: number | null
   /** Remaining percentage. Null when limitTokens is unknown. */
   readonly remainingPct: number | null
-  /** Same-source token telemetry origin, e.g. "codex.token_count". */
+  /** Same-source token telemetry origin. */
   readonly source: string
   readonly confidence: RuntimeContextSnapshotConfidence
   /** Optional provider timestamp; defaults to envelope occurredAtMs when omitted. */
   readonly updatedAtMs?: number
+}
+
+export interface RuntimeExecutionContextSignalPayload {
+  /** Candidate working directory detected from runtime events/tool execution. */
+  readonly cwd: string
+  /** Machine-readable source for observability/debugging. */
+  readonly source: 'runtime.tool'
+  /** Optional tool identifier that produced the signal. */
+  readonly toolUseId?: string
+  /** Optional human-readable tool name. */
+  readonly toolName?: string
 }
 
 export type EngineRuntimeEvent =
@@ -99,12 +118,33 @@ export type EngineRuntimeEvent =
       }
     }
   | {
+      /**
+       * Tool result envelope returned by the engine to the model.
+       *
+       * Carries the full structured payload (text + extracted media blocks)
+       * so the persistence/resume path can round-trip the SDK protocol
+       * losslessly. Without this event the model loses the tool's output
+       * on per-turn resume (e.g. browser_screenshot images vanish, the
+       * agent then claims it "didn't see the screenshot").
+       */
+      readonly kind: 'user.tool_result'
+      readonly payload: {
+        readonly toolUseId: string
+        readonly isError: boolean
+        readonly blocks: ConversationContentBlock[]
+      }
+    }
+  | {
       readonly kind: 'turn.usage'
       readonly payload: RuntimeTurnUsage
     }
   | {
       readonly kind: 'context.snapshot'
       readonly payload: RuntimeContextSnapshotPayload
+    }
+  | {
+      readonly kind: 'execution_context.signal'
+      readonly payload: RuntimeExecutionContextSignalPayload
     }
   | {
       readonly kind: 'tool.progress'
@@ -186,7 +226,7 @@ export type EngineRuntimeEvent =
     }
 
 export interface EngineRuntimeEventEnvelope {
-  readonly engine: AIEngineKind
+  readonly engine: 'claude'
   readonly occurredAtMs: number
   readonly event: EngineRuntimeEvent
   /** Turn-scoped correlation key; omitted for session/global events. */
@@ -194,7 +234,7 @@ export interface EngineRuntimeEventEnvelope {
 }
 
 export function createRuntimeEventEnvelope(params: {
-  engine: AIEngineKind
+  engine: 'claude'
   event: EngineRuntimeEvent
   turnRef?: RuntimeTurnRef
   occurredAtMs?: number
@@ -213,6 +253,7 @@ export function isTurnScopedRuntimeEventKind(kind: EngineRuntimeEvent['kind']): 
     kind === 'turn.started' ||
     kind === 'assistant.partial' ||
     kind === 'assistant.final' ||
+    kind === 'user.tool_result' ||
     kind === 'turn.usage' ||
     kind === 'tool.progress' ||
     kind === 'turn.result' ||

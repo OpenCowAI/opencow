@@ -21,12 +21,14 @@
  */
 
 import { z } from 'zod/v4'
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- matches SDK's ToolInputSchemaShape
+type ToolInputSchemaShape = Readonly<Record<string, any>>
 import type {
   NativeCapabilityMeta,
   NativeCapabilityToolContext,
   CallToolResult,
   NativeToolDescriptor,
-  NativeToolCallInput,
 } from '../types'
 import { BaseNativeCapability } from '../baseNativeCapability'
 import type { DataBus } from '../../core/dataBus'
@@ -104,24 +106,31 @@ export interface BrowserNativeCapabilityDeps {
 /**
  * Declarative tool configuration for browser tools.
  *
- * Extends the concept of BaseNativeCapability's ToolConfig with browser-specific
- * concerns: the execute function receives a `viewId` (guaranteed-active
- * browser view) and an optional `showWindow` flag.
+ * Extends the concept of BaseCapabilityProvider's `ToolConfig` with two
+ * browser-specific concerns:
+ *   - the `execute` callback receives `viewId` (guaranteed-active browser
+ *     view) and `executionContext` (sandbox/timeout/abort plumbing) in
+ *     addition to the typed `args`
+ *   - an optional `showWindow` flag controls whether the browser window is
+ *     made visible before the tool runs
+ *
+ * Generic on `TSchema` so each tool's `args` is typed precisely from its
+ * own zod shape — no `as string` casts in handler bodies. Per-tool TSchema
+ * is preserved through the `browserTool<TSchema>(cfg)` helper closure.
  */
-interface BrowserToolConfig {
-  name: string
-  description: string
-  schema: Record<string, z.ZodType>
+interface BrowserToolConfig<TSchema extends ToolInputSchemaShape> {
+  readonly name: string
+  readonly description: string
+  readonly schema: TSchema
   /**
-   * Execute the tool's business logic.
-   * Receives validated args and a guaranteed-active viewId.
-   * Returns CallToolResult directly for maximum flexibility.
+   * Execute the tool's business logic. Receives schema-validated `args`,
+   * a guaranteed-active `viewId`, and the runtime `executionContext`.
    */
-  execute: (
-    args: Record<string, unknown>,
+  execute(
+    args: { [K in keyof TSchema]: z.output<TSchema[K]> },
     viewId: string,
     executionContext: import('../../browser/types').BrowserExecutionContext,
-  ) => Promise<CallToolResult>
+  ): Promise<CallToolResult>
   /**
    * Whether to make the browser window visible before executing this tool.
    *
@@ -132,7 +141,7 @@ interface BrowserToolConfig {
    * and don't require the window to be rendered on screen. This avoids any
    * unnecessary window state changes for silent data-capture operations.
    */
-  showWindow?: boolean
+  readonly showWindow?: boolean
 }
 
 // ─── BrowserNativeCapability ─────────────────────────────────────────────
@@ -140,9 +149,7 @@ interface BrowserToolConfig {
 export class BrowserNativeCapability extends BaseNativeCapability {
   readonly meta: NativeCapabilityMeta = {
     category: 'browser',
-    name: 'Browser',
     description: 'Embedded browser control — navigate, interact, and extract web content',
-    version: '1.0.0',
   }
 
   private readonly browserService: BrowserService
@@ -164,21 +171,26 @@ export class BrowserNativeCapability extends BaseNativeCapability {
    * are suppressed to prevent LLM confusion. Only non-overlapping tools
    * (e.g. browser_scroll) are retained alongside DevTools' 38 tools.
    */
-  getToolDescriptors(context: NativeCapabilityToolContext): NativeToolDescriptor[] {
-    const hasDevTools = context.activeMcpServerNames?.has(CHROME_DEVTOOLS_MCP_NAME) ?? false
+  override getToolDescriptors(ctx: NativeCapabilityToolContext): readonly NativeToolDescriptor[] {
+    const hasDevTools = ctx.hostEnvironment.activeMcpServerNames.includes(CHROME_DEVTOOLS_MCP_NAME)
+    const session = ctx.sessionContext
 
-    let configs = this.browserToolConfigs()
+    // Build all browser tools (each one closes over `session` for view affinity).
+    // Filtering to suppress overlap with chrome-devtools MCP happens AFTER build
+    // so the conditional list still flows through the same `browserTool<TSchema>`
+    // helper that adds the timeout + ensureView pipeline.
+    let descriptors = this.allBrowserDescriptors(session)
 
     if (hasDevTools) {
-      const before = configs.length
-      configs = configs.filter((c) => !CHROME_DEVTOOLS_OVERLAPPING_TOOLS.has(c.name))
+      const before = descriptors.length
+      descriptors = descriptors.filter((d) => !CHROME_DEVTOOLS_OVERLAPPING_TOOLS.has(d.name))
       log.info(
-        `Chrome DevTools MCP active — suppressed ${before - configs.length} overlapping tools, ` +
-        `retaining: [${configs.map((c) => c.name).join(', ')}]`,
+        `Chrome DevTools MCP active — suppressed ${before - descriptors.length} overlapping tools, ` +
+        `retaining: [${descriptors.map((d) => d.name).join(', ')}]`,
       )
     }
 
-    return configs.map((config) => this.createBrowserToolDescriptor(config, context.session))
+    return descriptors
   }
 
   // ── Lifecycle ──────────────────────────────────────────────────────
@@ -194,42 +206,60 @@ export class BrowserNativeCapability extends BaseNativeCapability {
   // ── Browser Tool Factory ───────────────────────────────────────────
 
   /**
-   * Create an MCP tool from a browser tool config, bound to a specific session.
+   * Adapt a `BrowserToolConfig<TSchema>` into a framework `ToolDescriptor`,
+   * bound to a specific session. Wraps the inner execute with the browser
+   * pipeline:
    *
-   * Handles the common pipeline for every browser tool:
-   * 1. Wrap in timeout protection
-   * 2. Ensure a session-owned browser view exists
-   * 3. Delegate to config.execute()
+   *   1. timeout protection
+   *   2. ensure a session-owned browser view exists
+   *   3. assemble executionContext (signal + sandbox roots)
+   *   4. delegate to `config.execute(args, viewId, executionContext)` with
+   *      typed `args`
    *
-   * Binding `sessionId` at factory time (rather than reading it at invocation
+   * Binding `session` at factory time (rather than reading it at invocation
    * time) ensures each session's tools always operate on their own dedicated
    * WebContentsView — preventing cross-session navigation interference.
+   *
+   * The try/catch is inlined here (instead of going through
+   * `BaseCapabilityProvider.tool()`) because the pipeline needs the timeout
+   * race BEFORE the user-supplied execute, and timeout/abort outcomes must
+   * be returned as structured `CallToolResult` (not thrown). Generic on
+   * `TSchema` so per-tool typing flows through to the user's `execute`.
    */
-  private createBrowserToolDescriptor(
-    config: BrowserToolConfig,
+  private browserTool<TSchema extends ToolInputSchemaShape>(
+    config: BrowserToolConfig<TSchema>,
     session: import('../types').NativeCapabilitySessionContext,
   ): NativeToolDescriptor {
-    // Reuse BaseNativeCapability descriptor wrapper with execute injected with viewId + timeout.
-    return this.createToolDescriptor({
+    type TypedArgs = { [K in keyof TSchema]: z.output<TSchema[K]> }
+    return {
       name: config.name,
       description: config.description,
-      schema: config.schema,
-      execute: async (args, input) => {
-        return this.withToolTimeout(config.name, input, async () => {
-          const viewId = await this.ensureSessionView(session, config.showWindow ?? true)
-          const executionContext = this.buildExecutionContext(session, input)
-          return config.execute(args, viewId, executionContext)
-        })
+      inputSchema: config.schema,
+      execute: async ({ args, abortSignal }) => {
+        try {
+          return await this.withToolTimeout(config.name, abortSignal, async () => {
+            const viewId = await this.ensureSessionView(session, config.showWindow ?? true)
+            const executionContext = this.buildExecutionContext(session, abortSignal)
+            // The inline tool / MCP adapter has already validated `args`
+            // against `config.schema` via `z.object(schema).safeParse(...)`,
+            // so this cast is structurally safe.
+            return config.execute(args as TypedArgs, viewId, executionContext)
+          })
+        } catch (err) {
+          return this.errorResult(err)
+        }
       },
-    })
+    }
   }
 
   // ── Tool Definitions (declarative) ─────────────────────────────────
 
-  private browserToolConfigs(): BrowserToolConfig[] {
+  private allBrowserDescriptors(
+    session: import('../types').NativeCapabilitySessionContext,
+  ): NativeToolDescriptor[] {
     return [
       // ── browser_navigate ──────────────────────────────────────
-      {
+      this.browserTool({
         name: 'browser_navigate',
         description:
           'Navigate the embedded browser to a URL. Opens the browser window if not already visible. Returns the page title after navigation completes. ' +
@@ -241,7 +271,7 @@ export class BrowserNativeCapability extends BaseNativeCapability {
           const result = await this.browserService.executeCommand({
             viewId,
             action: 'navigate',
-            url: args.url as string,
+            url: args.url,
           }, executionContext)
 
           if (result.status === 'success') {
@@ -249,7 +279,7 @@ export class BrowserNativeCapability extends BaseNativeCapability {
             return this.textResult(
               JSON.stringify(
                 {
-                  url: info?.url ?? (args.url as string),
+                  url: info?.url ?? args.url,
                   title: info?.title ?? '',
                   status: 'navigated',
                 },
@@ -261,10 +291,10 @@ export class BrowserNativeCapability extends BaseNativeCapability {
 
           return this.toCallToolResult(result)
         },
-      },
+      }, session),
 
       // ── browser_click ─────────────────────────────────────────
-      {
+      this.browserTool({
         name: 'browser_click',
         description:
           'Click an element on the current page using a CSS selector. The element must be visible and interactable.',
@@ -279,14 +309,14 @@ export class BrowserNativeCapability extends BaseNativeCapability {
           const result = await this.browserService.executeCommand({
             viewId,
             action: 'click',
-            selector: args.selector as string,
+            selector: args.selector,
           }, executionContext)
           return this.toCallToolResult(result)
         },
-      },
+      }, session),
 
       // ── browser_type ──────────────────────────────────────────
-      {
+      this.browserTool({
         name: 'browser_type',
         description:
           'Type text into an input element on the current page. The element is focused and cleared before typing.',
@@ -302,15 +332,15 @@ export class BrowserNativeCapability extends BaseNativeCapability {
           const result = await this.browserService.executeCommand({
             viewId,
             action: 'type',
-            selector: args.selector as string,
-            text: args.text as string,
+            selector: args.selector,
+            text: args.text,
           }, executionContext)
           return this.toCallToolResult(result)
         },
-      },
+      }, session),
 
       // ── browser_upload ─────────────────────────────────────────
-      {
+      this.browserTool({
         name: 'browser_upload',
         description:
           'Upload local files to a file input element. Supports explicit css/ref targets. ' +
@@ -341,23 +371,25 @@ export class BrowserNativeCapability extends BaseNativeCapability {
             .describe('When true (default), target must be input[type=file]'),
         },
         execute: async (args, viewId, executionContext) => {
-          const rawTarget = args.target as { kind: 'css' | 'ref'; selector?: string; ref?: string }
-          const target = rawTarget.kind === 'css'
-            ? { kind: 'css' as const, selector: rawTarget.selector as string }
-            : { kind: 'ref' as const, ref: rawTarget.ref as string }
+          // The two `target.kind` branches each guarantee one of the two
+          // optional fields exists (enforced by the schema's refine() calls
+          // and validated by the framework before execute runs).
+          const target = args.target.kind === 'css'
+            ? { kind: 'css' as const, selector: args.target.selector! }
+            : { kind: 'ref' as const, ref: args.target.ref! }
           const result = await this.browserService.executeCommand({
             viewId,
             action: 'upload',
             target,
-            files: args.files as string[],
-            strict: args.strict as boolean | undefined,
+            files: args.files,
+            strict: args.strict,
           }, executionContext)
           return this.toCallToolResult(result)
         },
-      },
+      }, session),
 
       // ── browser_extract ───────────────────────────────────────
-      {
+      this.browserTool({
         name: 'browser_extract',
         description:
           'Extract text content from the current page. Without a selector, extracts the full page content (title, URL, visible text, links). With a selector, extracts only the text of matching elements.',
@@ -369,15 +401,15 @@ export class BrowserNativeCapability extends BaseNativeCapability {
         },
         execute: async (args, viewId, executionContext) => {
           const command: BrowserCommand = args.selector
-            ? { viewId, action: 'extract-text', selector: args.selector as string }
+            ? { viewId, action: 'extract-text', selector: args.selector }
             : { viewId, action: 'extract-page' }
           const result = await this.browserService.executeCommand(command, executionContext)
           return this.toCallToolResult(result)
         },
-      },
+      }, session),
 
       // ── browser_screenshot ────────────────────────────────────
-      {
+      this.browserTool({
         name: 'browser_screenshot',
         description:
           'Take a screenshot of the current page. Returns the image as base64-encoded PNG. ' +
@@ -403,10 +435,10 @@ export class BrowserNativeCapability extends BaseNativeCapability {
 
           return this.toCallToolResult(result)
         },
-      },
+      }, session),
 
       // ── browser_scroll ────────────────────────────────────────
-      {
+      this.browserTool({
         name: 'browser_scroll',
         description:
           'Scroll the current page up or down. Useful for reaching content below the fold or navigating long pages.',
@@ -424,15 +456,15 @@ export class BrowserNativeCapability extends BaseNativeCapability {
           const result = await this.browserService.executeCommand({
             viewId,
             action: 'scroll',
-            direction: args.direction as 'up' | 'down',
-            amount: args.amount as number | undefined,
+            direction: args.direction,
+            amount: args.amount,
           }, executionContext)
           return this.toCallToolResult(result)
         },
-      },
+      }, session),
 
       // ── browser_wait ──────────────────────────────────────────
-      {
+      this.browserTool({
         name: 'browser_wait',
         description:
           'Wait for an element matching a CSS selector to appear on the page. Useful after navigation or dynamic content loading.',
@@ -447,15 +479,15 @@ export class BrowserNativeCapability extends BaseNativeCapability {
           const result = await this.browserService.executeCommand({
             viewId,
             action: 'wait-for-selector',
-            selector: args.selector as string,
-            timeout: args.timeout as number | undefined,
+            selector: args.selector,
+            timeout: args.timeout,
           }, executionContext)
           return this.toCallToolResult(result)
         },
-      },
+      }, session),
 
       // ── browser_snapshot ───────────────────────────────────────
-      {
+      this.browserTool({
         name: 'browser_snapshot',
         description:
           'Take an accessibility snapshot of the current page. ' +
@@ -485,9 +517,9 @@ export class BrowserNativeCapability extends BaseNativeCapability {
               viewId,
               action: 'snapshot',
               options: {
-                selector: args.selector as string | undefined,
-                interactiveOnly: args.interactive_only as boolean | undefined,
-                compact: args.compact as boolean | undefined,
+                selector: args.selector,
+                interactiveOnly: args.interactive_only,
+                compact: args.compact,
                 detectCursorInteractive: true,
               },
             },
@@ -504,10 +536,10 @@ export class BrowserNativeCapability extends BaseNativeCapability {
           }
           return this.toCallToolResult(result)
         },
-      },
+      }, session),
 
       // ── browser_ref_click ──────────────────────────────────────
-      {
+      this.browserTool({
         name: 'browser_ref_click',
         description:
           'Click an element by its snapshot reference (e.g. "e1"). ' +
@@ -523,7 +555,7 @@ export class BrowserNativeCapability extends BaseNativeCapability {
             {
               viewId,
               action: 'ref-click',
-              ref: args.ref as string,
+              ref: args.ref,
             },
             executionContext,
           )
@@ -538,10 +570,10 @@ export class BrowserNativeCapability extends BaseNativeCapability {
           }
           return this.toCallToolResult(result)
         },
-      },
+      }, session),
 
       // ── browser_ref_type ───────────────────────────────────────
-      {
+      this.browserTool({
         name: 'browser_ref_type',
         description:
           'Type text into an element by its snapshot reference (e.g. "e3"). ' +
@@ -560,8 +592,8 @@ export class BrowserNativeCapability extends BaseNativeCapability {
             {
               viewId,
               action: 'ref-type',
-              ref: args.ref as string,
-              text: args.text as string,
+              ref: args.ref,
+              text: args.text,
             },
             executionContext,
           )
@@ -576,7 +608,7 @@ export class BrowserNativeCapability extends BaseNativeCapability {
           }
           return this.toCallToolResult(result)
         },
-      },
+      }, session),
     ]
   }
 
@@ -663,17 +695,12 @@ export class BrowserNativeCapability extends BaseNativeCapability {
    *
    * The timer is always cleaned up (via finally) to prevent memory leaks.
    */
-  private withToolTimeout(toolName: string, input: NativeToolCallInput, handler: () => Promise<CallToolResult>): Promise<CallToolResult> {
-    if (input.context.signal?.aborted) {
+  private withToolTimeout(toolName: string, abortSignal: AbortSignal, handler: () => Promise<CallToolResult>): Promise<CallToolResult> {
+    if (abortSignal.aborted) {
       return Promise.resolve(this.structuredError('ABORTED', `Tool "${toolName}" was cancelled before execution.`))
     }
 
-    const timeoutMs = this.resolveTimeoutMs(input.context.deadlineAt)
-    if (timeoutMs <= 0) {
-      return Promise.resolve(
-        this.structuredError('TIMEOUT', `Tool "${toolName}" exceeded the execution deadline before start.`),
-      )
-    }
+    const timeoutMs = TOOL_TIMEOUT_MS
 
     let timer: ReturnType<typeof setTimeout> | null = null
     let abortCleanup: (() => void) | null = null
@@ -692,13 +719,11 @@ export class BrowserNativeCapability extends BaseNativeCapability {
     })
 
     const abortResult = new Promise<CallToolResult>((resolve) => {
-      const signal = input.context.signal
-      if (!signal) return
       const onAbort = () => {
         resolve(this.structuredError('ABORTED', `Tool "${toolName}" was cancelled during execution.`))
       }
-      signal.addEventListener('abort', onAbort, { once: true })
-      abortCleanup = () => signal.removeEventListener('abort', onAbort)
+      abortSignal.addEventListener('abort', onAbort, { once: true })
+      abortCleanup = () => abortSignal.removeEventListener('abort', onAbort)
     })
 
     return Promise.race([handler(), timeoutResult, abortResult]).finally(() => {
@@ -707,19 +732,17 @@ export class BrowserNativeCapability extends BaseNativeCapability {
     })
   }
 
-  private resolveTimeoutMs(deadlineAt?: number): number {
-    if (deadlineAt === undefined) return TOOL_TIMEOUT_MS
-    return Math.max(0, Math.min(TOOL_TIMEOUT_MS, deadlineAt - Date.now()))
-  }
-
   private buildExecutionContext(
     session: import('../types').NativeCapabilitySessionContext,
-    input: NativeToolCallInput,
+    abortSignal: AbortSignal,
   ): import('../../browser/types').BrowserExecutionContext {
-    return buildBrowserExecutionContext(input.context, {
-      projectPath: session.projectPath,
-      startupCwd: session.startupCwd,
-    })
+    return buildBrowserExecutionContext(
+      { signal: abortSignal },
+      {
+        projectPath: session.projectPath,
+        startupCwd: session.startupCwd,
+      },
+    )
   }
 
   // ── Result Helpers ────────────────────────────────────────────────

@@ -321,6 +321,19 @@ function SessionActionConfig({
         />
       </div>
 
+      <div className="space-y-1.5">
+        <label className="block text-[11px] font-medium text-[hsl(var(--muted-foreground))]">
+          {t('action.systemPrompt')}
+        </label>
+        <textarea
+          value={action.systemPrompt}
+          onChange={(e) => dispatch({ type: 'SET_SYSTEM_PROMPT', payload: e.target.value })}
+          rows={3}
+          className="w-full px-3 py-2 text-xs rounded-xl border border-[hsl(var(--border))] bg-transparent placeholder:text-[hsl(var(--muted-foreground)/0.4)] focus:outline-none focus:ring-1 focus:ring-[hsl(var(--ring))] resize-y leading-relaxed"
+          placeholder={t('action.systemPromptPlaceholder')}
+        />
+      </div>
+
       {/* Context injections — collapsible */}
       <div className="rounded-xl border border-[hsl(var(--border)/0.5)]">
         <button

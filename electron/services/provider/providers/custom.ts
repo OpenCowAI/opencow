@@ -17,8 +17,8 @@
  */
 
 import type {
-  CodexAuthConfig,
   HTTPAuthResult,
+  ProbeResult,
   ProviderAdapter,
   ProviderAdapterStatus,
   CustomCredential,
@@ -26,18 +26,21 @@ import type {
 } from '../types'
 import { CredentialStore } from '../credentialStore'
 import { createLogger } from '../../../platform/logger'
+import { probeUpstream } from './probe'
 
 const log = createLogger('Provider:Custom')
 
 export class CustomProvider implements ProviderAdapter {
   private readonly store: CredentialStore
+  private readonly credentialKey: string
 
-  constructor(store: CredentialStore) {
+  constructor(store: CredentialStore, credentialKey: string = 'custom') {
     this.store = store
+    this.credentialKey = credentialKey
   }
 
   async checkStatus(): Promise<ProviderAdapterStatus> {
-    const credential = await this.store.get('custom')
+    const credential = await this.store.getAs<CustomCredential>(this.credentialKey)
     if (!credential?.apiKey || !credential?.baseUrl) {
       return { authenticated: false }
     }
@@ -45,7 +48,7 @@ export class CustomProvider implements ProviderAdapter {
   }
 
   async getEnv(): Promise<Record<string, string>> {
-    const credential = await this.store.get('custom')
+    const credential = await this.store.getAs<CustomCredential>(this.credentialKey)
     if (!credential?.apiKey || !credential?.baseUrl) return {}
 
     const env: Record<string, string> = {
@@ -89,7 +92,7 @@ export class CustomProvider implements ProviderAdapter {
       authStyle,
     }
 
-    await this.store.update('custom', credential)
+    await this.store.updateAs(this.credentialKey, credential)
     log.info('Custom provider credentials saved', {
       baseUrl: credential.baseUrl,
       authStyle,
@@ -98,7 +101,7 @@ export class CustomProvider implements ProviderAdapter {
   }
 
   async getCredential(): Promise<import('@shared/types').ProviderCredentialInfo | null> {
-    const credential = await this.store.get('custom')
+    const credential = await this.store.getAs<CustomCredential>(this.credentialKey)
     if (!credential?.apiKey || !credential?.baseUrl) return null
     return {
       apiKey: credential.apiKey,
@@ -108,7 +111,7 @@ export class CustomProvider implements ProviderAdapter {
   }
 
   async getHTTPAuth(): Promise<HTTPAuthResult | null> {
-    const credential = await this.store.get('custom')
+    const credential = await this.store.getAs<CustomCredential>(this.credentialKey)
     if (!credential?.apiKey || !credential?.baseUrl) return null
     return {
       apiKey: credential.apiKey,
@@ -117,25 +120,32 @@ export class CustomProvider implements ProviderAdapter {
     }
   }
 
-  async getCodexAuthConfig(): Promise<CodexAuthConfig | null> {
-    const credential = await this.store.get('custom')
-    if (!credential?.apiKey || !credential?.baseUrl) return null
-    // Compatibility: historical credentials may carry `authStyle: api_key` from
-    // older UI flows. Codex auth only needs apiKey/baseUrl and sends bearer auth
-    // internally, so we don't hard-fail on that legacy field.
-    if (credential.authStyle && credential.authStyle !== 'bearer') {
-      log.warn(
-        `Custom credential authStyle="${credential.authStyle}" is legacy for Codex; proceeding with apiKey/baseUrl mapping`,
-      )
-    }
-    return {
-      apiKey: credential.apiKey,
-      baseUrl: credential.baseUrl,
-    }
-  }
-
   async logout(): Promise<void> {
-    await this.store.remove('custom')
+    await this.store.removeAt(this.credentialKey)
     log.info('Custom provider credentials cleared')
   }
+
+  async probe(): Promise<ProbeResult> {
+    const credential = await this.store.getAs<CustomCredential>(this.credentialKey)
+    if (!credential?.apiKey || !credential?.baseUrl) {
+      return { ok: false, reason: 'unauthenticated', message: 'Missing API key or base URL' }
+    }
+    const headers: Record<string, string> =
+      credential.authStyle === 'bearer'
+        ? { Authorization: `Bearer ${credential.apiKey}` }
+        : { 'x-api-key': credential.apiKey, 'anthropic-version': '2023-06-01' }
+    return probeUpstream({
+      url: joinPath(credential.baseUrl, 'v1/models'),
+      headers,
+      logLabel: `Anthropic-compat (${credential.baseUrl})`,
+    })
+  }
+}
+
+function joinPath(base: string, path: string): string {
+  const b = base.replace(/\/+$/, '')
+  const p = path.replace(/^\/+/, '')
+  // Honour base URLs that already include `/v1` (common for proxies).
+  if (b.endsWith('/v1') && p.startsWith('v1/')) return `${b}/${p.slice(3)}`
+  return `${b}/${p}`
 }

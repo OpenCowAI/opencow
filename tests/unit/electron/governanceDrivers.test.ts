@@ -2,7 +2,6 @@
 
 import { describe, it, expect, vi } from 'vitest'
 import { ClaudeGovernanceDriver } from '../../../electron/services/capabilityCenter/governance/claudeGovernanceDriver'
-import { CodexGovernanceDriver } from '../../../electron/services/capabilityCenter/governance/codexGovernanceDriver'
 import type { EngineGovernanceDriver, GovernanceOperation } from '../../../electron/services/capabilityCenter/governance/engineGovernanceDriver'
 import type { ManagedCapabilityCategory } from '../../../src/shared/types'
 
@@ -42,21 +41,9 @@ describe('Governance drivers', () => {
     }
   })
 
-  it('CodexGovernanceDriver supports only skill and mcp-server', () => {
-    const driver = new CodexGovernanceDriver(createImpl())
-    for (const operation of operations) {
-      expect(driver.supports('skill', operation)).toBe(true)
-      expect(driver.supports('mcp-server', operation)).toBe(true)
-      expect(driver.supports('agent', operation)).toBe(false)
-      expect(driver.supports('command', operation)).toBe(false)
-      expect(driver.supports('rule', operation)).toBe(false)
-      expect(driver.supports('hook', operation)).toBe(false)
-    }
-  })
-
   it('forwards calls to underlying implementation', async () => {
     const impl = createImpl()
-    const driver = new CodexGovernanceDriver(impl)
+    const driver = new ClaudeGovernanceDriver(impl)
 
     await driver.discover({ projectPath: '/tmp/project' })
     await driver.importItem({
@@ -65,29 +52,29 @@ describe('Governance drivers', () => {
         category: 'skill',
         description: '',
         sourcePath: '/tmp/source',
-        sourceType: 'codex',
+        sourceType: 'claude-code',
         alreadyImported: false,
         sourceScope: 'global',
       },
       target: { scope: 'global' },
-      store: {} as any,
-      stateRepo: {} as any,
+      store: {} as never,
+      stateRepo: {} as never,
     })
     await driver.publish({
       category: 'skill',
       name: 'alpha',
-      target: 'codex-global',
-      store: {} as any,
-      stateRepo: {} as any,
+      target: 'claude-code-global',
+      store: {} as never,
+      stateRepo: {} as never,
       strategy: 'copy',
     })
     await driver.unpublish({
       category: 'skill',
       name: 'alpha',
-      target: 'codex-global',
-      stateRepo: {} as any,
+      target: 'claude-code-global',
+      stateRepo: {} as never,
     })
-    await driver.detectDrift({ distributions: [], store: {} as any })
+    await driver.detectDrift({ distributions: [], store: {} as never })
 
     expect(impl.discover).toHaveBeenCalledTimes(1)
     expect(impl.importItem).toHaveBeenCalledTimes(1)

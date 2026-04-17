@@ -194,21 +194,21 @@ describe('StateRepository', () => {
       await repo.recordDistribution({
         category: 'rule',
         name: 'engine-aware',
-        targetType: 'codex-global',
-        targetPath: '/tmp/codex/rules/engine-aware.md',
+        targetType: 'claude-code-project',
+        targetPath: '/tmp/project/.claude/rules/engine-aware.md',
         strategy: 'copy',
-        contentHash: 'sha256:codex',
+        contentHash: 'sha256:project',
         distributedAt: now,
       })
 
       const result = await repo.batchGetDistributions(
         'rule',
         ['engine-aware'],
-        { targetTypes: ['codex-global', 'claude-code-global'] },
+        { targetTypes: ['claude-code-project', 'claude-code-global'] },
       )
 
-      expect(result.get('engine-aware')?.targetType).toBe('codex-global')
-      expect(result.get('engine-aware')?.targetPath).toBe('/tmp/codex/rules/engine-aware.md')
+      expect(result.get('engine-aware')?.targetType).toBe('claude-code-project')
+      expect(result.get('engine-aware')?.targetPath).toBe('/tmp/project/.claude/rules/engine-aware.md')
     })
   })
 
@@ -218,10 +218,10 @@ describe('StateRepository', () => {
       await repo.recordDistribution({
         category: 'skill',
         name: 'multi-engine',
-        targetType: 'codex-project',
-        targetPath: '/tmp/project/.codex/config.toml',
+        targetType: 'claude-code-project',
+        targetPath: '/tmp/project/.claude/skills/multi-engine/SKILL.md',
         strategy: 'copy',
-        contentHash: 'sha256:codex-a',
+        contentHash: 'sha256:project-a',
         distributedAt: now,
       })
       await repo.recordDistribution({
@@ -248,25 +248,25 @@ describe('StateRepository', () => {
         ['multi-engine', 'claude-only'],
       )
 
-      expect(result.get('multi-engine')).toEqual(['claude-code-global', 'codex-project'])
+      expect(result.get('multi-engine')).toEqual(['claude-code-global', 'claude-code-project'])
       expect(result.get('claude-only')).toEqual(['claude-code-project'])
     })
   })
 
   describe('import source_origin mapping', () => {
-    it('keeps codex origin as-is', async () => {
+    it('keeps plugin origin as-is', async () => {
       await repo.recordImport({
         category: 'skill',
-        name: 'codex-skill',
-        sourcePath: '/tmp/.agents/skills/codex-skill/SKILL.md',
-        sourceOrigin: 'codex',
+        name: 'plugin-skill',
+        sourcePath: '/tmp/plugins/plugin-skill/SKILL.md',
+        sourceOrigin: 'plugin',
         sourceHash: null,
         importedAt: Date.now(),
       })
 
-      const records = await repo.getImportsByOrigin('codex')
+      const records = await repo.getImportsByOrigin('plugin')
       expect(records).toHaveLength(1)
-      expect(records[0]?.sourceOrigin).toBe('codex')
+      expect(records[0]?.sourceOrigin).toBe('plugin')
     })
 
     it('maps unknown source_origin to unknown instead of claude-code', async () => {
@@ -284,6 +284,23 @@ describe('StateRepository', () => {
 
       const record = await repo.getImport('skill', 'future-origin')
       expect(record?.sourceOrigin).toBe('unknown')
+    })
+
+    it('keeps codex source_origin as-is', async () => {
+      await db
+        .insertInto('capability_import')
+        .values({
+          category: 'skill',
+          name: 'codex-origin',
+          source_path: '/tmp/codex-origin.md',
+          source_origin: 'codex',
+          source_hash: null,
+          imported_at: Date.now(),
+        })
+        .execute()
+
+      const record = await repo.getImport('skill', 'codex-origin')
+      expect(record?.sourceOrigin).toBe('codex')
     })
   })
 })

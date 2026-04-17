@@ -35,6 +35,8 @@
     "anyProject": "Any project",
     "selectProject": "Select project",
     "promptTemplate": "Prompt template",
+    "systemPrompt": "System Prompt",
+    "systemPromptPlaceholder": "Optional system behavior guidance for scheduled session.",
     "variableHint": "Supports {{date}} {{project}} variables",
     "types": {
       "startSession": "Start Session",
@@ -57,6 +59,7 @@
     "minutes": "minutes",
     "at": "At",
     "cronHelp": "minute · hour · day-of-month · month · day-of-week",
+    "cronAdvancedHint": "Cron is advanced mode. Prefer regular time settings unless needed.",
     "nextExecution": "Next execution:",
     "eventType": "Event type",
     "events": {

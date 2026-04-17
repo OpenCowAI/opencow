@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-import type { SessionLaunchOptions } from './sessionLaunchOptions'
+import type { ClaudeSessionLaunchOptions } from './sessionLaunchOptions'
 import { createLogger } from '../platform/logger'
 
 const log = createLogger('EnginePolicy')
@@ -38,7 +38,7 @@ export interface ClaudeCanUseToolPolicyInput {
 
 export interface ClaudeSessionPolicyInput {
   builtinToolsEnabled?: boolean
-  options: SessionLaunchOptions
+  options: ClaudeSessionLaunchOptions
   logger?: {
     debug: (message: string) => void
   }

@@ -6,7 +6,6 @@ import { resolveStartSessionPolicy } from '../../../electron/command/policy/star
 describe('resolveStartSessionPolicy', () => {
   it('builds defaults when no policy is provided', () => {
     const resolved = resolveStartSessionPolicy({
-      engineKind: 'codex',
     })
 
     expect(resolved).toEqual({
@@ -19,7 +18,7 @@ describe('resolveStartSessionPolicy', () => {
       },
       capabilities: {
         skill: {
-          maxChars: 24000,
+          maxChars: 80000,
           explicit: [],
           implicitQuery: undefined,
         },
@@ -29,7 +28,6 @@ describe('resolveStartSessionPolicy', () => {
 
   it('respects mode=none and clears allowlist', () => {
     const resolved = resolveStartSessionPolicy({
-      engineKind: 'claude',
       policy: {
         tools: {
           builtin: { enabled: false },
@@ -54,7 +52,6 @@ describe('resolveStartSessionPolicy', () => {
 
   it('infers mode=allowlist when allowlist entries are provided without mode', () => {
     const resolved = resolveStartSessionPolicy({
-      engineKind: 'claude',
       policy: {
         tools: {
           native: {
@@ -70,7 +67,6 @@ describe('resolveStartSessionPolicy', () => {
 
   it('normalizes allowlist and skill fields', () => {
     const resolved = resolveStartSessionPolicy({
-      engineKind: 'claude',
       policy: {
         tools: {
           builtin: { enabled: true },

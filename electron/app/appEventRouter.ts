@@ -187,6 +187,22 @@ export function wireEventRoutes(deps: EventRouterDeps): void {
       await inboxService.onEngineEvent(engineEvent)
       await webhookService.onEngineEvent(engineEvent)
     }
+
+    // Execution-context fallback from hook stream:
+    // Hook payload may carry cwd updates for managed sessions. Feed those
+    // into orchestrator so branch/worktree context stays fresh even when
+    // engine runtime streams omit cwd-oriented events.
+    const hookCwd = typeof event.payload.payload.cwd === 'string'
+      ? event.payload.payload.cwd.trim()
+      : ''
+    const skipHookCwdIngestion = orchestrator.shouldSkipHookSourceEvent(event.payload.sessionId)
+    if (hookCwd.length > 0 && !skipHookCwdIngestion) {
+      orchestrator.ingestExecutionContextSignal(event.payload.sessionId, {
+        cwd: hookCwd,
+        source: 'hook',
+        occurredAtMs: Date.parse(event.payload.timestamp),
+      })
+    }
   })
 
   // Artifact capture from monitor sessions (session_stop hook events)

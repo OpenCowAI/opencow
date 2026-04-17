@@ -138,6 +138,7 @@ describe('conversation domain reducer', () => {
         {
           kind: 'context.snapshot',
           payload: {
+            metricKind: 'context_occupancy',
             usedTokens: 1234,
             limitTokens: 272000,
             remainingTokens: 270766,
@@ -152,6 +153,37 @@ describe('conversation domain reducer', () => {
 
     expect(decision.state.phase).toBe('streaming')
     expect(decision.effects.some((effect) => effect.type === 'apply_context_snapshot')).toBe(true)
+  })
+
+  it('routes execution_context.signal to apply_execution_context_signal without changing phase', () => {
+    const decision = reduceConversationDomainEvent({
+      state: createInitialConversationDomainState({ phase: 'streaming' }),
+      eventEnvelope: envelope(
+        {
+          kind: 'execution_context.signal',
+          payload: {
+            cwd: '/tmp/opencow-worktree',
+            source: 'runtime.tool',
+            toolUseId: 'cmd-1',
+            toolName: 'Bash',
+          },
+        },
+        { includeTurnRef: false, occurredAtMs: 12_345 },
+      ),
+    })
+
+    expect(decision.state.phase).toBe('streaming')
+    const effect = decision.effects.find((candidate) => candidate.type === 'apply_execution_context_signal')
+    expect(effect).toBeTruthy()
+    if (effect?.type === 'apply_execution_context_signal') {
+      expect(effect.payload).toEqual({
+        cwd: '/tmp/opencow-worktree',
+        source: 'runtime.tool',
+        toolUseId: 'cmd-1',
+        toolName: 'Bash',
+        occurredAtMs: 12_345,
+      })
+    }
   })
 
   it('fail-closes protocol violations', () => {
@@ -321,6 +353,28 @@ describe('conversation domain reducer', () => {
     expect(decision.effects.some((effect) => effect.type === 'apply_turn_usage')).toBe(true)
   })
 
+  it('does not recover streaming from awaiting_input on execution_context.signal events', () => {
+    const decision = reduceConversationDomainEvent({
+      state: createInitialConversationDomainState({ phase: 'awaiting_input' }),
+      eventEnvelope: envelope(
+        {
+          kind: 'execution_context.signal',
+          payload: {
+            cwd: '/tmp/opencow-worktree',
+            source: 'runtime.tool',
+            toolUseId: 'cmd-1',
+            toolName: 'Bash',
+          },
+        },
+        { includeTurnRef: false },
+      ),
+    })
+
+    expect(decision.state.phase).toBe('awaiting_input')
+    expect(decision.effects.some((effect) => effect.type === 'recover_streaming_from_awaiting_input')).toBe(false)
+    expect(decision.effects.some((effect) => effect.type === 'apply_execution_context_signal')).toBe(true)
+  })
+
   it('does not recover streaming from awaiting_input on context.snapshot events', () => {
     const decision = reduceConversationDomainEvent({
       state: createInitialConversationDomainState({ phase: 'awaiting_input' }),
@@ -328,6 +382,7 @@ describe('conversation domain reducer', () => {
         {
           kind: 'context.snapshot',
           payload: {
+            metricKind: 'context_occupancy',
             usedTokens: 500,
             limitTokens: 200000,
             remainingTokens: 199500,
@@ -420,6 +475,7 @@ describe('conversation domain reducer', () => {
         {
           kind: 'context.snapshot',
           payload: {
+            metricKind: 'context_occupancy',
             usedTokens: 2345,
             limitTokens: 272000,
             remainingTokens: 269655,

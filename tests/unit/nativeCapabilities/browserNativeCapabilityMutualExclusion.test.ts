@@ -11,6 +11,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { BrowserNativeCapability } from '../../../electron/nativeCapabilities/browser/browserNativeCapability'
 import type { NativeCapabilityToolContext } from '../../../electron/nativeCapabilities/types'
+import type { OpenCowSessionContext } from '../../../electron/nativeCapabilities/openCowSessionContext'
+import type { ToolProgressRelay } from '../../../electron/utils/toolProgressRelay'
 
 // ── Mocks ──────────────────────────────────────────────────────────────
 
@@ -34,22 +36,40 @@ const mockBus = {
 
 // ── Helpers ─────────────────────────────────────────────────────────────
 
-function makeContext(overrides?: Partial<NativeCapabilityToolContext>): NativeCapabilityToolContext {
+function makeRelay(): ToolProgressRelay {
   return {
-    session: {
-      sessionId: 'test-session-1',
-      projectId: null,
-      issueId: null,
-      originSource: 'agent',
-      startupCwd: process.cwd(),
+    register: vi.fn(),
+    unregister: vi.fn(),
+    emit: vi.fn(),
+    flush: vi.fn(),
+  } as unknown as ToolProgressRelay
+}
+
+function makeSessionContext(): OpenCowSessionContext {
+  return {
+    sessionId: 'test-session-1',
+    cwd: process.cwd(),
+    abortSignal: new AbortController().signal,
+    projectId: null,
+    issueId: null,
+    originSource: 'agent',
+    startupCwd: process.cwd(),
+    relay: makeRelay(),
+  }
+}
+
+/**
+ * Phase 1B.11: build the SDK CapabilityToolContext shape (sessionContext +
+ * hostEnvironment). `activeMcpServerNames` lives on hostEnvironment as a
+ * `readonly string[]` (not the legacy `ReadonlySet<string>` field on the
+ * pre-migration NativeCapabilityToolContext).
+ */
+function makeContext(opts: { activeMcpServerNames?: readonly string[] } = {}): NativeCapabilityToolContext {
+  return {
+    sessionContext: makeSessionContext(),
+    hostEnvironment: {
+      activeMcpServerNames: opts.activeMcpServerNames ?? [],
     },
-    relay: {
-      register: vi.fn(),
-      unregister: vi.fn(),
-      emit: vi.fn(),
-      flush: vi.fn(),
-    } as unknown as NativeCapabilityToolContext['relay'],
-    ...overrides,
   }
 }
 
@@ -109,14 +129,14 @@ describe('BrowserNativeCapability — Chrome DevTools MCP Mutual Exclusion', () 
       }
     })
 
-    it('returns all 11 tools when activeMcpServerNames is undefined', () => {
-      const context = makeContext({ activeMcpServerNames: undefined })
+    it('returns all 11 tools when activeMcpServerNames is omitted', () => {
+      const context = makeContext()
       const tools = getToolNames(capability, context)
       expect(tools).toHaveLength(11)
     })
 
     it('returns all 11 tools when activeMcpServerNames is empty', () => {
-      const context = makeContext({ activeMcpServerNames: new Set() })
+      const context = makeContext({ activeMcpServerNames: [] })
       const tools = getToolNames(capability, context)
       expect(tools).toHaveLength(11)
     })
@@ -127,7 +147,7 @@ describe('BrowserNativeCapability — Chrome DevTools MCP Mutual Exclusion', () 
   describe('with chrome-devtools MCP active', () => {
     it('suppresses 7 overlapping tools', () => {
       const context = makeContext({
-        activeMcpServerNames: new Set(['chrome-devtools']),
+        activeMcpServerNames: ['chrome-devtools'],
       })
       const tools = getToolNames(capability, context)
 
@@ -138,7 +158,7 @@ describe('BrowserNativeCapability — Chrome DevTools MCP Mutual Exclusion', () 
 
     it('retains non-overlapping browser tools (scroll/ref/upload)', () => {
       const context = makeContext({
-        activeMcpServerNames: new Set(['chrome-devtools']),
+        activeMcpServerNames: ['chrome-devtools'],
       })
       const tools = getToolNames(capability, context)
 
@@ -147,7 +167,7 @@ describe('BrowserNativeCapability — Chrome DevTools MCP Mutual Exclusion', () 
 
     it('returns exactly 4 tools when chrome-devtools is active', () => {
       const context = makeContext({
-        activeMcpServerNames: new Set(['chrome-devtools']),
+        activeMcpServerNames: ['chrome-devtools'],
       })
       const tools = getToolNames(capability, context)
       expect(tools).toHaveLength(4)
@@ -159,7 +179,7 @@ describe('BrowserNativeCapability — Chrome DevTools MCP Mutual Exclusion', () 
   describe('with unrelated MCP servers', () => {
     it('returns all 11 tools when other MCP servers are active', () => {
       const context = makeContext({
-        activeMcpServerNames: new Set(['some-other-server', 'another-mcp']),
+        activeMcpServerNames: ['some-other-server', 'another-mcp'],
       })
       const tools = getToolNames(capability, context)
       expect(tools).toHaveLength(11)
@@ -167,7 +187,7 @@ describe('BrowserNativeCapability — Chrome DevTools MCP Mutual Exclusion', () 
 
     it('still suppresses when chrome-devtools is among other servers', () => {
       const context = makeContext({
-        activeMcpServerNames: new Set(['some-other-server', 'chrome-devtools', 'another-mcp']),
+        activeMcpServerNames: ['some-other-server', 'chrome-devtools', 'another-mcp'],
       })
       const tools = getToolNames(capability, context)
 
@@ -181,7 +201,7 @@ describe('BrowserNativeCapability — Chrome DevTools MCP Mutual Exclusion', () 
   describe('tool object integrity', () => {
     it('retained descriptors have valid name and handler', () => {
       const context = makeContext({
-        activeMcpServerNames: new Set(['chrome-devtools']),
+        activeMcpServerNames: ['chrome-devtools'],
       })
       const tools = capability.getToolDescriptors(context)
 

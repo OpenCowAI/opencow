@@ -3,6 +3,7 @@
 import type {
   RuntimeContextSnapshotPayload,
   RuntimeDiagnosticPayload,
+  RuntimeExecutionContextSignalPayload,
   RuntimeResultPayload,
   RuntimeTurnUsage,
 } from '../runtime/events'
@@ -38,12 +39,26 @@ export type ConversationDomainEffect =
       }
     }
   | {
+      readonly type: 'apply_user_tool_result'
+      readonly payload: {
+        readonly toolUseId: string
+        readonly isError: boolean
+        readonly blocks: ConversationContentBlock[]
+      }
+    }
+  | {
       readonly type: 'apply_turn_usage'
       readonly payload: RuntimeTurnUsage
     }
   | {
       readonly type: 'apply_context_snapshot'
       readonly payload: RuntimeContextSnapshotPayload
+    }
+  | {
+      readonly type: 'apply_execution_context_signal'
+      readonly payload: RuntimeExecutionContextSignalPayload & {
+        readonly occurredAtMs: number
+      }
     }
   | {
       readonly type: 'apply_tool_progress'

@@ -4,7 +4,7 @@ import { useEffect, useLayoutEffect, useState, useCallback, useMemo, useRef } fr
 import { useTranslation } from 'react-i18next'
 import { useAppStore, selectProjectId } from '@/stores/appStore'
 import { useDialogState } from '@/hooks/useModalAnimation'
-import { Blocks, Search, Download, Plus, Sparkles, Store, GitFork, Copy, Cpu, AlertTriangle } from 'lucide-react'
+import { Blocks, Search, Download, Plus, Sparkles, Store, GitFork, Copy, AlertTriangle } from 'lucide-react'
 import { createLogger } from '@/lib/logger'
 import { fireAndForget } from '@/lib/asyncUtils'
 import { isAICreatableCategory } from '@shared/types'
@@ -292,26 +292,22 @@ export function CapabilitiesView(): React.JSX.Element {
 
   // ── Import — welcome page detection count + CTA dialog ─────────
 
-  const [importableCounts, setImportableCounts] = useState({ claude: 0, codex: 0 })
+  const [importableCounts, setImportableCounts] = useState({ claude: 0 })
   const [welcomeImportOpen, setWelcomeImportOpen] = useState(false)
-  const [welcomeImportSource, setWelcomeImportSource] = useState<'claude-code' | 'codex'>('claude-code')
+  const [welcomeImportSource, setWelcomeImportSource] = useState<'claude-code'>('claude-code')
 
   useEffect(() => {
     let cancelled = false
     ;(async () => {
       try {
         const projectId = selectedProjectId ?? undefined
-        const [claudeItems, codexItems] = await Promise.all([
-          getAppAPI()['capability:import:discover']({ sourceType: 'claude-code', projectId }),
-          getAppAPI()['capability:import:discover']({ sourceType: 'codex', projectId }),
-        ])
+        const claudeItems = await getAppAPI()['capability:import:discover']({ sourceType: 'claude-code', projectId })
         if (cancelled) return
         setImportableCounts({
           claude: claudeItems.filter((i) => !i.alreadyImported).length,
-          codex: codexItems.filter((i) => !i.alreadyImported).length,
         })
       } catch {
-        if (!cancelled) setImportableCounts({ claude: 0, codex: 0 })
+        if (!cancelled) setImportableCounts({ claude: 0 })
       }
     })()
     return () => { cancelled = true }
@@ -566,29 +562,6 @@ export function CapabilitiesView(): React.JSX.Element {
                 {importableCounts.claude > 0 && (
                   <p className="text-xs text-[hsl(var(--muted-foreground))] mt-0.5">
                     {t('capabilityCenter.importDetected', { count: importableCounts.claude })}
-                  </p>
-                )}
-              </div>
-              <span className="text-[hsl(var(--muted-foreground))] text-sm">&rarr;</span>
-            </button>
-
-            {/* Import from Codex CTA */}
-            <button
-              type="button"
-              onClick={() => {
-                setWelcomeImportSource('codex')
-                setWelcomeImportOpen(true)
-              }}
-              className="w-full flex items-center gap-4 p-4 rounded-xl border border-[hsl(var(--border))] hover:border-[hsl(var(--ring))] hover:shadow-sm transition-all text-left outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--ring))]"
-            >
-              <div className="p-2.5 rounded-lg bg-cyan-500/10">
-                <Cpu className="h-5 w-5 text-cyan-600 dark:text-cyan-400" />
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium">{t('capabilityCenter.importFromCodex')}</p>
-                {importableCounts.codex > 0 && (
-                  <p className="text-xs text-[hsl(var(--muted-foreground))] mt-0.5">
-                    {t('capabilityCenter.importDetected', { count: importableCounts.codex })}
                   </p>
                 )}
               </div>

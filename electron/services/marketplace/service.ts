@@ -410,9 +410,8 @@ export class MarketplaceService {
     // Start the visible session — projectPath sets the SDK subprocess cwd
     // so the Agent's sandboxed tools (read_file, list_directory) resolve
     // paths relative to the downloaded repository.
-    // customTools (engine-agnostic): SessionOrchestrator handles injection per engine
-    // - Claude: creates in-process MCP server
-    // - Codex:  registers via CodexNativeBridgeManager HTTP bridge
+    // customTools (engine-agnostic): SessionOrchestrator handles injection
+    // via in-process MCP server
     const sessionInput: SessionStartOptions = {
       prompt: prepared.userMessage,
       origin: { source: 'market-analyzer', slug, marketplaceId },

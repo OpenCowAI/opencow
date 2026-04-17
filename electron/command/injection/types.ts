@@ -1,28 +1,32 @@
 // SPDX-License-Identifier: Apache-2.0
 
-import type { AIEngineKind } from '../../../src/shared/types'
 import type { CapabilityPlan } from '../../services/capabilityCenter'
 import type { SDKHookMap } from '../../services/capabilityCenter/claudeCodeAdapter'
 import type { SystemPromptLayers } from '../systemPromptComposer'
-import type { SessionLaunchOptions } from '../sessionLaunchOptions'
+import type {
+  SessionLaunchOptions,
+  SessionLaunchOptionPatch,
+} from '../sessionLaunchOptions'
 
-export interface EngineInjectionRequest {
-  engineKind: AIEngineKind
+export interface ClaudeEngineInjectionRequest {
   plan: CapabilityPlan
   promptLayers: SystemPromptLayers
   options: SessionLaunchOptions
   builtInHooks?: SDKHookMap
 }
 
+export type EngineInjectionRequest = ClaudeEngineInjectionRequest
+
 export interface EngineInjectionResult {
   promptLayers: SystemPromptLayers
-  optionPatch: Partial<SessionLaunchOptions>
+  optionPatch: SessionLaunchOptionPatch
   hooks?: SDKHookMap
   hookCleanup?: () => void
   activeMcpServerNames?: ReadonlySet<string>
 }
 
-export interface EngineInjectionAdapter {
-  readonly engineKind: AIEngineKind
-  inject(request: EngineInjectionRequest): EngineInjectionResult
+export interface EngineInjectionAdapter<TRequest extends EngineInjectionRequest = EngineInjectionRequest> {
+  inject(request: TRequest): EngineInjectionResult
 }
+
+export type ClaudeEngineInjectionAdapter = EngineInjectionAdapter<ClaudeEngineInjectionRequest>

@@ -2,7 +2,6 @@
 
 import { nanoid } from 'nanoid'
 import type {
-  AIEngineKind,
   ManagedSessionConfig,
   ManagedSessionState,
   ManagedSessionInfo,
@@ -20,30 +19,12 @@ import type {
   EvoseProgressBlock,
   EvoseToolCallBlock,
 } from '../../src/shared/types'
+import type { ProviderProfileId } from '../../src/shared/providerProfile'
 import type { SessionLifecycleEvent } from './sessionStateMachine'
 import { createLogger } from '../platform/logger'
 import { IPC_PROGRESS_CAP_CHARS } from '../conversation/constants'
 
 const log = createLogger('ManagedSession')
-
-/**
- * Dynamic engine switch parameters.
- *
- * Structured as an object to keep the call site self-documenting
- * and extensible without changing the method signature.
- */
-export interface SwitchEngineParams {
-  /** Target engine to switch to. */
-  newEngine: AIEngineKind
-  /** Conversation summary injected as context for the new engine. */
-  contextSummary?: string
-  /**
-   * Original context system prompt (from issue/project).
-   * Passed explicitly so switchEngine replaces — not appends to —
-   * any prior engine-switch summary, preventing unbounded growth.
-   */
-  originalContext?: string
-}
 
 export interface ManagedSessionRuntimeConfig extends ManagedSessionConfig {
   customMcpServers?: Record<string, Record<string, unknown>>
@@ -92,6 +73,7 @@ function normalizeUpdatedAtMs(updatedAtMs: number | undefined): number {
 }
 
 function normalizeContextState(params: {
+  metricKind?: SessionContextState['metricKind']
   usedTokens: number
   limitTokens: number | null
   source: string
@@ -99,6 +81,7 @@ function normalizeContextState(params: {
   updatedAtMs?: number
 }): SessionContextState {
   return {
+    metricKind: 'context_occupancy',
     usedTokens: normalizeUsedTokens(params.usedTokens),
     limitTokens: normalizeLimitTokens(params.limitTokens),
     source: normalizeContextSource(params.source),
@@ -112,6 +95,7 @@ function toContextTelemetry(state: SessionContextState | null): SessionContextTe
   const remainingTokens = Math.max(0, state.limitTokens - state.usedTokens)
   const remainingPct = Math.max(0, Math.min(100, (remainingTokens / state.limitTokens) * 100))
   return {
+    metricKind: 'context_occupancy',
     usedTokens: state.usedTokens,
     limitTokens: state.limitTokens,
     remainingTokens,
@@ -129,7 +113,6 @@ function toContextTelemetry(state: SessionContextState | null): SessionContextTe
  */
 export class ManagedSession {
   private sessionId: string
-  private engineKind: AIEngineKind
   private engineSessionRef: string | null = null
   private engineState: Record<string, unknown> | null = null
   private state: ManagedSessionState = 'creating'
@@ -161,26 +144,48 @@ export class ManagedSession {
   private _stopReason: SessionStopReason | null = null
   private systemEventIndex = new Map<string, string>()
   private executionContext: SessionExecutionContext | null = null
+  /**
+   * Session-bound provider profile (ε.3b).
+   *
+   *   - `null` — session follows the current Settings default. Matches
+   *     pre-ε.3 behavior.
+   *   - Non-null — pinned to this profile regardless of Settings changes.
+   *     ε.3c will have spawn prefer this value.
+   */
+  private providerProfileId: ProviderProfileId | null = null
 
   constructor(config: ManagedSessionRuntimeConfig) {
     this.sessionId = `ccb-${nanoid(12)}`
-    const engineKind: AIEngineKind = config.engineKind ?? 'claude'
     const engineState: Record<string, unknown> | null = config.engineState ?? null
     const { model: startupModelOverride, ...configWithoutModel } = config
     this.config = {
       ...configWithoutModel,
-      engineKind,
       engineState,
     }
-    this.engineKind = engineKind
     this.engineState = engineState
     this.modelOverride = startupModelOverride ?? null
     this.model = null
+    this.providerProfileId = config.providerProfileId ?? null
     const now = Date.now()
     this.createdAt = now
     this.lastActivity = now
     // Initial state is 'creating' which is active
     this.activeStartedAt = now
+  }
+
+  /** ε.3b — the provider profile this session is bound to, or null for "follow default". */
+  getProviderProfileId(): ProviderProfileId | null {
+    return this.providerProfileId
+  }
+
+  /**
+   * ε.3b — pin the session to an explicit profile, or set to null to
+   * re-enable "follow default" behavior. ε.4 UI exposes this via a
+   * per-session "Change provider" action.
+   */
+  setProviderProfileId(id: ProviderProfileId | null): void {
+    this.providerProfileId = id
+    this.lastActivity = Date.now()
   }
 
   get id(): string {
@@ -213,62 +218,7 @@ export class ManagedSession {
     return this.state
   }
 
-  /** Cheap engine accessor for projection/runtime logic. */
-  getEngineKind(): AIEngineKind {
-    return this.engineKind
-  }
 
-  /**
-   * Switch the session to a different AI engine.
-   *
-   * Clears engine-specific state (ref, checkpoint) since they cannot cross
-   * engine boundaries. Injects a system event marker into the message timeline.
-   *
-   * This method is purely state mutation — it does NOT create or start a new
-   * lifecycle. The caller (SessionOrchestrator) is responsible for restarting
-   * the lifecycle after calling this.
-   */
-  switchEngine(params: SwitchEngineParams): void {
-    const { newEngine, contextSummary, originalContext } = params
-    const oldEngine = this.engineKind
-    if (oldEngine === newEngine) return
-
-    const hadModelOverride = this.modelOverride != null
-
-    // 1. Update both storage locations (dual storage invariant)
-    this.engineKind = newEngine
-    this.config = { ...this.config, engineKind: newEngine }
-    this.modelOverride = null
-    this.model = null
-    this.clearContextState()
-
-    // 2. Clear engine-specific state (cannot resume cross-engine)
-    this.engineSessionRef = null
-    this.engineState = null
-
-    // 3. Set context system prompt: original context + engine switch summary.
-    //    Replace (not append) to prevent unbounded growth on A→B→A cycles.
-    if (contextSummary) {
-      this.config = {
-        ...this.config,
-        contextSystemPrompt: originalContext
-          ? `${originalContext}\n\n${contextSummary}`
-          : contextSummary,
-      }
-    }
-
-    // 4. Insert engine switch marker into message timeline
-    this.addSystemEvent({ type: 'engine_switch', fromEngine: oldEngine, toEngine: newEngine })
-
-    log.info('switchEngine', {
-      sessionId: this.sessionId,
-      from: oldEngine,
-      to: newEngine,
-      summaryLength: contextSummary?.length ?? 0,
-      clearedModelOverride: hadModelOverride,
-    })
-    this.lastActivity = Date.now()
-  }
 
   /** Cheap model accessor for projection/runtime logic. */
   getModel(): string | null {
@@ -331,6 +281,7 @@ export class ManagedSession {
     // Downgrade to estimated confidence so the UI can distinguish stale data.
     if (prev && prev.usedTokens > 0) {
       this.contextState = {
+        metricKind: 'context_occupancy',
         usedTokens: prev.usedTokens,
         limitTokens: null, // invalidate model-scoped limit
         source: prev.source,
@@ -418,6 +369,7 @@ export class ManagedSession {
     }
 
     const next = normalizeContextState({
+      metricKind: 'context_occupancy',
       usedTokens: normalizedUsed ?? prev?.usedTokens ?? 0,
       limitTokens: normalizedLimit !== undefined ? normalizedLimit : (prev?.limitTokens ?? null),
       source: patch.source,
@@ -430,14 +382,14 @@ export class ManagedSession {
   /**
    * Apply a context snapshot from engine runtime events.
    *
-   * Handles both authoritative (e.g. Codex token_count) and estimated
-   * (e.g. Claude assistant_usage) snapshots.
+   * Handles both authoritative and estimated snapshots.
    *
    * When `limitTokens` is null the adapter doesn't know the limit —
    * the previously known limit is preserved (it arrives separately via
    * modelUsage.contextWindow in turn.result → setContextLimitFromModelUsage).
    */
   applyContextSnapshot(snapshot: {
+    metricKind?: SessionContextState['metricKind']
     usedTokens: number
     limitTokens: number | null
     source: string
@@ -445,6 +397,7 @@ export class ManagedSession {
     updatedAtMs: number
   }): boolean {
     const normalized = normalizeContextState({
+      metricKind: snapshot.metricKind ?? 'context_occupancy',
       usedTokens: snapshot.usedTokens,
       limitTokens: snapshot.limitTokens,
       source: snapshot.source,
@@ -622,6 +575,29 @@ export class ManagedSession {
     }
 
     log.debug('addMessage', { sessionId: this.sessionId, messageId: id, role, blockCount: blocks.length })
+
+    // Heuristic: when the SDK fails to make an upstream request (e.g.
+    // OpenAI-compat endpoint returns a non-JSON error), some shims
+    // stream the error text as assistant content instead of surfacing
+    // it via the error channel. That's how "API Error: fetch failed"
+    // reaches the chat view without ever appearing in the failure log.
+    // Detect textual error patterns in assistant messages and emit a
+    // WARN so the session history log tells the full story.
+    if (role === 'assistant') {
+      const textContent = blocks
+        .filter((b): b is Extract<ContentBlock, { type: 'text' }> => b.type === 'text')
+        .map((b) => b.text)
+        .join('\n')
+        .trim()
+      if (looksLikeUpstreamError(textContent)) {
+        log.warn('assistant message looks like an upstream error (SDK may have swallowed a fetch failure)', {
+          sessionId: this.sessionId,
+          messageId: id,
+          preview: textContent.slice(0, 400),
+        })
+      }
+    }
+
     this.lastActivity = timestamp
     return id
   }
@@ -916,7 +892,6 @@ export class ManagedSession {
     const contextTelemetry = toContextTelemetry(this.contextState)
     return {
       id: this.sessionId,
-      engineKind: this.engineKind,
       engineSessionRef: this.engineSessionRef,
       engineState: this.engineState ? { ...this.engineState } : null,
       state: this.state,
@@ -932,13 +907,14 @@ export class ManagedSession {
       totalCostUsd: this.totalCostUsd,
       inputTokens: this.inputTokens,
       outputTokens: this.outputTokens,
-      lastInputTokens: contextState?.usedTokens ?? 0,
+      lastInputTokens: 0,
       contextLimitOverride: contextState?.limitTokens ?? null,
       contextState,
       contextTelemetry,
       activity: this.activity,
       error: this.error,
       executionContext: this.executionContext ? { ...this.executionContext } : null,
+      providerProfileId: this.providerProfileId,
     }
   }
 
@@ -989,7 +965,6 @@ export class ManagedSession {
     const session = new ManagedSession({
       prompt: '',
       origin: info.origin,
-      engineKind: info.engineKind,
       engineState: info.engineState,
       startupCwd: info.executionContext?.cwd ?? info.projectPath ?? process.cwd(),
       projectPath: info.projectPath ?? undefined,
@@ -1016,6 +991,7 @@ export class ManagedSession {
     session.outputTokens = info.outputTokens
     if (info.contextState) {
       session.contextState = normalizeContextState({
+        metricKind: info.contextState.metricKind,
         usedTokens: info.contextState.usedTokens,
         limitTokens: info.contextState.limitTokens ?? null,
         source: info.contextState.source,
@@ -1024,6 +1000,7 @@ export class ManagedSession {
       })
     } else if (info.contextTelemetry) {
       session.contextState = normalizeContextState({
+        metricKind: info.contextTelemetry.metricKind,
         usedTokens: info.contextTelemetry.usedTokens,
         limitTokens: info.contextTelemetry.limitTokens,
         source: info.contextTelemetry.source,
@@ -1031,25 +1008,24 @@ export class ManagedSession {
         updatedAtMs: info.contextTelemetry.updatedAtMs,
       })
     } else {
-      const legacyUsed = normalizeUsedTokens(info.lastInputTokens ?? 0)
-      const legacyLimit = normalizeLimitTokens(info.contextLimitOverride ?? null)
-      if (legacyUsed > 0 || legacyLimit != null) {
-        session.contextState = normalizeContextState({
-          usedTokens: legacyUsed,
-          limitTokens: legacyLimit,
-          source: 'legacy.session_info',
-          confidence: 'estimated',
-          updatedAtMs: info.lastActivity,
-        })
-      } else {
-        session.contextState = null
-      }
+      session.contextState = null
     }
     session.activity = info.activity
     session.error = info.error
     if (info.executionContext) {
       session.executionContext = { ...info.executionContext }
     }
+    session.providerProfileId = info.providerProfileId
     return session
   }
+}
+
+function looksLikeUpstreamError(text: string): boolean {
+  if (!text) return false
+  // Text-under-80-chars that starts with these tokens is almost certainly
+  // an SDK-rendered error, not a real assistant reply.
+  if (text.length > 400) return false
+  return /^(API Error|Error:|fetch failed|ECONNREFUSED|ENOTFOUND|ETIMEDOUT|SyntaxError|TypeError|HTTP 4\d\d|HTTP 5\d\d|Request failed)/i.test(
+    text,
+  )
 }

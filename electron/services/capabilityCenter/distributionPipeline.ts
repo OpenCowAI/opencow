@@ -22,21 +22,15 @@ import { safeReadFile, safeReadJson } from './shared/fsUtils'
 import {
   type CapabilityDistributionTargetType,
   isClaudeCodeTargetType,
-  isCodexTargetType,
 } from './distributionTargets'
 import { ClaudeGovernanceDriver } from './governance/claudeGovernanceDriver'
-import { CodexGovernanceDriver } from './governance/codexGovernanceDriver'
-import { resolveCodexConfigPath } from './governance/codexPaths'
 import type { EngineGovernanceDriver } from './governance/engineGovernanceDriver'
-import { removeManagedCodexMcpServer, upsertManagedCodexMcpServer } from './governance/tomlPatch'
 
 // ─── Types ──────────────────────────────────────────────────────────────
 
 export type DistributionTarget =
   | { type: 'claude-code-global' }
   | { type: 'claude-code-project'; projectPath: string }
-  | { type: 'codex-global' }
-  | { type: 'codex-project'; projectPath: string }
 
 export interface DriftReport {
   category: ManagedCapabilityCategory
@@ -53,7 +47,7 @@ export interface SyncResult {
   errors: string[]
 }
 
-type GovernanceEngineKind = 'claude' | 'codex'
+type GovernanceEngineKind = 'claude'
 
 // ─── DistributionPipeline ───────────────────────────────────────────────
 
@@ -116,25 +110,21 @@ export class DistributionPipeline {
 
   // ── Drift Detection ─────────────────────────────────────────────
 
-  async detectDrift(options?: { engineKind?: GovernanceEngineKind }): Promise<DriftReport[]> {
+  async detectDrift(): Promise<DriftReport[]> {
     const distributions = await this.stateRepo.getAllDistributions()
     const claudeDistributions = distributions.filter((d) =>
-      isClaudeCodeTargetType(d.targetType) && (!options?.engineKind || options.engineKind === 'claude'),
-    )
-    const codexDistributions = distributions.filter((d) =>
-      isCodexTargetType(d.targetType) && (!options?.engineKind || options.engineKind === 'codex'),
+      isClaudeCodeTargetType(d.targetType),
     )
     const unknownDistributions = distributions.filter(
-      (d) => !isClaudeCodeTargetType(d.targetType) && !isCodexTargetType(d.targetType),
+      (d) => !isClaudeCodeTargetType(d.targetType),
     )
 
-    const [claudeDrifts, codexDrifts, unknownDrifts] = await Promise.all([
+    const [claudeDrifts, unknownDrifts] = await Promise.all([
       this.governanceDrivers.claude.detectDrift({ distributions: claudeDistributions, store: this.store }),
-      this.governanceDrivers.codex.detectDrift({ distributions: codexDistributions, store: this.store }),
       this.detectDriftForDistributions(unknownDistributions),
     ])
 
-    return [...claudeDrifts, ...codexDrifts, ...unknownDrifts]
+    return [...claudeDrifts, ...unknownDrifts]
   }
 
   // ── Single Capability Sync ────────────────────────────────────────
@@ -148,12 +138,9 @@ export class DistributionPipeline {
   async syncCapability(
     category: ManagedCapabilityCategory,
     name: string,
-    options?: { engineKind?: GovernanceEngineKind },
   ): Promise<SyncResult> {
     const distributions = await this.stateRepo.getDistributionsFor(category, name)
-    const filtered = options?.engineKind
-      ? distributions.filter((d) => targetTypeToEngineKindStrict(d.targetType) === options.engineKind)
-      : distributions
+    const filtered = distributions
     return this.republishAll(
       filtered.map((d) => ({
         category,
@@ -190,8 +177,8 @@ export class DistributionPipeline {
   // ── Full Sync ───────────────────────────────────────────────────
 
   /** Sync all drifted distributions (source modified since last publish). */
-  async syncAll(options?: { engineKind?: GovernanceEngineKind }): Promise<SyncResult> {
-    const drifts = await this.detectDrift(options)
+  async syncAll(): Promise<SyncResult> {
+    const drifts = await this.detectDrift()
     return this.republishAll(
       drifts.map((d) => ({
         category: d.category,
@@ -254,15 +241,9 @@ export class DistributionPipeline {
         if (!projectPath) {
           throw new Error(`projectPath is required for target type "${targetType}"`)
         }
-        if (targetType === 'claude-code-project') {
-          return { type: 'claude-code-project', projectPath }
-        }
-        return { type: 'codex-project', projectPath }
+        return { type: 'claude-code-project', projectPath }
       }
-      if (targetType === 'claude-code-global') {
-        return { type: 'claude-code-global' }
-      }
-      return { type: 'codex-global' }
+      return { type: 'claude-code-global' }
     }
 
     return {
@@ -293,37 +274,6 @@ export class DistributionPipeline {
               return
             default:
               await this.unpublishDocument(category, name, resolvedTarget)
-          }
-        },
-        detectDrift: async ({ distributions }) => this.detectDriftForDistributions(distributions),
-      }),
-      codex: new CodexGovernanceDriver({
-        discover: async () => { throw unsupportedOpError('discover') },
-        importItem: async () => { throw unsupportedOpError('import') },
-        publish: async ({ category, name, target, projectPath, strategy }) => {
-          const resolvedTarget = resolveTarget(target, projectPath)
-          switch (category) {
-            case 'skill':
-              await this.publishDocument(category, name, resolvedTarget, strategy ?? 'copy')
-              return
-            case 'mcp-server':
-              await this.publishMcpServerCodex(name, resolvedTarget)
-              return
-            default:
-              throw new Error(`codex does not support category=${category}`)
-          }
-        },
-        unpublish: async ({ category, name, target, projectPath }) => {
-          const resolvedTarget = resolveTarget(target, projectPath)
-          switch (category) {
-            case 'skill':
-              await this.unpublishDocument(category, name, resolvedTarget)
-              return
-            case 'mcp-server':
-              await this.unpublishMcpServerCodex(name, resolvedTarget)
-              return
-            default:
-              throw new Error(`codex does not support category=${category}`)
           }
         },
         detectDrift: async ({ distributions }) => this.detectDriftForDistributions(distributions),
@@ -464,16 +414,6 @@ export class DistributionPipeline {
     name: string,
     target: DistributionTarget,
   ): string {
-    if (isCodexTargetType(target.type)) {
-      if (category !== 'skill') {
-        throw new Error(`codex does not support category=${category}`)
-      }
-      const baseDir = target.type === 'codex-global'
-        ? path.join(os.homedir(), '.agents')
-        : path.join((target as { projectPath: string }).projectPath, '.agents')
-      return path.join(baseDir, 'skills', name, SKILL_BUNDLE_FILENAME)
-    }
-
     const baseDir =
       target.type === 'claude-code-global'
         ? path.join(os.homedir(), '.claude')
@@ -560,7 +500,7 @@ export class DistributionPipeline {
     await this.stateRepo.removeDistribution('hook', name, target.type)
   }
 
-  // ── MCP Server distribution (Claude JSON + Codex TOML) ───────────
+  // ── MCP Server distribution (Claude JSON) ───────────
 
   private async publishMcpServerClaude(name: string, target: DistributionTarget): Promise<void> {
     const mcpPath = this.store.resolvePath('global', 'mcp-server', name)
@@ -606,93 +546,22 @@ export class DistributionPipeline {
     await this.stateRepo.removeDistribution('mcp-server', name, target.type)
   }
 
-  private async publishMcpServerCodex(name: string, target: DistributionTarget): Promise<void> {
-    if (!isCodexTargetType(target.type)) {
-      throw new Error(`Invalid codex target type: ${target.type}`)
-    }
-
-    const mcpPath = this.store.resolvePath('global', 'mcp-server', name)
-    const mcpContent = await safeReadFile(mcpPath)
-    if (!mcpContent) throw new Error(`MCP Server not found: ${name}`)
-
-    const parsed = JSON.parse(mcpContent) as unknown
-    if (!isPlainObject(parsed)) {
-      throw new Error(`Invalid MCP server config for "${name}": expected a JSON object`)
-    }
-    const serverConfig = parsed['serverConfig']
-    if (!isPlainObject(serverConfig)) {
-      throw new Error(`Invalid MCP server config for "${name}": missing "serverConfig" field`)
-    }
-
-    const configPath = this.resolveCodexMcpConfigPath(target)
-    const existingContent = await safeReadFile(configPath)
-    const nextContent = upsertManagedCodexMcpServer({
-      existingContent,
-      name,
-      serverConfig: serverConfig as Record<string, unknown>,
-    })
-
-    await atomicWriteText(configPath, nextContent)
-
-    await this.stateRepo.recordDistribution({
-      category: 'mcp-server',
-      name,
-      targetType: target.type,
-      targetPath: configPath,
-      strategy: 'copy',
-      contentHash: contentHash(mcpContent),
-      distributedAt: Date.now(),
-    })
-  }
-
-  private async unpublishMcpServerCodex(name: string, target: DistributionTarget): Promise<void> {
-    if (!isCodexTargetType(target.type)) {
-      throw new Error(`Invalid codex target type: ${target.type}`)
-    }
-
-    const configPath = this.resolveCodexMcpConfigPath(target)
-    const existingContent = await safeReadFile(configPath)
-    const { content, removed } = removeManagedCodexMcpServer({
-      existingContent,
-      name,
-    })
-    if (removed) {
-      await atomicWriteText(configPath, content)
-    }
-    await this.stateRepo.removeDistribution('mcp-server', name, target.type)
-  }
-
   // ── Path helpers ────────────────────────────────────────────────
 
   private resolveSettingsPath(target: DistributionTarget): string {
     if (target.type === 'claude-code-global') {
       return path.join(os.homedir(), '.claude', 'settings.json')
     }
-    if (target.type === 'claude-code-project') {
-      return path.join(target.projectPath, '.claude', 'settings.json')
-    }
-    throw new Error(`Invalid Claude settings target type: ${target.type}`)
+    return path.join(target.projectPath, '.claude', 'settings.json')
   }
 
   private resolveClaudeMcpConfigPath(target: DistributionTarget): string {
     if (target.type === 'claude-code-global') {
       return path.join(os.homedir(), '.claude.json')
     }
-    if (target.type === 'claude-code-project') {
-      return path.join(target.projectPath, '.mcp.json')
-    }
-    throw new Error(`Invalid Claude MCP target type: ${target.type}`)
+    return path.join(target.projectPath, '.mcp.json')
   }
 
-  private resolveCodexMcpConfigPath(target: DistributionTarget): string {
-    if (!isCodexTargetType(target.type)) {
-      throw new Error(`Invalid codex target type: ${target.type}`)
-    }
-    return resolveCodexConfigPath({
-      scope: target.type === 'codex-project' ? 'project' : 'global',
-      projectPath: target.type === 'codex-project' ? target.projectPath : undefined,
-    })
-  }
 }
 
 // ─── Utility Functions ──────────────────────────────────────────────────
@@ -711,20 +580,14 @@ function reconstructTarget(targetType: string, targetPath: string): Distribution
       ? { type: 'claude-code-project', projectPath: extractProjectPath(targetPath) }
       : { type: 'claude-code-global' }
   }
-  if (isCodexTargetType(targetType)) {
-    return targetType === 'codex-project'
-      ? { type: 'codex-project', projectPath: extractProjectPath(targetPath) }
-      : { type: 'codex-global' }
-  }
   return null
 }
 
-function targetTypeToEngineKind(targetType: CapabilityDistributionTargetType): GovernanceEngineKind {
-  return isCodexTargetType(targetType) ? 'codex' : 'claude'
+function targetTypeToEngineKind(_targetType: CapabilityDistributionTargetType): GovernanceEngineKind {
+  return 'claude'
 }
 
 function targetTypeToEngineKindStrict(targetType: string): GovernanceEngineKind | null {
-  if (isCodexTargetType(targetType)) return 'codex'
   if (isClaudeCodeTargetType(targetType)) return 'claude'
   return null
 }
@@ -740,8 +603,6 @@ function isEnoent(err: unknown): boolean {
  *   /some/project/.claude/skills/foo/SKILL.md
  *   /some/project/.claude/settings.json
  *   /some/project/.mcp.json
- *   /some/project/.agents/skills/foo/SKILL.md
- *   /some/project/.codex/config.toml
  *
  * We look for the `.claude` directory or `.mcp.json` suffix to find the boundary.
  */
@@ -751,10 +612,6 @@ function extractProjectPath(targetPath: string): string {
 
   const agentsIdx = targetPath.indexOf(`${path.sep}.agents${path.sep}`)
   if (agentsIdx !== -1) return targetPath.slice(0, agentsIdx)
-
-  const codexConfigSuffix = `${path.sep}.codex${path.sep}config.toml`
-  const codexIdx = targetPath.indexOf(codexConfigSuffix)
-  if (codexIdx !== -1) return targetPath.slice(0, codexIdx)
 
   // .mcp.json sits directly in the project root
   if (targetPath.endsWith('.mcp.json')) return path.dirname(targetPath)
@@ -780,14 +637,4 @@ async function atomicWriteJson(filePath: string, data: unknown): Promise<void> {
   }
 }
 
-async function atomicWriteText(filePath: string, content: string): Promise<void> {
-  await fs.mkdir(path.dirname(filePath), { recursive: true })
-  const tmpPath = `${filePath}.tmp.${process.pid}`
-  try {
-    await fs.writeFile(tmpPath, content, 'utf-8')
-    await fs.rename(tmpPath, filePath)
-  } catch (err) {
-    await fs.unlink(tmpPath).catch(() => {})
-    throw err
-  }
-}
+

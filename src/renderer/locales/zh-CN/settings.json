@@ -44,17 +44,54 @@
   },
   "provider": {
     "title": "服务商",
-    "description": "分别配置 OpenCow 在 Claude / Codex 引擎下的服务商连接方式。凭据已加密并存储在本地。",
-    "engineScope": "配置引擎",
-    "defaultEngine": "默认会话引擎",
-    "defaultEngineHint": "新建会话时默认使用该引擎。可在会话级别覆盖。",
-    "engines": {
-      "claude": "Claude 引擎",
-      "codex": "Codex 引擎"
-    },
-    "configTitles": {
-      "claude": "Claude 配置",
-      "codex": "Codex 配置"
+    "description": "管理可用的 LLM 账户，凭据加密后仅存储在本地。",
+    "profile": {
+      "addButton": "添加服务商",
+      "addHeading": "新建 {{type}} 配置",
+      "typeGroups": {
+        "anthropic": "Anthropic",
+        "openai": "OpenAI",
+        "google": "Google"
+      },
+      "typeLabels": {
+        "claude-subscription": "Claude Pro/Max 订阅",
+        "anthropic-api": "Anthropic API 直连",
+        "anthropic-compat-proxy": "Anthropic 兼容代理",
+        "openai-direct": "OpenAI 直连",
+        "openai-compat-proxy": "OpenAI 兼容代理",
+        "gemini": "Gemini"
+      },
+      "emptyState": "还没有任何服务商。点击「添加服务商」开始配置。",
+      "defaultBadge": "默认",
+      "setDefault": "设为默认",
+      "edit": "编辑",
+      "moreActions": "更多操作",
+      "remove": "删除",
+      "confirmRemove": "确定删除服务商「{{name}}」？这会同时清除其凭据。",
+      "save": "保存",
+      "saving": "保存中…",
+      "cancel": "取消",
+      "close": "关闭",
+      "loginSubscription": "Claude 登录",
+      "nameLabel": "名称",
+      "apiKeyLabel": "API Key",
+      "apiKeyKeepHint": "（留空表示保持不变）",
+      "baseUrlLabel": "Base URL",
+      "authStyleLabel": "认证方式",
+      "preferredModelLabel": "模型",
+      "preferredModelOptional": "（可选）",
+      "preferredModelRecommended": "（建议填写 — placeholder 是推荐默认值）",
+      "subscriptionHint": "点击登录将打开浏览器走 Claude OAuth 流程。本地不保存密钥，只保存 Anthropic 下发的 OAuth Token。",
+      "test": "测试",
+      "testing": "测试中…",
+      "testOk": "通过",
+      "testOkTitle": "连接验证通过（耗时 {{ms}} 毫秒）",
+      "testFail": {
+        "unauthenticated": "凭据缺失",
+        "network": "网络错误",
+        "unsupported": "类型不支持",
+        "error": "错误"
+      }
     },
     "modes": {
       "subscription": "Claude 订阅",
@@ -180,10 +217,7 @@
   },
   "command": {
     "title": "对话设置",
-    "description": "新建 AI 会话时的默认参数（最大轮次目前仅对 Claude 生效）。",
-    "defaultEngine": "默认引擎",
-    "engineClaude": "Claude",
-    "engineCodex": "Codex",
+    "description": "新建 AI 会话时的默认参数。",
     "maxTurns": "最大轮次",
     "permissionMode": "权限模式",
     "bypassPermissions": "跳过权限（默认）",

@@ -97,7 +97,7 @@ export function ImportDialog({ open, sourceType, filePaths, onClose }: ImportDia
       setStep('select')
       if (sourceType === 'file') {
         discover({ sourceType, filePaths: filePaths ?? [], projectId: selectedProjectId ?? undefined })
-      } else if (sourceType === 'claude-code' || sourceType === 'codex') {
+      } else if (sourceType === 'claude-code') {
         discover({ sourceType, projectId: selectedProjectId ?? undefined })
       } else {
         discover({ sourceType })
@@ -110,9 +110,7 @@ export function ImportDialog({ open, sourceType, filePaths, onClose }: ImportDia
 
   const dialogTitle = sourceType === 'claude-code'
     ? t('capabilityCenter.importTitleClaude', 'Import from Claude Code')
-    : sourceType === 'codex'
-      ? t('capabilityCenter.importTitleCodex', 'Import from Codex')
-      : t('capabilityCenter.importTitleFile', 'Import from File')
+    : t('capabilityCenter.importTitleFile', 'Import from File')
 
   // ── Handlers ──────────────────────────────────────────────────
 

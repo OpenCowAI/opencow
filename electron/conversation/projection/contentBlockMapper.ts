@@ -16,7 +16,17 @@ export function toManagedContentBlocks(blocks: ConversationContentBlock[]): Cont
         result.push({ type: 'text', text: block.text })
         break
       case 'thinking':
-        result.push({ type: 'thinking', thinking: block.thinking })
+        result.push({
+          type: 'thinking',
+          thinking: block.thinking,
+          // Carry provenance + any provider-specific replay token so the
+          // persisted managed-message shape round-trips losslessly back into
+          // `sdkHistoryMapper` on resume.
+          // See plans/cross-provider-thinking.md §5.3.
+          ...(block.provenance ? { provenance: block.provenance } : {}),
+          ...(block.signature ? { signature: block.signature } : {}),
+          ...(block.encryptedContent ? { encryptedContent: block.encryptedContent } : {}),
+        })
         break
       case 'tool_use':
         result.push({
@@ -41,6 +51,7 @@ export function toManagedContentBlocks(blocks: ConversationContentBlock[]): Cont
           mediaType: block.mediaType as ImageMediaType,
           data: block.data,
           sizeBytes: block.sizeBytes,
+          ...(block.toolUseId ? { toolUseId: block.toolUseId } : {}),
         })
         break
       case 'document':

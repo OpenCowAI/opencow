@@ -19,7 +19,7 @@
  */
 export interface LLMAuthConfig {
   /** API protocol — determines request format and endpoint path */
-  protocol: 'anthropic' | 'openai'
+  protocol: 'anthropic' | 'openai' | 'gemini'
   /** API key or OAuth access token */
   apiKey: string
   /** Base URL (no trailing slash, no path, e.g. "https://api.anthropic.com") */

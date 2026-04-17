@@ -5,6 +5,22 @@ import type { CapabilityCenter } from '../../../electron/services/capabilityCent
 import type { CapabilityPlan } from '../../../electron/services/capabilityCenter/sessionInjector'
 import { EngineCapabilityRuntime } from '../../../electron/command/engineCapabilityRuntime'
 import type { SDKHookMap } from '../../../electron/services/capabilityCenter/claudeCodeAdapter'
+import {
+  createProviderNativeSystemPrompt,
+} from '../../../electron/command/systemPromptTransport'
+
+function createClaudeOptions() {
+  return {
+    engineKind: 'claude' as const,
+    maxTurns: 8,
+    includePartialMessages: true,
+    permissionMode: 'acceptEdits',
+    allowDangerouslySkipPermissions: true,
+    env: {},
+    systemPromptPayload: createProviderNativeSystemPrompt(''),
+  }
+}
+
 
 function createPlan(overrides: Partial<CapabilityPlan> = {}): CapabilityPlan {
   return {
@@ -46,7 +62,7 @@ describe('EngineCapabilityRuntime', () => {
         identity: 'identity',
         base: 'base',
       },
-      options: {},
+      options: createClaudeOptions(),
       builtInHooks,
     })
 
@@ -58,39 +74,6 @@ describe('EngineCapabilityRuntime', () => {
     expect(result.hooks).toBe(builtInHooks)
   })
 
-  it('applies codex prompt-layer injection via adapter', async () => {
-    const buildCapabilityPlan = vi.fn().mockResolvedValue(createPlan())
-    const runtime = new EngineCapabilityRuntime({
-      capabilityCenter: { buildCapabilityPlan } as unknown as CapabilityCenter,
-    })
-
-    const result = await runtime.apply({
-      engineKind: 'codex',
-      planInput: {
-        projectId: 'project-1',
-        request: {
-          session: { engineKind: 'codex' },
-        },
-      },
-      promptLayers: {
-        identity: 'identity',
-        base: 'base',
-        session: 'session-original',
-      },
-      options: {},
-    })
-
-    expect(buildCapabilityPlan).toHaveBeenCalledWith({
-      projectId: 'project-1',
-      request: {
-        session: { engineKind: 'codex' },
-      },
-    })
-    expect(result.promptLayers.session).toBe('You are a reviewer.')
-    expect(result.promptLayers.capability).toContain('code-review')
-    expect(result.optionPatch).toEqual({})
-  })
-
   it('degrades safely when capability plan building throws', async () => {
     const runtime = new EngineCapabilityRuntime({
       capabilityCenter: {
@@ -99,16 +82,16 @@ describe('EngineCapabilityRuntime', () => {
     })
 
     const result = await runtime.apply({
-      engineKind: 'codex',
+      engineKind: 'claude',
       planInput: {
         request: {
-          session: { engineKind: 'codex' },
+          session: { engineKind: 'claude' },
         },
       },
       promptLayers: {
         identity: 'identity',
       },
-      options: {},
+      options: createClaudeOptions(),
     })
 
     expect(result.promptLayers).toEqual({ identity: 'identity' })

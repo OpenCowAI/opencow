@@ -43,6 +43,13 @@ export interface DataPaths {
   readonly logs: string
   /** Encrypted credentials file (OS keychain-backed) */
   readonly credentials: string
+  /**
+   * Legacy encrypted credentials for the removed Codex engine
+   * (OpenCow <= 0.3.21). Read-only — the one-shot Phase B.3d migration
+   * copies its contents into the main credentials store at profile-
+   * scoped keys. New writes never land here.
+   */
+  readonly legacyCodexCredentials: string
   /** Global capability store root: ~/.opencow/capabilities/ */
   readonly capabilities: string
   /** Encrypted credentials for repo sources (OS keychain-backed) */
@@ -65,6 +72,7 @@ export function resolveDataPaths(): DataPaths {
     onboarding: join(root, 'onboarding.json'),
     logs: join(root, 'logs'),
     credentials: join(root, 'credentials.enc'),
+    legacyCodexCredentials: join(root, 'credentials-codex.enc'),
     capabilities: join(root, 'capabilities'),
     repoSourceCredentials: join(root, 'repo-credentials.enc'),
     issueProviderCredentials: join(root, 'issue-provider-credentials.enc'),

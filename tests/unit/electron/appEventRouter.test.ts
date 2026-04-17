@@ -92,6 +92,8 @@ describe('AppEventRouter managed transition routing', () => {
   const webhookOnEngineEvent = vi.fn(async () => undefined)
   const inboxOnEngineEvent = vi.fn(async () => undefined)
   const orchestratorGetSession = vi.fn(async () => null)
+  const orchestratorIngestExecutionContextSignal = vi.fn()
+  const orchestratorShouldSkipHookSourceEvent = vi.fn(() => false)
 
   beforeEach(() => {
     bus = new DataBus()
@@ -104,6 +106,9 @@ describe('AppEventRouter managed transition routing', () => {
     inboxOnEngineEvent.mockImplementation(async () => undefined)
     orchestratorGetSession.mockReset()
     orchestratorGetSession.mockImplementation(async () => null)
+    orchestratorIngestExecutionContextSignal.mockReset()
+    orchestratorShouldSkipHookSourceEvent.mockReset()
+    orchestratorShouldSkipHookSourceEvent.mockReturnValue(false)
 
     wireEventRoutes({
       bus,
@@ -113,7 +118,11 @@ describe('AppEventRouter managed transition routing', () => {
         onEngineEvent: webhookOnEngineEvent,
       } as never,
       inboxService: { onEngineEvent: inboxOnEngineEvent } as never,
-      orchestrator: { getSession: orchestratorGetSession } as never,
+      orchestrator: {
+        getSession: orchestratorGetSession,
+        ingestExecutionContextSignal: orchestratorIngestExecutionContextSignal,
+        shouldSkipHookSourceEvent: orchestratorShouldSkipHookSourceEvent,
+      } as never,
       artifactService: {
         captureFromManagedSession: vi.fn(async () => undefined),
         captureFromMonitorSession: vi.fn(async () => undefined),
@@ -261,6 +270,58 @@ describe('AppEventRouter managed transition routing', () => {
         sessionRef: 'engine-ref-10',
       }),
     )
+  })
+
+  it('feeds hook cwd into orchestrator runtime execution-context ingestion', async () => {
+    bus.dispatch({
+      type: 'hooks:event',
+      payload: makeHookEvent({
+        sessionId: 'codex-engine-ref-ctx',
+        rawEventName: 'SessionStart',
+        eventType: 'session_start',
+        timestamp: '2026-04-08T00:00:01.000Z',
+        payload: {
+          cwd: '/tmp/opencow-hook-worktree',
+        },
+      }),
+    })
+
+    await flushMicrotasks()
+    await flushMicrotasks()
+
+    expect(orchestratorIngestExecutionContextSignal).toHaveBeenCalledTimes(1)
+    expect(orchestratorIngestExecutionContextSignal).toHaveBeenCalledWith(
+      'codex-engine-ref-ctx',
+      expect.objectContaining({
+        cwd: '/tmp/opencow-hook-worktree',
+        source: 'hook',
+        occurredAtMs: Date.parse('2026-04-08T00:00:01.000Z'),
+      }),
+    )
+  })
+
+  it('skips hook cwd ingestion when orchestrator skip policy returns true', async () => {
+    orchestratorShouldSkipHookSourceEvent.mockReturnValue(true)
+
+    bus.dispatch({
+      type: 'hooks:event',
+      payload: makeHookEvent({
+        sessionId: 'claude-engine-ref-ctx',
+        rawEventName: 'SessionStart',
+        eventType: 'session_start',
+        timestamp: '2026-04-08T00:00:01.000Z',
+        payload: {
+          cwd: '/tmp/opencow-claude-hook-worktree',
+        },
+      }),
+    })
+
+    await flushMicrotasks()
+    await flushMicrotasks()
+
+    expect(orchestratorShouldSkipHookSourceEvent).toHaveBeenCalledTimes(1)
+    expect(orchestratorShouldSkipHookSourceEvent).toHaveBeenCalledWith('claude-engine-ref-ctx')
+    expect(orchestratorIngestExecutionContextSignal).not.toHaveBeenCalled()
   })
 
   it('projects command created(active) into managed session_start engine event', async () => {

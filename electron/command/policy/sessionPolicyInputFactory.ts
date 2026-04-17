@@ -41,7 +41,11 @@ function derivePromptPolicy(prompt: UserMessageContent | undefined): PromptPolic
   const explicitSkillNames = resolveActivatedSkillNames(prompt)
   return {
     explicitSkillNames,
-    implicitQuery: resolveImplicitSkillActivationQuery(prompt),
+    // Phase 1B.11d: implicit keyword matching removed. Skill discovery is
+    // now model-driven via the SDK's built-in SkillTool. The model reads
+    // the SkillTool catalog and calls Skill('name') when it decides to
+    // activate a skill — no framework-side keyword scoring needed.
+    implicitQuery: undefined,
     requiredNativeAllow: extractNativeRequirementsFromContent(prompt),
   }
 }
@@ -49,18 +53,31 @@ function derivePromptPolicy(prompt: UserMessageContent | undefined): PromptPolic
 /**
  * Default native-tool allowlist for general-purpose sessions.
  *
- * Browser is always available so users can naturally say "open x.com" in any
- * conversation — whether from the app, Telegram, Discord, or any future channel.
+ * All 8 native capabilities are exposed by default — capability-level, not
+ * tool-level. Token cost is bounded (~5.6K for all tools across all 8
+ * capabilities) and amortised by prompt caching.
  *
- * HTML is always available so users can naturally say "generate an HTML page"
- * and get an interactive browser preview card via
- * gen_html, rather than a raw file written by the Write tool.
+ * The previous narrow allowlist (browser + html + 3 tool-scoped entries)
+ * caused session `ccb-XTyTIQFpUSI-` to fail: user asked "list issues" but
+ * `list_issues` was not in the allowlist, so the model fell back to
+ * `gh issue list` in Bash. Root cause: conflating visibility with governance.
+ * Governance for mutating operations lives in LifecycleOperationCoordinator
+ * (confirmation flow), not in the allowlist.
  *
  * Builtin tools remain enabled (not overridden here).
  */
 const GENERAL_PURPOSE_NATIVE_TOOLS: StartSessionNativeToolAllowItem[] = [
   { capability: 'browser' },
   { capability: 'html' },
+  { capability: 'interaction' },
+  { capability: 'issues' },
+  { capability: 'projects' },
+  { capability: 'schedules' },
+  { capability: 'evose' },
+  // Lifecycle — apply/cancel tools for pending issue/schedule proposals.
+  // Always enabled alongside issues + schedules so the Propose→Confirm loop
+  // can close from chat ("确定" / "confirm") and not just via the UI card.
+  { capability: 'lifecycle' },
 ]
 
 /**
@@ -113,10 +130,22 @@ function resolveDefaultPolicyByOrigin(origin: SessionOrigin): StartSessionPolicy
     case 'agent-creator':
     case 'command-creator':
     case 'rule-creator':
-    case 'issue-creator':
-    case 'schedule-creator':
     case 'bot-creator':
       return undefined
+
+    // ── Issue/Schedule lifecycle sources: explicitly expose propose tools ──
+    case 'issue':
+    case 'schedule':
+    case 'issue-creator':
+    case 'schedule-creator':
+      return {
+        tools: {
+          native: {
+            mode: 'allowlist',
+            allow: [...GENERAL_PURPOSE_NATIVE_TOOLS],
+          },
+        },
+      }
 
     // ── All other origins: general-purpose with browser ──────────────
     default:

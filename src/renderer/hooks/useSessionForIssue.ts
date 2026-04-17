@@ -170,7 +170,6 @@ function sessionStableEqual(a: SessionSnapshot | null, b: SessionSnapshot | null
   return (
     a.id === b.id &&
     a.state === b.state &&
-    a.engineKind === b.engineKind &&
     a.error === b.error &&
     a.stopReason === b.stopReason &&
     a.model === b.model &&

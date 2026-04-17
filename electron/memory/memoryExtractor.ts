@@ -4,8 +4,8 @@
  * MemoryExtractor — extracts structured memories from interaction events.
  *
  * Uses a HeadlessLLMClient (Vercel AI SDK) for single-turn text generation.
- * The client is engine-agnostic — it automatically uses whichever LLM engine
- * (Claude / Codex) the user has configured in Settings.
+ * The client is engine-agnostic — it automatically uses the LLM engine
+ * the user has configured in Settings.
  */
 
 import { createLogger } from '../platform/logger'

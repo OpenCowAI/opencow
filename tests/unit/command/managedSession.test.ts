@@ -3,6 +3,7 @@
 import { describe, it, expect } from 'vitest'
 import { ManagedSession } from '../../../electron/command/managedSession'
 import type { ManagedSessionConfig, ContentBlock, TaskStartedEvent, HookStatusEvent } from '../../../src/shared/types'
+import { asProviderProfileId } from '../../../src/shared/providerProfile'
 
 function textBlock(text: string): ContentBlock {
   return { type: 'text', text }
@@ -23,7 +24,6 @@ describe('ManagedSession', () => {
     const session = new ManagedSession(baseConfig)
     const info = session.getInfo()
     expect(info.state).toBe('creating')
-    expect(info.engineKind).toBe('claude')
     expect(info.origin).toEqual({ source: 'issue', issueId: 'issue-1' })
     expect(info.messages).toHaveLength(0)
   })
@@ -456,13 +456,13 @@ describe('ManagedSession', () => {
   it('applyContextSnapshot with estimated confidence sets usedTokens', () => {
     const session = new ManagedSession(baseConfig)
     session.applyContextSnapshot({
-      usedTokens: 123,
+      metricKind: 'context_occupancy', usedTokens: 123,
       limitTokens: null,
       source: 'claude.assistant_usage',
       confidence: 'estimated',
       updatedAtMs: Date.now(),
     })
-    expect(session.getInfo().lastInputTokens).toBe(123)
+    expect(session.getInfo().contextState?.usedTokens).toBe(123)
   })
 
   it('applyContextSnapshot with null limitTokens preserves existing limit', () => {
@@ -473,14 +473,14 @@ describe('ManagedSession', () => {
 
     // Then apply snapshot with null limitTokens — should preserve 200k
     session.applyContextSnapshot({
-      usedTokens: 50_000,
+      metricKind: 'context_occupancy', usedTokens: 50_000,
       limitTokens: null,
       source: 'claude.assistant_usage',
       confidence: 'estimated',
       updatedAtMs: Date.now(),
     })
     const info = session.getInfo()
-    expect(info.lastInputTokens).toBe(50_000)
+    expect(info.contextState?.usedTokens).toBe(50_000)
     expect(info.contextState?.limitTokens).toBe(200_000)
   })
 
@@ -496,7 +496,7 @@ describe('ManagedSession', () => {
   it('applyContextSnapshot stores authoritative telemetry and syncs compatibility fields', () => {
     const session = new ManagedSession(baseConfig)
     session.applyContextSnapshot({
-      usedTokens: 1024,
+      metricKind: 'context_occupancy', usedTokens: 1024,
       limitTokens: 272000,
       source: 'codex.token_count',
       confidence: 'authoritative',
@@ -510,14 +510,13 @@ describe('ManagedSession', () => {
     expect(info.contextTelemetry?.limitTokens).toBe(272000)
     expect(info.contextTelemetry?.remainingTokens).toBe(270976)
     expect(info.contextTelemetry?.confidence).toBe('authoritative')
-    expect(info.lastInputTokens).toBe(1024)
     expect(info.contextLimitOverride).toBe(272000)
   })
 
   it('does not downgrade authoritative context state with estimated snapshots', () => {
     const session = new ManagedSession(baseConfig)
     session.applyContextSnapshot({
-      usedTokens: 4096,
+      metricKind: 'context_occupancy', usedTokens: 4096,
       limitTokens: 272000,
       source: 'codex.token_count',
       confidence: 'authoritative',
@@ -525,14 +524,14 @@ describe('ManagedSession', () => {
     })
 
     session.applyContextSnapshot({
-      usedTokens: 12,
+      metricKind: 'context_occupancy', usedTokens: 12,
       limitTokens: null,
       source: 'codex.turn_usage',
       confidence: 'estimated',
       updatedAtMs: 2_100,
     })
     const info = session.getInfo()
-    expect(info.lastInputTokens).toBe(4096)
+    expect(info.contextState?.usedTokens).toBe(4096)
     expect(info.contextState?.confidence).toBe('authoritative')
     expect(info.contextState?.source).toBe('codex.token_count')
   })
@@ -540,7 +539,7 @@ describe('ManagedSession', () => {
   it('ignores stale authoritative context snapshots and keeps latest', () => {
     const session = new ManagedSession(baseConfig)
     session.applyContextSnapshot({
-      usedTokens: 5000,
+      metricKind: 'context_occupancy', usedTokens: 5000,
       limitTokens: 272000,
       source: 'codex.token_count',
       confidence: 'authoritative',
@@ -548,7 +547,7 @@ describe('ManagedSession', () => {
     })
 
     session.applyContextSnapshot({
-      usedTokens: 4500,
+      metricKind: 'context_occupancy', usedTokens: 4500,
       limitTokens: 272000,
       source: 'codex.token_count',
       confidence: 'authoritative',
@@ -563,7 +562,7 @@ describe('ManagedSession', () => {
   it('clearContextState resets context tracking', () => {
     const session = new ManagedSession(baseConfig)
     session.applyContextSnapshot({
-      usedTokens: 90000,
+      metricKind: 'context_occupancy', usedTokens: 90000,
       limitTokens: 200000,
       source: 'claude.assistant_usage',
       confidence: 'estimated',
@@ -588,7 +587,7 @@ describe('ManagedSession', () => {
   it('setModel downgrades contextState to estimated and clears model-scoped limit', () => {
     const session = new ManagedSession(baseConfig)
     session.applyContextSnapshot({
-      usedTokens: 2048,
+      metricKind: 'context_occupancy', usedTokens: 2048,
       limitTokens: 272000,
       source: 'codex.token_count',
       confidence: 'authoritative',
@@ -603,16 +602,15 @@ describe('ManagedSession', () => {
     expect(info.contextState!.usedTokens).toBe(2048)
     expect(info.contextState!.limitTokens).toBeNull()
     expect(info.contextState!.confidence).toBe('estimated')
+    expect(info.contextState!.metricKind).toBe('context_occupancy')
     // contextTelemetry requires non-null limitTokens to compute remaining%
     expect(info.contextTelemetry).toBeNull()
-    // lastInputTokens derived from contextState.usedTokens
-    expect(info.lastInputTokens).toBe(2048)
   })
 
   it('setModel fully clears contextState when usedTokens is 0', () => {
     const session = new ManagedSession(baseConfig)
     session.applyContextSnapshot({
-      usedTokens: 0,
+      metricKind: 'context_occupancy', usedTokens: 0,
       limitTokens: null,
       source: 'test',
       confidence: 'estimated',
@@ -624,37 +622,23 @@ describe('ManagedSession', () => {
     expect(info.lastInputTokens).toBe(0)
   })
 
-  it('switchEngine clears model overrides and context state', () => {
-    const session = new ManagedSession({
-      ...baseConfig,
-      engineKind: 'claude',
-      model: 'claude-sonnet-4-6',
-    })
-    session.setModel('claude-sonnet-4-6')
+  it('normalizes unsupported metricKind to context_occupancy', () => {
+    const session = new ManagedSession(baseConfig)
     session.applyContextSnapshot({
-      usedTokens: 1024,
+      metricKind: 'token_usage_total' as any,
+      usedTokens: 2048,
       limitTokens: 200_000,
-      source: 'claude.assistant_usage',
+      source: 'test',
       confidence: 'estimated',
       updatedAtMs: Date.now(),
     })
-
-    session.switchEngine({ newEngine: 'codex', contextSummary: 'summary' })
-
-    const info = session.getInfo()
-    expect(info.engineKind).toBe('codex')
-    expect(info.model).toBeNull()
-    expect(info.contextState).toBeNull()
-    expect(session.getModelOverride()).toBeNull()
-    const cfg = session.getConfig()
-    expect(cfg.engineKind).toBe('codex')
+    expect(session.getInfo().contextState?.metricKind).toBe('context_occupancy')
   })
 
   it('fromInfo restores runtime model but does not restore startup model override', () => {
     const now = Date.now()
     const restored = ManagedSession.fromInfo({
       id: 'ccb-restored',
-      engineKind: 'codex',
       engineSessionRef: 'engine-ref',
       engineState: null,
       state: 'idle',
@@ -683,5 +667,67 @@ describe('ManagedSession', () => {
     expect(restored.getModel()).toBe('claude-sonnet-4-6')
     expect(restored.getModelOverride()).toBeNull()
     expect(restored.getConfig().model).toBeUndefined()
+  })
+
+  // ── ε.3b + ε.3c — providerProfileId binding ────────────────────────────
+  describe('providerProfileId binding (ε.3b/c)', () => {
+    it('defaults to null (follow Settings default) when config omits it', () => {
+      const session = new ManagedSession(baseConfig)
+      expect(session.getProviderProfileId()).toBeNull()
+      expect(session.snapshot().providerProfileId).toBeNull()
+    })
+
+    it('honours config.providerProfileId at construction', () => {
+      const pinned = asProviderProfileId('prof_abc')
+      const session = new ManagedSession({
+        ...baseConfig,
+        providerProfileId: pinned,
+      })
+      expect(session.getProviderProfileId()).toBe(pinned)
+      expect(session.snapshot().providerProfileId).toBe(pinned)
+    })
+
+    it('setProviderProfileId mutates and updates lastActivity', () => {
+      const session = new ManagedSession(baseConfig)
+      const before = session.snapshot().lastActivity
+      // Small wait to ensure the mutator timestamps monotonically forward.
+      // Using explicit Date.now() check rather than a timer — deterministic.
+      const pinned = asProviderProfileId('prof_xyz')
+      session.setProviderProfileId(pinned)
+      expect(session.getProviderProfileId()).toBe(pinned)
+      expect(session.snapshot().lastActivity).toBeGreaterThanOrEqual(before)
+
+      session.setProviderProfileId(null)
+      expect(session.getProviderProfileId()).toBeNull()
+    })
+
+    it('fromInfo restores providerProfileId from persisted snapshot', () => {
+      const pinned = asProviderProfileId('prof_persisted')
+      const restored = ManagedSession.fromInfo({
+        id: 'ccb-restore-test',
+        engineSessionRef: null,
+        engineState: null,
+        state: 'idle',
+        stopReason: null,
+        origin: { source: 'browser-agent' },
+        projectPath: null,
+        projectId: null,
+        model: null,
+        messages: [],
+        createdAt: 0,
+        lastActivity: 0,
+        activeDurationMs: 0,
+        activeStartedAt: null,
+        totalCostUsd: 0,
+        inputTokens: 0,
+        outputTokens: 0,
+        lastInputTokens: 0,
+        activity: null,
+        error: null,
+        executionContext: null,
+        providerProfileId: pinned,
+      })
+      expect(restored.getProviderProfileId()).toBe(pinned)
+    })
   })
 })

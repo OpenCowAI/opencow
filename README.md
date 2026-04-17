@@ -345,7 +345,7 @@ Please read **[CONTRIBUTING.md](CONTRIBUTING.md)** for the full guide on code st
 
 [Apache-2.0](LICENSE) — completely free and open source. No paid tiers, no usage limits, no subscriptions.
 
-> **Third-party SDKs:** OpenCow integrates with third-party AI SDKs (e.g. `@anthropic-ai/claude-agent-sdk`, `@openai/codex-sdk`) that are subject to their own license terms. Please review each SDK's license before use.
+> **Third-party SDKs:** OpenCow integrates with third-party AI SDKs (e.g. `@opencow-ai/opencow-agent-sdk`, `@openai/codex-sdk`) that are subject to their own license terms. Please review each SDK's license before use.
 
 <div align="center">
 <br />

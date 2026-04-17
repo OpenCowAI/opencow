@@ -384,11 +384,11 @@ export interface IPCChannels {
     return: void
   }
   'capability:sync': {
-    args: [params?: { engineKind?: AIEngineKind }]
+    args: []
     return: { synced: string[]; errors: string[] }
   }
   'capability:detect-drift': {
-    args: [params?: { engineKind?: AIEngineKind }]
+    args: []
     return: CapabilityDriftReport[]
   }
   // M6: diagnostics + version history
@@ -573,22 +573,82 @@ export interface IPCChannels {
   }
   'command:list-managed-sessions': { args: []; return: SessionSnapshot[] }
   'command:get-managed-session': { args: [sessionId: string]; return: SessionSnapshot | null }
+  /**
+   * ε.4 — Pin (or unpin) a session to a specific provider profile.
+   *
+   *   - `profileId: null`  — session follows the current Settings default
+   *     (status-quo behavior). Pre-existing sessions all have this value.
+   *   - `profileId: <id>` — session is pinned; Settings changes no longer
+   *     affect it. Next turn resolves env from the pinned profile.
+   *
+   * Returns `true` on a successful in-memory + DB update, `false` when
+   * the session id is unknown.
+   */
+  'command:set-session-provider-profile': {
+    args: [
+      sessionId: string,
+      profileId: import('./providerProfile').ProviderProfileId | null,
+    ]
+    return: boolean
+  }
   'command:get-session-messages': { args: [sessionId: string]; return: ManagedSessionMessage[] }
+  'command:list-session-lifecycle-operations': {
+    args: [sessionId: string]
+    return: SessionLifecycleOperationEnvelope[]
+  }
+  'command:confirm-session-lifecycle-operation': {
+    args: [sessionId: string, operationId: string]
+    return: SessionLifecycleOperationConfirmResult
+  }
+  'command:reject-session-lifecycle-operation': {
+    args: [sessionId: string, operationId: string]
+    return: SessionLifecycleOperationRejectResult
+  }
+  'command:mark-session-lifecycle-operation-applied': {
+    args: [
+      sessionId: string,
+      operationId: string,
+      input: SessionLifecycleOperationMarkAppliedInput,
+    ]
+    return: SessionLifecycleOperationMarkAppliedResult
+  }
   'command:delete-session': { args: [sessionId: string]; return: boolean }
   // Settings
   'get-settings': { args: []; return: AppSettings }
   'update-settings': { args: [settings: AppSettings]; return: AppSettings }
   // Provider
-  'provider:get-status': { args: [engineKind?: AIEngineKind]; return: ProviderStatus }
-  'provider:login': {
-    args: [engineKind: AIEngineKind, mode: ApiProvider, params?: Record<string, unknown>]
-    return: ProviderStatus
-  }
-  'provider:cancel-login': { args: [engineKind: AIEngineKind, mode: ApiProvider]; return: boolean }
-  'provider:logout': { args: [engineKind: AIEngineKind, mode: ApiProvider]; return: boolean }
+  'provider:get-status': { args: []; return: ProviderStatus }
   'provider:get-credential': {
-    args: [engineKind: AIEngineKind, mode: ApiProvider]
-    return: ProviderCredentialInfo | null
+    args: [profileId: import('./providerProfile').ProviderProfileId]
+    return: import('./providerProfile').ProviderCredentialInfo | null
+  }
+  // Phase B.4 — profile CRUD (additive; legacy channels above continue to work).
+  'provider:list-profiles': {
+    args: []
+    return: import('./providerProfile').ProviderProfile[]
+  }
+  'provider:create-profile': {
+    args: [input: import('./providerProfile').CreateProviderProfileInput]
+    return: import('./providerProfile').ProviderProfile
+  }
+  'provider:update-profile': {
+    args: [
+      id: import('./providerProfile').ProviderProfileId,
+      patch: import('./providerProfile').UpdateProviderProfilePatch,
+    ]
+    return: import('./providerProfile').ProviderProfile
+  }
+  'provider:remove-profile': {
+    args: [id: import('./providerProfile').ProviderProfileId]
+    return: boolean
+  }
+  'provider:set-default-profile': {
+    args: [id: import('./providerProfile').ProviderProfileId | null]
+    return: boolean
+  }
+  'provider:test-profile': {
+    args: [id: import('./providerProfile').ProviderProfileId]
+    return: import('./providerProfile').ProviderTestResult
   }
   // Webhooks
   'webhook:test': { args: [endpoint: WebhookEndpoint]; return: WebhookTestResult }
@@ -1265,7 +1325,7 @@ export interface DocumentCapabilityEntry {
   metadata: Record<string, unknown>
   importInfo?: CapabilityImportRecord | null
   distributionInfo?: CapabilityDistributionInfo | null
-  /** All published target types for this capability (e.g. claude+codex). */
+  /** All published target types for this capability. */
   distributionTargets?: string[]
   /** Mount provenance — only set for entries from external mounts (plugins, packages) */
   mountInfo?: CapabilityMountInfo | null
@@ -1287,7 +1347,7 @@ export interface ConfigCapabilityEntry {
   metadata: Record<string, unknown>
   importInfo?: CapabilityImportRecord | null
   distributionInfo?: CapabilityDistributionInfo | null
-  /** All published target types for this capability (e.g. claude+codex). */
+  /** All published target types for this capability. */
   distributionTargets?: string[]
   /** Mount provenance — only set for entries from external mounts (plugins, packages) */
   mountInfo?: CapabilityMountInfo | null
@@ -1552,7 +1612,6 @@ export interface MarketSkillInfo {
 /** Import source types for Capability Center IPC */
 export type CapabilityImportSourceType =
   | 'claude-code'
-  | 'codex'
   | 'plugin'
   | 'marketplace'
   | 'template'
@@ -1561,7 +1620,6 @@ export type CapabilityImportSourceType =
 /** Discriminated union — each sourceType carries only its own required params */
 export type CapabilityDiscoverParams =
   | { sourceType: 'claude-code'; projectId?: string }
-  | { sourceType: 'codex'; projectId?: string }
   | { sourceType: 'plugin' }
   | { sourceType: 'template' }
   | { sourceType: 'marketplace'; query?: string; marketplaceId?: string }
@@ -1627,7 +1685,7 @@ export interface CapabilityToggleParams {
 export interface CapabilityPublishParams {
   category: ManagedCapabilityCategory
   name: string
-  target: 'claude-code-global' | 'claude-code-project' | 'codex-global' | 'codex-project'
+  target: 'claude-code-global' | 'claude-code-project'
   projectId?: string
 }
 
@@ -1921,6 +1979,16 @@ export type DataBusEvent =
       payload: { sessionId: string; origin: SessionOrigin; error: string }
     }
   | { type: 'command:session:deleted'; payload: { sessionId: string } }
+  | {
+      type: 'session:lifecycle-operation:updated'
+      payload: {
+        sessionId: string
+        operationId: string
+        entity: SessionLifecycleOperationEntity
+        action: SessionLifecycleOperationAction
+        state: SessionLifecycleOperationState
+      }
+    }
   | {
       type: 'command:session:ask-question'
       payload: {
@@ -2841,9 +2909,56 @@ export interface ToolResultBlock {
   isError?: boolean
 }
 
+/**
+ * Which provider produced a given thinking block. Governs replay policy:
+ *
+ *  - `'anthropic'`   — Extended Thinking; requires `signature` to replay to the
+ *                      Anthropic API, otherwise dropped.
+ *  - `'codex'`       — OpenAI Responses API reasoning item; would require
+ *                      `encryptedContent` to round-trip to Codex. Dropped on
+ *                      Anthropic replay (signature is Anthropic-specific and
+ *                      cannot be synthesised from Codex output).
+ *  - `'openai-chat'` — chat_completions `reasoning_content` (DeepSeek-R1 /
+ *                      o1 / o3 / Kimi-k2-thinking style). Not replayable on
+ *                      any API — chat_completions discards reasoning on input.
+ *  - `'unknown'`     — provenance could not be determined (legacy data
+ *                      without `extra_content.provenance` and no signature).
+ *                      Conservative default: do not replay.
+ *
+ * See `plans/cross-provider-thinking.md` for the full rationale.
+ */
+export type ThinkingProvenance = 'anthropic' | 'codex' | 'openai-chat' | 'unknown'
+
 export interface ThinkingBlock {
   type: 'thinking'
   thinking: string
+  /**
+   * Which provider produced this reasoning. Determines whether — and how —
+   * the block can be replayed. See {@link ThinkingProvenance}.
+   *
+   * Optional only for backwards compatibility with messages persisted before
+   * the cross-provider-thinking fix. Readers that need to decide replay MUST
+   * treat a missing value as `'anthropic'` if `signature` is present, else
+   * `'unknown'`. Writers produced after this fix always populate it.
+   */
+  provenance?: ThinkingProvenance
+  /**
+   * Cryptographic signature emitted by Claude with every extended-thinking
+   * block. MUST be preserved when replaying assistant history back to the
+   * Anthropic API — without it the API rejects with
+   *
+   *   400 messages.N.content.0.thinking.signature: Field required
+   *
+   * Populated only when `provenance === 'anthropic'`.
+   */
+  signature?: string
+  /**
+   * Codex Responses API `encrypted_content` blob. Required for Codex round-
+   * trip replay in `store: false` mode. Populated only when
+   * `provenance === 'codex'`. Not persisted by default today — see
+   * `plans/cross-provider-thinking.md` §5.5 (Part E, follow-up).
+   */
+  encryptedContent?: string
 }
 
 export type SlashCommandProviderExecution =
@@ -2922,18 +3037,11 @@ export interface CompactBoundaryEvent {
   phase?: 'compacting' | 'done'
 }
 
-export interface EngineSwitchEvent {
-  type: 'engine_switch'
-  fromEngine: AIEngineKind
-  toEngine: AIEngineKind
-}
-
 export type SystemEvent =
   | TaskStartedEvent
   | TaskNotificationEvent
   | HookStatusEvent
   | CompactBoundaryEvent
-  | EngineSwitchEvent
 
 // === Command Phase: Managed Sessions ===
 
@@ -2954,9 +3062,6 @@ export type SessionStopReason =
   | 'budget_exceeded' // spending limit hit (result.subtype === 'error_max_budget_usd')
   | 'execution_error' // unrecoverable execution error (result.subtype === 'error_during_execution')
   | 'structured_output_error' // structured output validation failed (result.subtype === 'error_max_structured_output_retries')
-
-/** Conversation engine kind for managed sessions. */
-export type AIEngineKind = 'claude' | 'codex'
 
 // ─── Session Origin (discriminated union) ─────────────────────────────────
 //
@@ -3097,8 +3202,6 @@ export interface StartSessionPolicy {
 export interface ManagedSessionConfig {
   prompt: UserMessageContent
   origin: SessionOrigin
-  /** Conversation engine kind. Defaults to 'claude'. */
-  engineKind?: AIEngineKind
   /** Engine-specific checkpoint/thread state. */
   engineState?: Record<string, unknown> | null
   /** Resolved startup cwd for engine lifecycle bootstrap (single source of truth). */
@@ -3107,6 +3210,16 @@ export interface ManagedSessionConfig {
   /** Resolved Project ID — set at session creation time, persisted for resume. */
   projectId?: string
   model?: string
+  /**
+   * Provider profile binding (ε.3b).
+   *
+   *   - `null` / omitted — session follows the current Settings default
+   *     provider. Matches pre-ε behavior; used for backward compatibility
+   *     and for users who want "change default → all sessions follow".
+   *   - Non-null — session is pinned to this profile regardless of Settings
+   *     changes. ε.3c changes spawn to prefer this value.
+   */
+  providerProfileId?: import('./providerProfile').ProviderProfileId | null
   maxTurns?: number
   permissionMode?: string
   // ── Browser Agent extensions ──
@@ -3173,6 +3286,7 @@ export interface SessionExecutionContext {
  * Not persisted in DB; produced and consumed only within active process memory.
  */
 export interface SessionContextTelemetry {
+  metricKind: 'context_occupancy'
   usedTokens: number
   limitTokens: number
   remainingTokens: number
@@ -3187,6 +3301,7 @@ export interface SessionContextTelemetry {
  * `limitTokens` can be null before an authoritative/provider limit is known.
  */
 export interface SessionContextState {
+  metricKind: 'context_occupancy'
   usedTokens: number
   limitTokens: number | null
   source: string
@@ -3207,7 +3322,6 @@ export interface SessionContextState {
  */
 export interface SessionSnapshot {
   id: string
-  engineKind: AIEngineKind
   /** Engine-specific session/thread reference (canonical). */
   engineSessionRef: string | null
   /** Engine-specific checkpoint/thread state payload. */
@@ -3248,12 +3362,19 @@ export interface SessionSnapshot {
   contextLimitOverride?: number | null
   /** Canonical runtime context state (single source of truth). */
   contextState?: SessionContextState | null
-  /** Runtime-only context telemetry from same-source token counters (e.g. codex token_count). */
+  /** Runtime-only context telemetry from same-source token counters. */
   contextTelemetry?: SessionContextTelemetry | null
   activity: string | null
   error: string | null
   /** Session runtime execution context; null when not yet initialized (creating phase) */
   executionContext: SessionExecutionContext | null
+  /**
+   * Provider profile binding persisted on the session (ε.3b).
+   *
+   *   - `null` — session follows the current Settings default provider.
+   *   - Non-null — session is pinned to this profile.
+   */
+  providerProfileId: import('./providerProfile').ProviderProfileId | null
 }
 
 /**
@@ -3292,8 +3413,6 @@ export interface StartSessionInput {
   prompt: UserMessageContent
   /** Session origin — determines routing and idempotency behavior. Defaults to {source:'agent'} if omitted. */
   origin?: SessionOrigin
-  /** Conversation engine kind. Defaults to 'claude'. */
-  engineKind?: AIEngineKind
   /** Session workspace scope. Defaults to `{ scope: 'global' }` when omitted. */
   workspace?: SessionWorkspaceInput
   model?: string
@@ -3359,8 +3478,6 @@ export interface ProxySettings {
 export interface CommandDefaults {
   maxTurns: number
   permissionMode: PermissionMode
-  /** Default engine used when startSession input does not specify engineKind. */
-  defaultEngine: AIEngineKind
 }
 
 export interface EventSubscriptionSettings {
@@ -3604,21 +3721,22 @@ export interface IMOrchestratorDeps {
 
 // === Provider ===
 
+/**
+ * @deprecated Post-Phase-B.7, the flat "API provider mode" concept is
+ * replaced by `ProviderType` in `./providerProfile.ts`. This alias
+ * remains only for legacy test files and will be dropped once those
+ * are rewritten.
+ */
 export type ApiProvider = 'subscription' | 'api_key' | 'openrouter' | 'custom'
-export type CodexReasoningEffort = 'minimal' | 'low' | 'medium' | 'high' | 'xhigh'
 
-/** Non-sensitive credential fields returned for pre-filling the edit form. API key is included (masked in UI). */
-export interface ProviderCredentialInfo {
-  apiKey?: string
-  baseUrl?: string
-  authStyle?: 'api_key' | 'bearer'
-}
+export type { ProviderCredentialInfo } from './providerProfile'
 
 export type ProviderStatusState = 'authenticated' | 'unauthenticated' | 'authenticating' | 'error'
 
 export interface ProviderStatus {
   state: ProviderStatusState
-  mode: ApiProvider | null
+  /** The profile this status refers to, or null when no profile is configured. */
+  profileId: import('./providerProfile').ProviderProfileId | null
   detail?: {
     email?: string
     organization?: string
@@ -3627,18 +3745,25 @@ export interface ProviderStatus {
   error?: string
 }
 
-/** Non-sensitive provider config (persisted in settings.json). Secrets live in CredentialStore. */
-export interface ProviderEngineSettings {
-  activeMode: ApiProvider | null
-  /** Optional per-engine default model hint. */
-  defaultModel?: string
-  /** Optional default reasoning effort for Codex model calls. */
-  defaultReasoningEffort?: CodexReasoningEffort
-}
-
-/** Engine-scoped provider configuration. */
+/**
+ * Non-sensitive provider config (persisted in settings.json). Secrets
+ * live in the CredentialStore under `credential:${profileId}` keys.
+ *
+ * Schema v1 shape (Phase B.7 cutover):
+ *   - `schemaVersion: 1`  — stamp written by the migration runner
+ *   - `profiles[]`        — user-owned LLM account records
+ *   - `defaultProfileId`  — pointer into `profiles` or null when none
+ *   - `defaultModel`      — optional model hint applied when a profile
+ *                            omits its own `preferredModel`
+ *
+ * The pre-Phase-A `byEngine.{claude,codex}` shape and the Phase A flat
+ * `activeMode` shape are read only by the migration runner (see
+ * electron/services/provider/migration/). Runtime readers see v1 only.
+ */
 export interface ProviderSettings {
-  byEngine: Record<AIEngineKind, ProviderEngineSettings>
+  schemaVersion?: 1
+  profiles: import('./providerProfile').ProviderProfile[]
+  defaultProfileId: import('./providerProfile').ProviderProfileId | null
 }
 
 // === Update Settings ===
@@ -4163,6 +4288,7 @@ export interface ScheduleAction {
   // start_session / resume_session
   session?: {
     promptTemplate: string
+    systemPrompt?: string
     model?: string
     maxTurns?: number
     permissionMode?: 'bypassPermissions' | 'default'
@@ -4380,6 +4506,153 @@ export interface UpdateScheduleInput {
   endDate?: number
   maxExecutions?: number
   projectId?: string | null
+}
+
+// === Session Lifecycle Operations (Issue/Schedule Native Capabilities) ===
+
+/** P1 lifecycle entity scope — intentionally limited to Issue + Schedule. */
+export type SessionLifecycleOperationEntity = 'issue' | 'schedule'
+
+/** Issue lifecycle actions available to the native lifecycle protocol. */
+export type IssueLifecycleOperationAction =
+  | 'create'
+  | 'update'
+  | 'transition_status'
+
+/** Schedule lifecycle actions available to the native lifecycle protocol. */
+export type ScheduleLifecycleOperationAction =
+  | 'create'
+  | 'update'
+  | 'pause'
+  | 'resume'
+  | 'trigger_now'
+
+/** Union of all P1 lifecycle actions. */
+export type SessionLifecycleOperationAction =
+  | IssueLifecycleOperationAction
+  | ScheduleLifecycleOperationAction
+
+/** Confirmation strategy for a proposed lifecycle operation. */
+export type SessionLifecycleOperationConfirmationMode =
+  | 'required'
+  | 'auto_if_user_explicit'
+
+/** Backend state machine for lifecycle operations. */
+export type SessionLifecycleOperationState =
+  | 'pending_confirmation'
+  | 'applying'
+  | 'applied'
+  | 'failed'
+  | 'cancelled'
+
+/** Persisted lifecycle operation record (backend canonical source of truth). */
+export interface SessionLifecycleOperation {
+  id: string
+  sessionId: string
+  toolUseId: string
+  proposalGroupKey: string
+  operationIndex: number
+  entity: SessionLifecycleOperationEntity
+  action: SessionLifecycleOperationAction
+  normalizedPayload: Record<string, unknown>
+  summary: Record<string, unknown>
+  warnings: string[]
+  confirmationMode: SessionLifecycleOperationConfirmationMode
+  state: SessionLifecycleOperationState
+  idempotencyKey: string | null
+  resultSnapshot: Record<string, unknown> | null
+  errorCode: string | null
+  errorMessage: string | null
+  createdAt: number
+  updatedAt: number
+  appliedAt: number | null
+}
+
+/** Internal proposal input used by coordinator/native-capability integration. */
+export interface SessionLifecycleOperationProposalInput {
+  entity: SessionLifecycleOperationEntity
+  action: SessionLifecycleOperationAction
+  normalizedPayload: Record<string, unknown>
+  summary?: Record<string, unknown>
+  warnings?: string[]
+  confirmationMode?: SessionLifecycleOperationConfirmationMode
+  idempotencyKey?: string | null
+}
+
+/**
+ * Tool-facing envelope for session message rendering.
+ *
+ * `createdAt`/`updatedAt`/`appliedAt` are ISO-8601 strings because tool outputs
+ * are text-serialised and consumed by cross-runtime renderers.
+ */
+export interface SessionLifecycleOperationEnvelope {
+  operationId: string
+  operationIndex: number
+  entity: SessionLifecycleOperationEntity
+  action: SessionLifecycleOperationAction
+  confirmationMode: SessionLifecycleOperationConfirmationMode
+  state: SessionLifecycleOperationState
+  normalizedPayload: Record<string, unknown>
+  summary: Record<string, unknown>
+  warnings: string[]
+  createdAt: string
+  updatedAt: string
+  appliedAt: string | null
+  resultSnapshot: Record<string, unknown> | null
+  /** ID of the entity created/updated by this operation, extracted from resultSnapshot. */
+  createdEntityId: string | null
+  errorCode: string | null
+  errorMessage: string | null
+}
+
+export type SessionLifecycleOperationConfirmResultCode =
+  | 'confirmed_applied'
+  | 'already_applied'
+  | 'rejected_concurrent'
+  | 'not_found'
+  | 'invalid_state'
+
+export interface SessionLifecycleOperationConfirmResult {
+  ok: boolean
+  code: SessionLifecycleOperationConfirmResultCode
+  operation: SessionLifecycleOperationEnvelope | null
+}
+
+export type SessionLifecycleOperationRejectResultCode =
+  | 'rejected'
+  | 'already_terminal'
+  | 'rejected_concurrent'
+  | 'not_found'
+  | 'invalid_state'
+
+export interface SessionLifecycleOperationRejectResult {
+  ok: boolean
+  code: SessionLifecycleOperationRejectResultCode
+  operation: SessionLifecycleOperationEnvelope | null
+}
+
+export type SessionLifecycleOperationMarkAppliedResultCode =
+  | 'marked_applied_externally'
+  | 'already_applied'
+  | 'entity_not_found'
+  | 'entity_mismatch'
+  | 'rejected_concurrent'
+  | 'not_found'
+  | 'invalid_state'
+
+export interface SessionLifecycleOperationMarkAppliedInput {
+  source: 'manual_form_create'
+  entityRef: {
+    entity: 'issue' | 'schedule'
+    id: string
+  }
+  note?: string
+}
+
+export interface SessionLifecycleOperationMarkAppliedResult {
+  ok: boolean
+  code: SessionLifecycleOperationMarkAppliedResultCode
+  operation: SessionLifecycleOperationEnvelope | null
 }
 
 // === Pipeline CRUD Input Types ===

@@ -2,18 +2,15 @@
 
 import type { ManagedSessionTable } from '../../database/types'
 import type {
-  AIEngineKind,
   ManagedSessionInfo,
   ManagedSessionMessage,
   SessionExecutionContext,
   SessionOrigin,
 } from '../../../src/shared/types'
-
-const DEFAULT_ENGINE_KIND: AIEngineKind = 'claude'
-
-function normalizeEngineKind(raw: string): AIEngineKind {
-  return raw === 'codex' ? 'codex' : DEFAULT_ENGINE_KIND
-}
+import {
+  asProviderProfileId,
+  type ProviderProfileId,
+} from '../../../src/shared/providerProfile'
 
 function parseEngineState(raw: string | null): Record<string, unknown> | null {
   if (!raw) return null
@@ -149,10 +146,8 @@ function originToColumns(origin: SessionOrigin): {
 
 export function managedSessionRowToInfo(row: ManagedSessionTable): ManagedSessionInfo {
   const engineSessionRef = row.sdk_session_id
-  const engineKind = normalizeEngineKind(row.engine_kind)
   return {
     id: row.id,
-    engineKind,
     engineSessionRef,
     engineState: parseEngineState(row.engine_state_json),
     state: row.state as ManagedSessionInfo['state'],
@@ -178,18 +173,27 @@ export function managedSessionRowToInfo(row: ManagedSessionTable): ManagedSessio
     executionContext: row.execution_context
       ? (JSON.parse(row.execution_context) as SessionExecutionContext)
       : null,
+    providerProfileId: rowProviderProfileIdToDomain(row.provider_profile_id),
   }
+}
+
+function rowProviderProfileIdToDomain(
+  raw: string | null,
+): ProviderProfileId | null {
+  if (raw === null || raw.length === 0) return null
+  return asProviderProfileId(raw)
 }
 
 export function managedSessionInfoToRow(session: ManagedSessionInfo): ManagedSessionTable {
   const { origin_source, origin_id, origin_extra } = originToColumns(session.origin)
-  const engineKind = normalizeEngineKind(session.engineKind)
   const engineSessionRef = session.engineSessionRef ?? null
 
   return {
     id: session.id,
     sdk_session_id: engineSessionRef,
-    engine_kind: engineKind,
+    // engine_kind is a constant column: DB retains TEXT NOT NULL, app only ever writes 'claude'.
+    // See docs/proposals/2026-04-12-provider-management-redesign.md §4.3 for deferred-drop plan.
+    engine_kind: 'claude',
     engine_state_json: session.engineState ? JSON.stringify(session.engineState) : null,
     state: session.state,
     stop_reason: session.stopReason,
@@ -211,5 +215,6 @@ export function managedSessionInfoToRow(session: ManagedSessionInfo): ManagedSes
     activity: session.activity,
     error: session.error,
     execution_context: session.executionContext ? JSON.stringify(session.executionContext) : null,
+    provider_profile_id: session.providerProfileId,
   }
 }

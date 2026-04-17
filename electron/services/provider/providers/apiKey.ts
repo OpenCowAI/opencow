@@ -11,9 +11,10 @@
  * - OpenAIApiKeyProvider:    `sk-*` keys, `Authorization: Bearer`, api.openai.com
  */
 
-import type { CodexAuthConfig, HTTPAuthResult, ProviderAdapter, ProviderAdapterStatus } from '../types'
+import type { HTTPAuthResult, ProbeResult, ProviderAdapter, ProviderAdapterStatus } from '../types'
 import type { CredentialStore } from '../credentialStore'
 import { createLogger } from '../../../platform/logger'
+import { probeUpstream } from './probe'
 
 const log = createLogger('Auth:ApiKey')
 
@@ -26,17 +27,18 @@ const log = createLogger('Auth:ApiKey')
  * - `validateKey()` — engine-specific format validation
  * - `getEnv()` — engine-specific env var mapping
  * - `getHTTPAuth()` — structured HTTP auth with correct base URL and auth style
- * - `getCodexAuthConfig()` — OpenAI SDK compatibility (null for Anthropic)
  */
 abstract class BaseApiKeyProvider implements ProviderAdapter {
   protected readonly store: CredentialStore
+  protected readonly credentialKey: string
 
-  constructor(store: CredentialStore) {
+  constructor(store: CredentialStore, credentialKey: string = 'apiKey') {
     this.store = store
+    this.credentialKey = credentialKey
   }
 
   async checkStatus(): Promise<ProviderAdapterStatus> {
-    const key = await this.store.get('apiKey')
+    const key = await this.store.getAs<string>(this.credentialKey)
     if (!key) return { authenticated: false }
     return { authenticated: true }
   }
@@ -53,19 +55,19 @@ abstract class BaseApiKeyProvider implements ProviderAdapter {
       return { authenticated: false, error: validationError }
     }
 
-    await this.store.update('apiKey', trimmed)
+    await this.store.updateAs(this.credentialKey, trimmed)
     log.info('API key saved')
     return { authenticated: true }
   }
 
   async getCredential(): Promise<import('@shared/types').ProviderCredentialInfo | null> {
-    const key = await this.store.get('apiKey')
+    const key = await this.store.getAs<string>(this.credentialKey)
     if (!key) return null
     return { apiKey: key }
   }
 
   async logout(): Promise<void> {
-    await this.store.remove('apiKey')
+    await this.store.removeAt(this.credentialKey)
     log.info('API key cleared')
   }
 
@@ -74,7 +76,7 @@ abstract class BaseApiKeyProvider implements ProviderAdapter {
 
   abstract getEnv(): Promise<Record<string, string>>
   abstract getHTTPAuth(): Promise<HTTPAuthResult | null>
-  abstract getCodexAuthConfig(): Promise<CodexAuthConfig | null>
+  abstract probe(): Promise<ProbeResult>
 }
 
 // ─── Anthropic (Claude engine) ──────────────────────────────────────
@@ -85,9 +87,8 @@ const ANTHROPIC_BASE_URL = 'https://api.anthropic.com'
 /**
  * Anthropic Console API key provider.
  *
- * Used by the Claude engine. Validates `sk-ant-*` key format,
+ * Validates `sk-ant-*` key format,
  * sends credentials via `x-api-key` header to api.anthropic.com.
- * Not compatible with Codex/OpenAI protocol.
  */
 export class AnthropicApiKeyProvider extends BaseApiKeyProvider {
   protected validateKey(key: string): string | null {
@@ -98,13 +99,13 @@ export class AnthropicApiKeyProvider extends BaseApiKeyProvider {
   }
 
   async getEnv(): Promise<Record<string, string>> {
-    const key = await this.store.get('apiKey')
+    const key = await this.store.getAs<string>(this.credentialKey)
     if (!key) return {}
     return { ANTHROPIC_API_KEY: key }
   }
 
   async getHTTPAuth(): Promise<HTTPAuthResult | null> {
-    const key = await this.store.get('apiKey')
+    const key = await this.store.getAs<string>(this.credentialKey)
     if (!key) return null
     return {
       apiKey: key,
@@ -113,56 +114,19 @@ export class AnthropicApiKeyProvider extends BaseApiKeyProvider {
     }
   }
 
-  async getCodexAuthConfig(): Promise<CodexAuthConfig | null> {
-    // Anthropic API keys are not compatible with Codex/OpenAI auth.
-    return null
-  }
-}
-
-// ─── OpenAI (Codex engine) ──────────────────────────────────────────
-
-const OPENAI_API_KEY_PREFIX = 'sk-'
-const OPENAI_BASE_URL = 'https://api.openai.com'
-
-/**
- * OpenAI API key provider.
- *
- * Used by the Codex engine. Validates `sk-*` key format,
- * sends credentials via `Authorization: Bearer` header to api.openai.com.
- * Fully compatible with Codex/OpenAI protocol.
- */
-export class OpenAIApiKeyProvider extends BaseApiKeyProvider {
-  protected validateKey(key: string): string | null {
-    if (!key.startsWith(OPENAI_API_KEY_PREFIX)) {
-      return `Invalid API key format (expected prefix "${OPENAI_API_KEY_PREFIX}")`
+  async probe(): Promise<ProbeResult> {
+    const key = await this.store.getAs<string>(this.credentialKey)
+    if (!key) {
+      return { ok: false, reason: 'unauthenticated', message: 'No API key stored' }
     }
-    return null
-  }
-
-  async getEnv(): Promise<Record<string, string>> {
-    const key = await this.store.get('apiKey')
-    if (!key) return {}
-    // Codex SDK reads CODEX_API_KEY from env
-    return { CODEX_API_KEY: key }
-  }
-
-  async getHTTPAuth(): Promise<HTTPAuthResult | null> {
-    const key = await this.store.get('apiKey')
-    if (!key) return null
-    return {
-      apiKey: key,
-      baseUrl: OPENAI_BASE_URL,
-      authStyle: 'bearer',
-    }
-  }
-
-  async getCodexAuthConfig(): Promise<CodexAuthConfig | null> {
-    const key = await this.store.get('apiKey')
-    if (!key) return null
-    return {
-      apiKey: key,
-      baseUrl: OPENAI_BASE_URL,
-    }
+    return probeUpstream({
+      url: `${ANTHROPIC_BASE_URL}/v1/models`,
+      headers: {
+        'x-api-key': key,
+        'anthropic-version': '2023-06-01',
+      },
+      logLabel: 'Anthropic API',
+    })
   }
 }
 

@@ -20,8 +20,10 @@
 
 import { z } from 'zod/v4'
 import { randomUUID } from 'node:crypto'
+import type { ToolDescriptor } from '@opencow-ai/opencow-agent-sdk'
 import type { NativeCapabilityMeta, NativeCapabilityToolContext, CallToolResult } from '../types'
-import { BaseNativeCapability, type ToolConfig } from '../baseNativeCapability'
+import { BaseNativeCapability } from '../baseNativeCapability'
+import type { OpenCowSessionContext } from '../openCowSessionContext'
 import type { PendingQuestionRegistry } from './pendingQuestionRegistry'
 import type { DataBusEvent } from '../../../src/shared/types'
 import { isIMPlatformSource } from '../../../src/shared/types'
@@ -61,9 +63,7 @@ const questionSchema = z.object({
 export class InteractionNativeCapability extends BaseNativeCapability {
   readonly meta: NativeCapabilityMeta = {
     category: 'interaction',
-    name: 'User Interaction',
     description: 'Interactive tools that pause execution and wait for user input',
-    version: '1.0.0',
   }
 
   private readonly deps: InteractionNativeCapabilityDeps
@@ -73,8 +73,10 @@ export class InteractionNativeCapability extends BaseNativeCapability {
     this.deps = deps
   }
 
-  protected toolConfigs(context: NativeCapabilityToolContext): ToolConfig[] {
-    const { sessionId, originSource } = context.session
+  override getToolDescriptors(
+    ctx: NativeCapabilityToolContext,
+  ): readonly ToolDescriptor<OpenCowSessionContext>[] {
+    const { sessionId, originSource } = ctx.sessionContext
 
     // IM clients (Telegram, Discord, Feishu, WeChat) cannot render interactive
     // cards — suppress all interaction tools so they never appear in Claude's
@@ -88,7 +90,7 @@ export class InteractionNativeCapability extends BaseNativeCapability {
     const { registry, dispatch, enterQuestionState, exitQuestionState } = this.deps
 
     return [
-      {
+      this.tool({
         name: 'ask_user_question',
         description:
           'Ask the user questions with selectable options and wait for their response. '
@@ -99,7 +101,7 @@ export class InteractionNativeCapability extends BaseNativeCapability {
             .min(1).max(4)
             .describe('Questions to ask (1-4 questions)'),
         },
-        execute: async (args): Promise<CallToolResult> => {
+        execute: async ({ args }): Promise<CallToolResult> => {
           const requestId = randomUUID()
           const questions = args.questions
 
@@ -147,7 +149,7 @@ export class InteractionNativeCapability extends BaseNativeCapability {
             content: [{ type: 'text' as const, text: response.answer }],
           }
         },
-      },
+      }),
     ]
   }
 }

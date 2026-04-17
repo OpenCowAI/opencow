@@ -1,350 +1,491 @@
 // SPDX-License-Identifier: Apache-2.0
 
 /**
- * ProviderService — Central orchestrator for all API provider modes.
+ * ProviderService — profile-aware (Phase B.7 cutover).
  *
  * Responsibilities:
- *   1. Maintain the active provider adapter based on user settings
- *   2. Provide `getProviderEnv()` for SessionOrchestrator to inject into SDK env
- *   3. Expose login/logout/status for the IPC layer and frontend
- *   4. Broadcast provider status changes via DataBus
+ *   1. Create / read / update / remove user-owned provider profiles.
+ *   2. Emit SDK env vars + HTTP auth for a given profile.
+ *   3. Test a profile's credentials.
+ *   4. Broadcast status changes via DataBus.
  *
  * Architecture:
- *   - Strategy pattern: each ApiProvider maps to a ProviderAdapter implementation
- *   - Engine-scoped active provider (`provider.byEngine.{claude|codex}.activeMode`)
- *   - Sensitive credentials in CredentialStore (encrypted)
- *   - Non-sensitive config in SettingsService (plaintext JSON)
+ *   - Every profile has its own adapter instance keyed by
+ *     `credential:${profileId}`. Adapters are constructed on demand
+ *     (cheap — each holds only a CredentialStore reference + a string
+ *     key).
+ *   - Non-sensitive config in `settings.provider.profiles[]`.
+ *   - Secrets in CredentialStore, encrypted via OS keychain.
+ *   - Historical migration (pre-Phase-A `byEngine.*`, Phase A flat
+ *     activeMode, Phase B.0-B.6 preview shapes) is the sole
+ *     responsibility of `electron/services/provider/migration/`.
  */
 
 import type {
-  AIEngineKind,
-  ApiProvider,
   ProviderSettings,
   ProviderStatus,
-  ProviderCredentialInfo,
   DataBusEvent,
 } from '@shared/types'
-import type { CodexAuthConfig, ProviderAdapter } from './types'
+import type { ProviderAdapter } from './types'
 import type { LLMAuthConfig } from '../../llm/types'
 import { CredentialStore } from './credentialStore'
 import { SubscriptionProvider } from './providers/subscription'
-import { AnthropicApiKeyProvider, OpenAIApiKeyProvider } from './providers/apiKey'
-import { OpenRouterProvider } from './providers/openRouter'
+import { AnthropicApiKeyProvider } from './providers/apiKey'
 import { CustomProvider } from './providers/custom'
+import {
+  OpenAIDirectProvider,
+  OpenAICompatProxyProvider,
+} from './providers/openai'
+import { GeminiProvider } from './providers/gemini'
 import { createLogger } from '../../platform/logger'
+import type { ProviderCredentialInfo } from '@shared/types'
+import type {
+  ProviderProfile,
+  ProviderProfileId,
+  CreateProviderProfileInput,
+  UpdateProviderProfilePatch,
+  ProviderTestResult,
+} from '../../../src/shared/providerProfile'
+import {
+  credentialKeyFor,
+  generateProviderProfileId,
+} from '../../../src/shared/providerProfile'
 
 const log = createLogger('ProviderService')
 
 export interface ProviderServiceDeps {
   dispatch: (event: DataBusEvent) => void
-  credentialStoreByEngine: Record<AIEngineKind, CredentialStore>
-  /** Returns current provider settings (non-sensitive config). */
+  credentialStore: CredentialStore
+  /** Returns current provider settings. Always the v1 shape post-migration. */
   getProviderSettings: () => ProviderSettings
-  /** Bring the app window to the foreground (called after successful auth). */
+  /** Persist a patch to `settings.provider`; returns the saved snapshot. */
+  updateProviderSettings: (patch: Partial<ProviderSettings>) => Promise<ProviderSettings>
+  /** Bring the app window to the foreground (called after OAuth success). */
   focusApp?: () => void
 }
 
 export class ProviderService {
   private readonly deps: ProviderServiceDeps
-  private readonly providersByEngine: Map<AIEngineKind, Map<ApiProvider, ProviderAdapter>>
 
   constructor(deps: ProviderServiceDeps) {
     this.deps = deps
-    this.providersByEngine = new Map<AIEngineKind, Map<ApiProvider, ProviderAdapter>>([
-      ['claude', this.createProviders('claude', deps.credentialStoreByEngine.claude)],
-      ['codex', this.createProviders('codex', deps.credentialStoreByEngine.codex)],
-    ])
   }
 
-  private createProviders(engineKind: AIEngineKind, store: CredentialStore): Map<ApiProvider, ProviderAdapter> {
-    return new Map<ApiProvider, ProviderAdapter>([
-      ['subscription', new SubscriptionProvider(store)],
-      ['api_key', engineKind === 'codex'
-        ? new OpenAIApiKeyProvider(store)
-        : new AnthropicApiKeyProvider(store)],
-      ['openrouter', new OpenRouterProvider(store)],
-      ['custom', new CustomProvider(store)],
-    ])
+  // ── Profile CRUD ────────────────────────────────────────────────────
+
+  listProfiles(): ProviderProfile[] {
+    return [...(this.deps.getProviderSettings().profiles ?? [])]
   }
 
-  private getEngineProviders(engineKind: AIEngineKind): Map<ApiProvider, ProviderAdapter> {
-    return this.providersByEngine.get(engineKind) ?? this.providersByEngine.get('claude')!
+  async createProfile(input: CreateProviderProfileInput): Promise<ProviderProfile> {
+    const id = generateProviderProfileId()
+    const timestamp = new Date().toISOString()
+    const profile: ProviderProfile = {
+      id,
+      name: input.name.trim(),
+      credential: input.credential,
+      ...(input.preferredModel ? { preferredModel: input.preferredModel } : {}),
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    }
+
+    if (input.authParams) {
+      const adapter = this.buildAdapterForProfile(profile)
+      const result = await adapter.authenticate(input.authParams)
+      if (!result.authenticated) {
+        throw new Error(
+          `Authentication failed for "${profile.name}": ${result.error ?? 'unknown reason'}`,
+        )
+      }
+    }
+
+    const current = this.deps.getProviderSettings()
+    const nextProfiles = [...(current.profiles ?? []), profile]
+    await this.deps.updateProviderSettings({
+      profiles: nextProfiles,
+      ...(input.setAsDefault || !current.defaultProfileId
+        ? { defaultProfileId: id }
+        : {}),
+    })
+
+    log.info(`Profile created: ${profile.name} (${id}, ${profile.credential.type})`)
+    return profile
   }
 
-  private getEngineProviderSettings(engineKind: AIEngineKind): ProviderSettings['byEngine']['claude'] {
-    const settings = this.deps.getProviderSettings()
-    return settings.byEngine[engineKind] ?? { activeMode: null }
+  async updateProfile(
+    id: ProviderProfileId,
+    patch: UpdateProviderProfilePatch,
+  ): Promise<ProviderProfile> {
+    const profile = this.requireProfile(id)
+
+    const updated: ProviderProfile = {
+      ...profile,
+      ...(patch.name !== undefined ? { name: patch.name.trim() } : {}),
+      ...(patch.preferredModel === null
+        ? { preferredModel: undefined }
+        : patch.preferredModel !== undefined
+          ? { preferredModel: patch.preferredModel }
+          : {}),
+      credential: patch.credentialConfig
+        ? this.mergeCredentialConfig(profile.credential, patch.credentialConfig)
+        : profile.credential,
+      updatedAt: new Date().toISOString(),
+    }
+
+    if (patch.authParams) {
+      const adapter = this.buildAdapterForProfile(updated)
+      const result = await adapter.authenticate(patch.authParams)
+      if (!result.authenticated) {
+        throw new Error(
+          `Re-authentication failed for "${updated.name}": ${result.error ?? 'unknown reason'}`,
+        )
+      }
+    }
+
+    const current = this.deps.getProviderSettings()
+    const nextProfiles = (current.profiles ?? []).map((p) => (p.id === id ? updated : p))
+    await this.deps.updateProviderSettings({ profiles: nextProfiles })
+
+    log.info(`Profile updated: ${updated.name} (${id})`)
+    return updated
   }
 
-  // ── Public API ──────────────────────────────────────────────────────
+  async removeProfile(id: ProviderProfileId): Promise<boolean> {
+    const profile = this.findProfile(id)
+    if (!profile) return false
+
+    // Clear credentials before removing the profile record so a failure
+    // mid-op doesn't leave orphaned secrets in the store.
+    try {
+      await this.buildAdapterForProfile(profile).logout()
+    } catch (err) {
+      log.warn(`Profile logout failed (${id}) — proceeding with removal`, err)
+    }
+    await this.deps.credentialStore.removeAt(credentialKeyFor(id))
+
+    const current = this.deps.getProviderSettings()
+    const nextProfiles = (current.profiles ?? []).filter((p) => p.id !== id)
+    const nextDefault =
+      current.defaultProfileId === id
+        ? nextProfiles[0]?.id ?? null
+        : current.defaultProfileId ?? null
+    await this.deps.updateProviderSettings({
+      profiles: nextProfiles,
+      defaultProfileId: nextDefault,
+    })
+
+    log.info(`Profile removed: ${profile.name} (${id})`)
+    return true
+  }
+
+  async setDefaultProfile(id: ProviderProfileId | null): Promise<boolean> {
+    if (id !== null && !this.findProfile(id)) {
+      throw new Error(`Cannot set default: profile not found (${id})`)
+    }
+    await this.deps.updateProviderSettings({ defaultProfileId: id })
+    log.info(`Default profile set to ${id ?? '(none)'}`)
+    return true
+  }
+
+  // ── Env + status resolution for the orchestrator ───────────────────
 
   /**
-   * Get the current provider status for the active mode.
-   * Returns `unauthenticated` if no mode is configured.
+   * SDK env vars for a profile. Returns `{}` when the profile is
+   * absent or has no credentials — the orchestrator treats that as
+   * "not configured" and surfaces an auth error.
    */
-  async getStatus(engineKind: AIEngineKind = 'claude'): Promise<ProviderStatus> {
-    const mode = this.getEngineProviderSettings(engineKind).activeMode
-    if (!mode) {
-      return { state: 'unauthenticated', mode: null }
+  async getProviderEnvForProfile(profileId: ProviderProfileId): Promise<Record<string, string>> {
+    const profile = this.findProfile(profileId)
+    if (!profile) {
+      log.warn(`getProviderEnvForProfile: profile "${profileId}" not found`)
+      return {}
     }
 
-    const provider = this.getEngineProviders(engineKind).get(mode)
-    if (!provider) {
-      return { state: 'error', mode, error: `Unknown provider mode: ${mode}` }
+    // Non-Claude profiles MUST specify a model. The SDK's built-in
+    // defaults target Anthropic endpoints only; letting a session
+    // spawn without a model against an OpenAI-compat / Gemini endpoint
+    // causes the SDK to emit malformed requests that upstream returns
+    // as error text — which the SDK then surfaces as assistant content
+    // ("API Error: fetch failed"). Fail fast here so the user gets a
+    // clear error immediately instead of a confusing fake reply.
+    if (profileRequiresExplicitModel(profile) && !profile.preferredModel) {
+      throw new ProfileMisconfiguredError(
+        profile,
+        `Profile "${profile.name}" (${profile.credential.type}) requires an explicit Model — open Settings → Providers, edit this profile, and set a Model (e.g. ${suggestedModelFor(profile)}).`,
+      )
     }
 
-    const adapterStatus = await provider.checkStatus()
+    const adapter = this.tryBuildAdapter(profile)
+    if (!adapter) return {}
 
-    // Codex readiness is stricter than generic credential existence:
-    // we must be able to resolve OpenAI-compatible auth options (apiKey/baseUrl).
-    // Otherwise UI can show "configured" while runtime cannot start Codex turns.
-    if (engineKind === 'codex' && adapterStatus.authenticated) {
-      if (!provider.getCodexAuthConfig) {
-        return {
-          state: 'unauthenticated',
-          mode,
-          error: `Provider mode "${mode}" does not expose Codex-compatible auth mapping`,
-        }
+    const env = await adapter.getEnv()
+    // Protocol-aware model injection. Setting OPENAI_MODEL to a Claude
+    // model name (or vice-versa) would break upstream routing — each
+    // profile's preferredModel only makes sense for its own protocol.
+    const preferred = profile.preferredModel
+    if (preferred) {
+      switch (this.resolveProtocol(profile)) {
+        case 'anthropic':
+          env.ANTHROPIC_DEFAULT_SONNET_MODEL = preferred
+          break
+        case 'openai':
+          env.OPENAI_MODEL = preferred
+          break
+        case 'gemini':
+          env.GEMINI_MODEL = preferred
+          break
       }
-      const codexAuth = await provider.getCodexAuthConfig()
-      if (!codexAuth?.apiKey) {
-        return {
-          state: 'unauthenticated',
-          mode,
-          error: `Provider mode "${mode}" has no usable Codex API key mapping`,
-        }
+    }
+    log.info('getProviderEnvForProfile', {
+      profile: profile.name,
+      type: profile.credential.type,
+      model: preferred ?? '(none — SDK default)',
+      envKeys: Object.keys(env).sort(),
+    })
+    return env
+  }
+
+  /**
+   * Resolve the default profile id, honouring an optional override.
+   * Used by the orchestrator when starting sessions.
+   */
+  resolveProfileId(override?: ProviderProfileId | null): ProviderProfileId | null {
+    if (override) return override
+    return this.deps.getProviderSettings().defaultProfileId ?? null
+  }
+
+  async getStatusForProfile(profileId: ProviderProfileId): Promise<ProviderStatus> {
+    const profile = this.findProfile(profileId)
+    if (!profile) return { state: 'unauthenticated', profileId: null }
+
+    const adapter = this.tryBuildAdapter(profile)
+    if (!adapter) {
+      return {
+        state: 'error',
+        profileId,
+        error: `Profile type "${profile.credential.type}" is not yet supported in this build`,
       }
     }
 
+    const adapterStatus = await adapter.checkStatus()
     return {
       state: adapterStatus.authenticated ? 'authenticated' : 'unauthenticated',
-      mode,
+      profileId,
       detail: adapterStatus.detail,
       error: adapterStatus.error,
     }
   }
 
-  /**
-   * Get environment variables for the SDK subprocess.
-   *
-   * Called by SessionOrchestrator before spawning each SDK process.
-   * Returns an empty object if no provider mode is configured (SDK falls back
-   * to system-level credentials).
-   */
-  async getProviderEnv(engineKind: AIEngineKind): Promise<Record<string, string>> {
-    const engineSettings = this.getEngineProviderSettings(engineKind)
-    const mode = engineSettings.activeMode
-    if (!mode) {
-      if (engineKind === 'claude') {
-        log.warn(`getProviderEnv(${engineKind}): no activeMode configured — session will use system credentials`)
-      }
-      return {}
+  async getCredentialForProfile(
+    profileId: ProviderProfileId,
+  ): Promise<ProviderCredentialInfo | null> {
+    const profile = this.findProfile(profileId)
+    if (!profile) return null
+    const adapter = this.tryBuildAdapter(profile)
+    if (!adapter?.getCredential) return null
+    return adapter.getCredential()
+  }
+
+  async resolveHTTPAuthForProfile(profileId: ProviderProfileId): Promise<LLMAuthConfig> {
+    const profile = this.requireProfile(profileId)
+    const adapter = this.tryBuildAdapter(profile)
+    if (!adapter) {
+      throw new Error(`Profile type "${profile.credential.type}" is not yet supported`)
     }
-
-    const provider = this.getEngineProviders(engineKind).get(mode)
-    if (!provider) {
-      log.warn(`getProviderEnv: no adapter for mode "${mode}" — returning empty env`)
-      return {}
+    const httpAuth = await adapter.getHTTPAuth()
+    if (!httpAuth) {
+      throw new Error(`Profile "${profile.name}" has no stored HTTP credentials`)
     }
-
-    try {
-      const env = await provider.getEnv()
-
-      // Claude SDK default model is controlled via ANTHROPIC_DEFAULT_SONNET_MODEL.
-      if (engineKind === 'claude' && engineSettings.defaultModel) {
-        env.ANTHROPIC_DEFAULT_SONNET_MODEL = engineSettings.defaultModel
-      }
-
-      // Warn if the provider returned empty env — this almost certainly means
-      // the session will fail with "Not Logged in" from the SDK.
-      const hasAuthKey = Object.keys(env).some(
-        (k) => k === 'CLAUDE_CODE_OAUTH_TOKEN' || k === 'ANTHROPIC_API_KEY' || k === 'ANTHROPIC_AUTH_TOKEN'
+    if (!profile.preferredModel) {
+      throw new Error(
+        `Profile "${profile.name}" has no preferredModel set — direct HTTP calls require an explicit model`,
       )
-      if (engineKind === 'claude' && !hasAuthKey) {
-        log.warn(`getProviderEnv(${engineKind}): mode "${mode}" returned no auth credentials — session may fail`)
-      }
-
-      return env
-    } catch (err) {
-      log.error(`getProviderEnv(${engineKind}): failed for mode "${mode}"`, err)
-      return {}
+    }
+    return {
+      protocol: this.resolveProtocol(profile),
+      apiKey: httpAuth.apiKey,
+      baseUrl: httpAuth.baseUrl,
+      authStyle: httpAuth.authStyle,
+      model: profile.preferredModel,
     }
   }
 
-  /**
-   * Resolve Codex SDK auth options from the current active provider mode.
-   *
-   * Returns null when:
-   * - no active mode is configured
-   * - the active provider does not expose Codex-compatible credentials
-   * - credential lookup fails
-   */
-  async getCodexAuthConfig(engineKind: AIEngineKind): Promise<CodexAuthConfig | null> {
-    const mode = this.getEngineProviderSettings(engineKind).activeMode
-    if (!mode) return null
+  // ── Test Connection ────────────────────────────────────────────────
 
-    const provider = this.getEngineProviders(engineKind).get(mode)
-    if (!provider?.getCodexAuthConfig) return null
+  async testProfile(id: ProviderProfileId): Promise<ProviderTestResult> {
+    const started = Date.now()
+    const profile = this.findProfile(id)
+    if (!profile) {
+      log.warn(`testProfile: profile not found (${id})`)
+      return {
+        profileId: id,
+        outcome: { ok: false, reason: 'error', message: `Profile not found: ${id}` },
+        durationMs: Date.now() - started,
+      }
+    }
+
+    log.info(`testProfile started`, {
+      profile: profile.name,
+      type: profile.credential.type,
+    })
 
     try {
-      const resolved = await provider.getCodexAuthConfig()
-      if (!resolved?.apiKey) return null
-      return resolved
+      const adapter = this.buildAdapterForProfile(profile)
+      const result = await adapter.probe()
+      const durationMs = Date.now() - started
+
+      if (result.ok) {
+        log.info(`testProfile OK`, {
+          profile: profile.name,
+          type: profile.credential.type,
+          durationMs,
+          detail: result.detail,
+        })
+      } else {
+        log.warn(`testProfile FAIL`, {
+          profile: profile.name,
+          type: profile.credential.type,
+          reason: result.reason,
+          message: result.message,
+          durationMs,
+        })
+      }
+
+      return { profileId: id, outcome: result, durationMs }
     } catch (err) {
-      log.error(`getCodexAuthConfig(${engineKind}): failed for mode "${mode}"`, err)
+      const durationMs = Date.now() - started
+      const message = err instanceof Error ? err.message : String(err)
+      log.error(`testProfile threw`, {
+        profile: profile.name,
+        type: profile.credential.type,
+        error: message,
+        durationMs,
+      })
+      return {
+        profileId: id,
+        outcome: { ok: false, reason: 'error', message },
+        durationMs,
+      }
+    }
+  }
+
+  // ── Internals ──────────────────────────────────────────────────────
+
+  private findProfile(id: ProviderProfileId): ProviderProfile | null {
+    const profiles = this.deps.getProviderSettings().profiles ?? []
+    return profiles.find((p) => p.id === id) ?? null
+  }
+
+  private requireProfile(id: ProviderProfileId): ProviderProfile {
+    const profile = this.findProfile(id)
+    if (!profile) throw new Error(`Profile not found: ${id}`)
+    return profile
+  }
+
+  /** Build adapter or return null for types that aren't yet implemented. */
+  private tryBuildAdapter(profile: ProviderProfile): ProviderAdapter | null {
+    try {
+      return this.buildAdapterForProfile(profile)
+    } catch {
       return null
     }
   }
 
-  /**
-   * Perform authentication for the given mode.
-   *
-   * For subscription: triggers the OAuth PKCE browser flow.
-   * For api_key: validates and stores the provided key.
-   * For openrouter: validates and stores the OpenRouter API key.
-   */
-  async login(engineKind: AIEngineKind, mode: ApiProvider, params?: Record<string, unknown>): Promise<ProviderStatus> {
-    const provider = this.getEngineProviders(engineKind).get(mode)
-    if (!provider) {
-      return { state: 'error', mode, error: `Unknown provider mode: ${mode}` }
-    }
-
-    // Broadcast authenticating state
-    this.broadcastStatus({ state: 'authenticating', mode })
-
-    try {
-      const result = await provider.authenticate(params)
-
-      const status: ProviderStatus = {
-        state: result.authenticated ? 'authenticated' : 'error',
-        mode,
-        detail: result.detail,
-        error: result.error,
-      }
-
-      this.broadcastStatus(status)
-      log.info(`Login completed for mode "${mode}": ${status.state}`)
-
-      // Restore app focus after authentication completes (especially important
-      // for OAuth flows where the user was redirected to a browser).
-      if (result.authenticated) {
-        this.deps.focusApp?.()
-      }
-
-      return status
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err)
-      const status: ProviderStatus = { state: 'error', mode, error: message }
-      this.broadcastStatus(status)
-      log.error(`Login failed for mode "${mode}"`, err)
-      return status
-    }
-  }
-
-  /**
-   * Cancel an in-progress login flow for the given mode.
-   * Delegates to the adapter's cancelLogin() if it supports cancellation.
-   */
-  async cancelLogin(engineKind: AIEngineKind, mode: ApiProvider): Promise<void> {
-    const provider = this.getEngineProviders(engineKind).get(mode)
-    if (provider?.cancelLogin) {
-      await provider.cancelLogin()
-      this.broadcastStatus({ state: 'unauthenticated', mode })
-      log.info(`Login cancelled for mode "${mode}"`)
-    }
-  }
-
-  /**
-   * Logout from a specific provider mode.
-   * Clears credentials and broadcasts unauthenticated status.
-   */
-  async logout(engineKind: AIEngineKind, mode: ApiProvider): Promise<void> {
-    const provider = this.getEngineProviders(engineKind).get(mode)
-    if (provider) {
-      await provider.logout()
-    }
-
-    // Broadcast with the actual mode — the user is still IN this mode, just unauthenticated.
-    // This ensures isStatusForActiveMode guard on the frontend works correctly by design,
-    // not by coincidence (null !== activeMode).
-    this.broadcastStatus({ state: 'unauthenticated', mode })
-    log.info(`Logged out from mode "${mode}"`)
-  }
-
-  /**
-   * Return stored credential fields for the given mode (for edit form pre-fill).
-   * Returns null if the provider doesn't support it or no credential is stored.
-   */
-  async getCredential(engineKind: AIEngineKind, mode: ApiProvider): Promise<ProviderCredentialInfo | null> {
-    const provider = this.getEngineProviders(engineKind).get(mode)
-    if (!provider?.getCredential) return null
-    return provider.getCredential()
-  }
-
-  /**
-   * Resolve structured HTTP auth for direct LLM API calls.
-   *
-   * Combines adapter-level credentials with engine-level config
-   * (protocol, model) to produce a complete auth config suitable
-   * for constructing HTTP headers in direct fetch() calls.
-   *
-   * Resolution strategy per engine:
-   * - Claude: adapter.getHTTPAuth() — all adapters support Anthropic protocol
-   * - Codex:  adapter.getCodexAuthConfig() — only compatible adapters support OpenAI protocol
-   *
-   * @throws When no active provider, adapter not found, or credentials unavailable
-   */
-  async resolveHTTPAuth(engineKind: AIEngineKind): Promise<LLMAuthConfig> {
-    const engineSettings = this.getEngineProviderSettings(engineKind)
-    const mode = engineSettings.activeMode
-
-    if (!mode) {
-      throw new Error(`No active provider mode configured for engine "${engineKind}"`)
-    }
-
-    const provider = this.getEngineProviders(engineKind).get(mode)
-    if (!provider) {
-      throw new Error(`No adapter found for provider mode "${mode}"`)
-    }
-
-    // Codex engine: use getCodexAuthConfig() which already encodes
-    // "is this adapter compatible with OpenAI protocol?" semantics.
-    // Not all adapters support OpenAI — ApiKeyProvider (sk-ant-*) and
-    // SubscriptionProvider (OAuth) return null.
-    if (engineKind === 'codex') {
-      const codexAuth = provider.getCodexAuthConfig
-        ? await provider.getCodexAuthConfig()
-        : null
-      if (!codexAuth?.apiKey) {
-        throw new Error(`Provider mode "${mode}" is not compatible with Codex/OpenAI protocol`)
-      }
-      return {
-        protocol: 'openai',
-        apiKey: codexAuth.apiKey,
-        baseUrl: codexAuth.baseUrl ?? 'https://api.openai.com',
-        authStyle: 'bearer',
-        model: engineSettings.defaultModel ?? 'gpt-4o-mini',
+  private buildAdapterForProfile(profile: ProviderProfile): ProviderAdapter {
+    const key = credentialKeyFor(profile.id)
+    const store = this.deps.credentialStore
+    switch (profile.credential.type) {
+      case 'claude-subscription':
+        return new SubscriptionProvider(store, key)
+      case 'anthropic-api':
+        return new AnthropicApiKeyProvider(store, key)
+      case 'anthropic-compat-proxy':
+        return new CustomProvider(store, key)
+      case 'openai-direct':
+        return new OpenAIDirectProvider(store, key)
+      case 'openai-compat-proxy':
+        return new OpenAICompatProxyProvider(store, key)
+      case 'gemini':
+        return new GeminiProvider(store, key)
+      default: {
+        const exhaustive: never = profile.credential
+        throw new Error(`Unhandled profile credential: ${JSON.stringify(exhaustive)}`)
       }
     }
+  }
 
-    // Claude engine: use getHTTPAuth() for structured Anthropic-protocol auth
-    const httpAuth = await provider.getHTTPAuth()
-    if (!httpAuth) {
-      throw new Error(`Provider mode "${mode}" returned no HTTP auth credentials`)
-    }
+  private mergeCredentialConfig(
+    current: ProviderProfile['credential'],
+    patch: Partial<Omit<ProviderProfile['credential'], 'type'>>,
+  ): ProviderProfile['credential'] {
+    return { ...current, ...patch } as ProviderProfile['credential']
+  }
 
-    return {
-      protocol: 'anthropic',
-      apiKey: httpAuth.apiKey,
-      baseUrl: httpAuth.baseUrl,
-      authStyle: httpAuth.authStyle,
-      model: engineSettings.defaultModel ?? 'claude-sonnet-4-20250514',
+  private resolveProtocol(profile: ProviderProfile): 'anthropic' | 'openai' | 'gemini' {
+    switch (profile.credential.type) {
+      case 'claude-subscription':
+      case 'anthropic-api':
+      case 'anthropic-compat-proxy':
+        return 'anthropic'
+      case 'openai-direct':
+      case 'openai-compat-proxy':
+        return 'openai'
+      case 'gemini':
+        return 'gemini'
     }
   }
 
-  // ── Private ─────────────────────────────────────────────────────────
+  // ── Internal: status broadcast ─────────────────────────────────────
 
-  private broadcastStatus(status: ProviderStatus): void {
+  broadcastProfileStatus(status: ProviderStatus): void {
     this.deps.dispatch({ type: 'provider:status', payload: status })
+  }
+
+  /** Drive the app focus hook after OAuth completion. */
+  focusAppWindow(): void {
+    this.deps.focusApp?.()
+  }
+}
+
+/**
+ * Thrown when a profile is selected for use but lacks mandatory
+ * configuration (today: `preferredModel` on non-Claude profiles).
+ * Callers SHOULD catch this at the orchestrator boundary and surface
+ * the message to the user via the session error channel.
+ */
+export class ProfileMisconfiguredError extends Error {
+  constructor(readonly profile: ProviderProfile, message: string) {
+    super(message)
+    this.name = 'ProfileMisconfiguredError'
+  }
+}
+
+function profileRequiresExplicitModel(profile: ProviderProfile): boolean {
+  switch (profile.credential.type) {
+    case 'claude-subscription':
+      // Anthropic OAuth sessions use Anthropic's server-side default.
+      return false
+    case 'anthropic-api':
+      // Direct Anthropic API: SDK's built-in model default matches.
+      return false
+    case 'anthropic-compat-proxy':
+    case 'openai-direct':
+    case 'openai-compat-proxy':
+    case 'gemini':
+      return true
+  }
+}
+
+function suggestedModelFor(profile: ProviderProfile): string {
+  switch (profile.credential.type) {
+    case 'claude-subscription':
+    case 'anthropic-api':
+    case 'anthropic-compat-proxy':
+      return 'claude-sonnet-4-6'
+    case 'openai-direct':
+    case 'openai-compat-proxy':
+      return 'gpt-5.4'
+    case 'gemini':
+      return 'gemini-2.5-pro'
   }
 }

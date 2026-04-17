@@ -258,9 +258,9 @@ export const genHtmlArtifactExtractor: ArtifactExtractor = {
         if (block.type !== 'tool_use') continue
         if (block.name !== NativeCapabilityTools.GEN_HTML) continue
 
-        const { title, content } = parseGenHtmlInput(block.input)
-        if (!content) continue
-        const hash = hashContent(content)
+        const { title, html } = parseGenHtmlInput(block.input)
+        if (!html) continue
+        const hash = hashContent(html)
         const existing = map.get(hash)
 
         if (existing) {
@@ -273,7 +273,7 @@ export const genHtmlArtifactExtractor: ArtifactExtractor = {
             filePath: null,
             fileExtension: '.html',
             lastModifiedAt: msg.timestamp,
-            content,
+            content: html,
             contentHash: hash,
             stats: { writes: 1, edits: 0 },
           })

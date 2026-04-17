@@ -27,7 +27,14 @@ export function createLogger(scope: string): Logger {
     }
 
     // Fire-and-forget IPC — logger must never throw
-    getAppAPI()['log:write'](entry).catch(() => {})
+    try {
+      const maybePromise = getAppAPI()['log:write']?.(entry)
+      if (maybePromise && typeof maybePromise.catch === 'function') {
+        void maybePromise.catch(() => {})
+      }
+    } catch {
+      // no-op: renderer logging is best-effort and must not crash callsites
+    }
 
     // DEV mode: also output to browser DevTools console for immediate feedback
     if (import.meta.env.DEV) {

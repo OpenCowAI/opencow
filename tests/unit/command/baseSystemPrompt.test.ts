@@ -2,6 +2,7 @@
 
 import { describe, it, expect } from 'vitest'
 import { getBaseSystemPrompt } from '../../../electron/command/baseSystemPrompt'
+import { buildSessionPolicyInput } from '../../../electron/command/policy/sessionPolicyInputFactory'
 
 describe('getBaseSystemPrompt', () => {
   it('returns the base prompt for standard session origins', () => {
@@ -43,5 +44,26 @@ describe('getBaseSystemPrompt', () => {
     expect(prompt).toContain('open')
     expect(prompt).toContain('start')
     expect(prompt).toContain('xdg-open')
+  })
+
+  it('includes decoupled entity governance rules for issue and schedule', () => {
+    const prompt = getBaseSystemPrompt('agent')!
+    expect(prompt).toContain('<entity-governance>')
+    expect(prompt).toContain('<rule name="entity-router">')
+    expect(prompt).toContain('<rule name="issue-governance">')
+    expect(prompt).toContain('<rule name="schedule-governance">')
+    expect(prompt).toContain('For any scheduled-plan intent (daily/weekly/monthly/cron/time-based execution), prioritize schedule native capability tools.')
+    expect(prompt).toContain('Do not use OS-level schedulers (cron/launchd/systemd) unless the user explicitly asks for OS-level scheduling.')
+    expect(prompt).toContain('Do not run MCP capability-discovery calls (resources/resourceTemplates) before schedule execution unless the user explicitly asks you to inspect templates.')
+  })
+
+  it('keeps prompt/tool contract aligned for ask_user_question in default desktop sessions', () => {
+    const prompt = getBaseSystemPrompt('agent')!
+    expect(prompt).toContain('use the `ask_user_question` tool instead of writing options as plain text.')
+
+    const policy = buildSessionPolicyInput({ origin: { source: 'agent' } })
+    expect(policy?.tools?.native?.allow).toEqual(
+      expect.arrayContaining([{ capability: 'interaction' }]),
+    )
   })
 })

@@ -52,7 +52,6 @@
   "dependencies": {
     "@ai-sdk/anthropic": "^3.0.64",
     "@ai-sdk/openai": "^3.0.48",
-    "@anthropic-ai/claude-agent-sdk": "^0.2.83",
     "@dnd-kit/core": "^6.3.1",
     "@dnd-kit/sortable": "^10.0.0",
     "@dnd-kit/utilities": "^3.2.2",
@@ -65,7 +64,8 @@
     "@nivo/bar": "^0.99.0",
     "@nivo/calendar": "^0.99.0",
     "@nivo/core": "^0.99.0",
-    "@openai/codex-sdk": "^0.115.0",
+    "@opencow-ai/opencow-agent-sdk": "^0.1.9",
+    "@pydantic/genai-prices": "0.0.56",
     "@tailwindcss/vite": "^4.2.0",
     "@tiptap/core": "^3.20.0",
     "@tiptap/extension-document": "^3.20.0",
@@ -125,8 +125,7 @@
     "asar": true,
     "asarUnpack": [
       "**/node_modules/better-sqlite3/**/*.node",
-      "**/node_modules/node-pty/**/*.node",
-      "**/node_modules/@openai/codex-*/vendor/**"
+      "**/node_modules/node-pty/**/*.node"
     ],
     "extraResources": [
       {
@@ -217,7 +216,8 @@
       "express-rate-limit": "^8.2.2",
       "flatted": "^3.4.2",
       "undici@<7": "^6.24.0",
-      "path-to-regexp@>=8.0.0 <8.4.0": "^8.4.0"
+      "path-to-regexp@>=8.0.0 <8.4.0": "^8.4.0",
+      "protobufjs": "^7.5.5"
     }
   },
   "devDependencies": {

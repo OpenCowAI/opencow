@@ -4,7 +4,6 @@ import { readFile, writeFile, mkdir } from 'fs/promises'
 import { randomUUID } from 'crypto'
 import { dirname } from 'path'
 import {
-  type AIEngineKind,
   DEFAULT_EVOSE_SETTINGS,
   DEFAULT_UPDATE_SETTINGS,
   type AppSettings,
@@ -16,9 +15,7 @@ import {
   type IMConnection,
   type MessagingSettings,
   type EventSubscriptionSettings,
-  type ProviderEngineSettings,
   type ProviderSettings,
-  type CodexReasoningEffort,
   type UserConfigurableWorkspaceInput,
   type TelegramBotEntry,
   type TelegramBotSettings,
@@ -46,7 +43,6 @@ const DEFAULT_SETTINGS: AppSettings = {
   command: {
     maxTurns: 10000,
     permissionMode: 'bypassPermissions',
-    defaultEngine: 'claude',
   },
   eventSubscriptions: {
     enabled: true,
@@ -58,15 +54,8 @@ const DEFAULT_SETTINGS: AppSettings = {
     endpoints: []
   },
   provider: {
-    byEngine: {
-      claude: {
-        activeMode: null,
-      },
-      codex: {
-        activeMode: null,
-        defaultReasoningEffort: 'high',
-      },
-    },
+    profiles: [],
+    defaultProfileId: null,
   },
   messaging: {
     connections: [],
@@ -187,14 +176,14 @@ export class SettingsService {
       telegramBot?: Record<string, unknown>
       /** Legacy key — old settings persisted under `auth`; migrate to `provider`. */
       auth?: Partial<ProviderSettings> & Record<string, unknown>
-      /** Legacy key — old command.defaultModel migrated to provider.byEngine.claude.defaultModel. */
+      /** Legacy key — old command.defaultModel migrated to provider.defaultModel. */
       command?: Record<string, unknown>
     }
 
     // Migration: read from `provider` first, fall back to legacy `auth` key.
     const providerRaw = (p.provider ?? p.auth) as (Partial<ProviderSettings> & Record<string, unknown>) | undefined
 
-    // Migrate legacy command.defaultModel → provider.byEngine.claude.defaultModel (if not already set).
+    // Migrate legacy command.defaultModel → provider.defaultModel (if not already set).
     const legacyCommandModel = p.command?.defaultModel
     const legacyCommandModelStr = typeof legacyCommandModel === 'string' && legacyCommandModel ? legacyCommandModel : undefined
 
@@ -208,7 +197,6 @@ export class SettingsService {
       command: {
         maxTurns: (p.command?.maxTurns as number) ?? DEFAULT_SETTINGS.command.maxTurns,
         permissionMode: normalizePermissionMode((p.command as Record<string, unknown> | undefined)?.permissionMode),
-        defaultEngine: normalizeEngine((p.command as Record<string, unknown> | undefined)?.defaultEngine),
       },
       eventSubscriptions: {
         enabled: p.eventSubscriptions?.enabled ?? DEFAULT_SETTINGS.eventSubscriptions.enabled,
@@ -223,7 +211,7 @@ export class SettingsService {
           useProxy: ep.useProxy ?? false,
         }))
       },
-      provider: migrateProviderSettings(providerRaw, legacyCommandModelStr),
+      provider: readProviderSettings(providerRaw, legacyCommandModelStr),
       messaging: migrateToMessaging(p),
       schedule: {
         enabled: p.schedule?.enabled ?? DEFAULT_SETTINGS.schedule.enabled,
@@ -415,93 +403,29 @@ function legacyBotEntryToTelegramConnection(entry: TelegramBotEntry): TelegramCo
   }
 }
 
-// ── Provider settings migration ───────────────────────────────────────────────
+// ── Provider settings reader ──────────────────────────────────────────────────
+//
+// settingsService is intentionally legacy-unaware: it reads whatever
+// shape is on disk and hands it to the caller. The full legacy → v1
+// migration lives in electron/services/provider/migration/ and runs
+// once at bootstrap. After that, only the v1 shape is ever observed.
 
-const VALID_PROVIDER_MODES = new Set(['subscription', 'api_key', 'openrouter', 'custom'])
-const VALID_CODEX_REASONING_EFFORTS: ReadonlySet<CodexReasoningEffort> =
-  new Set(['minimal', 'low', 'medium', 'high', 'xhigh'])
-
-function normalizeProviderMode(raw: unknown): ProviderSettings['byEngine']['claude']['activeMode'] {
-  if (typeof raw !== 'string') return null
-  return VALID_PROVIDER_MODES.has(raw) ? raw as ProviderSettings['byEngine']['claude']['activeMode'] : null
-}
-
-function normalizeCodexReasoningEffort(raw: unknown): CodexReasoningEffort | undefined {
-  if (typeof raw !== 'string') return undefined
-  return VALID_CODEX_REASONING_EFFORTS.has(raw as CodexReasoningEffort)
-    ? raw as CodexReasoningEffort
-    : undefined
-}
-
-function pickLegacyDefaultModel(raw: Record<string, unknown> | undefined, legacyCommandModel?: string): string | undefined {
-  const legacyCustomModel = (raw?.custom as Record<string, unknown> | undefined)?.defaultModel
-  const legacyOpenRouterModel = (raw?.openrouter as Record<string, unknown> | undefined)?.defaultModel
-  const topLevelDefaultModel = raw?.defaultModel
-  return (typeof topLevelDefaultModel === 'string' && topLevelDefaultModel)
-    || legacyCommandModel
-    || (typeof legacyCustomModel === 'string' ? legacyCustomModel : undefined)
-    || (typeof legacyOpenRouterModel === 'string' ? legacyOpenRouterModel : undefined)
-}
-
-function normalizeEngineProviderSettings(
-  raw: unknown,
-  fallback: ProviderEngineSettings,
-): ProviderEngineSettings {
-  const r = (raw ?? {}) as Record<string, unknown>
-  const hasActiveMode = Object.prototype.hasOwnProperty.call(r, 'activeMode')
-  const hasDefaultModel = Object.prototype.hasOwnProperty.call(r, 'defaultModel')
-  const hasDefaultReasoningEffort = Object.prototype.hasOwnProperty.call(r, 'defaultReasoningEffort')
-  const activeMode = normalizeProviderMode(r.activeMode)
-  const defaultModel = typeof r.defaultModel === 'string' && r.defaultModel ? r.defaultModel : undefined
-  const defaultReasoningEffort = normalizeCodexReasoningEffort(r.defaultReasoningEffort)
-  return {
-    activeMode: hasActiveMode ? activeMode : fallback.activeMode,
-    ...(hasDefaultModel
-      ? (defaultModel ? { defaultModel } : {})
-      : (fallback.defaultModel ? { defaultModel: fallback.defaultModel } : {})),
-    ...(hasDefaultReasoningEffort
-      ? (defaultReasoningEffort ? { defaultReasoningEffort } : {})
-      : (fallback.defaultReasoningEffort ? { defaultReasoningEffort: fallback.defaultReasoningEffort } : {})),
-  }
-}
-
-/**
- * Migrate provider settings to engine-scoped shape.
- *
- * New shape:
- *   provider.byEngine.claude.activeMode/defaultModel
- *   provider.byEngine.codex.activeMode/defaultModel/defaultReasoningEffort
- *
- * Legacy fallback:
- *   - provider.activeMode/defaultModel (or auth.*) is migrated into `byEngine.claude`
- *   - `byEngine.codex` starts empty (no implicit credentials)
- */
-function migrateProviderSettings(
+function readProviderSettings(
   raw: (Partial<ProviderSettings> & Record<string, unknown>) | undefined,
-  legacyCommandModel?: string,
+  _legacyCommandModel: string | undefined,
 ): ProviderSettings {
   const source = (raw ?? {}) as Record<string, unknown>
-
-  const legacyClaude: ProviderSettings['byEngine']['claude'] = {
-    activeMode: normalizeProviderMode(source.activeMode),
-    ...(pickLegacyDefaultModel(source, legacyCommandModel)
-      ? { defaultModel: pickLegacyDefaultModel(source, legacyCommandModel) }
-      : {}),
-  }
-
-  const byEngineRaw = source.byEngine as Record<string, unknown> | undefined
+  const profilesArray = Array.isArray(source.profiles)
+    ? (source.profiles as ProviderSettings['profiles'])
+    : []
+  const defaultProfileId =
+    (source.defaultProfileId ?? null) as ProviderSettings['defaultProfileId']
+  const schemaVersion = source.schemaVersion === 1 ? 1 : undefined
 
   return {
-    byEngine: {
-      claude: normalizeEngineProviderSettings(
-        byEngineRaw?.claude,
-        legacyClaude,
-      ),
-      codex: normalizeEngineProviderSettings(
-        byEngineRaw?.codex,
-        { activeMode: null, defaultReasoningEffort: 'high' },
-      ),
-    },
+    ...(schemaVersion ? { schemaVersion } : {}),
+    profiles: profilesArray,
+    defaultProfileId,
   }
 }
 
@@ -568,10 +492,6 @@ function mergeUpdateSettings(raw: unknown): UpdateSettings {
       ? r.updateCheckInterval as UpdateCheckInterval
       : DEFAULT_UPDATE_SETTINGS.updateCheckInterval,
   }
-}
-
-function normalizeEngine(raw: unknown): AIEngineKind {
-  return raw === 'codex' ? 'codex' : 'claude'
 }
 
 function normalizePermissionMode(raw: unknown): AppSettings['command']['permissionMode'] {

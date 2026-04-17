@@ -175,8 +175,8 @@ const MARKDOWN_COMPONENTS: React.ComponentProps<typeof ReactMarkdown>['component
   ul: ({ children }) => (
     <ul className="list-disc pl-4 mb-0.5 text-sm space-y-0">{children}</ul>
   ),
-  ol: ({ children }) => (
-    <ol className="list-decimal pl-4 mb-0.5 text-sm space-y-0">{children}</ol>
+  ol: ({ children, start }) => (
+    <ol start={start} className="list-decimal pl-4 mb-0.5 text-sm space-y-0">{children}</ol>
   ),
   li: ({ children }) => (
     <li className="text-sm leading-relaxed text-[hsl(var(--foreground))] py-1">{children}</li>

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { SessionOrchestrator, type OrchestratorDeps } from '../../../electron/command/sessionOrchestrator'
 import type { SessionSnapshot } from '../../../src/shared/types'
 
@@ -9,13 +9,10 @@ function makeDeps(): OrchestratorDeps {
     dispatch: () => undefined,
     getProxyEnv: () => ({}),
     getProviderEnv: async () => ({}),
-    getCodexAuthConfig: async () => null,
     getProviderDefaultModel: () => undefined,
-    getProviderDefaultReasoningEffort: () => undefined,
     getCommandDefaults: () => ({
       maxTurns: 10,
       permissionMode: 'default',
-      defaultEngine: 'claude',
     }),
     store: {} as never,
   }
@@ -24,7 +21,6 @@ function makeDeps(): OrchestratorDeps {
 function makeSnapshot(overrides: Partial<SessionSnapshot>): SessionSnapshot {
   return {
     id: 'ccb-1',
-    engineKind: 'claude',
     engineSessionRef: null,
     engineState: null,
     state: 'creating',
@@ -53,11 +49,11 @@ function makeSnapshot(overrides: Partial<SessionSnapshot>): SessionSnapshot {
 interface MockRuntime {
   session: {
     getEngineRef: () => string | null
-    getEngineKind: () => string
     origin: { source: string; [key: string]: unknown }
     getState: () => string
     snapshot: () => SessionSnapshot
   }
+  executionContextSignalHandler?: (signal: unknown) => void
 }
 
 function setActiveSessions(orchestrator: SessionOrchestrator, snapshots: SessionSnapshot[]): void {
@@ -66,7 +62,6 @@ function setActiveSessions(orchestrator: SessionOrchestrator, snapshots: Session
     runtimes.set(snap.id, {
       session: {
         getEngineRef: () => snap.engineSessionRef,
-        getEngineKind: () => snap.engineKind,
         origin: snap.origin,
         getState: () => snap.state,
         snapshot: () => snap,
@@ -82,7 +77,6 @@ describe('SessionOrchestrator hook-source skip policy', () => {
     setActiveSessions(orchestrator, [
       makeSnapshot({
         id: 'ccb-claude',
-        engineKind: 'claude',
         engineSessionRef: 'claude-engine-ref',
       }),
     ])
@@ -94,26 +88,45 @@ describe('SessionOrchestrator hook-source skip policy', () => {
     expect(orchestrator.shouldSkipHookSourceEvent('claude-engine-ref')).toBe(true)
   })
 
-  it('does not skip hook-source events for Codex managed sessions', () => {
-    const orchestrator = new SessionOrchestrator(makeDeps())
-    setActiveSessions(orchestrator, [
-      makeSnapshot({
-        id: 'ccb-codex',
-        engineKind: 'codex',
-        engineSessionRef: 'codex-engine-ref',
-      }),
-    ])
-
-    expect(orchestrator.isManagedSession('ccb-codex')).toBe(true)
-    expect(orchestrator.isManagedSession('codex-engine-ref')).toBe(true)
-
-    expect(orchestrator.shouldSkipHookSourceEvent('ccb-codex')).toBe(false)
-    expect(orchestrator.shouldSkipHookSourceEvent('codex-engine-ref')).toBe(false)
-  })
-
   it('returns false for unknown session refs', () => {
     const orchestrator = new SessionOrchestrator(makeDeps())
     expect(orchestrator.isManagedSession('missing')).toBe(false)
     expect(orchestrator.shouldSkipHookSourceEvent('missing')).toBe(false)
+  })
+
+  it('ingests external execution-context signal for managed sessions with runtime handler', () => {
+    const orchestrator = new SessionOrchestrator(makeDeps())
+    const claudeSignalHandler = vi.fn()
+    const runtimes = new Map<string, MockRuntime>()
+    runtimes.set('ccb-claude', {
+      session: {
+        getEngineRef: () => 'claude-engine-ref',
+        origin: { source: 'agent' },
+        getState: () => 'streaming',
+        snapshot: () => makeSnapshot({ id: 'ccb-claude', engineSessionRef: 'claude-engine-ref' }),
+      },
+      executionContextSignalHandler: claudeSignalHandler,
+    })
+    ;(orchestrator as unknown as { runtimes: typeof runtimes }).runtimes = runtimes
+
+    orchestrator.ingestExecutionContextSignal('claude-engine-ref', {
+      cwd: '/tmp/claude-hook-cwd',
+      source: 'hook',
+      occurredAtMs: 1_733_000_000_100,
+    })
+    orchestrator.ingestExecutionContextSignal('missing', {
+      cwd: '/tmp/missing',
+      source: 'hook',
+      occurredAtMs: 1_733_000_000_200,
+    })
+
+    expect(claudeSignalHandler).toHaveBeenCalledTimes(1)
+    expect(claudeSignalHandler).toHaveBeenCalledWith(
+      expect.objectContaining({
+        cwd: '/tmp/claude-hook-cwd',
+        source: 'hook',
+        occurredAtMs: 1_733_000_000_100,
+      }),
+    )
   })
 })
