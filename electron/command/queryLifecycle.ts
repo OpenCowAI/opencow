@@ -130,10 +130,9 @@ export class QueryLifecycle implements SessionLifecycle {
     }
     const resolveTurnRef = (event: EngineRuntimeEvent): RuntimeTurnRef | undefined =>
       this.resolveTurnRef(event)
-    const lifecycle = this
     const resolveTurnOptions = input.resolveTurnOptions
     const getSessionMessages = input.getSessionMessages
-    const stream = (async function* () {
+    const stream = (async function* (lifecycle: QueryLifecycle) {
       try {
         const sdkMod = await loadSdkModule()
         const builtInTools = sdkMod.getBuiltInTools?.()
@@ -247,7 +246,7 @@ export class QueryLifecycle implements SessionLifecycle {
       } finally {
         cleanup()
       }
-    })()
+    })(this)
 
     return stream
   }

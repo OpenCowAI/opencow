@@ -28,13 +28,13 @@ describe('session lifecycle idempotency index migration', () => {
     const insert = (id: string, sessionId: string, idempotencyKey: string) => {
       raw.exec(`
         INSERT INTO session_lifecycle_operations (
-          id, session_id, tool_use_id, proposal_group_key, operation_index, entity, action,
+          id, session_id, tool_use_id, operation_index, entity, action,
           normalized_payload_json, summary_json, warnings_json,
           confirmation_mode, state, idempotency_key,
           result_snapshot_json, error_code, error_message,
           created_at, updated_at, applied_at
         ) VALUES (
-          '${id}', '${sessionId}', 'tool-1', 'tool-1', 0, 'schedule', 'create',
+          '${id}', '${sessionId}', 'tool-1', 0, 'schedule', 'create',
           '{}', '{}', '[]',
           'required', 'pending_confirmation', '${idempotencyKey}',
           NULL, NULL, NULL,
@@ -58,13 +58,13 @@ describe('session lifecycle idempotency index migration', () => {
     const now = Date.now()
     raw.exec(`
       INSERT INTO session_lifecycle_operations (
-        id, session_id, tool_use_id, proposal_group_key, operation_index, entity, action,
+        id, session_id, tool_use_id, operation_index, entity, action,
         normalized_payload_json, summary_json, warnings_json,
         confirmation_mode, state, idempotency_key,
         result_snapshot_json, error_code, error_message,
         created_at, updated_at, applied_at
       ) VALUES (
-        'lop-a', 'session-a', 'tool-1', 'tool-1', 0, 'schedule', 'create',
+        'lop-a', 'session-a', 'tool-1', 0, 'schedule', 'create',
         '{}', '{}', '[]',
         'required', 'pending_confirmation', NULL,
         NULL, NULL, NULL,

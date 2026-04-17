@@ -33,7 +33,7 @@ function createSkill(params: {
 }
 
 describe('skillActivationEngine', () => {
-  it('activates via implicit query when explicit list is empty', () => {
+  it('keeps skills in catalog mode when only implicit query is provided', () => {
     const skills = [
       createSkill({ name: 'docs-sync', description: 'sync docs before output' }),
       createSkill({ name: 'deploy-check', description: 'run deployment checks' }),
@@ -52,9 +52,10 @@ describe('skillActivationEngine', () => {
     const docsDecision = decisions.find((item) => item.skillName === 'docs-sync')
     const deployDecision = decisions.find((item) => item.skillName === 'deploy-check')
 
-    expect(docsDecision?.mode).toBe('full')
-    expect(docsDecision?.source).toBe('implicit')
+    expect(docsDecision?.mode).toBe('catalog')
+    expect(docsDecision?.source).toBe('default')
     expect(deployDecision?.mode).toBe('catalog')
+    expect(deployDecision?.source).toBe('default')
   })
 
   it('does not run implicit matching when explicit list is present', () => {
@@ -104,9 +105,9 @@ describe('skillActivationEngine', () => {
     })
   })
 
-  // ── alias-based implicit matching (Evose and similar providers) ──────────
+  // Implicit alias/name matching is intentionally disabled in Phase 1B.11d.
 
-  it('activates skill via alias phrase match when internal name diverges', () => {
+  it('does not activate skill via alias phrase when internal name diverges', () => {
     // Simulates an Evose skill whose internal name includes a namespace prefix
     // and hash suffix, but whose alias is the human-readable display name.
     // The provider (EvoseSkillProvider) populates attributes.aliases.
@@ -136,12 +137,10 @@ describe('skillActivationEngine', () => {
 
     expect(decisions[0]).toMatchObject({
       skillName: 'evose:x_analyst_ja4t9n',
-      mode: 'full',
-      source: 'implicit',
+      mode: 'catalog',
+      source: 'default',
     })
-    // The matched name should be the alias, not the internal name
-    expect(decisions[0].reason).toContain('matched="X Analyst"')
-    expect(decisions[0].reason).toContain('phrase=true')
+    expect(decisions[0].reason).toContain('default catalog projection')
   })
 
   it('does not match when neither internal name nor alias appears in query', () => {
@@ -172,7 +171,7 @@ describe('skillActivationEngine', () => {
     expect(xAnalyst?.mode).toBe('catalog')
   })
 
-  it('activates skill when multi-word alias appears in Chinese context', () => {
+  it('does not activate skill when multi-word alias appears in Chinese context', () => {
     const skills = [
       createSkill({
         name: 'evose:demo_redbook_agent_4fwwv5',
@@ -191,15 +190,10 @@ describe('skillActivationEngine', () => {
       resolveSkillActivationPolicy(),
     )
 
-    expect(decisions[0]).toMatchObject({
-      mode: 'full',
-      source: 'implicit',
-    })
+    expect(decisions[0]).toMatchObject({ mode: 'catalog', source: 'default' })
   })
 
-  it('prefers alias with higher score when internal name also partially matches', () => {
-    // The internal name has some matching tokens but the alias scores higher
-    // because it matches as a phrase.
+  it('does not activate skill when alias appears in an English query', () => {
     const skills = [
       createSkill({
         name: 'evose:native_english_coach_vw7ecv',
@@ -218,11 +212,7 @@ describe('skillActivationEngine', () => {
       resolveSkillActivationPolicy(),
     )
 
-    expect(decisions[0]).toMatchObject({
-      mode: 'full',
-      source: 'implicit',
-    })
-    // The alias should be the winning match, not the internal name
-    expect(decisions[0].reason).toContain('matched="Native English Coach"')
+    expect(decisions[0]).toMatchObject({ mode: 'catalog', source: 'default' })
+    expect(decisions[0].reason).toContain('default catalog projection')
   })
 })

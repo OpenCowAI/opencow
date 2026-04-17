@@ -296,7 +296,7 @@ function resolveScheduleName(payloadRecord: Record<string, unknown>): string | u
 
 function isLikelyCronExpression(value: string | undefined): boolean {
   if (!value) return false
-  const cronPattern = /^([*/,\d\-]+)\s+([*/,\d\-]+)\s+([*/,\d\-]+)\s+([*/,\d\-]+)\s+([*/,\d\-]+)$/
+  const cronPattern = /^([*/,\d-]+)\s+([*/,\d-]+)\s+([*/,\d-]+)\s+([*/,\d-]+)\s+([*/,\d-]+)$/
   return cronPattern.test(value.trim())
 }
 

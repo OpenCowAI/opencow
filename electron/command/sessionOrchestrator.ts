@@ -1003,11 +1003,7 @@ export class SessionOrchestrator {
       const runtimeEventStream = lifecycle.start({
         initialPrompt,
         launchOptions: options,
-        callbacks: true
-          ? undefined
-          : {
-              onExecutionContextSignal: (signal) => notifyExecutionContextCwd(signal),
-            },
+        callbacks: undefined,
         // ε.3d.2 — per-turn env refresh. Every turn calls this resolver
         // before invoking `session.query()`, so mid-session Settings
         // changes (default provider / credentials / model) propagate on

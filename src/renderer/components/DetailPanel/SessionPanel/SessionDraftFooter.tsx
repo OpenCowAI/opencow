@@ -99,9 +99,12 @@ export function SessionDraftFooter({
           result = await lifecycle.confirm(lifecycleOperationId)
         } catch (err) {
           if (err instanceof LifecycleOperationActionTimeoutError) {
-            throw new Error(tSession('lifecycleOperation.error.confirmTimeout', {
-              defaultValue: 'Confirmation timed out. Please retry.',
-            }))
+            throw new Error(
+              tSession('lifecycleOperation.error.confirmTimeout', {
+                defaultValue: 'Confirmation timed out. Please retry.',
+              }),
+              { cause: err }
+            )
           }
           throw err
         }
@@ -142,9 +145,12 @@ export function SessionDraftFooter({
           result = await lifecycle.confirm(lifecycleOperationId)
         } catch (err) {
           if (err instanceof LifecycleOperationActionTimeoutError) {
-            throw new Error(tSession('lifecycleOperation.error.confirmTimeout', {
-              defaultValue: 'Confirmation timed out. Please retry.',
-            }))
+            throw new Error(
+              tSession('lifecycleOperation.error.confirmTimeout', {
+                defaultValue: 'Confirmation timed out. Please retry.',
+              }),
+              { cause: err }
+            )
           }
           throw err
         }
