@@ -63,7 +63,7 @@ describe('getBaseSystemPrompt', () => {
 
     const policy = buildSessionPolicyInput({ origin: { source: 'agent' } })
     expect(policy?.tools?.native?.allow).toEqual(
-      expect.arrayContaining([{ capability: 'interaction', tool: 'ask_user_question' }]),
+      expect.arrayContaining([{ capability: 'interaction' }]),
     )
   })
 })

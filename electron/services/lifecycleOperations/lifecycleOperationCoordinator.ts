@@ -17,7 +17,9 @@ import type {
   SchedulePriority,
   ScheduleTrigger,
   SessionLifecycleOperation,
+  SessionLifecycleOperationAction,
   SessionLifecycleOperationEnvelope,
+  SessionLifecycleOperationEntity,
   SessionLifecycleOperationProposalInput,
   SessionLifecycleOperationState,
   UpdateScheduleInput,
@@ -117,8 +119,8 @@ interface ListSessionOperationsInput {
 }
 
 export interface SessionEntityHint {
-  entity: string
-  action: string
+  entity: SessionLifecycleOperationEntity
+  action: SessionLifecycleOperationAction
   entityId: string
   name: string | null
 }
@@ -378,17 +380,17 @@ export class LifecycleOperationCoordinator {
 
   async getSessionEntityHints(sessionId: string): Promise<SessionEntityHint[]> {
     const operations = await this.store.listBySession(sessionId)
-    return operations
-      .filter((op) => op.state === 'applied')
-      .map((op) => {
-        const entityId = extractCreatedEntityId(op.resultSnapshot)
-        if (!entityId) return null
-        const name =
-          typeof op.summary.name === 'string' ? op.summary.name :
-          typeof op.summary.title === 'string' ? op.summary.title : null
-        return { entity: op.entity, action: op.action, entityId, name } satisfies SessionEntityHint
-      })
-      .filter((item): item is SessionEntityHint => item !== null)
+    const hints: SessionEntityHint[] = []
+    for (const op of operations) {
+      if (op.state !== 'applied') continue
+      const entityId = extractCreatedEntityId(op.resultSnapshot)
+      if (!entityId) continue
+      const name =
+        typeof op.summary.name === 'string' ? op.summary.name :
+        typeof op.summary.title === 'string' ? op.summary.title : null
+      hints.push({ entity: op.entity, action: op.action, entityId, name })
+    }
+    return hints
   }
 
   async confirmOperation(input: ConfirmLifecycleOperationInput): Promise<ConfirmLifecycleOperationResult> {

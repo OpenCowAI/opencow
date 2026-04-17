@@ -108,12 +108,13 @@ export function createAsarAwareSpawnFn(
   const command = getElectronAsNodePath()
 
   return (spawnOpts: SpawnOptions): SpawnedProcess => {
+    const env = spawnOpts.env ?? process.env
     // Node's ChildProcess is a structural superset of the SDK's SpawnedProcess
     // interface (stdin: Writable, stdout: Readable, killed, exitCode, kill, on).
     // stdio: 'pipe' guarantees stdin/stdout/stderr are non-null Streams.
     const child = spawn(command, spawnOpts.args, {
       cwd: spawnOpts.cwd,
-      env: buildAsarAwareEnv(spawnOpts.env),
+      env: buildAsarAwareEnv(env),
       signal: spawnOpts.signal,
       stdio: ['pipe', 'pipe', 'pipe'],
       windowsHide: true,

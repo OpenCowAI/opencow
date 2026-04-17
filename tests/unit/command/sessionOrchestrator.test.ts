@@ -31,51 +31,60 @@ function installClaudeQueryMock(): void {
   mockClose.mockReset()
   pendingNextResolvers = []
 
+  const queryMock = vi.fn(() => {
+    pendingNextResolvers = []
+
+    const generator = {
+      next: () =>
+        new Promise<IteratorResult<unknown>>((resolve) => {
+          pendingNextResolvers.push(resolve)
+        }),
+      return: () => {
+        for (const resolve of pendingNextResolvers) {
+          resolve({ value: undefined, done: true })
+        }
+        pendingNextResolvers = []
+        return Promise.resolve({ value: undefined, done: true as const })
+      },
+      throw: (e: unknown) => Promise.reject(e),
+      [Symbol.asyncIterator]: () => generator,
+      close: () => {
+        mockClose()
+        // Resolve all pending next() calls to unblock the for-await loop
+        for (const resolve of pendingNextResolvers) {
+          resolve({ value: undefined, done: true })
+        }
+        pendingNextResolvers = []
+      },
+      interrupt: () => Promise.resolve(),
+      setPermissionMode: () => Promise.resolve(),
+      setModel: () => Promise.resolve(),
+      setMaxThinkingTokens: () => Promise.resolve(),
+      initializationResult: () => Promise.resolve({}),
+      supportedCommands: () => Promise.resolve([]),
+      supportedModels: () => Promise.resolve([]),
+      mcpServerStatus: () => Promise.resolve([]),
+      accountInfo: () => Promise.resolve({}),
+      rewindFiles: () => Promise.resolve({ canRewind: false }),
+      reconnectMcpServer: () => Promise.resolve(),
+      toggleMcpServer: () => Promise.resolve(),
+      setMcpServers: () => Promise.resolve({}),
+      streamInput: () => Promise.resolve(),
+      stopTask: () => Promise.resolve(),
+    }
+
+    return generator
+  })
+
   __setOpenClaudeModuleLoaderForTest(async () => ({
-    query: vi.fn(() => {
-      pendingNextResolvers = []
-
-      const generator = {
-        next: () =>
-          new Promise<IteratorResult<unknown>>((resolve) => {
-            pendingNextResolvers.push(resolve)
-          }),
-        return: () => {
-          for (const resolve of pendingNextResolvers) {
-            resolve({ value: undefined, done: true })
-          }
-          pendingNextResolvers = []
-          return Promise.resolve({ value: undefined, done: true as const })
-        },
-        throw: (e: unknown) => Promise.reject(e),
-        [Symbol.asyncIterator]: () => generator,
-        close: () => {
-          mockClose()
-          // Resolve all pending next() calls to unblock the for-await loop
-          for (const resolve of pendingNextResolvers) {
-            resolve({ value: undefined, done: true })
-          }
-          pendingNextResolvers = []
-        },
-        interrupt: () => Promise.resolve(),
-        setPermissionMode: () => Promise.resolve(),
-        setModel: () => Promise.resolve(),
-        setMaxThinkingTokens: () => Promise.resolve(),
-        initializationResult: () => Promise.resolve({}),
-        supportedCommands: () => Promise.resolve([]),
-        supportedModels: () => Promise.resolve([]),
-        mcpServerStatus: () => Promise.resolve([]),
-        accountInfo: () => Promise.resolve({}),
-        rewindFiles: () => Promise.resolve({ canRewind: false }),
-        reconnectMcpServer: () => Promise.resolve(),
-        toggleMcpServer: () => Promise.resolve(),
-        setMcpServers: () => Promise.resolve({}),
-        streamInput: () => Promise.resolve(),
-        stopTask: () => Promise.resolve(),
-      }
-
-      return generator
-    }),
+    query: queryMock,
+    createSession: vi.fn((_options: Record<string, unknown>) => ({
+      query: (params: {
+        prompt: AsyncIterable<unknown>
+        options?: Record<string, unknown>
+      }) => queryMock(params),
+      close: vi.fn(async () => {}),
+    })),
   }))
 }
 
@@ -396,26 +405,35 @@ describe('SessionOrchestrator.stopSession — deterministic cleanup', () => {
   it('calls lifecycle.stop() which invokes query.close()', async () => {
     let queryCreated = false
     let closeCalled = 0
+    const queryMock = vi.fn(() => {
+      queryCreated = true
+      let pendingNextResolve: ((v: IteratorResult<unknown>) => void) | null = null
+      const generator = {
+        next: () =>
+          new Promise<IteratorResult<unknown>>((resolve) => {
+            pendingNextResolve = resolve
+          }),
+        return: () => Promise.resolve({ value: undefined, done: true as const }),
+        throw: (e: unknown) => Promise.reject(e),
+        [Symbol.asyncIterator]: () => generator,
+        close: () => {
+          closeCalled += 1
+          pendingNextResolve?.({ value: undefined, done: true })
+          pendingNextResolve = null
+        },
+      }
+      return generator
+    })
+
     __setOpenClaudeModuleLoaderForTest(async () => ({
-      query: vi.fn(() => {
-        queryCreated = true
-        let pendingNextResolve: ((v: IteratorResult<unknown>) => void) | null = null
-        const generator = {
-          next: () =>
-            new Promise<IteratorResult<unknown>>((resolve) => {
-              pendingNextResolve = resolve
-            }),
-          return: () => Promise.resolve({ value: undefined, done: true as const }),
-          throw: (e: unknown) => Promise.reject(e),
-          [Symbol.asyncIterator]: () => generator,
-          close: () => {
-            closeCalled += 1
-            pendingNextResolve?.({ value: undefined, done: true })
-            pendingNextResolve = null
-          },
-        }
-        return generator
-      }),
+      query: queryMock,
+      createSession: vi.fn((_options: Record<string, unknown>) => ({
+        query: (params: {
+          prompt: AsyncIterable<unknown>
+          options?: Record<string, unknown>
+        }) => queryMock(params),
+        close: vi.fn(async () => {}),
+      })),
     }))
 
     const id = await orchestrator.startSession({ prompt: 'test' })
@@ -593,7 +611,7 @@ describe('SessionOrchestrator.handleSessionError — transient spawn errors', ()
   })
 })
 
-describe('SessionOrchestrator.sendMessage — provider mode drift detection', () => {
+describe('SessionOrchestrator.sendMessage — provider profile changes', () => {
   let orchestrator: SessionOrchestrator
   let deps: OrchestratorDeps
   let tmpDir: string
@@ -629,7 +647,7 @@ describe('SessionOrchestrator.sendMessage — provider mode drift detection', ()
     await rm(tmpDir, { recursive: true, force: true })
   })
 
-  it('forces lifecycle restart when provider mode changes between messages', async () => {
+  it('does not restart lifecycle when provider mode changes between messages (per-turn env refresh)', async () => {
     const sessionId = await orchestrator.startSession({
       prompt: 'Fix the bug',
       origin: { source: 'issue', issueId: 'issue-drift-1' },
@@ -655,21 +673,20 @@ describe('SessionOrchestrator.sendMessage — provider mode drift detection', ()
     // Simulate user switching provider mode mid-session
     activeProviderMode = 'custom'
 
+    const dispatchCountBefore = (deps.dispatch as ReturnType<typeof vi.fn>).mock.calls.length
     const result = await orchestrator.sendMessage(sessionId, 'Continue with new provider')
     expect(result).toBe(true)
 
-    // Verify that a 'creating' state was dispatched (indicating lifecycle restart)
-    const creatingEvents = (deps.dispatch as ReturnType<typeof vi.fn>).mock.calls
+    // Provider changes are handled by per-turn resolveTurnOptions; no restart.
+    const creatingEventsAfter = (deps.dispatch as ReturnType<typeof vi.fn>).mock.calls
+      .slice(dispatchCountBefore)
       .map(([event]: [DataBusEvent]) => event)
       .filter((event): event is Extract<DataBusEvent, { type: 'command:session:updated' }> =>
         event.type === 'command:session:updated'
       )
       .filter((event) => event.payload.state === 'creating')
 
-    // At least 1 creating event from the sendMessage restart path
-    // (initial startSession uses session:created, not session:updated)
-    expect(creatingEvents.length).toBeGreaterThanOrEqual(1)
-
+    expect(creatingEventsAfter).toHaveLength(0)
   })
 
   it('does not restart when provider mode has not changed', async () => {
@@ -735,18 +752,27 @@ describe('SessionOrchestrator.sendMessage — provider mode drift detection', ()
     await deps.store.save(persistedSession)
 
     let capturedOptions: Record<string, unknown> | undefined
+    const queryMock = vi.fn((params: { options?: Record<string, unknown> }) => {
+      capturedOptions = params.options
+      return {
+        async *[Symbol.asyncIterator]() {
+          // no-op stream
+        },
+        close() {
+          // no-op
+        },
+      }
+    })
+
     __setOpenClaudeModuleLoaderForTest(async () => ({
-      query: vi.fn((params: { options?: Record<string, unknown> }) => {
-        capturedOptions = params.options
-        return {
-          async *[Symbol.asyncIterator]() {
-            // no-op stream
-          },
-          close() {
-            // no-op
-          },
-        }
-      }),
+      query: queryMock,
+      createSession: vi.fn((_options: Record<string, unknown>) => ({
+        query: (params: {
+          prompt: AsyncIterable<unknown>
+          options?: Record<string, unknown>
+        }) => queryMock(params),
+        close: vi.fn(async () => {}),
+      })),
     }))
 
     const resumed = await orchestrator.sendMessage(persistedSession.id, 'resume with history')
@@ -788,18 +814,27 @@ describe('SessionOrchestrator.sendMessage — provider mode drift detection', ()
     await deps.store.save(persistedSession)
 
     let capturedOptions: Record<string, unknown> | undefined
+    const queryMock = vi.fn((params: { options?: Record<string, unknown> }) => {
+      capturedOptions = params.options
+      return {
+        async *[Symbol.asyncIterator]() {
+          // no-op stream
+        },
+        close() {
+          // no-op
+        },
+      }
+    })
+
     __setOpenClaudeModuleLoaderForTest(async () => ({
-      query: vi.fn((params: { options?: Record<string, unknown> }) => {
-        capturedOptions = params.options
-        return {
-          async *[Symbol.asyncIterator]() {
-            // no-op stream
-          },
-          close() {
-            // no-op
-          },
-        }
-      }),
+      query: queryMock,
+      createSession: vi.fn((_options: Record<string, unknown>) => ({
+        query: (params: {
+          prompt: AsyncIterable<unknown>
+          options?: Record<string, unknown>
+        }) => queryMock(params),
+        close: vi.fn(async () => {}),
+      })),
     }))
 
     const resumed = await (orchestrator as unknown as {

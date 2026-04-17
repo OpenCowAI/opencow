@@ -3,38 +3,37 @@
 import { describe, expect, it } from 'vitest'
 import { buildSessionPolicyInput } from '../../../electron/command/policy/sessionPolicyInputFactory'
 
+const GENERAL_PURPOSE_ALLOW = [
+  { capability: 'browser' },
+  { capability: 'html' },
+  { capability: 'interaction' },
+  { capability: 'issues' },
+  { capability: 'projects' },
+  { capability: 'schedules' },
+  { capability: 'evose' },
+  { capability: 'lifecycle' },
+] as const
+
 describe('buildSessionPolicyInput lifecycle propose defaults', () => {
-  it('injects issue/schedule propose tools for issue origin', () => {
+  it('injects general-purpose native capabilities for issue origin', () => {
     const policy = buildSessionPolicyInput({
       origin: { source: 'issue', issueId: 'issue-1' },
     })
 
     expect(policy?.tools?.native?.mode).toBe('allowlist')
-    expect(policy?.tools?.native?.allow).toEqual([
-      { capability: 'browser' },
-      { capability: 'html' },
-      { capability: 'interaction', tool: 'ask_user_question' },
-      { capability: 'issues', tool: 'propose_issue_operation' },
-      { capability: 'schedules', tool: 'propose_schedule_operation' },
-    ])
+    expect(policy?.tools?.native?.allow).toEqual([...GENERAL_PURPOSE_ALLOW])
   })
 
-  it('injects issue/schedule propose tools for schedule origin', () => {
+  it('injects general-purpose native capabilities for schedule origin', () => {
     const policy = buildSessionPolicyInput({
       origin: { source: 'schedule', scheduleId: 'sched-1' },
     })
 
     expect(policy?.tools?.native?.mode).toBe('allowlist')
-    expect(policy?.tools?.native?.allow).toEqual([
-      { capability: 'browser' },
-      { capability: 'html' },
-      { capability: 'interaction', tool: 'ask_user_question' },
-      { capability: 'issues', tool: 'propose_issue_operation' },
-      { capability: 'schedules', tool: 'propose_schedule_operation' },
-    ])
+    expect(policy?.tools?.native?.allow).toEqual([...GENERAL_PURPOSE_ALLOW])
   })
 
-  it('injects issue/schedule propose tools for creator origins', () => {
+  it('injects general-purpose native capabilities for creator origins', () => {
     const issueCreator = buildSessionPolicyInput({
       origin: { source: 'issue-creator' },
     })
@@ -42,15 +41,7 @@ describe('buildSessionPolicyInput lifecycle propose defaults', () => {
       origin: { source: 'schedule-creator' },
     })
 
-    const expectedAllow = [
-      { capability: 'browser' },
-      { capability: 'html' },
-      { capability: 'interaction', tool: 'ask_user_question' },
-      { capability: 'issues', tool: 'propose_issue_operation' },
-      { capability: 'schedules', tool: 'propose_schedule_operation' },
-    ]
-
-    expect(issueCreator?.tools?.native?.allow).toEqual(expectedAllow)
-    expect(scheduleCreator?.tools?.native?.allow).toEqual(expectedAllow)
+    expect(issueCreator?.tools?.native?.allow).toEqual([...GENERAL_PURPOSE_ALLOW])
+    expect(scheduleCreator?.tools?.native?.allow).toEqual([...GENERAL_PURPOSE_ALLOW])
   })
 })

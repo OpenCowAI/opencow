@@ -142,16 +142,15 @@ describe('sessionReconfigurationCoordinator', () => {
   // ── Phase 2: Implicit requirements (plain-text skill references) ─────
 
   describe('Phase 2: implicit native requirements', () => {
-    it('restarts lifecycle when plain text mentions an evose app by alias', () => {
+    it('reuses lifecycle when plain text mentions an evose app by alias (implicit phase removed)', () => {
       const decision = decideSessionReconfiguration({
         currentPolicy: makePolicy(),
         message: '请使用 X Analyst 分析一下 @elonmusk',
         capabilitySnapshot: makeSnapshotWithEvoseSkills(),
       })
 
-      expect(decision.action).toBe('restart')
-      expect(decision.reason).toBe('implicit_native_requirements_not_satisfied')
-      expect(decision.triggeringRequirements).toEqual([{ capability: 'evose' }])
+      expect(decision.action).toBe('reuse')
+      expect(decision.reason).toBe('no_native_requirements')
     })
 
     it('reuses lifecycle when evose is already in allowlist', () => {
@@ -162,7 +161,7 @@ describe('sessionReconfigurationCoordinator', () => {
       })
 
       expect(decision.action).toBe('reuse')
-      expect(decision.reason).toBe('native_allowlist_satisfied')
+      expect(decision.reason).toBe('no_native_requirements')
     })
 
     it('reuses lifecycle when plain text does not match any skill', () => {
@@ -198,15 +197,15 @@ describe('sessionReconfigurationCoordinator', () => {
       expect(decision.reason).toBe('no_native_requirements')
     })
 
-    it('restarts when policy is missing and implicit requirements are found', () => {
+    it('reuses when policy is missing even if implicit requirements could be inferred (implicit phase removed)', () => {
       const decision = decideSessionReconfiguration({
         currentPolicy: undefined,
         message: '请使用 Demo Assistant',
         capabilitySnapshot: makeSnapshotWithEvoseSkills(),
       })
 
-      expect(decision.action).toBe('restart')
-      expect(decision.reason).toBe('implicit_native_requirements_policy_missing')
+      expect(decision.action).toBe('reuse')
+      expect(decision.reason).toBe('no_native_requirements')
     })
 
     it('explicit requirements take priority over implicit (Phase 1 short-circuits)', () => {
