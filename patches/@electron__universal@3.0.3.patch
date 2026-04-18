@@ -1,0 +1,17 @@
+diff --git a/dist/asar-utils.js b/dist/asar-utils.js
+index 170ec9ea9813b4e5abcf0e6beed8e4581ff74cd2..0c841461394db8f9e68320dd7cea398969f3d543 100644
+--- a/dist/asar-utils.js
++++ b/dist/asar-utils.js
+@@ -141,7 +141,11 @@ export const mergeASARs = async ({ x64AsarPath, arm64AsarPath, outputAsarPath, s
+             execFileSync(LIPO, [source, destination, '-create', '-output', destination]);
+         }
+         d(`creating archive at ${outputAsarPath}`);
+-        const resolvedUnpack = Array.from(unpackedFiles).map((file) => path.join(x64Dir, file));
++        // Use **-prefixed relative patterns instead of absolute paths to avoid
++        // minimatch's pattern-length limit when there are many unpacked files.
++        // e.g. "**/node_modules/better-sqlite3/build/Release/better_sqlite3.node"
++        // correctly matches the absolute filename via the leading "**/" wildcard.
++        const resolvedUnpack = Array.from(unpackedFiles).map((file) => `**/${file}`);
+         let unpack;
+         if (resolvedUnpack.length > 1) {
+             unpack = `{${resolvedUnpack.join(',')}}`;
