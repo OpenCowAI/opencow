@@ -13,8 +13,8 @@
  *    RESULT_CARD_REGISTRY, parse the raw JSON and render the typed card.
  *    Falls through to raw text on parse failure.
  *
- * 3. **Raw text**: Default fallback for all other tools — shows the raw text
- *    content with collapse/expand for long output.
+ * 3. **Raw text**: Default fallback for all other tools — suppresses non-error
+ *    raw output entirely, while still rendering error output with collapse/expand.
  *
  * Tool name resolution works via ToolLifecycleContext:
  *   ToolResultBlock.toolUseId → ToolLifecycleMap → { name } → routing
@@ -55,6 +55,26 @@ import {
 interface ToolResultBlockViewProps {
   block: ToolResultBlock
   sessionId?: string
+}
+
+/**
+ * Whether a tool_result block produces any visible UI at all.
+ *
+ * Most successful tool results are intentionally suppressed to avoid repeating
+ * raw payloads in the session stream. Only rich result cards, provenance-backed
+ * media, and error outputs should reserve vertical space.
+ */
+export function shouldRenderToolResultBlock(
+  block: ToolResultBlock,
+  toolName?: string,
+): boolean {
+  if (!block.content) return false
+  if (toolName && shouldSuppressResult(toolName)) return false
+  if (block.isError) return true
+  if (!toolName) return false
+  const renderer = RESULT_CARD_REGISTRY.get(toolName)
+  if (!renderer) return false
+  return renderer(block.content) !== null
 }
 
 // ─── Result Card Registry ───────────────────────────────────────────────────
@@ -143,8 +163,7 @@ export const ToolResultBlockView = memo(function ToolResultBlockView({ block, se
   // Resolve originating tool lifecycle via Context (O(1) Map lookup)
   const toolInfo = useToolLifecycle(block.toolUseId)
 
-  // Path 1: Widget Tools with suppressResult=true — their result is rendered by the Widget.
-  if (toolInfo && shouldSuppressResult(toolInfo.name)) return <></>
+  if (!shouldRenderToolResultBlock(block, toolInfo?.name)) return <></>
 
   // Path 2: Result Card — rich card for tools whose data lives in tool_result.
   if (toolInfo && block.content && !block.isError) {
@@ -160,25 +179,21 @@ export const ToolResultBlockView = memo(function ToolResultBlockView({ block, se
   return <RawToolResult block={block} />
 })
 
-// ─── Raw fallback (extracted for clarity, logic identical to original) ───────
+// ─── Raw fallback ─────────────────────────────────────────────────────────────
 
 function RawToolResult({ block }: { block: ToolResultBlock }): React.JSX.Element {
-  const lines = block.content.split('\n')
+  if (!block.content || !block.isError) return <></>
+  return <RawErrorToolResult content={block.content} />
+}
+
+function RawErrorToolResult({ content }: { content: string }): React.JSX.Element {
+  const lines = content.split('\n')
   const isLong = lines.length > COLLAPSE_THRESHOLD
   const [expanded, setExpanded] = useState(!isLong)
-
-  const displayContent = expanded ? block.content : lines.slice(0, COLLAPSE_THRESHOLD).join('\n')
-
-  if (!block.content) return <></>
+  const displayContent = expanded ? content : lines.slice(0, COLLAPSE_THRESHOLD).join('\n')
 
   return (
-    <div
-      className={`rounded text-xs ${
-        block.isError
-          ? 'border-l-2 border-red-500 pl-2'
-          : 'pl-2'
-      }`}
-    >
+    <div className="rounded text-xs border-l-2 border-red-500 pl-2">
       <pre className="whitespace-pre-wrap break-words font-mono text-[hsl(var(--muted-foreground))] overflow-x-auto leading-normal">
         {displayContent}
       </pre>

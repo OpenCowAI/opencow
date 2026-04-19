@@ -14,6 +14,7 @@ import { useRef, useMemo, memo } from 'react'
 import { ContentBlockRenderer } from './ContentBlockRenderer'
 import { ToolBatchCollapsible } from './ToolBatchCollapsible'
 import { useCommandStore, selectStreamingMessage } from '@/stores/commandStore'
+import { cn } from '@/lib/utils'
 import { NativeCapabilityTools } from '@shared/nativeCapabilityToolNames'
 import { isEvoseToolName } from '@shared/evoseNames'
 import type { ManagedSessionMessage, ContentBlock } from '@shared/types'
@@ -84,6 +85,21 @@ function extractLastTextBlockIndex(blocks: ContentBlock[]): number {
     if (blocks[i].type === 'text') return i
   }
   return -1
+}
+
+/**
+ * Compact assistant messages are made entirely of lightweight console rows
+ * (tool pills/results and collapsed thinking toggles) with no prose/image/
+ * document content. Their vertical rhythm should come from the stack
+ * container rather than per-message padding.
+ */
+export function isCompactAssistantContent(blocks: readonly ContentBlock[]): boolean {
+  if (blocks.length === 0) return false
+  return blocks.every((block) =>
+    block.type === 'tool_use' ||
+    block.type === 'tool_result' ||
+    block.type === 'thinking',
+  )
 }
 
 // ---------------------------------------------------------------------------
@@ -202,86 +218,87 @@ export const AssistantMessage = memo(function AssistantMessage({
   const lastTextBlockIndex = extractLastTextBlockIndex(filteredContent)
   const hasToolUseInMessage = toolCallCount > 0
   const textStreaming = isStreaming && !hasToolUseInMessage
+  const isCompactOnly = isCompactAssistantContent(filteredContent)
+  const rootClassName = cn(
+    isCompactOnly ? 'py-px' : 'py-0.5',
+    'break-words min-w-0',
+  )
+  const compactStackClassName = isCompactOnly && filteredContent.length > 1 ? 'space-y-1' : undefined
+
+  const renderBlock = (block: ContentBlock, index: number) => (
+    <ContentBlockRenderer
+      key={`${block.type}-${index}`}
+      block={block}
+      sessionId={sessionId}
+      isLastTextBlock={index === lastTextBlockIndex}
+      isStreaming={textStreaming}
+      isMessageStreaming={isStreaming}
+      activeToolUseId={activeToolUseId}
+    />
+  )
 
   if (!shouldCollapseInMessageTools) {
+    const renderedBlocks = filteredContent.map(renderBlock)
     return (
-      <div data-msg-id={id} data-msg-role="assistant" className="py-0.5 break-words min-w-0">
-        {filteredContent.map((block, index) => (
-          <ContentBlockRenderer
-            key={`${block.type}-${index}`}
-            block={block}
-            sessionId={sessionId}
-            isLastTextBlock={index === lastTextBlockIndex}
-            isStreaming={textStreaming}
-            isMessageStreaming={isStreaming}
-            activeToolUseId={activeToolUseId}
-          />
-        ))}
+      <div data-msg-id={id} data-msg-role="assistant" className={rootClassName}>
+        {compactStackClassName ? (
+          <div className={compactStackClassName}>
+            {renderedBlocks}
+          </div>
+        ) : renderedBlocks}
       </div>
     )
   }
 
   const segments = splitToolAndNonToolSegments(filteredContent)
-
-  return (
-    <div data-msg-id={id} data-msg-role="assistant" className="py-0.5 break-words min-w-0">
-      {segments.map((segment, segmentIndex) => {
-        if (segment.kind === 'tool') {
-          const segmentContent = segment.blocks.map(({ block }) => block)
-          const segmentToolCallCount = countToolUseBlocks(segmentContent)
-          const shouldKeepExpanded =
-            segmentToolCallCount < IN_MESSAGE_TOOL_COLLAPSE_THRESHOLD ||
-            hasNonBatchableToolUse(segmentContent)
-          if (shouldKeepExpanded) {
-            return (
-              <div key={`${id}-tool-segment-raw-${segmentIndex}-${segment.blocks[0]?.index ?? 0}`}>
-                {segment.blocks.map(({ block, index }) => (
-                  <ContentBlockRenderer
-                    key={`${block.type}-${index}`}
-                    block={block}
-                    sessionId={sessionId}
-                    isLastTextBlock={index === lastTextBlockIndex}
-                    isStreaming={textStreaming}
-                    isMessageStreaming={isStreaming}
-                    activeToolUseId={activeToolUseId}
-                  />
-                ))}
-              </div>
-            )
-          }
-
-          const segmentMessage: ManagedSessionMessage = {
-            id: `${id}-tool-segment-${segmentIndex}`,
-            role: 'assistant',
-            content: segmentContent,
-            timestamp: msg.timestamp,
-            isStreaming,
-            activeToolUseId,
-          }
-          return (
-            <ToolBatchCollapsible
-              key={`${id}-tool-segment-${segmentIndex}-${segment.blocks[0]?.index ?? 0}`}
-              messages={[segmentMessage]}
-              sessionId={sessionId}
-            />
-          )
-        }
+  const renderSegment = (
+    segment: { kind: 'tool' | 'other'; blocks: IndexedContentBlock[] },
+    segmentIndex: number,
+  ) => {
+    if (segment.kind === 'tool') {
+      const segmentContent = segment.blocks.map(({ block }) => block)
+      const segmentToolCallCount = countToolUseBlocks(segmentContent)
+      const shouldKeepExpanded =
+        segmentToolCallCount < IN_MESSAGE_TOOL_COLLAPSE_THRESHOLD ||
+        hasNonBatchableToolUse(segmentContent)
+      if (shouldKeepExpanded) {
         return (
-          <div key={`${id}-other-segment-${segmentIndex}-${segment.blocks[0]?.index ?? 0}`}>
-            {segment.blocks.map(({ block, index }) => (
-              <ContentBlockRenderer
-                key={`${block.type}-${index}`}
-                block={block}
-                sessionId={sessionId}
-                isLastTextBlock={index === lastTextBlockIndex}
-                isStreaming={textStreaming}
-                isMessageStreaming={isStreaming}
-                activeToolUseId={activeToolUseId}
-              />
-            ))}
+          <div key={`${id}-tool-segment-raw-${segmentIndex}-${segment.blocks[0]?.index ?? 0}`}>
+            {segment.blocks.map(({ block, index }) => renderBlock(block, index))}
           </div>
         )
-      })}
+      }
+
+      const segmentMessage: ManagedSessionMessage = {
+        id: `${id}-tool-segment-${segmentIndex}`,
+        role: 'assistant',
+        content: segmentContent,
+        timestamp: msg.timestamp,
+        isStreaming,
+        activeToolUseId,
+      }
+      return (
+        <ToolBatchCollapsible
+          key={`${id}-tool-segment-${segmentIndex}-${segment.blocks[0]?.index ?? 0}`}
+          messages={[segmentMessage]}
+          sessionId={sessionId}
+        />
+      )
+    }
+    return (
+      <div key={`${id}-other-segment-${segmentIndex}-${segment.blocks[0]?.index ?? 0}`}>
+        {segment.blocks.map(({ block, index }) => renderBlock(block, index))}
+      </div>
+    )
+  }
+
+  return (
+    <div data-msg-id={id} data-msg-role="assistant" className={rootClassName}>
+      {compactStackClassName ? (
+        <div className={compactStackClassName}>
+          {segments.map(renderSegment)}
+        </div>
+      ) : segments.map(renderSegment)}
     </div>
   )
 })

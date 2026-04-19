@@ -6,7 +6,13 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import '@testing-library/jest-dom/vitest'
 import { SessionMessageList } from '../../../src/renderer/components/DetailPanel/SessionPanel/SessionMessageList'
-import type { ManagedSessionMessage, ManagedSessionState, ContentBlock, SystemEvent } from '../../../src/shared/types'
+import type {
+  ManagedSessionMessage,
+  ManagedSessionState,
+  ContentBlock,
+  SystemEvent,
+  ToolResultBlock,
+} from '../../../src/shared/types'
 import { resolveLatestSessionDraft } from '../../../src/shared/sessionDraftOutputParser'
 
 const lifecycleHookMock = vi.hoisted(() => {
@@ -242,6 +248,62 @@ describe('SessionMessageList', () => {
     expect(list.children).toHaveLength(3)
   })
 
+  it('does not split one assistant turn into multiple nav anchors across tool results', () => {
+    render(
+      <SessionMessageList
+        sessionId="test-session"
+        messages={[
+          makeUserMsg(textBlocks('First question'), 'user-1'),
+          makeAssistantMsg([
+            { type: 'tool_use', id: 'tool-1', name: 'Glob', input: { pattern: '*.ts' } },
+          ], { id: 'assistant-turn-1a' }),
+          makeUserMsg([
+            { type: 'tool_result', toolUseId: 'tool-1', content: 'result payload' } as any,
+          ], 'tool-result-1'),
+          makeAssistantMsg(textBlocks('First answer'), { id: 'assistant-turn-1b' }),
+          makeUserMsg(textBlocks('Second question'), 'user-2'),
+          makeAssistantMsg(textBlocks('Second answer'), { id: 'assistant-turn-2' }),
+        ]}
+      />
+    )
+
+    expect(screen.getByLabelText('Message navigation')).toBeInTheDocument()
+    expect(screen.getAllByLabelText(/User message/)).toHaveLength(2)
+    expect(screen.getAllByLabelText(/Assistant message/)).toHaveLength(2)
+  })
+
+  it('filters invisible tool-result user messages so they do not leave empty rows between tool batches', () => {
+    const { container } = render(
+      <SessionMessageList
+        sessionId="test-session"
+        messages={[
+          makeAssistantMsg([
+            { type: 'tool_use', id: 'tu-1', name: 'Read', input: { file_path: 'a.ts' } },
+          ], { id: 'assistant-batch-1a' }),
+          makeAssistantMsg([
+            { type: 'tool_use', id: 'tu-2', name: 'Read', input: { file_path: 'b.ts' } },
+          ], { id: 'assistant-batch-1b' }),
+          makeUserMsg([
+            { type: 'tool_result', toolUseId: 'tu-1', content: 'ok' } satisfies ToolResultBlock,
+          ], 'tool-result-hidden-1'),
+          makeUserMsg([
+            { type: 'tool_result', toolUseId: 'tu-2', content: 'ok' } satisfies ToolResultBlock,
+          ], 'tool-result-hidden-2'),
+          makeAssistantMsg([
+            { type: 'tool_use', id: 'tu-3', name: 'Glob', input: { pattern: '*.ts' } },
+          ], { id: 'assistant-batch-2a' }),
+          makeAssistantMsg([
+            { type: 'tool_use', id: 'tu-4', name: 'Grep', input: { pattern: 'ThemeScheme' } },
+          ], { id: 'assistant-batch-2b' }),
+        ]}
+      />
+    )
+
+    expect(screen.getByRole('button', { name: /Expand 4 tool calls/i })).toBeInTheDocument()
+    expect(container.querySelectorAll('[data-msg-role="user-tool-result"]')).toHaveLength(0)
+    expect(screen.getByRole('list').children).toHaveLength(1)
+  })
+
   it('renders empty state when no messages', () => {
     render(<SessionMessageList sessionId="test-session" messages={[]} />)
     expect(screen.getByRole('list').children).toHaveLength(0)
@@ -432,7 +494,7 @@ describe('SessionMessageList', () => {
       />
     )
     expect(screen.getByText('Read')).toBeInTheDocument()
-    expect(screen.getByText('file contents here')).toBeInTheDocument()
+    expect(screen.queryByText('file contents here')).not.toBeInTheDocument()
     expect(screen.getByText(/Done reading/)).toBeInTheDocument()
   })
 

@@ -503,7 +503,7 @@ describe('ToolBatchCollapsible', () => {
   }
 
   it('renders collapsed state with tool count', () => {
-    renderBatch([
+    const { container } = renderBatch([
       makeToolOnlyMsg('Read', 'a1'),
       makeToolOnlyMsg('Grep', 'a2'),
       makeToolOnlyMsg('Edit', 'a3')
@@ -512,6 +512,8 @@ describe('ToolBatchCollapsible', () => {
     // Should show "3 tool calls" summary
     expect(screen.getByText(/3 tool calls/)).toBeInTheDocument()
     expect(screen.getByText(/Read, Grep, Edit/)).toBeInTheDocument()
+    const batchRoot = container.querySelector('[data-msg-id="a1"][data-msg-role="assistant"]') as HTMLElement | null
+    expect(batchRoot?.className).toContain('py-px')
   })
 
   it('renders collapsed state with tool count (×N for duplicates)', () => {
@@ -545,8 +547,27 @@ describe('ToolBatchCollapsible', () => {
     const toggle = screen.getByRole('button', { name: /Expand 2 tool calls/ })
     fireEvent.click(toggle)
 
-    // Now tool details should be visible
-    expect(screen.getAllByText('result output')).toHaveLength(2)
+    expect(screen.queryByText('result output')).not.toBeInTheDocument()
+    expect(screen.getByText('Read')).toBeInTheDocument()
+    expect(screen.getByText('Grep')).toBeInTheDocument()
+  })
+
+  it('uses consistent vertical spacing for expanded tool pills', () => {
+    renderBatch([
+      makeToolOnlyMsg('Read', 'a1'),
+      makeToolOnlyMsg('Grep', 'a2')
+    ])
+
+    const toggle = screen.getByRole('button', { name: /Expand 2 tool calls/ })
+    fireEvent.click(toggle)
+
+    const expandedContent = toggle.nextElementSibling as HTMLElement | null
+    expect(expandedContent?.className).toContain('space-y-1')
+
+    const messageContainers = Array.from(expandedContent?.children ?? []) as HTMLElement[]
+    expect(messageContainers).toHaveLength(2)
+    expect(messageContainers[0]?.firstElementChild?.className).toContain('space-y-0.5')
+    expect(messageContainers[1]?.firstElementChild?.className).toContain('space-y-0.5')
   })
 
   it('collapses again on second click', () => {
@@ -557,7 +578,8 @@ describe('ToolBatchCollapsible', () => {
 
     // Expand
     fireEvent.click(screen.getByRole('button', { name: /Expand 2 tool calls/ }))
-    expect(screen.getAllByText('result output')).toHaveLength(2)
+    expect(screen.getByText('Read')).toBeInTheDocument()
+    expect(screen.getByText('Grep')).toBeInTheDocument()
 
     // Collapse
     fireEvent.click(screen.getByRole('button', { name: /Collapse 2 tool calls/ }))
@@ -596,11 +618,16 @@ describe('ToolBatchCollapsible', () => {
   })
 
   it('does not render collapsible summary for a single tool call', () => {
-    renderBatch([makeToolOnlyMsg('Read', 'a1')])
+    const { container } = renderBatch([makeToolOnlyMsg('Read', 'a1')])
 
     expect(screen.queryByRole('button', { name: /Expand 1 tool/i })).toBeNull()
     expect(screen.queryByText(/1 tool call/)).toBeNull()
-    expect(screen.getByText('result output')).toBeInTheDocument()
+    expect(screen.getByText('Read')).toBeInTheDocument()
+    expect(screen.queryByText('result output')).not.toBeInTheDocument()
+
+    const assistantContainers = container.querySelectorAll('[data-msg-id="a1"][data-msg-role="assistant"]')
+    const messageContainer = assistantContainers[assistantContainers.length - 1] as HTMLElement | undefined
+    expect(messageContainer?.firstElementChild?.className ?? '').not.toContain('space-y-0.5')
   })
 
   it('singular "tool call" for single-tool batch edge case', () => {

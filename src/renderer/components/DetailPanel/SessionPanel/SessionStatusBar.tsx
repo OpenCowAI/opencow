@@ -9,9 +9,10 @@ import type { SessionHistoryContext } from './sessionHistoryTypes'
 import { ContextWindowRing } from '../../ui/ContextWindowRing'
 import { Tooltip } from '../../ui/Tooltip'
 import { PillDropdown } from '../../ui/PillDropdown'
+import { TodoStatusPill } from './TodoWidgets'
 import { formatDuration, computeActiveDuration } from '@/lib/sessionHelpers'
 import { isProcessCorruptedError } from '../../../lib/sessionErrors'
-import { useStreamingSessionMetrics, useCommandStore } from '@/stores/commandStore'
+import { selectLatestOpenTodos, useStreamingSessionMetrics, useCommandStore } from '@/stores/commandStore'
 import { useStoreWithEqualityFn } from 'zustand/traditional'
 import { shallow } from 'zustand/shallow'
 import { resolveContextDisplayState } from '@shared/contextDisplay'
@@ -137,6 +138,7 @@ export const SessionStatusBar = React.memo(function SessionStatusBar({
   const metrics = useStreamingSessionMetrics(sessionId)
   const activeDurationMs = metrics?.activeDurationMs ?? 0
   const activeStartedAt = metrics?.activeStartedAt ?? null
+  const latestTodos = useCommandStore((s) => selectLatestOpenTodos(s, sessionId))
 
   // Context display — resolves from the full session snapshot.
   // Uses useStoreWithEqualityFn + shallow to avoid re-renders when
@@ -175,6 +177,7 @@ export const SessionStatusBar = React.memo(function SessionStatusBar({
     state === 'stopped' ||
     state === 'error'
   ) && !!onNewSession && !!onNewBlankSession
+  const isTodoPaused = state === 'idle' || state === 'stopped' || state === 'error'
 
   return (
     <div
@@ -204,6 +207,9 @@ export const SessionStatusBar = React.memo(function SessionStatusBar({
       </div>
 
       <div className="flex items-center gap-1 shrink-0">
+        {latestTodos && (
+          <TodoStatusPill todos={latestTodos} isPaused={isTodoPaused} />
+        )}
         {showStop && (
           <button
             onClick={() => onStop?.()}

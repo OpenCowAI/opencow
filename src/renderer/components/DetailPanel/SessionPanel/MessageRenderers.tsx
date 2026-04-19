@@ -11,6 +11,8 @@
 import { memo } from 'react'
 import { LinkifiedText } from '@/components/ui/LinkifiedText'
 import { ContentBlockRenderer } from './ContentBlockRenderer'
+import { useToolLifecycleMap, type ToolLifecycleMap } from './ToolLifecycleContext'
+import { shouldRenderToolResultBlock } from './ToolResultBlockView'
 import { ContextFileChips } from '@/components/ui/ContextFileChips'
 import { parseContextFiles } from '@/lib/contextFilesParsing'
 import { getSlashDisplayLabel } from '@shared/slashDisplay'
@@ -138,6 +140,9 @@ export const ToolResultUserMessage = memo(function ToolResultUserMessage({
   content: ContentBlock[]
   sessionId?: string
 }) {
+  const toolLifecycleMap = useToolLifecycleMap()
+  if (!hasVisibleToolResultUserMessageContent(content, toolLifecycleMap)) return null
+
   return (
     <div data-msg-id={id} data-msg-role="user-tool-result" className="py-0.5 break-words min-w-0">
       {content.map((block, i) => (
@@ -171,3 +176,21 @@ export const ChatBubbleUserMessage = memo(function ChatBubbleUserMessage({ id, c
     </div>
   )
 })
+
+/**
+ * Engine-emitted user tool-result messages should only reserve space when at
+ * least one block actually renders visible UI.
+ */
+export function hasVisibleToolResultUserMessageContent(
+  content: readonly ContentBlock[],
+  toolLifecycleMap: ToolLifecycleMap,
+): boolean {
+  for (const block of content) {
+    if (block.type === 'image' && block.toolUseId) return true
+    if (block.type === 'tool_result') {
+      const toolName = toolLifecycleMap.get(block.toolUseId)?.name
+      if (shouldRenderToolResultBlock(block, toolName)) return true
+    }
+  }
+  return false
+}

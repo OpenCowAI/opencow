@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import type { ManagedSessionMessage, TodoWriteItem } from '@shared/types'
+import { getUserMessageDisplayInfo } from '@/components/DetailPanel/SessionPanel/messageDisplayUtils'
 
 /**
  * Parsed TodoWrite snapshot from assistant content blocks.
@@ -69,7 +70,9 @@ function probeTodoSnapshotFromAssistant(
 
 function findCurrentTurnStartIndex(messages: ManagedSessionMessage[]): number {
   for (let i = messages.length - 1; i >= 0; i--) {
-    if (messages[i].role === 'user') return i
+    const msg = messages[i]
+    if (msg.role !== 'user') continue
+    if (!getUserMessageDisplayInfo(msg.content).isEmpty) return i
   }
   return 0
 }
@@ -77,8 +80,9 @@ function findCurrentTurnStartIndex(messages: ManagedSessionMessage[]): number {
 /**
  * Find the latest TodoWrite snapshot within the current turn.
  *
- * "Current turn" is scoped from the latest user message (inclusive) to the end.
- * This prevents stale todos from previous turns from leaking into the footer.
+ * "Current turn" is scoped from the latest visible user input (inclusive) to
+ * the end. Engine-emitted `tool_result` user messages must NOT reset this
+ * boundary; they are transport artifacts within the same turn.
  */
 export function getLatestTodoSnapshotInCurrentTurn(
   messages: ManagedSessionMessage[],

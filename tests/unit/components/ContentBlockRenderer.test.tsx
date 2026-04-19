@@ -78,8 +78,9 @@ describe('ContentBlockRenderer', () => {
       toolUseId: 'tu-1',
       content: 'file contents here'
     }
-    render(<ContentBlockRenderer block={block} />)
-    expect(screen.getByText('file contents here')).toBeInTheDocument()
+    const { container } = render(<ContentBlockRenderer block={block} />)
+    expect(container.innerHTML).toBe('')
+    expect(screen.queryByText('file contents here')).not.toBeInTheDocument()
   })
 
   it('renders slash_command with frozen label instead of canonical name', () => {

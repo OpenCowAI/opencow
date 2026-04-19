@@ -14,6 +14,11 @@ import { resolveContextDisplayState } from '../../../src/shared/contextDisplay'
 // We mock the store so the component can read session data in tests.
 
 let mockSessionData: Record<string, Partial<SessionSnapshot>>  = {}
+let mockLatestTodosBySession: Record<string, Array<{
+  content: string
+  status: 'pending' | 'in_progress' | 'completed'
+  activeForm?: string
+}> | null> = {}
 
 vi.mock('@/stores/commandStore', () => {
   // Create a minimal zustand-compatible mock
@@ -24,6 +29,9 @@ vi.mock('@/stores/commandStore', () => {
       ),
       managedSessions: [],
       messagesBySession: {},
+      sessionMessages: {},
+      streamingMessageBySession: {},
+      latestTodosBySession: mockLatestTodosBySession,
     })
     const subscribe = () => () => {}
     const store = (selector: (s: ReturnType<typeof getState>) => unknown) => selector(getState())
@@ -47,6 +55,8 @@ vi.mock('@/stores/commandStore', () => {
         activity: session.activity ?? null,
       }
     },
+    selectLatestOpenTodos: (state: ReturnType<typeof mockStore.getState>, sessionId: string | null) =>
+      (sessionId ? state.latestTodosBySession[sessionId] : null) ?? null,
   }
 })
 
@@ -102,12 +112,21 @@ function makeSession(overrides: Partial<ManagedSessionInfo> = {}): Partial<Sessi
 function setupStore(session: Partial<SessionSnapshot>) {
   const id = (session as { id?: string }).id ?? 'session-1'
   mockSessionData = { [id]: session }
+  mockLatestTodosBySession = {}
+}
+
+function setLatestTodos(
+  sessionId: string,
+  todos: Array<{ content: string; status: 'pending' | 'in_progress' | 'completed'; activeForm?: string }> | null,
+) {
+  mockLatestTodosBySession = { [sessionId]: todos }
 }
 
 describe('SessionStatusBar', () => {
   beforeEach(() => {
     vi.useFakeTimers()
     mockSessionData = {}
+    mockLatestTodosBySession = {}
   })
   afterEach(() => {
     vi.useRealTimers()
@@ -267,6 +286,62 @@ describe('SessionStatusBar', () => {
     )
     const durationEl = screen.getByText(/\d+m\s\d+s|\d+s/)
     expect(durationEl.className).toContain('tabular-nums')
+  })
+
+  it('renders todo pill when latest open todos exist', () => {
+    const session = makeSession({ state: 'streaming' })
+    setupStore(session)
+    setLatestTodos('session-1', [
+      { content: 'Task A', status: 'completed' },
+      { content: 'Task B', status: 'pending' },
+    ])
+    render(
+      <SessionStatusBar
+        sessionId="session-1"
+        state="streaming"
+        error={null}
+        stopReason={null}
+        {...defaultProps()}
+      />
+    )
+    expect(screen.getByLabelText('Toggle task list')).toBeInTheDocument()
+    expect(screen.getByText('✓1')).toBeInTheDocument()
+    expect(screen.getByText('○1')).toBeInTheDocument()
+  })
+
+  it('renders paused todo state for in-progress items when session is idle', () => {
+    const session = makeSession({ state: 'idle' })
+    setupStore(session)
+    setLatestTodos('session-1', [
+      { content: 'Task A', status: 'in_progress', activeForm: 'Working on Task A' },
+    ])
+    render(
+      <SessionStatusBar
+        sessionId="session-1"
+        state="idle"
+        error={null}
+        stopReason="completed"
+        {...defaultProps()}
+      />
+    )
+    expect(screen.getByLabelText('Toggle task list')).toBeInTheDocument()
+    expect(screen.getByText('⏸1')).toBeInTheDocument()
+    expect(screen.queryByText('◉1')).toBeNull()
+  })
+
+  it('does not render todo pill when no open todos exist', () => {
+    const session = makeSession({ state: 'streaming' })
+    setupStore(session)
+    render(
+      <SessionStatusBar
+        sessionId="session-1"
+        state="streaming"
+        error={null}
+        stopReason={null}
+        {...defaultProps()}
+      />
+    )
+    expect(screen.queryByLabelText('Toggle task list')).toBeNull()
   })
 
   it('renders context window ring when contextState.usedTokens > 0', () => {

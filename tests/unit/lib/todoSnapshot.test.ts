@@ -17,6 +17,15 @@ function userMsg(id: string, text: string): ManagedSessionMessage {
   }
 }
 
+function userToolResultMsg(id: string, toolUseId: string, content = 'ok'): ManagedSessionMessage {
+  return {
+    id,
+    role: 'user',
+    timestamp: Date.now(),
+    content: [{ type: 'tool_result', toolUseId, content }],
+  }
+}
+
 function assistantTodoMsg(
   id: string,
   todos: Array<{ content: string; status: 'pending' | 'in_progress' | 'completed'; activeForm?: string }>,
@@ -71,6 +80,25 @@ describe('todoSnapshot', () => {
     ]
 
     expect(getLatestTodoSnapshotInCurrentTurn(messages)).toBeNull()
+  })
+
+  it('does not let tool_result-only user messages reset the current turn boundary', () => {
+    const messages: ManagedSessionMessage[] = [
+      userMsg('u1', 'turn'),
+      assistantTodoMsg('a1', [{ content: 'task', status: 'pending' }]),
+      userToolResultMsg('r1', 'a1-todo', 'Todos updated'),
+      {
+        id: 'a2',
+        role: 'assistant',
+        timestamp: Date.now(),
+        content: [{ type: 'text', text: 'Continuing work' }],
+      },
+    ]
+
+    const snapshot = getLatestTodoSnapshotInCurrentTurn(messages)
+    expect(snapshot?.messageId).toBe('a1')
+    expect(snapshot?.turnStartMessageId).toBe('u1')
+    expect(snapshot?.items).toEqual([{ content: 'task', status: 'pending' }])
   })
 
   it('checks open/completed todo set correctly', () => {
