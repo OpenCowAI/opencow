@@ -8,6 +8,7 @@ import type { ClaudeSessionLaunchOptions } from './sessionLaunchOptions'
 import { toSdkOptions } from './sessionLaunchOptions'
 import { mapManagedMessagesToSdkInitialMessages } from './sdkHistoryMapper'
 import { adaptClaudeSdkMessage } from '../conversation/runtime/claudeRuntimeAdapter'
+import { ensureSdkCompatEnv } from './sdkCompatEnv'
 import {
   createRuntimeEventEnvelope,
   isTurnScopedRuntimeEventKind,
@@ -41,6 +42,7 @@ let _modulePromise: Promise<OpenCowAgentModule> | null = null
 async function loadSdkModule(): Promise<OpenCowAgentModule> {
   if (!_modulePromise) {
     _modulePromise = (async () => {
+      ensureSdkCompatEnv()
       const entryPath = require.resolve('@opencow-ai/opencow-agent-sdk/dist/sdk.js')
       return import(pathToFileURL(entryPath).href) as Promise<OpenCowAgentModule>
     })()
