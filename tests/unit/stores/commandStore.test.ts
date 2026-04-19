@@ -27,6 +27,44 @@ function makeAssistantMessage(params: {
   }
 }
 
+function makeUserTextMessage(id: string, text: string): ManagedSessionMessage {
+  return {
+    id,
+    role: 'user',
+    timestamp: 1_700_000_000_000,
+    content: [{ type: 'text', text }],
+  }
+}
+
+function makeAssistantTodoMessage(
+  id: string,
+  todos: Array<{ content: string; status: 'pending' | 'in_progress' | 'completed'; activeForm?: string }>,
+): ManagedSessionMessage {
+  return {
+    id,
+    role: 'assistant',
+    timestamp: 1_700_000_000_000,
+    isStreaming: false,
+    content: [
+      {
+        type: 'tool_use',
+        id: `${id}-todo`,
+        name: 'TodoWrite',
+        input: { todos },
+      },
+    ],
+  }
+}
+
+function makeUserToolResultMessage(id: string, toolUseId: string, content = 'ok'): ManagedSessionMessage {
+  return {
+    id,
+    role: 'user',
+    timestamp: 1_700_000_000_000,
+    content: [{ type: 'tool_result', toolUseId, content }],
+  }
+}
+
 describe('commandStore.batchAppendSessionMessages', () => {
   beforeEach(() => {
     useCommandStore.getState().reset()
@@ -194,5 +232,42 @@ describe('commandStore.batchAppendSessionMessages', () => {
 
     const derived = selectLatestOpenTodos(useCommandStore.getState(), sessionId)
     expect(derived).toEqual([{ content: 'new', status: 'pending' }])
+  })
+
+  it('keeps current-turn todos visible after user tool_result messages append', () => {
+    const sessionId = 'session-todo-tool-result'
+    const snapshot = makeManagedSession({
+      id: sessionId,
+      state: 'streaming',
+      messages: [],
+    })
+
+    useCommandStore.setState({
+      managedSessions: [snapshot],
+      sessionById: { [sessionId]: snapshot },
+      sessionMessages: { [sessionId]: [] },
+      streamingMessageBySession: {},
+      latestTodosBySession: {},
+      activeManagedSessionId: sessionId,
+    })
+
+    useCommandStore.getState().appendSessionMessage(sessionId, makeUserTextMessage('u1', 'turn'))
+    useCommandStore.getState().appendSessionMessage(
+      sessionId,
+      makeAssistantTodoMessage('a1', [{ content: 'task', status: 'pending' }]),
+    )
+
+    expect(useCommandStore.getState().latestTodosBySession[sessionId]).toEqual([
+      { content: 'task', status: 'pending' },
+    ])
+
+    useCommandStore.getState().appendSessionMessage(
+      sessionId,
+      makeUserToolResultMessage('r1', 'a1-todo', 'Todos updated'),
+    )
+
+    expect(useCommandStore.getState().latestTodosBySession[sessionId]).toEqual([
+      { content: 'task', status: 'pending' },
+    ])
   })
 })

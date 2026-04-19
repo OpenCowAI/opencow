@@ -113,6 +113,7 @@ export const TodoCard = memo(function TodoCard({
   todos: TodoItem[]
   isPaused?: boolean
 }): React.JSX.Element {
+  const { t } = useTranslation('sessions')
   const [expanded, setExpanded] = useState(false)
   const [showCompleted, setShowCompleted] = useState(false)
 
@@ -120,11 +121,11 @@ export const TodoCard = memo(function TodoCard({
   const activeTodos: TodoItem[] = []
   const pendingTodos: TodoItem[] = []
   const completedTodos: TodoItem[] = []
-  for (const t of todos) {
-    const eff = effectiveStatus(t.status, isPaused)
-    if (eff === 'completed') completedTodos.push(t)
-    else if (eff === 'in_progress' || eff === 'paused') activeTodos.push(t)
-    else pendingTodos.push(t)
+  for (const todo of todos) {
+    const eff = effectiveStatus(todo.status, isPaused)
+    if (eff === 'completed') completedTodos.push(todo)
+    else if (eff === 'in_progress' || eff === 'paused') activeTodos.push(todo)
+    else pendingTodos.push(todo)
   }
 
   // The currently active task name (for collapsed summary)
@@ -137,7 +138,7 @@ export const TodoCard = memo(function TodoCard({
     <div
       className="max-w-lg rounded-xl border border-[hsl(var(--border)/0.5)] bg-[hsl(var(--card))] text-[hsl(var(--card-foreground))]"
       role="region"
-      aria-label="Task list card"
+      aria-label={t('sessionPanel.taskListCardAria')}
     >
       {/* Header — always visible, clickable to expand/collapse */}
       <button
@@ -189,7 +190,7 @@ export const TodoCard = memo(function TodoCard({
                 ) : (
                   <ChevronRight className="w-2.5 h-2.5" />
                 )}
-                {completedTodos.length} completed
+                {t('sessionPanel.completedCount', { count: completedTodos.length })}
               </button>
               {showCompleted && (
                 <TodoList todos={completedTodos} isPaused={isPaused} />
@@ -211,6 +212,7 @@ export const TodoStatusPill = memo(function TodoStatusPill({
   todos: TodoItem[]
   isPaused?: boolean
 }): React.JSX.Element {
+  const { t } = useTranslation('sessions')
   const [popoverOpen, setPopoverOpen] = useState(false)
 
   return (
@@ -223,7 +225,7 @@ export const TodoStatusPill = memo(function TodoStatusPill({
       trigger={
         <button
           className="flex items-center gap-1.5 px-2 py-0.5 text-xs rounded-full border border-[hsl(var(--border))] text-[hsl(var(--muted-foreground))] hover:bg-[hsl(var(--foreground)/0.04)] hover:text-[hsl(var(--accent-foreground))] transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[hsl(var(--ring))]"
-          aria-label="Toggle task list"
+          aria-label={t('sessionPanel.toggleTaskListAria')}
           aria-expanded={popoverOpen}
         >
           <ListChecks className="w-3 h-3" aria-hidden="true" />
@@ -235,7 +237,7 @@ export const TodoStatusPill = memo(function TodoStatusPill({
         {/* Header — fixed at top of popover */}
         <div className="flex items-center gap-1.5 px-4 py-2 pb-1.5 border-b border-[hsl(var(--border)/0.5)] shrink-0">
           <CheckSquare className="w-3.5 h-3.5 shrink-0 text-[hsl(var(--muted-foreground))]" aria-hidden="true" />
-          <span className="text-xs font-medium text-[hsl(var(--foreground))]">Tasks</span>
+          <span className="text-xs font-medium text-[hsl(var(--foreground))]">{t('sessionPanel.tasks')}</span>
           <span className="ml-auto">
             <TodoStats todos={todos} isPaused={isPaused} />
           </span>
