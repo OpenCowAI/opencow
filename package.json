@@ -1,7 +1,7 @@
 {
   "name": "opencow",
   "productName": "OpenCow",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "Task-driven autonomous AI agent platform",
   "packageManager": "pnpm@10.13.1",
   "main": "./out/main/index.js",
@@ -14,7 +14,8 @@
     "typecheck:node": "tsc --noEmit -p tsconfig.node.json",
     "typecheck:web": "tsc --noEmit -p tsconfig.web.json",
     "typecheck": "npm run typecheck:node && npm run typecheck:web",
-    "lint": "eslint .",
+    "lint": "eslint . --quiet",
+    "lint:full": "eslint .",
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",
     "pretest": "bash scripts/rebuild-better-sqlite3.sh node",
