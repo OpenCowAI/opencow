@@ -4,7 +4,12 @@ import { useEffect, useRef, useCallback, useMemo, useState, startTransition, mem
 import { useTranslation } from 'react-i18next'
 import { Virtuoso, type VirtuosoHandle, type ListRange } from 'react-virtuoso'
 import { ArrowDown, GitCompare } from 'lucide-react'
-import { UserMessage, ChatBubbleUserMessage, ToolResultUserMessage } from './MessageRenderers'
+import {
+  UserMessage,
+  ChatBubbleUserMessage,
+  ToolResultUserMessage,
+  hasVisibleToolResultUserMessageContent,
+} from './MessageRenderers'
 import { AssistantMessage } from './AssistantMessage'
 import { INCREASE_VIEWPORT_BY, FooterNodeContext, VIRTUOSO_COMPONENTS } from './VirtuosoShell'
 import type { VirtuosoContext, MessageListVariant } from './VirtuosoShell'
@@ -358,6 +363,8 @@ function SessionMessageList({
     scanToolLifecycle,
     INIT_TOOL_MAP,
   )
+  const toolLifecycleMapRef = useRef(toolLifecycleMap)
+  toolLifecycleMapRef.current = toolLifecycleMap
 
   // ---------------------------------------------------------------------------
   // RC3: Incremental messageGroups — O(delta) per append instead of O(N).
@@ -405,6 +412,13 @@ function SessionMessageList({
       // Filter consumed task events from the delta
       const filtered = newMsgs.filter((msg) => {
         if (msg.role === 'system' && isConsumedTaskEvent(msg.event, consumedIdsRef.current)) return false
+        if (
+          msg.role === 'user' &&
+          isToolResultOnlyUserMessage(msg.content) &&
+          !hasVisibleToolResultUserMessageContent(msg.content, toolLifecycleMapRef.current)
+        ) {
+          return false
+        }
         return true
       })
       if (filtered.length === 0) return prev // copy-on-write: no change
@@ -644,9 +658,11 @@ function SessionMessageList({
   // If in 'browsing' state (user had scrolled up), `followOutput` returned
   // `false` so no Virtuoso scroll was initiated.  We need `engage()` to
   // transition to 'following' and issue the scroll manually.
-  const userMsgCountRef = useRef(messages.filter((m) => m.role === 'user').length)
+  const userMsgCountRef = useRef(
+    messages.filter((m) => m.role === 'user' && !isToolResultOnlyUserMessage(m.content)).length,
+  )
   useEffect(() => {
-    const count = messages.filter((m) => m.role === 'user').length
+    const count = messages.filter((m) => m.role === 'user' && !isToolResultOnlyUserMessage(m.content)).length
     if (count > userMsgCountRef.current) {
       reengageIfBrowsing('smooth')
     }

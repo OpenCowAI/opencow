@@ -6,7 +6,10 @@ import { describe, it, expect } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import '@testing-library/jest-dom/vitest'
-import { ToolResultBlockView } from '../../../src/renderer/components/DetailPanel/SessionPanel/ToolResultBlockView'
+import {
+  ToolResultBlockView,
+  shouldRenderToolResultBlock,
+} from '../../../src/renderer/components/DetailPanel/SessionPanel/ToolResultBlockView'
 import type { ToolResultBlock } from '../../../src/shared/types'
 
 function makeBlock(overrides: Partial<ToolResultBlock> = {}): ToolResultBlock {
@@ -19,6 +22,14 @@ function makeBlock(overrides: Partial<ToolResultBlock> = {}): ToolResultBlock {
 }
 
 describe('ToolResultBlockView', () => {
+  it('visibility helper treats successful raw tool output as hidden', () => {
+    expect(shouldRenderToolResultBlock(makeBlock())).toBe(false)
+  })
+
+  it('visibility helper keeps error output visible', () => {
+    expect(shouldRenderToolResultBlock(makeBlock({ content: 'Error: not found', isError: true }))).toBe(true)
+  })
+
   it('suppresses non-error short content entirely', () => {
     const { container } = render(<ToolResultBlockView block={makeBlock()} />)
     expect(container.innerHTML).toBe('')

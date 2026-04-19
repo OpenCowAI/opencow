@@ -409,15 +409,20 @@ export const TaskExecutionView = memo(function TaskExecutionView({
   const prompt = (block.input.prompt as string | undefined) ?? ''
   const hasExpandableContent = !!prompt || !!lifecycle?.summary || !!lifecycle?.resultContent || !!block.progress
   const isRunning = state === 'pending' || state === 'running'
+  const isExpandedCard = expanded && hasExpandableContent
 
   return (
     <div
-      className="mt-1 inline-flex max-w-full flex-col align-top rounded-xl border border-[hsl(var(--border)/0.5)] bg-[hsl(var(--card))] text-[hsl(var(--card-foreground))]"
+      className={cn(
+        'inline-flex max-w-full align-top border border-[hsl(var(--border)/0.5)] bg-[hsl(var(--card))] text-[hsl(var(--card-foreground))]',
+        isExpandedCard ? 'flex-col rounded-xl' : 'rounded-full',
+      )}
       role="region"
       aria-label={`Sub-agent: ${description}`}
     >
       {/* ── Header — always visible ───────────────────────────────────── */}
       <TaskHeader
+        state={state}
         visual={visual}
         agentLabel={agentLabel}
         description={description}
@@ -447,6 +452,7 @@ export const TaskExecutionView = memo(function TaskExecutionView({
 
 /** Header row: state icon, agent badge, description, and duration/label. */
 function TaskHeader({
+  state,
   visual,
   agentLabel,
   description,
@@ -455,6 +461,7 @@ function TaskHeader({
   hasExpandableContent,
   onToggle,
 }: {
+  state: TaskAgentState
   visual: StateVisual
   agentLabel: string
   description: string
@@ -463,11 +470,18 @@ function TaskHeader({
   hasExpandableContent: boolean
   onToggle: () => void
 }): React.JSX.Element {
+  const trailingMeta = durationMs != null
+    ? formatDuration(durationMs)
+    : state === 'completed'
+      ? null
+      : visual.label
+
   return (
     <button
       onClick={onToggle}
       className={cn(
-        'inline-flex max-w-full items-center gap-1.5 self-start px-2.5 py-1.5 text-left rounded-xl',
+        'inline-flex max-w-full items-center gap-1.5 self-start text-left',
+        'px-2 py-0.5 rounded-full',
         hasExpandableContent && 'hover:bg-[hsl(var(--foreground)/0.02)] transition-colors',
       )}
       aria-expanded={hasExpandableContent ? expanded : undefined}
@@ -483,17 +497,19 @@ function TaskHeader({
         />
       )}
       <span className={visual.colorClass}>{visual.icon}</span>
-      <span className="text-xs font-medium text-[hsl(var(--foreground))] bg-[hsl(var(--muted)/0.6)] rounded-md px-1.5 py-0.5">
+      <span className="text-xs font-medium text-[hsl(var(--foreground))] bg-[hsl(var(--muted)/0.6)] rounded-md px-1.5 py-px">
         {agentLabel}
       </span>
       {description && (
-        <span className="text-[13px] text-[hsl(var(--muted-foreground))] truncate min-w-0">
+        <span className="text-xs text-[hsl(var(--muted-foreground))] truncate min-w-0">
           {description}
         </span>
       )}
-      <span className={cn('ml-auto text-xs font-mono shrink-0', visual.colorClass)}>
-        {durationMs != null ? formatDuration(durationMs) : visual.label}
-      </span>
+      {trailingMeta && (
+        <span className={cn('ml-auto text-xs font-mono shrink-0', visual.colorClass)}>
+          {trailingMeta}
+        </span>
+      )}
     </button>
   )
 }

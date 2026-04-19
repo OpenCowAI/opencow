@@ -57,6 +57,26 @@ interface ToolResultBlockViewProps {
   sessionId?: string
 }
 
+/**
+ * Whether a tool_result block produces any visible UI at all.
+ *
+ * Most successful tool results are intentionally suppressed to avoid repeating
+ * raw payloads in the session stream. Only rich result cards, provenance-backed
+ * media, and error outputs should reserve vertical space.
+ */
+export function shouldRenderToolResultBlock(
+  block: ToolResultBlock,
+  toolName?: string,
+): boolean {
+  if (!block.content) return false
+  if (toolName && shouldSuppressResult(toolName)) return false
+  if (block.isError) return true
+  if (!toolName) return false
+  const renderer = RESULT_CARD_REGISTRY.get(toolName)
+  if (!renderer) return false
+  return renderer(block.content) !== null
+}
+
 // ─── Result Card Registry ───────────────────────────────────────────────────
 
 /**
@@ -143,8 +163,7 @@ export const ToolResultBlockView = memo(function ToolResultBlockView({ block, se
   // Resolve originating tool lifecycle via Context (O(1) Map lookup)
   const toolInfo = useToolLifecycle(block.toolUseId)
 
-  // Path 1: Widget Tools with suppressResult=true — their result is rendered by the Widget.
-  if (toolInfo && shouldSuppressResult(toolInfo.name)) return <></>
+  if (!shouldRenderToolResultBlock(block, toolInfo?.name)) return <></>
 
   // Path 2: Result Card — rich card for tools whose data lives in tool_result.
   if (toolInfo && block.content && !block.isError) {

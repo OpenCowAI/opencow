@@ -97,6 +97,14 @@ describe('TaskExecutionView', () => {
     expect(screen.getByText('3.2s')).toBeInTheDocument()
   })
 
+  it('hides the redundant completed status label when no duration is available', () => {
+    renderWithTaskEvents(
+      <TaskExecutionView block={makeTaskBlock()} />,
+      { state: 'completed' },
+    )
+    expect(screen.queryByText('Completed')).toBeNull()
+  })
+
   it('shows "Failed" when lifecycle reports failed', () => {
     renderWithTaskEvents(
       <TaskExecutionView block={makeTaskBlock()} />,
@@ -198,9 +206,36 @@ describe('TaskExecutionView', () => {
     const region = screen.getByRole('region', { name: /Search codebase/ })
     const toggle = screen.getByRole('button', { expanded: false })
     const toggleClasses = toggle.className.split(/\s+/)
+    const regionClasses = region.className.split(/\s+/)
 
     expect(region.className).toContain('inline-flex')
     expect(toggle.className).toContain('inline-flex')
     expect(toggleClasses).not.toContain('w-full')
+    expect(regionClasses).toContain('rounded-full')
+    expect(toggleClasses).toContain('py-0.5')
+    expect(toggleClasses).not.toContain('py-1.5')
+  })
+
+  it('keeps the compact pill height when expanded', async () => {
+    const user = userEvent.setup()
+    renderWithTaskEvents(
+      <TaskExecutionView block={makeTaskBlock()} />,
+      { state: 'completed', summary: 'Done' },
+    )
+
+    const toggle = screen.getByRole('button', { expanded: false })
+    await user.click(toggle)
+
+    const expandedClasses = screen.getByRole('button', { expanded: true }).className.split(/\s+/)
+    expect(expandedClasses).toContain('py-0.5')
+    expect(expandedClasses).not.toContain('py-1.5')
+  })
+
+  it('does not add extra outer top margin to the task pill container', () => {
+    renderWithTaskEvents(<TaskExecutionView block={makeTaskBlock()} />)
+    const region = screen.getByRole('region', { name: /Search codebase/ })
+    const regionClasses = region.className.split(/\s+/)
+
+    expect(regionClasses).not.toContain('mt-1')
   })
 })

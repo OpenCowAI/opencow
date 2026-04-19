@@ -137,7 +137,7 @@ export const ToolBatchCollapsible = memo(function ToolBatchCollapsible({
     <div
       data-msg-id={messages[0]?.id}
       data-msg-role="assistant"
-      className="py-0.5"
+      className="py-px"
     >
       {canCollapse && (
         <>

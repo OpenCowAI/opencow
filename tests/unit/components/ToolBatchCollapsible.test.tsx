@@ -503,7 +503,7 @@ describe('ToolBatchCollapsible', () => {
   }
 
   it('renders collapsed state with tool count', () => {
-    renderBatch([
+    const { container } = renderBatch([
       makeToolOnlyMsg('Read', 'a1'),
       makeToolOnlyMsg('Grep', 'a2'),
       makeToolOnlyMsg('Edit', 'a3')
@@ -512,6 +512,8 @@ describe('ToolBatchCollapsible', () => {
     // Should show "3 tool calls" summary
     expect(screen.getByText(/3 tool calls/)).toBeInTheDocument()
     expect(screen.getByText(/Read, Grep, Edit/)).toBeInTheDocument()
+    const batchRoot = container.querySelector('[data-msg-id="a1"][data-msg-role="assistant"]') as HTMLElement | null
+    expect(batchRoot?.className).toContain('py-px')
   })
 
   it('renders collapsed state with tool count (×N for duplicates)', () => {
