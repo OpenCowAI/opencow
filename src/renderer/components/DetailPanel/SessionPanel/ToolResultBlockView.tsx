@@ -183,11 +183,14 @@ export const ToolResultBlockView = memo(function ToolResultBlockView({ block, se
 
 function RawToolResult({ block }: { block: ToolResultBlock }): React.JSX.Element {
   if (!block.content || !block.isError) return <></>
+  return <RawErrorToolResult content={block.content} />
+}
 
-  const lines = block.content.split('\n')
+function RawErrorToolResult({ content }: { content: string }): React.JSX.Element {
+  const lines = content.split('\n')
   const isLong = lines.length > COLLAPSE_THRESHOLD
   const [expanded, setExpanded] = useState(!isLong)
-  const displayContent = expanded ? block.content : lines.slice(0, COLLAPSE_THRESHOLD).join('\n')
+  const displayContent = expanded ? content : lines.slice(0, COLLAPSE_THRESHOLD).join('\n')
 
   return (
     <div className="rounded text-xs border-l-2 border-red-500 pl-2">
