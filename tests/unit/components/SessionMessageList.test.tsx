@@ -242,6 +242,30 @@ describe('SessionMessageList', () => {
     expect(list.children).toHaveLength(3)
   })
 
+  it('does not split one assistant turn into multiple nav anchors across tool results', () => {
+    render(
+      <SessionMessageList
+        sessionId="test-session"
+        messages={[
+          makeUserMsg(textBlocks('First question'), 'user-1'),
+          makeAssistantMsg([
+            { type: 'tool_use', id: 'tool-1', name: 'Glob', input: { pattern: '*.ts' } },
+          ], { id: 'assistant-turn-1a' }),
+          makeUserMsg([
+            { type: 'tool_result', toolUseId: 'tool-1', content: 'result payload' } as any,
+          ], 'tool-result-1'),
+          makeAssistantMsg(textBlocks('First answer'), { id: 'assistant-turn-1b' }),
+          makeUserMsg(textBlocks('Second question'), 'user-2'),
+          makeAssistantMsg(textBlocks('Second answer'), { id: 'assistant-turn-2' }),
+        ]}
+      />
+    )
+
+    expect(screen.getByLabelText('Message navigation')).toBeInTheDocument()
+    expect(screen.getAllByLabelText(/User message/)).toHaveLength(2)
+    expect(screen.getAllByLabelText(/Assistant message/)).toHaveLength(2)
+  })
+
   it('renders empty state when no messages', () => {
     render(<SessionMessageList sessionId="test-session" messages={[]} />)
     expect(screen.getByRole('list').children).toHaveLength(0)

@@ -162,6 +162,7 @@ function scanNavAnchors(
 
   for (const msg of newMsgs) {
     if (msg.role === 'user') {
+      if (isToolResultOnlyUserMessage(msg.content)) continue
       inAssistantTurn = false
       const info = getUserMessageDisplayInfo(msg.content)
       if (info.isEmpty) continue
