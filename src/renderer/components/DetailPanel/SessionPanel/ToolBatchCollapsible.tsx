@@ -5,6 +5,7 @@ import { ChevronRight, AlertTriangle } from 'lucide-react'
 import { ContentBlockRenderer } from './ContentBlockRenderer'
 import { MarkdownFileCard } from './PreviewCards/MarkdownFileCard'
 import { getToolDisplayName } from './toolMeta'
+import { cn } from '../../../lib/utils'
 import { detectLanguage } from '@shared/fileUtils'
 import { isEvoseToolName } from '@shared/evoseNames'
 import { NativeCapabilityTools } from '@shared/nativeCapabilityToolNames'
@@ -209,7 +210,11 @@ export const ToolBatchCollapsible = memo(function ToolBatchCollapsible({
 
       {/* ── Expanded content ───────────────────────────────────────────── */}
       {showExpandedContent && (
-        <div className={canCollapse ? 'mt-0.5 border-l-2 border-[hsl(var(--border)/0.3)] pl-1.5 ml-1' : undefined}>
+        <div
+          className={cn(
+            canCollapse && 'mt-0.5 ml-1 space-y-1 border-l-2 border-[hsl(var(--border)/0.3)] pl-1.5',
+          )}
+        >
           {messages.map((msg) => {
             if (msg.role !== 'assistant') return null
 
@@ -227,19 +232,21 @@ export const ToolBatchCollapsible = memo(function ToolBatchCollapsible({
                 key={msg.id}
                 data-msg-id={msg.id}
                 data-msg-role="assistant"
-                className="py-0.5 break-words min-w-0"
+                className="break-words min-w-0"
               >
-                {msg.content.map((block: ContentBlock, index: number) => (
-                  <ContentBlockRenderer
-                    key={`${block.type}-${index}`}
-                    block={block}
-                    sessionId={sessionId}
-                    isLastTextBlock={index === lastTextBlockIndex}
-                    isStreaming={msg.role === 'assistant' ? msg.isStreaming : undefined}
-                    isMessageStreaming={msg.role === 'assistant' ? msg.isStreaming : undefined}
-                    activeToolUseId={msg.role === 'assistant' ? msg.activeToolUseId : undefined}
-                  />
-                ))}
+                <div className={cn(canCollapse && 'space-y-0.5')}>
+                  {msg.content.map((block: ContentBlock, index: number) => (
+                    <ContentBlockRenderer
+                      key={`${block.type}-${index}`}
+                      block={block}
+                      sessionId={sessionId}
+                      isLastTextBlock={index === lastTextBlockIndex}
+                      isStreaming={msg.role === 'assistant' ? msg.isStreaming : undefined}
+                      isMessageStreaming={msg.role === 'assistant' ? msg.isStreaming : undefined}
+                      activeToolUseId={msg.role === 'assistant' ? msg.activeToolUseId : undefined}
+                    />
+                  ))}
+                </div>
               </div>
             )
           })}

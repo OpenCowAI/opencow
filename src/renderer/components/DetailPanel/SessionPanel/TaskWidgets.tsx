@@ -412,7 +412,7 @@ export const TaskExecutionView = memo(function TaskExecutionView({
 
   return (
     <div
-      className="mt-1 rounded-xl border border-[hsl(var(--border)/0.5)] bg-[hsl(var(--card))] text-[hsl(var(--card-foreground))]"
+      className="mt-1 inline-flex max-w-full flex-col align-top rounded-xl border border-[hsl(var(--border)/0.5)] bg-[hsl(var(--card))] text-[hsl(var(--card-foreground))]"
       role="region"
       aria-label={`Sub-agent: ${description}`}
     >
@@ -467,7 +467,7 @@ function TaskHeader({
     <button
       onClick={onToggle}
       className={cn(
-        'w-full flex items-center gap-1.5 px-2.5 py-1.5 text-left rounded-xl',
+        'inline-flex max-w-full items-center gap-1.5 self-start px-2.5 py-1.5 text-left rounded-xl',
         hasExpandableContent && 'hover:bg-[hsl(var(--foreground)/0.02)] transition-colors',
       )}
       aria-expanded={hasExpandableContent ? expanded : undefined}

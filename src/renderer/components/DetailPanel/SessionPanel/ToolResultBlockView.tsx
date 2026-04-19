@@ -13,8 +13,8 @@
  *    RESULT_CARD_REGISTRY, parse the raw JSON and render the typed card.
  *    Falls through to raw text on parse failure.
  *
- * 3. **Raw text**: Default fallback for all other tools — shows the raw text
- *    content with collapse/expand for long output.
+ * 3. **Raw text**: Default fallback for all other tools — suppresses non-error
+ *    raw output entirely, while still rendering error output with collapse/expand.
  *
  * Tool name resolution works via ToolLifecycleContext:
  *   ToolResultBlock.toolUseId → ToolLifecycleMap → { name } → routing
@@ -160,25 +160,18 @@ export const ToolResultBlockView = memo(function ToolResultBlockView({ block, se
   return <RawToolResult block={block} />
 })
 
-// ─── Raw fallback (extracted for clarity, logic identical to original) ───────
+// ─── Raw fallback ─────────────────────────────────────────────────────────────
 
 function RawToolResult({ block }: { block: ToolResultBlock }): React.JSX.Element {
+  if (!block.content || !block.isError) return <></>
+
   const lines = block.content.split('\n')
   const isLong = lines.length > COLLAPSE_THRESHOLD
   const [expanded, setExpanded] = useState(!isLong)
-
   const displayContent = expanded ? block.content : lines.slice(0, COLLAPSE_THRESHOLD).join('\n')
 
-  if (!block.content) return <></>
-
   return (
-    <div
-      className={`rounded text-xs ${
-        block.isError
-          ? 'border-l-2 border-red-500 pl-2'
-          : 'pl-2'
-      }`}
-    >
+    <div className="rounded text-xs border-l-2 border-red-500 pl-2">
       <pre className="whitespace-pre-wrap break-words font-mono text-[hsl(var(--muted-foreground))] overflow-x-auto leading-normal">
         {displayContent}
       </pre>

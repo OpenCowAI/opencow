@@ -432,7 +432,7 @@ describe('SessionMessageList', () => {
       />
     )
     expect(screen.getByText('Read')).toBeInTheDocument()
-    expect(screen.getByText('file contents here')).toBeInTheDocument()
+    expect(screen.queryByText('file contents here')).not.toBeInTheDocument()
     expect(screen.getByText(/Done reading/)).toBeInTheDocument()
   })
 

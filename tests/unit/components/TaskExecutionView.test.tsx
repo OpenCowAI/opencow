@@ -192,4 +192,15 @@ describe('TaskExecutionView', () => {
     renderWithTaskEvents(<TaskExecutionView block={makeTaskBlock()} />)
     expect(screen.getByRole('region', { name: /Search codebase/ })).toBeInTheDocument()
   })
+
+  it('uses shrink-to-fit pill layout instead of full-width header', () => {
+    renderWithTaskEvents(<TaskExecutionView block={makeTaskBlock()} />)
+    const region = screen.getByRole('region', { name: /Search codebase/ })
+    const toggle = screen.getByRole('button', { expanded: false })
+    const toggleClasses = toggle.className.split(/\s+/)
+
+    expect(region.className).toContain('inline-flex')
+    expect(toggle.className).toContain('inline-flex')
+    expect(toggleClasses).not.toContain('w-full')
+  })
 })
