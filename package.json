@@ -64,7 +64,7 @@
     "@nivo/bar": "^0.99.0",
     "@nivo/calendar": "^0.99.0",
     "@nivo/core": "^0.99.0",
-    "@opencow-ai/opencow-agent-sdk": "^0.1.9",
+    "@opencow-ai/opencow-agent-sdk": "file:../opencow-agent-sdk/opencow-ai-opencow-agent-sdk-0.1.10.tgz",
     "@pydantic/genai-prices": "0.0.56",
     "@tailwindcss/vite": "^4.2.0",
     "@tiptap/core": "^3.20.0",
