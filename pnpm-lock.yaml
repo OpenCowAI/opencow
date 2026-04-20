@@ -71,8 +71,8 @@ importers:
         specifier: ^0.99.0
         version: 0.99.0(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
       '@opencow-ai/opencow-agent-sdk':
-        specifier: ^0.1.10
-        version: 0.1.10(encoding@0.1.13)
+        specifier: ^0.1.13
+        version: 0.1.13(encoding@0.1.13)
       '@pydantic/genai-prices':
         specifier: 0.0.56
         version: 0.0.56
@@ -1444,8 +1444,8 @@ packages:
     resolution: {integrity: sha512-da6KbdNCV5sr1/txD896V+6W0iamFWrvVl8cHkBSPT+YlvmT3DwXa4jxZnQc+gnuTEqSWbBeoSZYTayXH9wXcw==}
     engines: {node: '>= 20'}
 
-  '@opencow-ai/opencow-agent-sdk@0.1.10':
-    resolution: {integrity: sha512-4u91hMGjJOZXVstkETY20TkQvGIM5mRf42ntFTwGlUDaTzPEPdfs/9/qssEBAEcYwZhXunmuhBiPIaFhGWIgjw==}
+  '@opencow-ai/opencow-agent-sdk@0.1.13':
+    resolution: {integrity: sha512-lx5t9Pdow2ODBy2+5Kk0p4ofWtWPBicB0smYnxAKd1+eYSuPR28NOfZpkbLq2RgVX21BoFRS5K1flu+7Wyfhqg==}
     engines: {node: '>=20.0.0'}
     hasBin: true
 
@@ -6804,7 +6804,7 @@ snapshots:
       '@octokit/request-error': 7.1.0
       '@octokit/webhooks-methods': 6.0.0
 
-  '@opencow-ai/opencow-agent-sdk@0.1.10(encoding@0.1.13)':
+  '@opencow-ai/opencow-agent-sdk@0.1.13(encoding@0.1.13)':
     dependencies:
       '@alcalzone/ansi-tokenize': 0.3.0
       '@anthropic-ai/sandbox-runtime': 0.0.46
