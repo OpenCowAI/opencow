@@ -140,6 +140,8 @@ export class ProviderService {
           `Re-authentication failed for "${updated.name}": ${result.error ?? 'unknown reason'}`,
         )
       }
+    } else if (patch.credentialConfig) {
+      await this.syncStoredCredentialConfig(updated)
     }
 
     const current = this.deps.getProviderSettings()
@@ -419,6 +421,44 @@ export class ProviderService {
     patch: Partial<Omit<ProviderProfile['credential'], 'type'>>,
   ): ProviderProfile['credential'] {
     return { ...current, ...patch } as ProviderProfile['credential']
+  }
+
+  private async syncStoredCredentialConfig(profile: ProviderProfile): Promise<void> {
+    const adapter = this.tryBuildAdapter(profile)
+    if (!adapter?.getCredential) return
+
+    const current = await adapter.getCredential()
+    const apiKey = current?.apiKey?.trim()
+    if (!apiKey) return
+
+    let authParams: Record<string, unknown> | null = null
+    switch (profile.credential.type) {
+      case 'anthropic-compat-proxy':
+        authParams = {
+          apiKey,
+          baseUrl: profile.credential.baseUrl,
+          authStyle: profile.credential.authStyle,
+        }
+        break
+      case 'openai-compat-proxy':
+        authParams = {
+          apiKey,
+          baseUrl: profile.credential.baseUrl,
+        }
+        break
+      case 'claude-subscription':
+      case 'anthropic-api':
+      case 'openai-direct':
+      case 'gemini':
+        return
+    }
+
+    const result = await adapter.authenticate(authParams)
+    if (!result.authenticated) {
+      throw new Error(
+        `Credential configuration update failed for "${profile.name}": ${result.error ?? 'unknown reason'}`,
+      )
+    }
   }
 
   private resolveProtocol(profile: ProviderProfile): 'anthropic' | 'openai' | 'gemini' {
