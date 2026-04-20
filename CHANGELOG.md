@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.4.2] - 2026-04-21
+
+### Changed
+- Bumped `@opencow-ai/opencow-agent-sdk` to `^0.1.13` to pick up upstream SDK fixes and improvements
+
+### Fixed
+- Provider base URL edits are now synced back to the stored credential so subsequent sessions use the updated endpoint
+
 ## [0.4.1] - 2026-04-20
 
 ### Fixed
