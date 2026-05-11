@@ -11,6 +11,7 @@ import { selectIssue, deleteIssue } from '../../actions/issueActions'
 import { cn } from '../../lib/utils'
 import { IssueStatusIcon, IssuePriorityIcon } from '../IssuesView/IssueIcons'
 import { IssueFormModal } from '../IssueForm/IssueFormModal'
+import { ConfirmDialog } from '../ui/confirm-dialog'
 import { PillDropdown, PILL_TRIGGER } from '../ui/PillDropdown'
 import { Tooltip } from '../ui/Tooltip'
 import { SessionPanel } from './SessionPanel/SessionPanel'
@@ -49,61 +50,10 @@ const PRIORITY_LABEL_KEYS: Record<IssuePriority, string> = {
   low: 'detail.priorityOptions.low'
 }
 
-function DeleteConfirmModal({
-  title,
-  onConfirm,
-  onCancel
-}: {
-  title: string
-  onConfirm: () => void
-  onCancel: () => void
-}): React.JSX.Element {
-  const cancelRef = useRef<HTMLButtonElement>(null)
-
-  useEffect(() => {
-    cancelRef.current?.focus()
-  }, [])
-
-  useEffect(() => {
-    const handleKey = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape') onCancel()
-    }
-    document.addEventListener('keydown', handleKey)
-    return () => document.removeEventListener('keydown', handleKey)
-  }, [onCancel])
-
-  return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
-      role="dialog"
-      aria-modal="true"
-      aria-label="Confirm delete"
-      onClick={(e) => { if (e.target === e.currentTarget) onCancel() }}
-      style={{ overscrollBehavior: 'contain' }}
-    >
-      <div className="bg-[hsl(var(--background))] border border-[hsl(var(--border))] rounded-lg shadow-lg p-4 max-w-sm mx-4">
-        <p className="text-sm text-[hsl(var(--foreground))] mb-3">
-          Delete &quot;{title}&quot;? This cannot be undone.
-        </p>
-        <div className="flex justify-end gap-2">
-          <button
-            ref={cancelRef}
-            onClick={onCancel}
-            className="px-3 py-1.5 text-xs rounded-md text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] hover:bg-[hsl(var(--foreground)/0.04)] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--ring))]"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={onConfirm}
-            className="px-3 py-1.5 text-xs rounded-md bg-red-600 text-white hover:bg-red-700 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500"
-          >
-            Delete
-          </button>
-        </div>
-      </div>
-    </div>
-  )
-}
+// `DeleteConfirmModal` was retired in favor of the shared `<ConfirmDialog>`
+// component — same affordance, plus enter/exit animations, focus trap,
+// AlertTriangle icon, and the `destructive` variant styling, all of
+// which the hand-rolled version was missing.
 
 function IssueImageGallery({ images }: { images: import('@shared/types').IssueImage[] }): React.JSX.Element {
   const [lightboxIdx, setLightboxIdx] = useState<number | null>(null)
@@ -503,6 +453,15 @@ export function IssueDetailView({ issueId, onClose, onNavigateToIssue }: IssueDe
               <span className="invisible p-1.5" aria-hidden="true"><Trash2 className="w-3.5 h-3.5" /></span>
             </>
           )}
+          {/* Vertical separator — visually splits the row-action cluster
+              (edit / delete) from the panel-level close action.  `mx-1`
+              adds 4 px on each side on top of the parent's `gap-1`, so
+              the divider gets ~8 px breathing room and reads as an
+              intentional rule rather than crowding the X button. */}
+          <span
+            aria-hidden="true"
+            className="w-px h-3 mx-1 bg-[hsl(var(--border)/0.6)]"
+          />
           <Tooltip content={t('detail.closeDetailPanel')} position="bottom" align="end">
             <button
               onClick={() => onClose ? onClose() : selectIssue(null)}
@@ -800,13 +759,35 @@ export function IssueDetailView({ issueId, onClose, onNavigateToIssue }: IssueDe
         </div>
       </div>
 
-      {/* Edit modal */}
-      {showEditModal && issue && <IssueFormModal issueId={issue.id} defaultProjectId={issue.projectId} onClose={() => setShowEditModal(false)} />}
+      {/* Edit modal — raise above the popover host's `z-[100]` when
+          IssueDetailView is rendered inside `IssuePreviewOverlay`
+          (`isStandalone === true`).  In the inline-panel use case the
+          modal's default `z-50` is fine. */}
+      {showEditModal && issue && (
+        <IssueFormModal
+          issueId={issue.id}
+          defaultProjectId={issue.projectId}
+          onClose={() => setShowEditModal(false)}
+          zIndex={isStandalone ? 180 : undefined}
+        />
+      )}
 
-      {/* Delete confirmation */}
-      {confirmDelete && issue && (
-        <DeleteConfirmModal
-          title={issue.title}
+      {/* Delete confirmation.
+          Always-mounted so `<ConfirmDialog>` can drive its own
+          enter/exit animation lifecycle off `open` — conditional
+          rendering would unmount the dialog the instant `open` flipped
+          to false, killing the exit animation.
+          z-stack note: ConfirmDialog uses `z-[100]` internally, same
+          as `DetailPreviewOverlay`'s panel.  Inside the popover's
+          stacking context the dialog is rendered AFTER popover content
+          (the user has to open it from within the panel), so DOM order
+          puts it on top — no `zIndex` override needed. */}
+      {issue && (
+        <ConfirmDialog
+          open={confirmDelete}
+          title={t('detail.deleteIssue')}
+          message={t('deleteIssueConfirm', { title: issue.title })}
+          variant="destructive"
           onConfirm={handleDelete}
           onCancel={() => setConfirmDelete(false)}
         />

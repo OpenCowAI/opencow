@@ -1,8 +1,20 @@
 {
   "title": "Schedule",
+  "subtitle": "Recurring runs, one-shot timers, and event triggers for your agents.",
   "newSchedule": "New Schedule",
-  "noSchedules": "No schedules yet",
-  "noSchedulesHint": "Create a schedule to automate Agent tasks",
+  "emptyState": {
+    "noneYet": {
+      "title": "No schedules yet",
+      "subtitle": "Set up a recurring run, a one-shot timer, or an event-driven trigger to let your agents work on autopilot.",
+      "createCta": "Create schedule",
+      "aiCta": "Or describe it to AI"
+    },
+    "filtered": {
+      "title": "No schedules in this filter",
+      "subtitle": "Try clearing the project filter to see schedules from every project.",
+      "clearCta": "Clear filter"
+    }
+  },
   "active": "Active",
   "paused": "Paused",
   "pipelines": "Pipelines",
@@ -34,8 +46,10 @@
     "projectLabel": "Project",
     "anyProject": "Any project",
     "selectProject": "Select project",
-    "promptTemplate": "Prompt template",
+    "promptTemplate": "User question",
+    "promptTabsAria": "Prompt editor tabs",
     "systemPrompt": "System Prompt",
+    "systemPromptOptional": "(optional)",
     "systemPromptPlaceholder": "Optional system behavior guidance for scheduled session.",
     "variableHint": "Supports {{date}} {{project}} variables",
     "types": {
@@ -111,6 +125,18 @@
     "lastResult": "Last result",
     "todayStats": "Today's stats",
     "recentErrors": "Recent errors"
+  },
+  "tooltips": {
+    "project": "Specify the project associated with this Schedule.\n\nOnce selected:\n· The Agent will execute within the project directory\n· Context injections (e.g. Git changes, Issue list) will be automatically scoped to this project\n· Leave unselected for a global task with no project context",
+    "contextInjections": "Before running the Agent, automatically append selected project information to the end of the Prompt.\n\nThis allows the Agent to provide more precise analysis based on the actual state of the project, rather than generic responses.",
+    "injections": {
+      "gitChanges24h": "Inject a summary of all file changes from the past 24 hours (git diff --stat) into the Prompt.\nIdeal for: auto-generating daily \"what changed today\" progress reports.",
+      "gitLogWeek": "Inject this week's commit history (git log --oneline) into the Prompt.\nIdeal for: weekly reports, letting the Agent automatically summarize the week's development progress.",
+      "openIssues": "Inject the list of all open issues in the project into the Prompt.\nIdeal for: letting the Agent prioritize or plan based on the actual to-do list.",
+      "lastResult": "Inject the output from this Schedule's last execution into the Prompt.\nIdeal for: continuous tracking tasks, letting the Agent build on previous results.",
+      "todayStats": "Inject today's statistics (session count, issues completed, etc.) into the Prompt.\nIdeal for: end-of-day reviews, quickly summarizing the day's workload.",
+      "recentErrors": "Inject error messages from recent sessions into the Prompt.\nIdeal for: periodic health checks, letting the Agent automatically analyze and suggest fixes."
+    }
   },
   "detail": {
     "notFound": "Schedule not found",

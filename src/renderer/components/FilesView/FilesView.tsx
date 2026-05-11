@@ -132,7 +132,7 @@ function IDELayout({
         minSize="0%"
       >
         <div className="h-full flex flex-col min-w-0">
-          <EditorTabs projectId={projectId} projectPath={projectPath} rightSafeInset={12} />
+          <EditorTabs projectId={projectId} projectPath={projectPath} />
           <div className="flex-1 min-h-0">
             <EditorPane projectPath={projectPath} projectId={projectId} />
           </div>

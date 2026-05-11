@@ -141,5 +141,10 @@
     "timeMinutesAgo": "{{count}}m ago",
     "timeHoursAgo": "{{count}}h ago",
     "timeDaysAgo": "{{count}}d ago"
+  },
+  "timePicker": {
+    "hour": "Hour",
+    "minute": "Min",
+    "ariaLabel": "Pick time"
   }
 }

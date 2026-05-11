@@ -3403,7 +3403,12 @@ export interface ManagedSessionInfo extends SessionSnapshot {
  *
  * - `project`     : bind to a known project by stable projectId
  * - `global`      : run from user home (~)
- * - `custom-path` : explicit filesystem path (internal/system callers only)
+ * - `custom-path` : explicit filesystem path.  Accepted from any caller
+ *                   (renderer included), but the main-side resolver
+ *                   re-validates that the path is absolute, exists, and
+ *                   is a directory — so it should only be constructed
+ *                   from trusted sources such as a native directory
+ *                   picker, never from free-text user input.
  */
 export type SessionWorkspaceInput =
   | { scope: 'project'; projectId: string }
@@ -3413,8 +3418,10 @@ export type SessionWorkspaceInput =
 /**
  * Workspace selector exposed in user-facing settings.
  *
- * `custom-path` is intentionally excluded — it is reserved for internal/system
- * callers and must not be user-configurable.
+ * `custom-path` is intentionally excluded — settings forms must bind
+ * to a stable project or fall back to global, never a free-text path.
+ * (The chat folder picker uses `SessionWorkspaceInput` directly and
+ * resolves its path through the native directory dialog.)
  */
 export type UserConfigurableWorkspaceInput =
   | { scope: 'project'; projectId: string }

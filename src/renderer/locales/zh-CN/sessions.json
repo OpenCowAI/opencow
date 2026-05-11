@@ -2,10 +2,10 @@
   "agentSidebar": {
     "newChat": "新建对话",
     "newChatAria": "新建对话",
-    "newConversation": "新的对话",
+    "newConversation": "新对话",
     "claudeCapabilities": "能力",
     "openCapabilities": "打开能力",
-    "sessions": "会话",
+    "sessions": "历史会话",
     "noSessionsYet": "暂无会话",
     "expand": "展开侧栏",
     "collapse": "收起侧栏",
@@ -40,6 +40,12 @@
       "findBugs": "查找潜在 Bug",
       "suggestImprovements": "建议改进方案"
     }
+  },
+  "chatFolder": {
+    "home": "Home",
+    "triggerAria": "切换对话工作目录",
+    "useHome": "使用默认目录（Home）",
+    "chooseDifferent": "选择其他文件夹…"
   },
   "capabilities": {
     "loadingCapabilities": "加载能力中…",
@@ -328,6 +334,10 @@
     "viewingArchived": "正在查看已归档会话（只读）",
     "backToCurrent": "返回当前会话"
   },
+  "userMessageCollapse": {
+    "showMore": "展开",
+    "showLess": "收起"
+  },
   "sessionInput": {
     "placeholder": "输入消息或附加文件…",
     "inputAria": "向 Claude Code 会话发送消息",
@@ -401,7 +411,11 @@
   "notes": {
     "sentToChat": "已发送到对话",
     "notesSentToChat": "{{count}} 条笔记已发送到对话",
-    "switchToChat": "切换到对话"
+    "switchToChat": "切换到对话",
+    "empty": {
+      "title": "还没有笔记",
+      "subtitle": "在查看会话时，随手记下问题或上下文。"
+    }
   },
   "artifacts": {
     "unstar": "取消收藏",

@@ -15,10 +15,7 @@ import {
   SettingOptionCardGroup,
   type SettingOptionCardSpec,
 } from '@/components/ui/SettingOptionCards'
-import {
-  ChatLayoutPreview,
-  TopTabPreview,
-} from './previews/GeneralSettingPreviews'
+import { TopTabPreview } from './previews/GeneralSettingPreviews'
 
 interface ProjectGeneralSettingsPanelProps {
   projectId: string

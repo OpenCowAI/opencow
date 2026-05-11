@@ -6,7 +6,6 @@ import { DEFAULT_PROMPT_TEMPLATE } from './constants'
 import type { FreqPreset } from './constants'
 import type {
   FrequencyType,
-  ActionType,
   ContextInjectionType,
   Schedule,
   ScheduleTrigger,
@@ -39,12 +38,9 @@ export interface FormState {
   description: string
   projectId: string | null
 
-  triggerMode: 'time' | 'event'
   timeTrigger: TimeFreqState
-  eventTrigger: { matcherType: string }
 
   action: {
-    type: ActionType
     promptTemplate: string
     systemPrompt: string
     contextInjections: ContextInjectionType[]
@@ -62,7 +58,6 @@ export type FormAction =
   | { type: 'SET_NAME';             payload: string }
   | { type: 'SET_DESCRIPTION';      payload: string }
   | { type: 'SET_PROJECT';          payload: string | null }
-  | { type: 'SET_TRIGGER_MODE';     payload: 'time' | 'event' }
   | { type: 'APPLY_FREQ_PRESET';    payload: FreqPreset }
   | { type: 'SET_FREQ_TYPE';        payload: FrequencyType }
   | { type: 'SET_INTERVAL_MINUTES'; payload: number }
@@ -71,8 +66,6 @@ export type FormAction =
   | { type: 'SET_CRON';             payload: string }
   /** `once` mode: datetime-local string, e.g. "2026-03-01T14:30" */
   | { type: 'SET_EXECUTE_AT';       payload: string }
-  | { type: 'SET_EVENT_MATCHER';    payload: string }
-  | { type: 'SET_ACTION_TYPE';      payload: ActionType }
   | { type: 'SET_PROMPT';           payload: string }
   | { type: 'SET_SYSTEM_PROMPT';    payload: string }
   | { type: 'TOGGLE_INJECTION';     payload: ContextInjectionType }
@@ -97,11 +90,8 @@ const INITIAL_STATE: FormState = {
   name: '',
   description: '',
   projectId: null,
-  triggerMode: 'time',
   timeTrigger: INITIAL_TIME_TRIGGER,
-  eventTrigger: { matcherType: 'session:idle' },
   action: {
-    type: 'start_session',
     promptTemplate: DEFAULT_PROMPT_TEMPLATE,
     systemPrompt: '',
     contextInjections: [],
@@ -118,10 +108,8 @@ export interface ScheduleFormDefaultValues {
   name?: string
   description?: string
   projectId?: string | null
-  triggerMode?: 'time' | 'event'
   timeTrigger?: Partial<TimeFreqState>
   action?: {
-    type?: ActionType
     promptTemplate?: string
     systemPrompt?: string
     contextInjections?: ContextInjectionType[]
@@ -134,14 +122,12 @@ function applyDefaultValues(base: FormState, dv: ScheduleFormDefaultValues): For
     name:        dv.name        ?? base.name,
     description: dv.description ?? base.description,
     projectId:   dv.projectId !== undefined ? dv.projectId : base.projectId,
-    triggerMode:  dv.triggerMode ?? base.triggerMode,
     timeTrigger: dv.timeTrigger
       ? { ...base.timeTrigger, ...dv.timeTrigger, selectedPresetLabel: null }
       : base.timeTrigger,
     action: dv.action
       ? {
           ...base.action,
-          type:              dv.action.type              ?? base.action.type,
           promptTemplate:    dv.action.promptTemplate    ?? base.action.promptTemplate,
           systemPrompt:      dv.action.systemPrompt      ?? base.action.systemPrompt,
           contextInjections: dv.action.contextInjections ?? base.action.contextInjections,
@@ -159,8 +145,7 @@ function applyDefaultValues(base: FormState, dv: ScheduleFormDefaultValues): For
  * that ScheduleFormModal can pre-fill all fields when opened in edit mode.
  */
 export function scheduleToFormState(schedule: Schedule): FormState {
-  const t       = schedule.trigger
-  const isEvent = !!t.event
+  const t = schedule.trigger
 
   // datetime-local inputs expect "YYYY-MM-DDTHH:mm" (local time, no seconds)
   const executeAt = t.time?.executeAt
@@ -181,11 +166,8 @@ export function scheduleToFormState(schedule: Schedule): FormState {
     name:         schedule.name,
     description:  schedule.description ?? '',
     projectId:    schedule.action.projectId ?? null,
-    triggerMode:  isEvent ? 'event' : 'time',
     timeTrigger,
-    eventTrigger: { matcherType: t.event?.matcherType ?? 'session:idle' },
     action: {
-      type:              schedule.action.type,
       promptTemplate:    schedule.action.session?.promptTemplate ?? DEFAULT_PROMPT_TEMPLATE,
       systemPrompt:      schedule.action.session?.systemPrompt ?? '',
       contextInjections: schedule.action.contextInjections ?? [],
@@ -204,7 +186,6 @@ function reducer(state: FormState, action: FormAction): FormState {
     case 'SET_NAME':        return { ...state, name: action.payload, error: null }
     case 'SET_DESCRIPTION': return { ...state, description: action.payload }
     case 'SET_PROJECT':     return { ...state, projectId: action.payload }
-    case 'SET_TRIGGER_MODE':return { ...state, triggerMode: action.payload }
 
     case 'APPLY_FREQ_PRESET': {
       const p = action.payload
@@ -248,12 +229,6 @@ function reducer(state: FormState, action: FormAction): FormState {
     case 'SET_EXECUTE_AT':
       return { ...state, timeTrigger: { ...state.timeTrigger, executeAt: action.payload } }
 
-    case 'SET_EVENT_MATCHER':
-      return { ...state, eventTrigger: { matcherType: action.payload } }
-
-    case 'SET_ACTION_TYPE':
-      return { ...state, action: { ...state.action, type: action.payload } }
-
     case 'SET_PROMPT':
       return { ...state, action: { ...state.action, promptTemplate: action.payload } }
 
@@ -294,15 +269,6 @@ export function buildScheduleInput(state: FormState): CreateScheduleInput {
 }
 
 function buildTrigger(state: FormState): ScheduleTrigger {
-  if (state.triggerMode === 'event') {
-    return {
-      event: {
-        matcherType: state.eventTrigger.matcherType,
-        filter: state.projectId ? { projectId: state.projectId } : {},
-      },
-    }
-  }
-
   const t    = state.timeTrigger
   const base = {
     type:     t.freqType,
@@ -333,19 +299,16 @@ function buildTrigger(state: FormState): ScheduleTrigger {
 
 function buildAction(state: FormState): ScheduleAction {
   const { action, projectId } = state
-  const base: ScheduleAction = {
-    type:              action.type,
+  return {
+    type:              'start_session',
     projectId:         projectId ?? undefined,
     contextInjections: action.contextInjections.length > 0 ? action.contextInjections : undefined,
-  }
-  if (action.type === 'start_session' || action.type === 'resume_session') {
-    base.session = {
+    session: {
       promptTemplate: action.promptTemplate,
-      systemPrompt: action.systemPrompt.trim() || undefined,
+      systemPrompt:   action.systemPrompt.trim() || undefined,
       permissionMode: 'default',
-    }
+    },
   }
-  return base
 }
 
 // ---------------------------------------------------------------------------
@@ -449,7 +412,6 @@ export function useScheduleForm(initialSchedule?: Schedule, defaultValues?: Sche
 
   // `once` mode requires a future executeAt before the form is submittable
   const onceValid =
-    state.triggerMode !== 'time' ||
     state.timeTrigger.freqType !== 'once' ||
     (!!state.timeTrigger.executeAt && new Date(state.timeTrigger.executeAt) > new Date())
 

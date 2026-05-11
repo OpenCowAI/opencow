@@ -136,15 +136,23 @@ describe('SessionMessageList', () => {
     ].join('\n')
   }
 
-  it('renders user messages with ">" prefix', () => {
+  it('renders user messages as right-aligned chat bubbles', () => {
     render(
       <SessionMessageList
         sessionId="test-session"
         messages={[makeUserMsg(textBlocks('Fix the bug'))]}
       />
     )
-    expect(screen.getByText('Fix the bug')).toBeInTheDocument()
-    expect(screen.getByText('>')).toBeInTheDocument()
+    const text = screen.getByText('Fix the bug')
+    expect(text).toBeInTheDocument()
+    // The legacy "> " CLI prefix was retired in favor of a chat-bubble
+    // chip shared with the Chat view.  Verify the bubble wrapper is
+    // present: outer `flex justify-end` (right-aligned row) and inner
+    // `max-w-[80%]` bubble container.
+    const row = text.closest('[data-msg-role="user"]') as HTMLElement | null
+    expect(row).not.toBeNull()
+    expect(row!.className).toContain('justify-end')
+    expect(screen.queryByText('>')).toBeNull()
   })
 
   it('renders assistant messages with markdown', () => {

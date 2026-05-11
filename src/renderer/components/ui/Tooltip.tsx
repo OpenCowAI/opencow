@@ -141,8 +141,13 @@ export function Tooltip({
     >
       {children}
       {mounted && placement && createPortal(
+        // `z-[210]` keeps the tooltip above every other overlay in the app:
+        // DetailPreviewOverlay (`z-[150]`), popover-hosted form modals
+        // (`z-[180]`), and TimePicker/DateTimePicker popovers (`z-[199]`/
+        // `z-[200]`). Tooltips are transient hints — they should never be
+        // occluded by the surface they were summoned from.
         <span
-          className="pointer-events-none fixed z-[120]"
+          className="pointer-events-none fixed z-[210]"
           style={{
             top: placement.top,
             left: placement.left,

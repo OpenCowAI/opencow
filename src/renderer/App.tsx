@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useCallback, useDeferredValue, useEffect, useRef, useState } from 'react'
-import { Group, Panel, Separator, usePanelRef, type PanelSize } from 'react-resizable-panels'
+import { Group, Panel, Separator, usePanelRef } from 'react-resizable-panels'
 import { useAppBootstrap } from '@/hooks/useAppBootstrap'
 import { useAppStore } from '@/stores/appStore'
 import { useTerminalOverlayStore } from '@/stores/terminalOverlayStore'
@@ -44,25 +44,12 @@ const TERMINAL_ENTER_MS = 250
 /** Exit animation duration (ms) — snappy collapse */
 const TERMINAL_EXIT_MS = 180
 
-/** Left sidebar panel sizes.
+/** Left sidebar panel size.
  *
- * The expanded form is percentage-based so it scales with viewport. The
- * collapsed form uses an absolute pixel width so it consistently covers
- * the macOS traffic-light region (~78px from the window's left edge)
- * regardless of viewport size — at narrower windows a percentage-based
- * collapse would clip below the traffic lights, breaking the drag region.
+ * Absolute pixel width so it consistently covers the macOS traffic-light
+ * region (~78px from the window's left edge) regardless of viewport size.
  */
-const SIDEBAR_EXPANDED_DEFAULT_PCT = 15
-const SIDEBAR_EXPANDED_MIN_PCT = 12
-const SIDEBAR_EXPANDED_MAX_PCT = 25
 const SIDEBAR_COLLAPSED_PX = 80
-/** Tolerance (px) when comparing the current sidebar size against the collapsed target. */
-const SIDEBAR_COLLAPSE_GUARD_PX = 8
-
-/** Convert sidebar percentage values to explicit Panel size strings. */
-function sidebarPct(value: number): `${number}%` {
-  return `${value}%`
-}
 const SIDEBAR_COLLAPSED_SIZE = `${SIDEBAR_COLLAPSED_PX}px` as const
 
 /** Module-level memory: last user-dragged terminal height (persists across mount/unmount) */
@@ -236,7 +223,6 @@ function AppLayout(): React.JSX.Element {
   useThemeEffect()
 
   const appView = useAppStore((s) => s.appView)
-  const leftSidebarExpanded = useAppStore((s) => s.leftSidebarExpanded)
   const detailContext = useAppStore((s) => s.detailContext)
   const navigateToInbox = useAppStore((s) => s.navigateToInbox)
   const navigateToChatHome = useAppStore((s) => s.navigateToChatHome)
@@ -264,9 +250,7 @@ function AppLayout(): React.JSX.Element {
     (detailContext !== null &&
       detailContext.type !== 'issue' &&
       detailContext.type !== 'schedule')
-  const sidebarPanelRef = usePanelRef()
   const detailPanelRef = usePanelRef()
-  const lastSidebarExpandedSizeRef = useRef(SIDEBAR_EXPANDED_DEFAULT_PCT)
   const prevShowDetailRef = useRef(false)
   const prevDetailKindRef = useRef<string | null>(null)
 
@@ -289,40 +273,6 @@ function AppLayout(): React.JSX.Element {
     prevShowDetailRef.current = showDetail
     prevDetailKindRef.current = detailKind
   }, [showDetail, detailContext, detailPanelRef, isInbox, detailKind])
-
-  // Keep the left sidebar panel size in sync with the icon-only collapsed state.
-  const handleSidebarResize = useCallback(
-    (panelSize: PanelSize) => {
-      if (!leftSidebarExpanded) return
-      // Ignore size reports near the collapsed-pixel target (the panel can
-      // briefly settle to slightly different percentages depending on the
-      // viewport width).
-      if (panelSize.inPixels <= SIDEBAR_COLLAPSED_PX + SIDEBAR_COLLAPSE_GUARD_PX) return
-      if (panelSize.asPercentage < SIDEBAR_EXPANDED_DEFAULT_PCT) return
-      lastSidebarExpandedSizeRef.current = panelSize.asPercentage
-    },
-    [leftSidebarExpanded],
-  )
-
-  useEffect(() => {
-    const panel = sidebarPanelRef.current
-    if (!panel) return
-
-    if (!leftSidebarExpanded) {
-      const current = panel.getSize()
-      if (current.inPixels > SIDEBAR_COLLAPSED_PX + SIDEBAR_COLLAPSE_GUARD_PX) {
-        lastSidebarExpandedSizeRef.current = current.asPercentage
-      }
-      panel.resize(SIDEBAR_COLLAPSED_SIZE)
-      return
-    }
-
-    const target = Math.min(
-      SIDEBAR_EXPANDED_MAX_PCT,
-      Math.max(SIDEBAR_EXPANDED_DEFAULT_PCT, lastSidebarExpandedSizeRef.current),
-    )
-    panel.resize(target)
-  }, [leftSidebarExpanded, sidebarPanelRef])
 
   const isTerminalExiting = useTerminalOverlayStore((s) => s._terminalExiting)
   const isTerminalOpen = terminalOverlay !== null
@@ -361,16 +311,14 @@ function AppLayout(): React.JSX.Element {
       >
         <Panel
           id="sidebar"
-          panelRef={sidebarPanelRef}
-          defaultSize={sidebarPct(SIDEBAR_EXPANDED_DEFAULT_PCT)}
-          minSize={leftSidebarExpanded ? sidebarPct(SIDEBAR_EXPANDED_MIN_PCT) : SIDEBAR_COLLAPSED_SIZE}
-          maxSize={leftSidebarExpanded ? sidebarPct(SIDEBAR_EXPANDED_MAX_PCT) : SIDEBAR_COLLAPSED_SIZE}
-          onResize={handleSidebarResize}
+          defaultSize={SIDEBAR_COLLAPSED_SIZE}
+          minSize={SIDEBAR_COLLAPSED_SIZE}
+          maxSize={SIDEBAR_COLLAPSED_SIZE}
         >
           <Sidebar />
         </Panel>
 
-        <ResizeHandle disabled={!leftSidebarExpanded} />
+        <ResizeHandle disabled />
 
         <Panel id="main" minSize="20%">
           {isInbox ? (

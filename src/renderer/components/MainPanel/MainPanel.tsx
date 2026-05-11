@@ -325,7 +325,14 @@ export function MainPanel(): React.JSX.Element {
   const openFilesCount = useFileStore((s) =>
     projectId ? (s.openFilesByProject[projectId]?.length ?? 0) : 0,
   )
-  const hasOpenFiles = openFilesCount > 0
+  const editorCollapsed = useFileStore((s) =>
+    projectId ? (s.editorCollapsedByProject[projectId] ?? false) : false,
+  )
+  // The editor pane is visible only when there are tabs to render AND
+  // the user hasn't explicitly hidden it via the close-editor button.
+  // Separating "no tabs" from "user-hidden" lets the close button
+  // temporarily collapse the pane without losing the open-files list.
+  const hasOpenFiles = openFilesCount > 0 && !editorCollapsed
 
   // Editor panel: programmatically resize between 0% (hidden) and the open
   // target size. Layout-animated CSS smooths the flex-grow transition. Tree

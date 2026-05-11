@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { X } from 'lucide-react'
+import { PanelRightClose, X } from 'lucide-react'
 import { useFileStore } from '@/stores/fileStore'
 import { useGitStore } from '@/stores/gitStore'
 import { cn } from '@/lib/utils'
@@ -13,7 +13,12 @@ import { TabContextMenu, type TabContextMenuState } from './TabContextMenu'
 interface EditorTabsProps {
   projectId: string
   projectPath: string
-  /** Right-side reserved space to avoid overlap with floating mode switch. */
+  /**
+   * Right-side reserved space *additional* to the close-preview button.
+   * Callers that float their own controls (e.g. an editor mode switch)
+   * over the tab strip pass enough here so neither their control nor
+   * the close-preview button overlaps the rightmost tab.
+   */
   rightSafeInset?: number
 }
 
@@ -28,6 +33,17 @@ const EMPTY_OPEN_FILES: ReadonlyArray<{
   imageDataUrl: string | null
 }> = []
 
+// Close-preview affordance dimensions.  The floating button (positioned
+// absolutely) and the tab strip (`paddingRight`) need to agree on how
+// much space to reserve so tabs scroll *under* the button instead of
+// running into it.
+//
+// The container is wider than the visible chip (32 vs 36) so the icon
+// has comfortable horizontal whitespace on either side of the chip when
+// the chip glues to the card's right edge.
+const CLOSE_BUTTON_PX = 36
+const CLOSE_BUTTON_FADE_PX = 24
+
 export function EditorTabs({ projectId, projectPath, rightSafeInset = 0 }: EditorTabsProps): React.JSX.Element {
   const { t } = useTranslation('files')
   const openFiles = useFileStore((s) => s.openFilesByProject[projectId] ?? EMPTY_OPEN_FILES)
@@ -37,6 +53,7 @@ export function EditorTabs({ projectId, projectPath, rightSafeInset = 0 }: Edito
   const closeOtherFiles = useFileStore((s) => s.closeOtherFiles)
   const closeAllFiles = useFileStore((s) => s.closeAllFiles)
   const closeFilesToRight = useFileStore((s) => s.closeFilesToRight)
+  const collapseEditor = useFileStore((s) => s.collapseEditor)
   const gitSnapshot = useGitStore((s) => selectGitSnapshot(s, projectPath))
   const [contextMenu, setContextMenu] = useState<TabContextMenuState | null>(null)
 
@@ -53,6 +70,13 @@ export function EditorTabs({ projectId, projectPath, rightSafeInset = 0 }: Edito
 
   if (openFiles.length === 0) return <div className="h-9" />
 
+  // Total reserved width on the right edge — the close-preview button,
+  // its fade hint, plus whatever the caller asked for (e.g. an editor
+  // mode switch floating above the tab strip).  The tab strip pads by
+  // this much so the last tab can fully scroll into view without ending
+  // up permanently hidden under the button.
+  const reservedRightPx = CLOSE_BUTTON_PX + CLOSE_BUTTON_FADE_PX + rightSafeInset
+
   return (
     <div className="relative h-9 bg-[hsl(var(--muted)/0.2)]">
       <div
@@ -62,7 +86,7 @@ export function EditorTabs({ projectId, projectPath, rightSafeInset = 0 }: Edito
         className="flex items-center h-full overflow-x-auto no-scrollbar"
         role="tablist"
         aria-label={t('editor.openFilesAria')}
-        style={{ paddingRight: rightSafeInset > 0 ? `${rightSafeInset}px` : undefined }}
+        style={{ paddingRight: `${reservedRightPx}px` }}
       >
         {openFiles.map((file) => {
           const isActive = file.path === activeFilePath
@@ -144,13 +168,64 @@ export function EditorTabs({ projectId, projectPath, rightSafeInset = 0 }: Edito
           )
         })}
       </div>
-      {rightSafeInset > 0 && (
-        <div
-          aria-hidden="true"
-          className="absolute top-0 right-0 h-full pointer-events-none bg-gradient-to-l from-[hsl(var(--muted)/0.2)] to-transparent"
-          style={{ width: `${Math.max(16, rightSafeInset)}px` }}
-        />
-      )}
+
+      {/* Soft fade between the rightmost tab and the close-preview
+          button so long tab strips don't visually crash into the button.
+          Sits flush to the button's left edge; the strip's
+          `paddingRight` guarantees the fade is wide enough that the last
+          tab can still scroll fully into view. */}
+      <div
+        aria-hidden="true"
+        className="absolute top-0 h-full pointer-events-none bg-gradient-to-l from-[hsl(var(--muted)/0.2)] to-transparent"
+        style={{
+          right: `${CLOSE_BUTTON_PX + rightSafeInset}px`,
+          width: `${CLOSE_BUTTON_FADE_PX}px`,
+        }}
+      />
+
+      {/* Close editor preview — collapses the entire editor pane while
+          leaving open tabs intact.  Lives in absolute position with a
+          *fully opaque* background that mimics the strip's effective
+          color (a `--muted/0.2` tint over the editor card surface).
+          Tabs scrolling past the button are completely hidden, instead
+          of bleeding through a semi-transparent fill — which used to
+          produce a visible "crossing" artifact when many tabs were
+          open. */}
+      <div
+        className="absolute top-0 h-full flex items-center justify-center"
+        style={{
+          right: `${rightSafeInset}px`,
+          width: `${CLOSE_BUTTON_PX}px`,
+          // Stacked backgrounds: an opaque `--card` base layer (occludes
+          // scrolling tabs) plus a `--muted/0.2` tint on top (matches
+          // the strip's visual color so the button area looks like a
+          // seamless extension of the strip, not a different surface).
+          background:
+            'linear-gradient(hsl(var(--muted) / 0.2), hsl(var(--muted) / 0.2)), hsl(var(--card))',
+        }}
+      >
+        <button
+          type="button"
+          onClick={() => collapseEditor(projectId)}
+          aria-label={t('editor.closeEditorPreview')}
+          title={t('editor.closeEditorPreview')}
+          className={cn(
+            // Chip is a touch wider than the icon needs so the hit area
+            // reads as a deliberate control rather than a cramped square.
+            'inline-flex items-center justify-center w-7 h-6 rounded-md',
+            // No own bg — inherits the container's opaque strip-color so
+            // it reads as part of the strip; hover/focus adds an ink
+            // wash on top of that opaque surface, same pattern as a tab
+            // pill's hover.
+            'text-[hsl(var(--muted-foreground))]',
+            'hover:bg-[hsl(var(--foreground)/0.06)] hover:text-[hsl(var(--foreground))]',
+            'transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[hsl(var(--ring))]',
+          )}
+        >
+          <PanelRightClose className="h-3.5 w-3.5" aria-hidden="true" />
+        </button>
+      </div>
+
       {contextMenu && contextMeta && (
         <TabContextMenu
           state={contextMenu}

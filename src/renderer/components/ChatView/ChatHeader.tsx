@@ -353,7 +353,7 @@ export function ChatHeader({
           }}
         >
           <div className="flex items-center justify-between px-2 pb-1.5">
-            <span className="text-[11px] font-semibold uppercase tracking-wider text-[hsl(var(--muted-foreground)/0.7)]">
+            <span className="text-xs font-semibold uppercase tracking-wider text-[hsl(var(--muted-foreground)/0.7)]">
               {t('agentSidebar.sessions')}
             </span>
             {showProjectFilter && (

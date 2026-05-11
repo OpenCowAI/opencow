@@ -61,44 +61,44 @@ export const CONTEXT_INJECTION_OPTIONS: {
   value: ContextInjectionType
   labelKey: string
   label: string
-  /** Short tooltip: what it injects + a one-line usage example. */
-  tooltip: string
+  /** i18n key for the per-option tooltip body. */
+  tooltipKey: string
 }[] = [
   {
     value: 'git_diff_24h',
     labelKey: 'contextOptions.gitChanges24h',
     label: 'Git changes (24h)',
-    tooltip: 'Inject a summary of all file changes from the past 24 hours (git diff --stat) into the Prompt.\nIdeal for: auto-generating daily "what changed today" progress reports.',
+    tooltipKey: 'tooltips.injections.gitChanges24h',
   },
   {
     value: 'git_log_week',
     labelKey: 'contextOptions.gitLogWeek',
     label: 'Git log (week)',
-    tooltip: 'Inject this week\'s commit history (git log --oneline) into the Prompt.\nIdeal for: weekly reports, letting the Agent automatically summarize the week\'s development progress.',
+    tooltipKey: 'tooltips.injections.gitLogWeek',
   },
   {
     value: 'open_issues',
     labelKey: 'contextOptions.openIssues',
     label: 'Open issues',
-    tooltip: 'Inject the list of all open issues in the project into the Prompt.\nIdeal for: letting the Agent prioritize or plan based on the actual to-do list.',
+    tooltipKey: 'tooltips.injections.openIssues',
   },
   {
     value: 'last_execution_result',
     labelKey: 'contextOptions.lastResult',
     label: 'Last result',
-    tooltip: 'Inject the output from this Schedule\'s last execution into the Prompt.\nIdeal for: continuous tracking tasks, letting the Agent build on previous results.',
+    tooltipKey: 'tooltips.injections.lastResult',
   },
   {
     value: 'today_stats',
     labelKey: 'contextOptions.todayStats',
     label: "Today's stats",
-    tooltip: 'Inject today\'s statistics (session count, issues completed, etc.) into the Prompt.\nIdeal for: end-of-day reviews, quickly summarizing the day\'s workload.',
+    tooltipKey: 'tooltips.injections.todayStats',
   },
   {
     value: 'recent_errors',
     labelKey: 'contextOptions.recentErrors',
     label: 'Recent errors',
-    tooltip: 'Inject error messages from recent sessions into the Prompt.\nIdeal for: periodic health checks, letting the Agent automatically analyze and suggest fixes.',
+    tooltipKey: 'tooltips.injections.recentErrors',
   },
 ]
 

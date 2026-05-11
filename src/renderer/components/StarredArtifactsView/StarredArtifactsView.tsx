@@ -19,6 +19,7 @@ import type { Artifact, FileViewerStarContext } from '@shared/types'
 import { IssuePreviewOverlay } from './IssuePreviewOverlay'
 import { getAppAPI } from '@/windowAPI'
 import { useDialogState } from '@/hooks/useModalAnimation'
+import { useInView } from '@/hooks/useInView'
 import { wrapHtmlForSafePreview } from '@/lib/htmlSandbox'
 import { FileViewerStarButton } from '@/components/ui/FileViewerStarButton'
 // `MarkdownContent` is imported eagerly: it's used as the thumbnail
@@ -30,26 +31,24 @@ import { FileViewerStarButton } from '@/components/ui/FileViewerStarButton'
 // flash that scroll-and-return would otherwise be needed to clear.
 import { MarkdownContent } from '@/components/ui/MarkdownContent'
 
-// The heavy renderers below are still lazy because they only show up
-// inside the full-screen `StarredArtifactViewerDialog` — paid for once
-// when the dialog opens, not 60 times on the card grid.
-//
-// Module factories are extracted so the dialog can `preload()` the chunks
-// in parallel with the content-loading IPC.  Without this, the lazy import
-// only kicks off *after* `get-artifact-content` / `read-file-content`
-// resolves and the preview branch finally mounts — stacking the chunk-load
-// latency on top of the IPC and producing a "Loading preview…" Suspense
-// fallback that resolves only as the dialog is closing.  Bundlers
-// deduplicate in-flight import promises, so calling these factories twice
-// resolves to the same module instance.
-const loadMarkdownPreview = (): Promise<typeof import('@/components/ui/MarkdownPreviewWithToc')> =>
-  import('@/components/ui/MarkdownPreviewWithToc')
+// MarkdownPreviewWithToc is eager: every heavy transitive dep it needs
+// (`react-markdown`, `remark-gfm`, `rehype-highlight`, `rehype-raw`,
+// `MarkdownContent` itself) is *already* eagerly imported above for the
+// card grid, so splitting it into its own lazy chunk saved only a few KB
+// of its own component code while costing a full chunk-load round-trip
+// on the very first dialog open — long enough that the "加载预览中…"
+// Suspense fallback would persist until the dialog was closing.
+// Preloading via `useEffect` could narrow the gap but not close it.
+import { MarkdownPreviewWithToc } from '@/components/ui/MarkdownPreviewWithToc'
+
+// CodeViewer stays lazy: it pulls in Monaco, which is a genuine multi-MB
+// chunk that pays for itself only when the user actually inspects source.
+// We expose the module factory so the dialog can warm the chunk in
+// parallel with its content-loading IPC.  Bundlers deduplicate in-flight
+// import promises, so calling this twice resolves to the same instance.
 const loadCodeViewer = (): Promise<typeof import('@/components/ui/code-viewer')> =>
   import('@/components/ui/code-viewer')
 
-const MarkdownPreviewWithToc = lazy(() =>
-  loadMarkdownPreview().then((m) => ({ default: m.MarkdownPreviewWithToc }))
-)
 const CodeViewer = lazy(() =>
   loadCodeViewer().then((m) => ({ default: m.CodeViewer }))
 )
@@ -75,82 +74,6 @@ interface DateBucket {
   /** Latest artifact timestamp in this bucket — used to sort buckets descending. */
   latest: number
   artifacts: Artifact[]
-}
-
-// ─── useInView ──────────────────────────────────────────────────────────────
-
-/**
- * One-shot in-view hook used to defer expensive thumbnail rendering
- * until a card is about to scroll into the viewport. Once `inView`
- * flips to true it stays true, so heavy children don't re-mount as
- * the card leaves and re-enters.
- *
- * Strategy:
- *   1. Synchronously check `getBoundingClientRect()` in the ref
- *      callback (post-commit, layout is complete). If the element
- *      sits inside the viewport (plus `rootMarginPx` pre-warm band),
- *      flip `inView` straight away — `IntersectionObserver`'s async
- *      initial callback can miss this on the first paint after mount,
- *      which made cards above the fold stuck on the loading state
- *      until the user manually scrolled.
- *   2. Only when the initial check says "off-screen" do we install
- *      an IntersectionObserver to wait for the user to scroll there.
- *
- * 200 px of pre-warm gives roughly one screenful below the viewport
- * so card content is ready by the time the user reaches it.
- */
-const IN_VIEW_PRE_WARM_PX = 200
-
-function useInView(rootMarginPx = IN_VIEW_PRE_WARM_PX): {
-  ref: (node: Element | null) => void
-  inView: boolean
-} {
-  const [inView, setInView] = useState(false)
-  const observerRef = useRef<IntersectionObserver | null>(null)
-  // Once we've flipped to in-view we never go back; this guard keeps
-  // late ref re-attachments from re-creating the observer.
-  const settledRef = useRef(false)
-
-  const ref = useCallback(
-    (node: Element | null) => {
-      observerRef.current?.disconnect()
-      observerRef.current = null
-      if (!node || settledRef.current) return
-
-      // Synchronous initial probe. Layout is settled at the point a
-      // ref callback fires, so `getBoundingClientRect` returns
-      // authoritative numbers.
-      const rect = node.getBoundingClientRect()
-      const inViewport =
-        rect.bottom > -rootMarginPx &&
-        rect.top < window.innerHeight + rootMarginPx
-      if (inViewport) {
-        settledRef.current = true
-        setInView(true)
-        return
-      }
-
-      // Off-screen → wait for the user to scroll close enough.
-      const obs = new IntersectionObserver(
-        (entries) => {
-          for (const e of entries) {
-            if (e.isIntersecting) {
-              settledRef.current = true
-              setInView(true)
-              obs.disconnect()
-              return
-            }
-          }
-        },
-        { rootMargin: `${rootMarginPx}px` },
-      )
-      obs.observe(node)
-      observerRef.current = obs
-    },
-    [rootMarginPx],
-  )
-
-  return { ref, inView }
 }
 
 // ─── Date bucketing ─────────────────────────────────────────────────────────
@@ -719,7 +642,10 @@ const StarredArtifactCard = memo(function StarredArtifactCard({
             </div>
           ) : (
             <div className="relative mt-1">
-              <div className="px-2.5 py-1.5 h-24 overflow-hidden" aria-label={isDiagram ? t('starred.diagramPreview') : t('starred.contentPreview')}>
+              <div
+                className="artifact-card-preview px-2.5 py-1.5 h-24 overflow-hidden"
+                aria-label={isDiagram ? t('starred.diagramPreview') : t('starred.contentPreview')}
+              >
                 {inView && (
                   isDiagram ? (
                     <DiagramThumbnail code={preview!} />
@@ -729,7 +655,7 @@ const StarredArtifactCard = memo(function StarredArtifactCard({
                     // renders synchronously without a fallback flash.
                     <MarkdownContent content={preview!} />
                   ) : (
-                    <pre className="text-[10px] font-mono text-[hsl(var(--muted-foreground))] whitespace-pre-wrap break-all leading-relaxed">
+                    <pre className="text-[9px] font-mono text-[hsl(var(--muted-foreground))] whitespace-pre-wrap break-all leading-snug">
                       {safeSlice(preview!, 0, 500)}
                     </pre>
                   )
@@ -802,13 +728,12 @@ const StarredArtifactViewerDialog = memo(function StarredArtifactViewerDialog({
     || artifact.fileExtension === '.html' || artifact.fileExtension === '.htm'
   const language = languageFromMimeType(artifact.mimeType)
 
-  // Warm the lazy preview chunks in parallel with the content-loading IPC.
-  // The preview branch only mounts after `loading` flips to false, so without
-  // preloading the lazy chunk's network/parse cost would stack on top of the
-  // IPC instead of running alongside it — exactly the "Loading preview…"
-  // flash users see on first open of an artifact.
+  // Warm the lazy CodeViewer (Monaco) chunk in parallel with the
+  // content-loading IPC.  The source-view branch only mounts after
+  // `loading` flips to false, so without this warm-up the Monaco chunk
+  // would start downloading only when the user flips to Source view,
+  // stacking its multi-MB cost on top of the IPC.
   useEffect(() => {
-    void loadMarkdownPreview()
     void loadCodeViewer()
   }, [])
 
@@ -1015,9 +940,7 @@ const StarredArtifactViewerDialog = memo(function StarredArtifactViewerDialog({
           <MermaidBlock code={content!} />
         </div>
       ) : viewMode === 'preview' && isMarkdown ? (
-        <Suspense fallback={<LoadingFallback label={t('starred.loadingPreview')} />}>
-          <MarkdownPreviewWithToc content={content!} className="h-[82vh]" />
-        </Suspense>
+        <MarkdownPreviewWithToc content={content!} className="h-[82vh]" />
       ) : viewMode === 'preview' && isHtml ? (
         <iframe
           srcDoc={wrapHtmlForSafePreview(content!)}

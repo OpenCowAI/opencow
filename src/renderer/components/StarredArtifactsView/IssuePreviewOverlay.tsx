@@ -1,104 +1,76 @@
 // SPDX-License-Identifier: Apache-2.0
 
-import { memo, useState, useCallback, useEffect, useRef } from 'react'
+import { memo, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { createPortal } from 'react-dom'
-import { cn } from '@/lib/utils'
-import { surfaceProps } from '@/lib/surface'
-import { useExitAnimation } from '@/hooks/useModalAnimation'
+import { DetailPreviewOverlay } from '@/components/ui/DetailPreviewOverlay'
 import { IssueDetailView } from '../DetailPanel/IssueDetailView'
 
 // ─── IssuePreviewOverlay ────────────────────────────────────────────────────
 
 interface IssuePreviewOverlayProps {
-  /** The initial issue to display. */
+  /** The issue to display.  Updates swap the panel content without remount. */
   issueId: string
-  /** Called when the panel should close (ESC or IssueDetailView X). */
+  /** Called when the panel should close (ESC, X, or non-modal outside-click). */
   onClose: () => void
+  /**
+   * Modal behavior — see `DetailPreviewOverlay` docs.  Defaults to `true`
+   * to preserve the original Starred Artifacts dismiss-on-backdrop
+   * behavior.  Project Issues list overrides to `false`.
+   */
+  modal?: boolean
+  /**
+   * Optional navigation handler.  When provided, sub-issue / parent-issue
+   * links inside the panel delegate to this callback instead of mutating
+   * the panel's local state — letting the parent keep its own selection
+   * (e.g. row highlight) in sync with the displayed issue.
+   *
+   * When omitted, the panel manages navigation internally (Starred-
+   * artifacts behavior — no store pollution).
+   */
+  onNavigateToIssue?: (id: string) => void
 }
 
 /**
- * Right-aligned floating side-panel that renders `IssueDetailView`,
- * allowing the user to preview an issue without navigating away from
- * the Starred Artifacts page. No backdrop — the panel simply slides
- * in over the right edge.
- *
- * Supports in-panel navigation: clicking a sub-issue or parent-issue
- * link updates the displayed issue without closing the panel.
+ * Issue-detail flavor of the shared `DetailPreviewOverlay`.  Adds the
+ * one issue-specific concern that doesn't belong in the generic shell:
+ * a local `internalIssueId` that lets the panel handle in-place sub-
+ * issue / parent-issue navigation without leaking into the store when
+ * the caller hasn't opted into delegated navigation.
  */
 export const IssuePreviewOverlay = memo(function IssuePreviewOverlay({
   issueId,
   onClose,
-}: IssuePreviewOverlayProps): React.JSX.Element | null {
+  modal = true,
+  onNavigateToIssue,
+}: IssuePreviewOverlayProps): React.JSX.Element {
   const { t } = useTranslation('schedule')
-  const { phase, requestClose } = useExitAnimation(onClose)
 
-  // Internal navigation state — allows sub-issue / parent-issue traversal within the panel
-  const [currentIssueId, setCurrentIssueId] = useState(issueId)
-
-  // Keep in sync if the parent changes the issueId prop
+  // Internal navigation state — only used when the parent does NOT
+  // supply `onNavigateToIssue`.  When the parent owns navigation
+  // (e.g. the Issues list), `issueId` is the single source of truth and
+  // we bypass this state to keep behavior 1:1 with parent selection.
+  const [internalIssueId, setInternalIssueId] = useState(issueId)
   useEffect(() => {
-    setCurrentIssueId(issueId)
+    setInternalIssueId(issueId)
   }, [issueId])
 
-  const panelRef = useRef<HTMLDivElement>(null)
+  const currentIssueId = onNavigateToIssue ? issueId : internalIssueId
+  const handleNavigateToIssue = onNavigateToIssue ?? setInternalIssueId
 
-  // Focus the panel on mount so ESC works immediately
-  useEffect(() => {
-    panelRef.current?.focus()
-  }, [])
-
-  // ESC key to close
-  const handleKeyDown = useCallback(
-    (e: React.KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        requestClose()
-      }
-    },
-    [requestClose],
-  )
-
-  // Click outside the panel → close
-  const handleOutsideClick = useCallback(
-    (e: React.MouseEvent) => {
-      if (e.target === e.currentTarget) requestClose()
-    },
-    [requestClose],
-  )
-
-  // Navigate to a different issue within the panel
-  const handleNavigateToIssue = useCallback((id: string) => {
-    setCurrentIssueId(id)
-  }, [])
-
-  return createPortal(
-    /* Transparent hit-area covers the screen so clicking outside closes the panel */
-    <div
-      className="fixed inset-0 z-[100] overscroll-contain no-drag"
-      onClick={handleOutsideClick}
+  return (
+    <DetailPreviewOverlay
+      onClose={onClose}
+      modal={modal}
+      ariaLabel={t('starred.issuePreviewAria')}
+      swapTargetSelector="[data-issue-row]"
     >
-      {/* Side panel — right-aligned, similar width to DetailPanel (~45%) */}
-      <div
-        ref={panelRef}
-        role="dialog"
-        aria-label={t('starred.issuePreviewAria')}
-        tabIndex={-1}
-        onKeyDown={handleKeyDown}
-        {...surfaceProps({ elevation: 'modal', color: 'card' })}
-        className={cn(
-          'absolute top-3 bottom-3 right-3 flex flex-col w-[45%] min-w-[420px] max-w-[70%]',
-          'rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] shadow-2xl outline-none overflow-hidden',
-          phase === 'enter' && 'side-panel-enter',
-          phase === 'exit' && 'side-panel-exit',
-        )}
-      >
+      {(requestClose) => (
         <IssueDetailView
           issueId={currentIssueId}
           onClose={requestClose}
           onNavigateToIssue={handleNavigateToIssue}
         />
-      </div>
-    </div>,
-    document.body,
+      )}
+    </DetailPreviewOverlay>
   )
 })

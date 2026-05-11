@@ -17,8 +17,8 @@ import {
 const SKILL_CREATOR_CONFIG: CapabilityCreatorConfig = {
   category: 'skill',
   icon: Sparkles,
-  iconColor: 'text-violet-500',
-  iconGradient: 'bg-gradient-to-br from-violet-500/15 to-purple-500/10',
+  iconColor: 'text-[hsl(var(--ai))]',
+  iconGradient: 'bg-gradient-to-br from-[hsl(var(--ai)/0.18)] to-[hsl(var(--ai)/0.08)]',
   i18nPrefix: 'capabilityCreator.skill',
   suggestionKeys: ['codeReview', 'testGeneration', 'documentation']
 }

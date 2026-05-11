@@ -139,9 +139,9 @@ export function CategoryEmptyState({
                 className="
                   inline-flex items-center gap-1.5 px-5 py-2.5
                   rounded-xl text-[13px] font-medium
-                  bg-violet-500/10 text-violet-600 border border-violet-500/20
+                  bg-[hsl(var(--ai)/0.1)] text-[hsl(var(--ai))] border border-[hsl(var(--ai)/0.2)]
                   shadow-sm hover:shadow-md
-                  hover:bg-violet-500/15
+                  hover:bg-[hsl(var(--ai)/0.15)]
                   transition-all duration-200
                   outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--ring))] focus-visible:ring-offset-2
                 "

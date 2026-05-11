@@ -380,16 +380,24 @@ export function ScheduleDetailView({
             </Tooltip>
 
             {onClose && (
-              <Tooltip content={t('detail.close', { defaultValue: 'Close' })} position="bottom" align="end">
-                <button
-                  type="button"
-                  className="p-1.5 rounded-lg text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] hover:bg-[hsl(var(--foreground)/0.06)] transition-colors"
-                  onClick={onClose}
-                  aria-label={t('detail.close', { defaultValue: 'Close' })}
-                >
-                  <X className="h-3.5 w-3.5" aria-hidden="true" />
-                </button>
-              </Tooltip>
+              <>
+                {/* Divider — visually separates the "close panel" affordance
+                    from the schedule-level actions (edit / run / pause / delete). */}
+                <span
+                  aria-hidden="true"
+                  className="mx-1 h-4 w-px bg-[hsl(var(--border)/0.6)]"
+                />
+                <Tooltip content={t('detail.close', { defaultValue: 'Close' })} position="bottom" align="end">
+                  <button
+                    type="button"
+                    className="p-1.5 rounded-lg text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] hover:bg-[hsl(var(--foreground)/0.06)] transition-colors"
+                    onClick={onClose}
+                    aria-label={t('detail.close', { defaultValue: 'Close' })}
+                  >
+                    <X className="h-3.5 w-3.5" aria-hidden="true" />
+                  </button>
+                </Tooltip>
+              </>
             )}
           </div>
         </div>
@@ -510,7 +518,17 @@ export function ScheduleDetailView({
 
       {/* Modals */}
       {showEditModal && (
-        <ScheduleFormModal editSchedule={schedule} onClose={() => setShowEditModal(false)} />
+        // ScheduleDetailView is hosted inside DetailPreviewOverlay (`z-[150]`),
+        // so the form modal's default `z-50` would render *behind* the popover.
+        // 180 keeps it above the popover while staying below TimePicker /
+        // DateTimePicker popovers (backdrop `z-[199]`, content `z-[200]`) that
+        // open *inside* this modal — otherwise their click-away backdrop
+        // would sit behind the modal and dismiss-on-outside-click would break.
+        <ScheduleFormModal
+          editSchedule={schedule}
+          onClose={() => setShowEditModal(false)}
+          zIndex={180}
+        />
       )}
       {selectedExecution && (
         <ExecutionDetailModal

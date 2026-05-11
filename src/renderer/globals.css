@@ -1839,3 +1839,70 @@ h1[id], h2[id], h3[id], h4[id], h5[id], h6[id] {
   88%      { transform: translate(calc(var(--dx2) * 0.6), calc(var(--dy2) * 0.5)); opacity: calc(var(--peak, 0.6) * 0.35); }
   100%     { transform: translate(0, 0); opacity: 0; }
 }
+
+/* ── Artifact card content preview — compact typography scope ──────────
+ *
+ * `MarkdownContent` ships reading-grade typography (h1 → 24px, p → 14px)
+ * sized for full-page preview dialogs.  Inside an artifact card the
+ * preview area is roughly 200px wide × 96px tall, where a single 24px H1
+ * dominates two thirds of the visible region and a long heading wraps
+ * out of view entirely.
+ *
+ * The class scopes a smaller, denser typography to the card preview
+ * surface only, leaving the global markdown styling intact.  Specificity
+ * `.artifact-card-preview <el>` (0,1,1) beats Tailwind utility classes
+ * (0,1,0), so no `!important` is needed.
+ */
+.artifact-card-preview h1,
+.artifact-card-preview h2 {
+  font-size: 12px;
+  line-height: 1.25;
+  font-weight: 600;
+  margin: 0 0 2px;
+}
+.artifact-card-preview h3,
+.artifact-card-preview h4,
+.artifact-card-preview h5,
+.artifact-card-preview h6 {
+  font-size: 11px;
+  line-height: 1.25;
+  font-weight: 600;
+  margin: 0 0 2px;
+}
+.artifact-card-preview p,
+.artifact-card-preview li,
+.artifact-card-preview blockquote {
+  font-size: 10px;
+  line-height: 1.35;
+  margin: 0 0 2px;
+}
+.artifact-card-preview ul,
+.artifact-card-preview ol {
+  margin: 0 0 2px;
+  padding-left: 14px;
+}
+.artifact-card-preview code {
+  font-size: 9.5px;
+  padding: 0 2px;
+}
+.artifact-card-preview pre {
+  font-size: 9.5px;
+  line-height: 1.3;
+  margin: 2px 0;
+  padding: 4px;
+}
+.artifact-card-preview pre code {
+  font-size: 9.5px;
+  padding: 0;
+}
+.artifact-card-preview hr {
+  margin: 3px 0;
+}
+.artifact-card-preview img,
+.artifact-card-preview video {
+  max-height: 80px;
+  margin: 2px 0;
+}
+.artifact-card-preview table {
+  font-size: 9.5px;
+}

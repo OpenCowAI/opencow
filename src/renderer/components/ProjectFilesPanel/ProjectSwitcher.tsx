@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useTranslation } from 'react-i18next'
-import { Check, ChevronDown, FolderGit2, List, Pin } from 'lucide-react'
+import { Check, ChevronDown, Folder, List, Pin } from 'lucide-react'
 import { useAppStore } from '@/stores/appStore'
 import { useModalAnimation } from '@/hooks/useModalAnimation'
 import { cn } from '@/lib/utils'
@@ -119,7 +119,7 @@ export function ProjectSwitcher({ project }: ProjectSwitcherProps): React.JSX.El
         )}
       >
         <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-[hsl(var(--muted))] text-[hsl(var(--foreground))]">
-          <FolderGit2 className="h-4 w-4" aria-hidden="true" />
+          <Folder className="h-4 w-4" aria-hidden="true" />
         </span>
         <span className="min-w-0 flex-1 truncate text-left text-sm font-semibold text-[hsl(var(--foreground))]">
           {project.name}
@@ -177,33 +177,30 @@ export function ProjectSwitcher({ project }: ProjectSwitcherProps): React.JSX.El
                   )}
                 >
                   <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-[hsl(var(--muted))] text-[hsl(var(--foreground))]">
-                    <FolderGit2 className="h-3.5 w-3.5" aria-hidden="true" />
+                    <Folder className="h-3.5 w-3.5" aria-hidden="true" />
                   </span>
-                  <div className="min-w-0 flex-1">
-                    <div
-                      className={cn(
-                        'flex items-center gap-1 text-sm',
-                        isActive
-                          ? 'font-semibold text-[hsl(var(--foreground))]'
-                          : 'text-[hsl(var(--foreground)/0.85)]',
-                      )}
-                    >
-                      {isPinned && (
-                        <Pin className="h-3 w-3 shrink-0 fill-amber-500 text-amber-500" aria-hidden="true" />
-                      )}
-                      <span className="truncate">{p.name}</span>
-                      {isArchived && (
-                        <span className="text-[10px] text-[hsl(var(--muted-foreground))]">
-                          ({t('sidebar.archived')})
-                        </span>
-                      )}
-                    </div>
-                    <div
-                      className="truncate text-[11px] text-[hsl(var(--muted-foreground)/0.85)]"
-                      title={p.path}
-                    >
-                      {p.path}
-                    </div>
+                  {/* Path is intentionally omitted here — the switcher
+                      is a quick navigator, not a project inspector.
+                      `title={p.path}` keeps the full path one hover
+                      away for the rare disambiguation case. */}
+                  <div
+                    className={cn(
+                      'flex min-w-0 flex-1 items-center gap-1 text-sm',
+                      isActive
+                        ? 'font-semibold text-[hsl(var(--foreground))]'
+                        : 'text-[hsl(var(--foreground)/0.85)]',
+                    )}
+                    title={p.path}
+                  >
+                    {isPinned && (
+                      <Pin className="h-3 w-3 shrink-0 fill-amber-500 text-amber-500" aria-hidden="true" />
+                    )}
+                    <span className="truncate">{p.name}</span>
+                    {isArchived && (
+                      <span className="text-[10px] text-[hsl(var(--muted-foreground))]">
+                        ({t('sidebar.archived')})
+                      </span>
+                    )}
                   </div>
                   {isActive && (
                     <Check className="ml-auto h-4 w-4 shrink-0 text-[hsl(var(--primary))]" aria-hidden="true" />

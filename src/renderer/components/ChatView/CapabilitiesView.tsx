@@ -575,8 +575,8 @@ export function CapabilitiesView(): React.JSX.Element {
                 onClick={openCloneDialog}
                 className="w-full flex items-center gap-4 p-4 rounded-xl border border-[hsl(var(--border))] hover:border-[hsl(var(--ring))] hover:shadow-sm transition-all text-left outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--ring))]"
               >
-                <div className="p-2.5 rounded-lg bg-violet-500/8">
-                  <Copy className="h-5 w-5 text-violet-500" />
+                <div className="p-2.5 rounded-lg bg-[hsl(var(--ai)/0.08)]">
+                  <Copy className="h-5 w-5 text-[hsl(var(--ai))]" />
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium">{t('cloneCapabilities.fromProject')}</p>
@@ -861,7 +861,7 @@ export function CapabilitiesView(): React.JSX.Element {
                       <button
                         type="button"
                         onClick={() => setShowAICreator(activeId as AICreatableCategory)}
-                        className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs text-violet-600 hover:text-violet-700 hover:bg-violet-500/5 transition-colors outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--ring))]"
+                        className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs text-[hsl(var(--ai))] hover:bg-[hsl(var(--ai)/0.08)] transition-colors outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--ring))]"
                       >
                         <Sparkles className="h-3.5 w-3.5" aria-hidden="true" />
                         {t('capabilityCreator.aiCreate')}

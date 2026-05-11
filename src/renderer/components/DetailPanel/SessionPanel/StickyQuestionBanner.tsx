@@ -19,7 +19,7 @@
  */
 import React, { memo, useMemo, useState, useCallback, useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
-import { ArrowDown } from 'lucide-react'
+import { ArrowDown, MessageSquareQuote } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useCommandStore, selectSessionMessages } from '@/stores/commandStore'
 import { extractTextContent } from '@/lib/sessionHelpers'
@@ -124,26 +124,40 @@ export const StickyQuestionBanner = memo(function StickyQuestionBanner({
   if (!displayedQuestion) return null
 
   return (
+    // Chat-aesthetic refresh: previously the banner used the legacy
+    // CLI `>` prompt + monospace + `bg-primary/0.04` ink wash, which
+    // clashed with the now chat-bubble user message style.  New design:
+    //   - Soft `bg-muted/0.4` wash that reads as a section-level callout
+    //     instead of an action-tinted strip
+    //   - Subtle `border-b/0.5` divider
+    //   - `MessageSquareQuote` icon at left = "the quoted question
+    //     being answered" — semantic over decorative CLI prompt
+    //   - Sans-serif body, muted-foreground default, foreground on
+    //     hover; matches the rest of the session panel's typography
+    //   - Jump-to-latest is now a soft chip with a hover wash, in line
+    //     with the toolbar buttons elsewhere in the panel
     <div
-      className="flex items-start gap-2 px-3 py-1.5 border-b border-[hsl(var(--border))] bg-[hsl(var(--primary)/0.04)] shrink-0"
+      // `items-center` so the icon, question text, and jump-to-latest
+      // chip share the same vertical midline.  The expanded multi-line
+      // state remains rare (user must double-click to opt in), and even
+      // then a centered icon reads cleaner than a top-anchored one for
+      // this kind of banner-level callout.
+      className="flex items-center gap-2 px-4 py-2 border-b border-[hsl(var(--border)/0.5)] bg-[hsl(var(--muted)/0.4)] shrink-0"
       role="note"
       aria-label="Question being answered"
     >
-      {/* ">" prompt marker — leading-5 matches the button so both tops align */}
-      <span
-        className="text-[hsl(var(--muted-foreground))] font-mono text-xs shrink-0 select-none leading-5"
+      <MessageSquareQuote
+        className="w-3.5 h-3.5 shrink-0 text-[hsl(var(--muted-foreground))]"
         aria-hidden="true"
-      >
-        {'>'}
-      </span>
+      />
 
       {/* Clickable text area — click to scroll to question, double-click to expand/collapse */}
       <button
         onClick={handleBannerClick}
         title="Click to scroll to question · Double-click to expand/collapse"
         className={cn(
-          'flex-1 text-xs font-mono text-[hsl(var(--foreground)/0.65)] text-left min-w-0 leading-5',
-          'hover:text-[hsl(var(--foreground)/0.85)] transition-colors cursor-pointer',
+          'flex-1 text-xs text-left min-w-0 leading-relaxed',
+          'text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] transition-colors cursor-pointer',
           'focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[hsl(var(--ring))] rounded',
           isBannerExpanded ? 'line-clamp-3 break-words' : 'truncate',
         )}
@@ -153,10 +167,15 @@ export const StickyQuestionBanner = memo(function StickyQuestionBanner({
         {displayedQuestion}
       </button>
 
-      {/* Jump-to-latest button — leading-5 keeps it top-aligned with the first text line */}
+      {/* Jump-to-latest — soft chip; `-my-0.5` recovers the chip's
+          padding so its hover wash doesn't push the banner's height. */}
       <button
         onClick={() => messageListRef.current?.scrollToBottom()}
-        className="flex items-center gap-1 text-[10px] leading-5 text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--primary))] transition-colors shrink-0 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[hsl(var(--ring))] rounded px-1"
+        className={cn(
+          'inline-flex items-center gap-1 -my-0.5 px-1.5 py-0.5 rounded-md text-[10px] shrink-0',
+          'text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] hover:bg-[hsl(var(--foreground)/0.04)]',
+          'transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[hsl(var(--ring))]',
+        )}
         aria-label={t('sessionPanel.jumpToLatestAria')}
       >
         <ArrowDown className="w-3 h-3" aria-hidden="true" />

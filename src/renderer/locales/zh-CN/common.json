@@ -141,5 +141,10 @@
     "timeMinutesAgo": "{{count}}分钟前",
     "timeHoursAgo": "{{count}}小时前",
     "timeDaysAgo": "{{count}}天前"
+  },
+  "timePicker": {
+    "hour": "时",
+    "minute": "分",
+    "ariaLabel": "选择时间"
   }
 }

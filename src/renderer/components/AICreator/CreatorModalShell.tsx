@@ -117,7 +117,7 @@ export function CreatorModalShell({
           >
             {/* ── Header ──────────────────────────────────────── */}
             <div className="flex-none flex items-center gap-2 px-5 h-12 border-b border-[hsl(var(--border)/0.3)]">
-              <div className="flex items-center gap-1.5 text-violet-500">
+              <div className="flex items-center gap-1.5 text-[hsl(var(--ai))]">
                 <Sparkles className="w-3.5 h-3.5" aria-hidden />
               </div>
               <span className="text-sm font-semibold text-[hsl(var(--foreground))]">

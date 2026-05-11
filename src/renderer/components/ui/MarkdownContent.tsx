@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-import { memo, useState, useEffect, useRef, useLayoutEffect, createContext, useContext } from 'react'
+import { memo, useState, useEffect, useMemo, useRef, useLayoutEffect, createContext, useContext } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import rehypeHighlight from 'rehype-highlight'
@@ -18,6 +18,7 @@ import {
   MarkdownTd,
 } from './MarkdownTable'
 import { slugify } from '@/lib/extractToc'
+import { parseFrontmatter } from '@/lib/parseFrontmatter'
 
 // ---------------------------------------------------------------------------
 // Streaming Context
@@ -557,6 +558,16 @@ export const MarkdownContent = memo(function MarkdownContent({
     return () => clearTimeout(id)
   }, [isStreaming])
 
+  // Strip leading YAML frontmatter once per content change.  Without
+  // this, react-markdown sees `---` as a thematic break followed by a
+  // setext heading, producing a visually broken preview for files that
+  // carry frontmatter (skill manifests, agent prompts, blog posts).
+  //
+  // Frontmatter rendering (when callers want it surfaced as metadata) is
+  // handled one level up in `MarkdownPreviewWithToc` — `MarkdownContent`
+  // is the leaf renderer for the markdown body only.
+  const bodyContent = useMemo(() => parseFrontmatter(content).body, [content])
+
   if (!isStreaming) {
     // Reset streaming state so the next streaming session starts clean.
     scannerRef.current.reset()
@@ -570,7 +581,7 @@ export const MarkdownContent = memo(function MarkdownContent({
               rehypePlugins={rehypePlugins}
               components={MARKDOWN_COMPONENTS}
             >
-              {content}
+              {bodyContent}
             </ReactMarkdown>
           </div>
         </SlugCounterContext.Provider>

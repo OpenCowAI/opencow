@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next'
 import {
   Loader2, Eye, EyeOff, ChevronDown, ChevronRight,
   CheckSquare, Square, Search, Info,
+  CheckCircle2, XCircle,
 } from 'lucide-react'
 import { useSettingsStore } from '@/stores/settingsStore'
 import { DEFAULT_EVOSE_SETTINGS, type EvoseApp, type EvoseAppConfig, type EvoseSettings } from '@shared/types'
@@ -352,12 +353,25 @@ export function EvoseSection(): React.JSX.Element {
           {t('evose.verifyAndFetch')}
         </button>
         {fetchStatus.kind === 'success' && (
-          <span className="text-xs text-emerald-600">
+          // Soft success chip — replaces the raw `✅` emoji + flat
+          // `text-emerald-600`.  The lucide icon matches the
+          // app-wide iconography (emoji rendering varies across
+          // OSes), and the muted fill + dark-mode-aware foreground
+          // mirrors the established pattern in `WeixinConfigPanel`
+          // and `UpdateSection`.
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-xs">
+            <CheckCircle2 className="h-3.5 w-3.5" aria-hidden="true" />
             {t('evose.connectedApps', { count: fetchStatus.count })}
           </span>
         )}
         {fetchStatus.kind === 'error' && (
-          <span className="text-xs text-red-500">{fetchStatus.message}</span>
+          // Parallel destructive chip for the error case — same
+          // chrome, different semantic color so success / error
+          // read as visual peers.
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-red-500/10 text-red-600 dark:text-red-400 text-xs">
+            <XCircle className="h-3.5 w-3.5" aria-hidden="true" />
+            {fetchStatus.message}
+          </span>
         )}
       </div>
 
@@ -444,7 +458,10 @@ export function EvoseSection(): React.JSX.Element {
       {/* Save */}
       <div className="flex items-center justify-end gap-3 pt-2 border-t border-[hsl(var(--border))]">
         {saved && (
-          <span className="text-xs text-emerald-600">{t('evose.saved')}</span>
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-xs">
+            <CheckCircle2 className="h-3.5 w-3.5" aria-hidden="true" />
+            {t('evose.saved')}
+          </span>
         )}
         <button
           type="button"

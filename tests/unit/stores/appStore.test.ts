@@ -336,16 +336,6 @@ describe('appStore - NavigationSlice', () => {
     expect(selectMainTab(useAppStore.getState())).toBe('schedule')
   })
 
-  // ── leftSidebarExpanded persistence ────────────────────────────
-  it('leftSidebarExpanded defaults to true and persists', () => {
-    useAppStore.setState({ leftSidebarExpanded: true })
-    expect(useAppStore.getState().leftSidebarExpanded).toBe(true)
-    useAppStore.getState().setLeftSidebarExpanded(false)
-    expect(useAppStore.getState().leftSidebarExpanded).toBe(false)
-    // Tab switch does not reset it
-    useAppStore.getState().setMainTab('issues')
-    expect(useAppStore.getState().leftSidebarExpanded).toBe(false)
-  })
 })
 
 describe('appStore - DetailSlice', () => {

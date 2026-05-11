@@ -81,7 +81,7 @@ describe('ProjectStore', () => {
   it('applies default project preferences on create', async () => {
     const project = await store.create({ name: 'Pref', canonicalPath: '/pref' })
     expect(project.preferences).toEqual({
-      defaultTab: 'issues',
+      defaultTab: 'chat',
       defaultChatViewMode: 'default',
       defaultFilesDisplayMode: null,
       defaultBrowserStatePolicy: 'shared-global',
@@ -142,7 +142,7 @@ describe('ProjectStore', () => {
     })
 
     expect(updated?.preferences).toEqual({
-      defaultTab: 'issues',
+      defaultTab: 'chat',
       defaultChatViewMode: 'default',
       defaultFilesDisplayMode: null,
       defaultBrowserStatePolicy: 'isolated-issue',

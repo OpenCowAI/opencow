@@ -102,7 +102,13 @@ export function Dialog({
   if (!mounted) return null
 
   return createPortal(
-    <div className="fixed inset-0 z-[100] flex items-center justify-center overscroll-contain no-drag">
+    // `z-[180]` slots above `DetailPreviewOverlay` (`z-[150]`) so dialogs
+    // opened *from inside* the popover (artifact viewer, content viewer,
+    // confirm flows) sit on top of the panel, not behind it.  Stays
+    // below `TimePicker`/`DateTimePicker` (`z-[200]`) so date pickers
+    // summoned from within a dialog form remain on top.  See
+    // `Tooltip.tsx` for the full z-layer convention.
+    <div className="fixed inset-0 z-[180] flex items-center justify-center overscroll-contain no-drag">
       {/* Overlay */}
       <div
         className={cn(

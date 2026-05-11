@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-import { useCallback, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Activity, Archive, Folder, MoreVertical, Pin, Search, X } from 'lucide-react'
 import type { Project, ProjectGroup } from '@shared/types'
@@ -20,6 +20,19 @@ import { ProjectSettingsModal } from '@/components/ProjectSettings/ProjectSettin
 // ─── Types ───────────────────────────────────────────────────────────
 
 type ListTab = 'active' | 'archived'
+
+// ─── Helpers ─────────────────────────────────────────────────────────
+
+/**
+ * Replace the user's home directory prefix with `~` for display.
+ * Falls back to the original path when `homeDir` is unknown or doesn't match.
+ */
+function tildify(path: string, homeDir: string | null): string {
+  if (!homeDir) return path
+  if (path === homeDir) return '~'
+  if (path.startsWith(homeDir + '/')) return '~' + path.slice(homeDir.length)
+  return path
+}
 
 // ─── Constants ───────────────────────────────────────────────────────
 
@@ -84,6 +97,7 @@ interface PinTileProps {
   onRenameConfirm: (newName: string) => void
   onRenameCancel: () => void
   sessionLabel: string
+  displayPath: string
 }
 
 function PinTile({
@@ -96,6 +110,7 @@ function PinTile({
   onRenameConfirm,
   onRenameCancel,
   sessionLabel,
+  displayPath,
 }: PinTileProps): React.JSX.Element {
   return (
     <div
@@ -180,8 +195,11 @@ function PinTile({
             {project.name}
           </div>
         )}
-        <div className="mt-1 truncate text-[11px] leading-[1.5] text-[hsl(var(--muted-foreground))]">
-          {liveSessionCount > 0 ? sessionLabel : project.path.split('/').pop() ?? project.path}
+        <div
+          className="mt-1 truncate text-[11px] leading-[1.5] text-[hsl(var(--muted-foreground))]"
+          title={project.path}
+        >
+          {liveSessionCount > 0 ? sessionLabel : displayPath}
         </div>
       </div>
     </div>
@@ -202,6 +220,7 @@ interface ProjectCardProps {
   onRenameCancel: () => void
   pinnedLabel: string
   sessionLabel: string
+  displayPath: string
 }
 
 function ProjectCard({
@@ -216,6 +235,7 @@ function ProjectCard({
   onRenameCancel,
   pinnedLabel,
   sessionLabel,
+  displayPath,
 }: ProjectCardProps): React.JSX.Element {
   const isPinned = group === 'pinned'
 
@@ -317,7 +337,7 @@ function ProjectCard({
           className="mt-2 h-[38px] overflow-hidden text-xs leading-[1.5] text-[hsl(var(--muted-foreground))]"
           title={project.path}
         >
-          <div className="line-clamp-2 break-all">{project.path}</div>
+          <div className="line-clamp-2 break-all">{displayPath}</div>
         </div>
 
         {/* Meta row */}
@@ -345,8 +365,17 @@ export function ProjectsListView(): React.JSX.Element {
   const { t } = useTranslation('navigation')
   const projects = useAppStore((s) => s.projects)
   const navigateToProject = useAppStore((s) => s.navigateToProject)
+  const homeDir = useAppStore((s) => s.homeDir)
+  const ensureHomeDir = useAppStore((s) => s.ensureHomeDir)
   const liveCounts = useLiveSessionCounts()
   const grouped = useGroupedProjects()
+
+  // Sidebar normally resolves $HOME first, but this view can render
+  // before the Sidebar mounts (e.g. directly after onboarding), so
+  // request it here too — ensureHomeDir is idempotent.
+  useEffect(() => {
+    if (homeDir === null) void ensureHomeDir()
+  }, [homeDir, ensureHomeDir])
 
   const [tab, setTab] = useState<ListTab>('active')
   const [query, setQuery] = useState('')
@@ -467,6 +496,7 @@ export function ProjectsListView(): React.JSX.Element {
                   onRenameConfirm={(name) => void confirmRename(name)}
                   onRenameCancel={cancelRename}
                   sessionLabel={t('projectsList.sessionCount', { count: liveCounts[project.id] ?? 0 })}
+                  displayPath={tildify(project.path, homeDir)}
                 />
               ))}
             </HorizontalStrip>
@@ -556,6 +586,7 @@ export function ProjectsListView(): React.JSX.Element {
                 onRenameCancel={cancelRename}
                 pinnedLabel={t('projectsList.pinned')}
                 sessionLabel={t('projectsList.sessionCount', { count: liveCounts[project.id] ?? 0 })}
+                displayPath={tildify(project.path, homeDir)}
               />
             ))}
           </div>

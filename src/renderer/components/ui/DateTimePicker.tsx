@@ -4,6 +4,7 @@ import { useState, useRef, useCallback, useEffect, useMemo } from 'react'
 import { DayPicker } from 'react-day-picker'
 import { CalendarDays, ChevronLeft, ChevronRight, ChevronDown, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { TimePicker } from './TimePicker'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -295,12 +296,10 @@ export function DateTimePicker({
               <span className="text-[11px] text-[hsl(var(--muted-foreground))] shrink-0">
                 Time
               </span>
-              <input
-                type="time"
+              <TimePicker
                 value={timeStr}
-                disabled={!isValid}
-                onChange={(e) => handleTimeChange(e.target.value)}
-                className="px-2 py-1 text-xs rounded-md border border-[hsl(var(--border))] bg-transparent focus:outline-none focus:ring-1 focus:ring-[hsl(var(--ring))] text-[hsl(var(--foreground))]"
+                onChange={handleTimeChange}
+                ariaLabel="Pick time"
               />
               {isValid && (
                 <button

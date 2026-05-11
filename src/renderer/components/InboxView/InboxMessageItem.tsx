@@ -72,14 +72,20 @@ export function InboxMessageItem({
           <span className={cn('text-sm truncate', isUnread && 'text-[hsl(var(--foreground))]')}>
             {title}
           </span>
-          <span
-            className={cn(
-              'px-1.5 py-0.5 text-[10px] leading-tight rounded-full shrink-0',
-              PRIORITY_BADGE[priority].className
-            )}
-          >
-            {t(PRIORITY_BADGE[priority].labelKey)}
-          </span>
+          {/* Hide the badge for the default `normal` priority — every
+              message would otherwise carry a redundant "普通" tag that
+              adds visual noise without conveying any new information.
+              Only the *exceptional* tiers (high / low) get a badge. */}
+          {priority !== 'normal' && (
+            <span
+              className={cn(
+                'px-1.5 py-0.5 text-[10px] leading-tight rounded-full shrink-0',
+                PRIORITY_BADGE[priority].className
+              )}
+            >
+              {t(PRIORITY_BADGE[priority].labelKey)}
+            </span>
+          )}
         </div>
         <span className="text-xs text-[hsl(var(--muted-foreground))] shrink-0 tabular-nums">
           {formatRelativeTime(message.createdAt)}

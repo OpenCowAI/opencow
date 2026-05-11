@@ -14,7 +14,7 @@ import type { Project } from '@shared/types'
 export function ProjectEditorPanel({ project }: { project: Project }): React.JSX.Element {
   return (
     <div className="h-full flex flex-col min-w-0 overflow-hidden rounded-xl bg-[hsl(var(--card))] border border-[hsl(var(--border)/0.5)]">
-      <EditorTabs projectId={project.id} projectPath={project.path} rightSafeInset={12} />
+      <EditorTabs projectId={project.id} projectPath={project.path} />
       <div className="flex-1 min-h-0">
         <EditorPane projectPath={project.path} projectId={project.id} />
       </div>

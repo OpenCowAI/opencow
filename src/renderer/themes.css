@@ -51,6 +51,23 @@
   /* --- Destructive --------------------------------------------- */
   --destructive: 2 70% 47%;       /* warm vermilion */
   --destructive-foreground: 45 50% 97%;
+
+  /* --- AI affordance ------------------------------------------- *
+   * `--ai` is the single source of truth for "this surface speaks
+   * to the AI/agent system" (Sparkles buttons, AI creator entry
+   * points, subagent events).  Hue 25° / sat 85% / lightness 35%
+   * lands on a burnt-sienna 赭石, which sits in the same warm-earth
+   * family as the rest of the palette (背景 hue 30-45°) — so the
+   * accent feels like it *belongs to the same world* as the ink +
+   * cream surfaces, instead of crashing in as a cold violet from a
+   * different cosmos.
+   *
+   * Use as `hsl(var(--ai))` for foreground / dot, and
+   * `hsl(var(--ai) / <alpha>)` for translucent fills + borders.
+   * Common ratios in the codebase: bg @ 0.10, hover-bg @ 0.15,
+   * border @ 0.20.
+   */
+  --ai: 25 85% 35%;
 }
 
 .dark {
@@ -85,4 +102,10 @@
   /* --- Destructive --------------------------------------------- */
   --destructive: 0 60% 38%;
   --destructive-foreground: 45 30% 90%;
+
+  /* --- AI affordance ------------------------------------------- *
+   * Lighter, more golden 赭 for dark mode — readable against the
+   * charcoal canvas while keeping the same hue family as light
+   * mode for cross-theme continuity. */
+  --ai: 38 92% 55%;
 }

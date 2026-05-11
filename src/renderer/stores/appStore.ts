@@ -409,9 +409,6 @@ interface UISlice {
   runtimeVersions: RuntimeVersions | null
   onboarding: OnboardingState
   showArchived: boolean
-  /** Left Sidebar expanded/collapsed — controls icon-only navigation mode. */
-  leftSidebarExpanded: boolean
-  setLeftSidebarExpanded: (expanded: boolean) => void
   sessionsViewMode: SessionsViewMode
   chatSubTab: ChatSubTab
   /** Active chat session ID for Agent Chat — persisted across tab switches. */
@@ -888,8 +885,6 @@ export const useAppStore = create<AppStore>((set, get) => ({
   runtimeVersions: null,
   onboarding: { completed: false, hooksInstalled: false },
   showArchived: false,
-  leftSidebarExpanded: false,
-  setLeftSidebarExpanded: (expanded) => set({ leftSidebarExpanded: expanded }),
   sessionsViewMode: 'list',
   chatSubTab: 'conversation',
   agentChatSessionId: null,

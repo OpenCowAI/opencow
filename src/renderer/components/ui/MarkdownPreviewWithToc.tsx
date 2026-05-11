@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-import { memo, useRef, useMemo, useState, useCallback, useEffect } from 'react'
+import { Fragment, memo, useRef, useMemo, useState, useCallback, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ChevronLeft, List } from 'lucide-react'
 import { useModalAnimation } from '@/hooks/useModalAnimation'
@@ -9,6 +9,7 @@ import { MarkdownContent } from './MarkdownContent'
 import { TextSearchBar, SearchTrigger } from './TextSearchBar'
 import { extractToc, type TocEntry } from '@/lib/extractToc'
 import { useTextSearch } from '@/hooks/useTextSearch'
+import { parseFrontmatter } from '@/lib/parseFrontmatter'
 
 // ---------------------------------------------------------------------------
 // MarkdownPreviewWithToc
@@ -53,7 +54,13 @@ export const MarkdownPreviewWithToc = memo(function MarkdownPreviewWithToc({
   const { t } = useTranslation('common')
   const resolvedTocLabel = tocLabel ?? t('tableOfContents')
   const scrollRef = useRef<HTMLDivElement>(null)
-  const tocEntries = useMemo(() => extractToc(content), [content])
+
+  // Split off any leading YAML frontmatter once and reuse the body for
+  // both ToC extraction and the markdown render — passing it explicitly
+  // (rather than relying on MarkdownContent's internal strip) keeps the
+  // dataflow obvious and shaves one redundant parse.
+  const { frontmatter, body } = useMemo(() => parseFrontmatter(content), [content])
+  const tocEntries = useMemo(() => extractToc(body), [body])
   const [activeHeadingId, setActiveHeadingId] = useState<string | null>(null)
   const [isTocOpen, setIsTocOpen] = useState<boolean>(() => !defaultTocCollapsed)
 
@@ -173,7 +180,8 @@ export const MarkdownPreviewWithToc = memo(function MarkdownPreviewWithToc({
       <div className={cn('overflow-hidden relative', className)}>
         {topRightToolbar}
         <div ref={scrollRef} className="h-full overflow-y-auto px-6 py-4">
-          <MarkdownContent content={content} />
+          {frontmatter && <FrontmatterBlock data={frontmatter} />}
+          <MarkdownContent content={body} />
         </div>
       </div>
     )
@@ -208,7 +216,8 @@ export const MarkdownPreviewWithToc = memo(function MarkdownPreviewWithToc({
           // never reflows the content area.
           className="h-full overflow-y-auto px-6 py-4 pt-8"
         >
-          <MarkdownContent content={content} />
+          {frontmatter && <FrontmatterBlock data={frontmatter} />}
+          <MarkdownContent content={body} />
         </div>
       </div>
     )
@@ -233,7 +242,8 @@ export const MarkdownPreviewWithToc = memo(function MarkdownPreviewWithToc({
       <div className="flex-1 min-w-0 relative overflow-hidden">
         {topRightToolbar}
         <div ref={scrollRef} className="h-full overflow-y-auto px-6 py-4">
-          <MarkdownContent content={content} />
+          {frontmatter && <FrontmatterBlock data={frontmatter} />}
+          <MarkdownContent content={body} />
         </div>
       </div>
     </div>
@@ -462,3 +472,66 @@ const TocCollapsedTrigger = memo(function TocCollapsedTrigger({
     </button>
   )
 })
+
+// ---------------------------------------------------------------------------
+// FrontmatterBlock — surfaces parsed YAML frontmatter as a metadata card
+// ---------------------------------------------------------------------------
+
+/**
+ * Renders a YAML frontmatter map as a definition list inside a subtle
+ * card surface, sitting above the markdown body.
+ *
+ * Each entry's value is rendered according to its YAML type:
+ *   - string  → preserved verbatim with `whitespace-pre-wrap` so block
+ *               scalars (`description: |` …) keep their line breaks
+ *   - number / boolean → mono-formatted scalar
+ *   - null    → muted "null" placeholder
+ *   - object / array → pretty-printed JSON in a `<pre>` for inspection
+ *
+ * Returns `null` when the map is empty so the layout doesn't gain a
+ * floating card for a meaningless empty `---\n---` block.
+ */
+const FrontmatterBlock = memo(function FrontmatterBlock({
+  data,
+}: {
+  data: Record<string, unknown>
+}): React.JSX.Element | null {
+  const entries = Object.entries(data)
+  if (entries.length === 0) return null
+  return (
+    <div className="mt-4 mb-5 rounded-lg border border-[hsl(var(--border)/0.6)] bg-[hsl(var(--muted)/0.4)] px-4 py-3">
+      <dl className="grid grid-cols-[minmax(auto,140px)_1fr] gap-x-3 gap-y-1.5 text-sm">
+        {entries.map(([key, value]) => (
+          <Fragment key={key}>
+            <dt className="font-mono text-xs uppercase tracking-wider text-[hsl(var(--muted-foreground))] pt-0.5 truncate">
+              {key}
+            </dt>
+            <dd className="text-[hsl(var(--foreground))] min-w-0">
+              <FrontmatterValue value={value} />
+            </dd>
+          </Fragment>
+        ))}
+      </dl>
+    </div>
+  )
+})
+
+function FrontmatterValue({ value }: { value: unknown }): React.JSX.Element {
+  if (value == null) {
+    return <span className="italic text-[hsl(var(--muted-foreground)/0.6)]">null</span>
+  }
+  if (typeof value === 'string') {
+    return <span className="whitespace-pre-wrap break-words">{value}</span>
+  }
+  if (typeof value === 'number' || typeof value === 'boolean') {
+    return <span className="font-mono">{String(value)}</span>
+  }
+  // Objects / arrays — render as pretty-printed JSON so users can still
+  // inspect structured metadata (skill permissions, tags, etc.) without
+  // dropping out to view the raw source.
+  return (
+    <pre className="m-0 font-mono text-xs whitespace-pre-wrap break-words text-[hsl(var(--muted-foreground))]">
+      {JSON.stringify(value, null, 2)}
+    </pre>
+  )
+}

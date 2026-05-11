@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 
-import { useState, useRef, useCallback } from 'react'
 import { createPortal } from 'react-dom'
 import { useTranslation } from 'react-i18next'
 import { X, Clock, Pencil } from 'lucide-react'
@@ -10,7 +9,9 @@ import { useExitAnimation } from '@/hooks/useModalAnimation'
 import { cn } from '@/lib/utils'
 import { useScheduleForm, buildScheduleInput, type ScheduleFormDefaultValues } from './useScheduleForm'
 import { TriggerSection } from './TriggerSection'
-import { ActionSection } from './ActionSection'
+import { PromptPanel } from './PromptPanel'
+import { InfoTooltip } from './InfoTooltip'
+import { ProjectPicker } from '@/components/ui/ProjectPicker'
 import type { Schedule } from '@shared/types'
 
 // ---------------------------------------------------------------------------
@@ -39,22 +40,6 @@ export function ScheduleFormModal({ onClose, editSchedule, defaultValues, onCrea
 
   const { phase, requestClose } = useExitAnimation(onClose)
   const { state, dispatch, canSubmit } = useScheduleForm(editSchedule, defaultValues)
-
-  // Description field: show expanded immediately when editing or when defaultValues provide a description
-  const [descOpen, setDescOpen] = useState(
-    (isEditMode && !!editSchedule.description) || !!defaultValues?.description
-  )
-  const descRef = useRef<HTMLTextAreaElement>(null)
-  // Track whether the user just clicked "Add description" so we auto-focus only once
-  const shouldFocusDesc = useRef(false)
-
-  const descRefCallback = useCallback((el: HTMLTextAreaElement | null) => {
-    (descRef as React.MutableRefObject<HTMLTextAreaElement | null>).current = el
-    if (el && shouldFocusDesc.current) {
-      el.focus()
-      shouldFocusDesc.current = false
-    }
-  }, [])
 
   const handleSubmit = async (): Promise<void> => {
     if (!canSubmit) return
@@ -117,13 +102,16 @@ export function ScheduleFormModal({ onClose, editSchedule, defaultValues, onCrea
       <div
         className={cn(
           'relative z-10 bg-[hsl(var(--background))] border border-[hsl(var(--border))]',
-          'rounded-2xl shadow-xl w-full max-w-[600px] mx-4 flex flex-col max-h-[90vh] overflow-hidden',
+          'rounded-2xl shadow-xl w-full max-w-[1024px] mx-4 flex flex-col',
+          // Pin a minimum height so swapping frequency presets (interval ↔ weekly
+          // ↔ cron ↔ once) doesn't make the dialog jump.
+          'min-h-[640px] max-h-[92vh] overflow-hidden',
           phase === 'enter' && 'modal-content-enter',
           phase === 'exit'  && 'modal-content-exit'
         )}
       >
         {/* ── Header ── */}
-        <div className="flex items-center justify-between px-5 py-3.5 border-b border-[hsl(var(--border))]">
+        <div className="flex items-center justify-between px-5 py-3.5">
           <div className="flex items-center gap-2">
             {isEditMode
               ? <Pencil className="h-4 w-4 text-[hsl(var(--muted-foreground))]" aria-hidden="true" />
@@ -143,68 +131,74 @@ export function ScheduleFormModal({ onClose, editSchedule, defaultValues, onCrea
           </button>
         </div>
 
-        {/* ── Scrollable body ── */}
-        <div className="flex-1 overflow-y-auto overscroll-contain px-5 py-4 space-y-5">
+        {/* ── Two-column body ── */}
+        <div className="flex-1 min-h-0 flex">
 
-          {/* Name */}
-          <div className="space-y-1.5">
-            <label className="block text-xs font-medium text-[hsl(var(--muted-foreground))]">
-              {t('form.nameLabel')} <span className="text-red-400">*</span>
-            </label>
-            <input
-              type="text"
-              value={state.name}
-              onChange={(e) => dispatch({ type: 'SET_NAME', payload: e.target.value })}
-              placeholder={t('form.namePlaceholder')}
-              autoFocus
-              className="w-full px-3 py-2 text-sm rounded-xl border border-[hsl(var(--border))] bg-transparent placeholder:text-[hsl(var(--muted-foreground)/0.5)] focus:outline-none focus:ring-1 focus:ring-[hsl(var(--ring))]"
-            />
-          </div>
+          {/* ── Left column: name / description / trigger / project ── */}
+          <div className="w-[400px] shrink-0 overflow-y-auto overscroll-contain px-5 py-4 space-y-5">
 
-          {/* Description — expand-on-click (Linear / Notion pattern) */}
-          {descOpen ? (
+            {/* Name */}
+            <div className="space-y-1.5">
+              <label className="block text-xs font-medium text-[hsl(var(--muted-foreground))]">
+                {t('form.nameLabel')} <span className="text-red-400">*</span>
+              </label>
+              <input
+                type="text"
+                value={state.name}
+                onChange={(e) => dispatch({ type: 'SET_NAME', payload: e.target.value })}
+                placeholder={t('form.namePlaceholder')}
+                autoFocus
+                className="w-full px-3 py-2 text-sm rounded-xl border border-[hsl(var(--border))] bg-transparent placeholder:text-[hsl(var(--muted-foreground)/0.5)] focus:outline-none focus:ring-1 focus:ring-[hsl(var(--ring))]"
+              />
+            </div>
+
+            {/* Description — always mounted to avoid jitter from button↔textarea swap */}
             <textarea
               value={state.description}
               onChange={(e) => dispatch({ type: 'SET_DESCRIPTION', payload: e.target.value })}
-              onBlur={() => { if (!state.description.trim()) setDescOpen(false) }}
               placeholder={t('form.descriptionPlaceholder')}
               rows={2}
               className={cn(
-                'w-full px-0 py-0 text-xs bg-transparent resize-none',
-                'text-[hsl(var(--muted-foreground))] placeholder:text-[hsl(var(--muted-foreground)/0.4)]',
+                'w-full px-0 py-0 text-xs bg-transparent resize-none -mt-3',
+                'text-[hsl(var(--muted-foreground))] placeholder:text-[hsl(var(--muted-foreground)/0.45)]',
                 'focus:outline-none focus:text-[hsl(var(--foreground))]',
-                '-mt-3'
               )}
-              ref={descRefCallback}
             />
-          ) : (
-            <button
-              type="button"
-              onClick={() => { shouldFocusDesc.current = true; setDescOpen(true) }}
-              className="text-xs text-[hsl(var(--muted-foreground)/0.45)] hover:text-[hsl(var(--muted-foreground))] transition-colors text-left -mt-3"
-            >
-              {state.description.trim() || t('form.addDescription')}
-            </button>
-          )}
 
-          {/* Trigger */}
-          <TriggerSection
-            triggerMode={state.triggerMode}
-            timeTrigger={state.timeTrigger}
-            eventMatcherType={state.eventTrigger.matcherType}
-            dispatch={dispatch}
-          />
+            {/* Trigger */}
+            <TriggerSection
+              timeTrigger={state.timeTrigger}
+              dispatch={dispatch}
+            />
 
-          {/* Action */}
-          <ActionSection
-            action={state.action}
-            projectId={state.projectId}
-            dispatch={dispatch}
-          />
+            {/* Project picker */}
+            <div className="space-y-1.5">
+              <label className="flex items-center gap-1 text-xs font-medium text-[hsl(var(--muted-foreground))]">
+                {t('action.projectLabel')}
+                <InfoTooltip
+                  align="start"
+                  content={t('tooltips.project')}
+                />
+              </label>
+              <ProjectPicker
+                value={state.projectId}
+                onChange={(id) => dispatch({ type: 'SET_PROJECT', payload: id })}
+                placeholder={t('action.anyProject')}
+                ariaLabel={t('action.selectProject')}
+                triggerClassName="py-1.5 px-2.5 text-xs"
+                position="above"
+              />
+            </div>
+          </div>
+
+          {/* ── Right column: prompts + context injections ── */}
+          <div className="flex-1 min-w-0 overflow-y-auto overscroll-contain px-5 py-4">
+            <PromptPanel action={state.action} dispatch={dispatch} />
+          </div>
         </div>
 
         {/* ── Footer (P0: inline error) ── */}
-        <div className="flex items-center gap-3 px-5 py-3 border-t border-[hsl(var(--border))]">
+        <div className="flex items-center gap-3 px-5 py-3">
           {/* Error message */}
           {state.error && (
             <p className="flex-1 text-xs text-red-500 truncate" role="alert">

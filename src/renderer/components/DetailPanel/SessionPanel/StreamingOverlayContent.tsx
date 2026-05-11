@@ -34,22 +34,32 @@ export const StreamingOverlayContent = React.memo(function StreamingOverlayConte
   const latestTodos = useCommandStore((s) => selectLatestOpenTodos(s, sessionId))
   const metrics = useStreamingSessionMetrics(sessionId)
 
+  // `mx-3 mt-1` lifts both the streaming footer and the todo pill rail
+  // off the message list and aligns their horizontal edges with the
+  // floating `SessionInputBar` card below (which uses `mx-3 mb-3 mt-1`).
+  // `rounded` on the footer swaps its `border-t` strip chrome for a
+  // pill with full border + rounded corners — same chip vibe as the
+  // input bar, so the bottom overlay reads as one cohesive stack of
+  // floating cards instead of a row of full-bleed strips.
   if (isProcessing && metrics) {
     return (
-      <StreamingFooter
-        activeDurationMs={metrics.activeDurationMs}
-        activeStartedAt={metrics.activeStartedAt}
-        inputTokens={metrics.inputTokens}
-        outputTokens={metrics.outputTokens}
-        activity={metrics.activity}
-        todos={latestTodos}
-      />
+      <div className="mx-3 mt-1 shrink-0">
+        <StreamingFooter
+          activeDurationMs={metrics.activeDurationMs}
+          activeStartedAt={metrics.activeStartedAt}
+          inputTokens={metrics.inputTokens}
+          outputTokens={metrics.outputTokens}
+          activity={metrics.activity}
+          todos={latestTodos}
+          rounded
+        />
+      </div>
     )
   }
 
   if (latestTodos) {
     return (
-      <div className="flex items-center justify-end px-3 py-1 border-t border-[hsl(var(--border))] bg-[hsl(var(--muted))] shrink-0">
+      <div className="mx-3 mt-1 flex items-center justify-end px-3 py-1 rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--muted))] shrink-0">
         <TodoStatusPill todos={latestTodos} isPaused={isSessionPaused} />
       </div>
     )

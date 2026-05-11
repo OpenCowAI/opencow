@@ -36,8 +36,8 @@ const EVENT_COLORS: Record<HookEventType, string> = {
   session_error: 'text-red-500',
   task_completed: 'text-blue-500',
   notification: 'text-orange-500',
-  subagent_start: 'text-violet-500',
-  subagent_stop: 'text-violet-400',
+  subagent_start: 'text-[hsl(var(--ai))]',
+  subagent_stop: 'text-[hsl(var(--ai)/0.7)]',
 }
 
 const EVENT_LABELS: Record<HookEventType, string> = {

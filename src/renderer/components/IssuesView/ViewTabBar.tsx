@@ -36,6 +36,8 @@ import type { IssueView } from '@shared/types'
 
 /** Width (px) of the More (···) button (used to recover baseline when More is visible) */
 const MORE_BTN_W  = 36
+/** Width (px) of the inline "+ Add view" button (lives inside the tabs container after the last tab) */
+const ADD_BTN_W   = 28
 /** Left padding (pl-4) of the tab container — excluded from usable tab area */
 const PADDING_LEFT = 16
 /** gap-0.5 between tabs */
@@ -80,11 +82,14 @@ function SortableTab({
       onClick={onActivate}
       onContextMenu={onContextMenu}
       className={cn(
-        'relative flex items-center gap-1 px-3 py-1.5 text-xs whitespace-nowrap rounded-md transition-colors select-none',
+        'relative flex items-center gap-1 px-2.5 py-1 text-xs whitespace-nowrap rounded-md transition-colors select-none',
         'focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[hsl(var(--ring))]',
+        // Soft ink-wash active style — quieter than a solid primary
+        // fill, which felt too heavy when N custom views can be
+        // stacked across the strip.
         isActive
-          ? 'text-[hsl(var(--foreground))] font-medium bg-[hsl(var(--foreground)/0.06)]'
-          : 'text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] hover:bg-[hsl(var(--foreground)/0.04)]',
+          ? 'bg-[hsl(var(--foreground)/0.06)] text-[hsl(var(--foreground))] font-medium'
+          : 'text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] hover:bg-[hsl(var(--muted))]',
         isDragging && 'cursor-grabbing'
       )}
     >
@@ -106,6 +111,9 @@ function CountBadge({ count, isActive }: { count: number; isActive: boolean }): 
     <span
       className={cn(
         'ml-0.5 min-w-[16px] h-4 px-1 rounded-full text-[10px] leading-4 text-center tabular-nums',
+        // Active tab sits on a soft ink wash (see SortableTab), so the
+        // badge gets a slightly stronger foreground tint to read above
+        // it; inactive tab is a flat label, so a lighter wash works.
         isActive
           ? 'bg-[hsl(var(--foreground)/0.12)] text-[hsl(var(--foreground)/0.7)]'
           : 'bg-[hsl(var(--foreground)/0.07)] text-[hsl(var(--muted-foreground))]'
@@ -122,7 +130,10 @@ function CountBadge({ count, isActive }: { count: number; isActive: boolean }): 
 
 function TabOverlay({ view }: { view: IssueView }): React.JSX.Element {
   return (
-    <div className="flex items-center gap-1 px-3 py-1.5 text-xs whitespace-nowrap rounded-md bg-[hsl(var(--card))] shadow-md border border-[hsl(var(--border))] text-[hsl(var(--foreground))] font-medium">
+    // Drag overlay reads as "lifted card" — soft card surface + light
+    // shadow + border, distinct from the in-strip soft-wash active pill
+    // so the drag affordance is unmistakable.
+    <div className="flex items-center gap-1 px-2.5 py-1 text-xs whitespace-nowrap rounded-md bg-[hsl(var(--card))] shadow-md border border-[hsl(var(--border))] text-[hsl(var(--foreground))] font-medium">
       {view.icon && <span className="text-xs">{view.icon}</span>}
       <span>{view.name}</span>
     </div>
@@ -193,16 +204,19 @@ export function ViewTabBar(): React.JSX.Element {
 
   // Compute how many tabs fit in the available container width.
   //
-  // Key insight: when the More button is visible it lives in a sibling
-  // `shrink-0` div, which causes the `flex-1` tab container to shrink by
-  // ~MORE_BTN_W px.  To get a stable, oscillation-free result we always
-  // recover that width before comparing, giving a consistent baseline (baseW).
+  // Layout: the tabs container holds `[All] [view1] [view2] … [+]`.
+  // The `+` (Add view) button always sits inline at the end of the
+  // tab strip, so its width is always reserved.  The `More (···)`
+  // button only appears in a sibling `shrink-0` div when overflow
+  // happens — its presence shrinks the tab container by ~MORE_BTN_W,
+  // so we recover that width when computing the baseline to keep the
+  // result oscillation-free.
   //
   //   baseW = containerW                      (More hidden — already full width)
   //   baseW = containerW + MORE_BTN_W + gap   (More visible — recover its space)
   //
   // Then:
-  //   tabAreaW  = baseW - PADDING_LEFT                 (usable tab area)
+  //   tabAreaW  = baseW - PADDING_LEFT - ADD_BTN_W - gap     (usable tab area)
   //   all fit?  totalW ≤ tabAreaW
   //   cutAt?    tabs that fit in tabAreaW - MORE_BTN_W - gap
   const computeOverflow = useCallback(() => {
@@ -216,7 +230,8 @@ export function ViewTabBar(): React.JSX.Element {
     // compare against the same hypothetical "full-width" baseline.
     const moreIsVisible = overflowStartRef.current < tabCount
     const baseW    = moreIsVisible ? containerW + MORE_BTN_W + TAB_GAP : containerW
-    const tabAreaW = baseW - PADDING_LEFT
+    // Reserve room for the inline + button at the right edge of the tab strip.
+    const tabAreaW = baseW - PADDING_LEFT - ADD_BTN_W - TAB_GAP
 
     // Total width of all tabs (using cached measurements)
     let totalW = 0
@@ -365,7 +380,13 @@ export function ViewTabBar(): React.JSX.Element {
   const isAllActive = activeViewId === ALL_VIEW.id
 
   return (
-    <div className="flex items-center border-b border-[hsl(var(--border)/0.5)]">
+    // `pt-2` raises the tabs to roughly the same vertical position as
+    // the Chat page's ChatHeader content (h-10 with centered buttons),
+    // without using a fixed `h-10` here.  Top-padding only (no fixed
+    // height + `items-center`) avoids the invisible bottom whitespace
+    // that a centered fixed-height container would produce — keeping
+    // the gap to the filter row below tight.
+    <div className="flex items-center pt-2 shrink-0">
 
       {/* ── Hidden measurement layer ──────────────────────────────────────
           Renders all tabs (with badges) off-screen so we can read their
@@ -402,17 +423,19 @@ export function ViewTabBar(): React.JSX.Element {
         role="tablist"
         aria-label={t('issueViews.views')}
       >
-        {/* All tab — fixed, not draggable */}
+        {/* All tab — fixed, not draggable.  Shares the SortableTab
+            pill style so the leading-most tab feels visually peer to
+            its custom-view neighbours. */}
         <button
           role="tab"
           aria-selected={isAllActive}
           onClick={() => setActiveView(ALL_VIEW.id)}
           className={cn(
-            'relative flex items-center gap-1 px-3 py-1.5 text-xs whitespace-nowrap rounded-md transition-colors',
+            'relative flex items-center gap-1 px-2.5 py-1 text-xs whitespace-nowrap rounded-md transition-colors',
             'focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[hsl(var(--ring))]',
             isAllActive
-              ? 'text-[hsl(var(--foreground))] font-medium bg-[hsl(var(--foreground)/0.06)]'
-              : 'text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] hover:bg-[hsl(var(--foreground)/0.04)]'
+              ? 'bg-[hsl(var(--foreground)/0.06)] text-[hsl(var(--foreground))] font-medium'
+              : 'text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] hover:bg-[hsl(var(--muted))]'
           )}
         >
           {t('issueViews.all')}
@@ -445,12 +468,23 @@ export function ViewTabBar(): React.JSX.Element {
             {dragActiveView ? <TabOverlay view={dragActiveView} /> : null}
           </DragOverlay>
         </DndContext>
+
+        {/* + Add view — sits inline at the right edge of the tab strip,
+            so it visually follows the last tab rather than sitting in a
+            separate toolbar.  Width is reserved by computeOverflow via
+            ADD_BTN_W so it never gets clipped by `overflow-hidden`. */}
+        <button
+          ref={addButtonRef}
+          onClick={handleCreateView}
+          aria-label={t('issueViews.createNewView')}
+          className="shrink-0 flex items-center justify-center p-1.5 rounded-md text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] hover:bg-[hsl(var(--muted))] transition-colors"
+        >
+          <Plus className="w-3.5 h-3.5" />
+        </button>
       </div>
 
-      {/* ── Fixed right-side controls ─────────────────────────────────── */}
-      <div className="flex items-center gap-1 pr-2 shrink-0">
-
-        {/* More (···) — only when tabs overflow */}
+      {/* ── Fixed right-side controls — More button only ─────────────── */}
+      <div className="flex items-center pr-2 shrink-0">
         {hasOverflow && (
           <button
             ref={moreButtonRef}
@@ -462,23 +496,13 @@ export function ViewTabBar(): React.JSX.Element {
             className={cn(
               'flex items-center justify-center p-1.5 rounded-md transition-colors',
               activeInOverflow || moreOpen
-                ? 'text-[hsl(var(--foreground))] bg-[hsl(var(--foreground)/0.06)]'
-                : 'text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] hover:bg-[hsl(var(--foreground)/0.04)]'
+                ? 'text-[hsl(var(--foreground))] bg-[hsl(var(--muted))]'
+                : 'text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] hover:bg-[hsl(var(--muted))]'
             )}
           >
             <MoreHorizontal className="w-3.5 h-3.5" />
           </button>
         )}
-
-        {/* + Add view — always visible */}
-        <button
-          ref={addButtonRef}
-          onClick={handleCreateView}
-          aria-label={t('issueViews.createNewView')}
-          className="flex-none flex items-center justify-center p-1 rounded-lg border border-dashed border-[hsl(var(--border)/0.5)] text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] hover:border-[hsl(var(--foreground)/0.2)] transition-colors"
-        >
-          <Plus className="w-3 h-3" />
-        </button>
       </div>
 
       {/* ── More popover (fixed positioning) ─────────────────────────── */}
@@ -505,11 +529,17 @@ export function ViewTabBar(): React.JSX.Element {
                   key={tab.id}
                   onClick={() => { setActiveView(tab.id); setMoreOpen(false) }}
                   onContextMenu={isCustom ? (e) => handleEditView(e, tab as IssueView) : undefined}
+                  // Dropdown rows keep the soft-wash + checkmark active
+                  // indicator instead of the solid primary fill used on
+                  // the visible pills: a long full-width primary band
+                  // inside a popover reads as visually heavy, and the
+                  // checkmark is a lighter way to mark "current" in a
+                  // list-row context.
                   className={cn(
                     'w-full flex items-center gap-2 px-3 py-1.5 text-xs text-left transition-colors',
                     isActive
-                      ? 'text-[hsl(var(--foreground))] font-medium bg-[hsl(var(--foreground)/0.06)]'
-                      : 'text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] hover:bg-[hsl(var(--foreground)/0.04)]'
+                      ? 'text-[hsl(var(--foreground))] font-medium bg-[hsl(var(--muted))]'
+                      : 'text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] hover:bg-[hsl(var(--muted))]'
                   )}
                 >
                   {tab.icon && <span className="text-xs">{tab.icon}</span>}
