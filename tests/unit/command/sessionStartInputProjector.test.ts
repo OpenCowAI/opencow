@@ -77,13 +77,18 @@ describe('projectStartSessionInput', () => {
     expect(() => projectStartSessionInput(raw)).toThrowError(/disableBuiltinTools/)
   })
 
-  it('rejects custom-path workspace from IPC payloads', () => {
+  it('accepts custom-path workspace from IPC payloads', () => {
+    // `custom-path` is allowed at the IPC boundary because it originates
+    // from the chat folder picker's native directory dialog. The cwd is
+    // re-validated downstream by SessionWorkspaceResolver (absolute /
+    // exists / isDirectory) before a session actually starts.
     const raw = {
       prompt: 'hello',
       origin: { source: 'agent' as const },
       workspace: { scope: 'custom-path', cwd: '/tmp/project' },
     }
 
-    expect(() => projectStartSessionInput(raw)).toThrowError(/Invalid start-session payload/)
+    const projected = projectStartSessionInput(raw)
+    expect(projected.workspace).toEqual({ scope: 'custom-path', cwd: '/tmp/project' })
   })
 })
