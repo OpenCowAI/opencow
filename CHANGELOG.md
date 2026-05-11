@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.5.1] - 2026-05-12
+
+### Fixed
+- Chat conversation message list now aligns precisely with the bottom input bar — closes the residual ~64px column-width gap from a 680/640 mismatch in the sidebar Chat view, the OS scrollbar gutter, and a redundant inner padding on the chat-variant message list
+
 ## [0.5.0] - 2026-05-12
 
 ### Added
