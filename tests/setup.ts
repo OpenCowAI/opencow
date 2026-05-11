@@ -94,6 +94,45 @@ if (typeof document !== 'undefined' && !document.queryCommandSupported) {
   document.queryCommandSupported = () => false
 }
 
+// navigator —— Monaco Editor inspects `navigator.userAgent` at module load
+// to decide whether to install a WebKit-only clipboard workaround. jsdom's
+// default UA is `Mozilla/5.0 (darwin) AppleWebKit/537.36 (KHTML, like Gecko)
+// jsdom/28.1.0`, which makes Monaco's `isWebkitWebView` (`!isChrome &&
+// !isSafari && isWebKit`) flip to true. That workaround attaches a global
+// click/keydown handler that calls `navigator.clipboard.write([...])` —
+// jsdom doesn't implement the async Clipboard API, so the handler throws
+// `Cannot read properties of undefined (reading 'write')` as an uncaught
+// exception and fails the whole vitest run.
+//
+// Two complementary stubs:
+//   1. Override `userAgent` so `isWebKit` is false — Monaco skips the
+//      workaround entirely. This is the load-time guard.
+//   2. Provide a no-op `navigator.clipboard` stub so any other browser
+//      code that lands on the async Clipboard API also doesn't blow up.
+if (typeof window !== 'undefined') {
+  if (window.navigator.userAgent.includes('AppleWebKit')) {
+    Object.defineProperty(window.navigator, 'userAgent', {
+      configurable: true,
+      value: 'Mozilla/5.0 (test) jsdom/28.1.0',
+    })
+  }
+  if (!window.navigator.clipboard) {
+    const clipboardStub = {
+      write: async () => {},
+      writeText: async () => {},
+      read: async () => [],
+      readText: async () => '',
+      addEventListener: () => {},
+      removeEventListener: () => {},
+      dispatchEvent: () => false,
+    } as unknown as Clipboard
+    Object.defineProperty(window.navigator, 'clipboard', {
+      configurable: true,
+      value: clipboardStub,
+    })
+  }
+}
+
 // IntersectionObserver —— SessionScrollNav uses this for scroll-nav tracking.
 // jsdom does not implement it, so we provide a minimal no-op stub.
 if (typeof globalThis.IntersectionObserver === 'undefined') {
