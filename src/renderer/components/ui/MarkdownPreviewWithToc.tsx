@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { memo, useRef, useMemo, useState, useCallback, useEffect } from 'react'
+import { useTranslation } from 'react-i18next'
 import { ChevronLeft, List } from 'lucide-react'
 import { useModalAnimation } from '@/hooks/useModalAnimation'
 import { cn } from '@/lib/utils'
@@ -25,7 +26,11 @@ interface MarkdownPreviewWithTocProps {
   content: string
   /** Passed to the outermost container (typically `h-[82vh]`). */
   className?: string
-  /** Optional TOC title text. */
+  /**
+   * Optional TOC title text. When omitted, falls back to the localised
+   * `common.tableOfContents` key (中:目录 / 英:Contents) — keeps this
+   * generic UI primitive decoupled from any specific business namespace.
+   */
   tocLabel?: string
   /** Enable user-controlled TOC collapse/expand behavior. */
   enableTocCollapse?: boolean
@@ -40,11 +45,13 @@ interface MarkdownPreviewWithTocProps {
 export const MarkdownPreviewWithToc = memo(function MarkdownPreviewWithToc({
   content,
   className,
-  tocLabel = 'Contents',
+  tocLabel,
   enableTocCollapse = false,
   defaultTocCollapsed = false,
   topRightSlot,
 }: MarkdownPreviewWithTocProps): React.JSX.Element {
+  const { t } = useTranslation('common')
+  const resolvedTocLabel = tocLabel ?? t('tableOfContents')
   const scrollRef = useRef<HTMLDivElement>(null)
   const tocEntries = useMemo(() => extractToc(content), [content])
   const [activeHeadingId, setActiveHeadingId] = useState<string | null>(null)
@@ -172,42 +179,62 @@ export const MarkdownPreviewWithToc = memo(function MarkdownPreviewWithToc({
     )
   }
 
-  // TOC is presented as a slide-in drawer overlay anchored to the left edge
-  // of the content area — clicking the trigger opens it; clicking outside,
-  // clicking a TOC item, or pressing Escape closes it. The content area
-  // stays at full width regardless of drawer state (the drawer floats on
-  // top with backdrop-blur), so the preview never reflows.
-  return (
-    <div className={cn('overflow-hidden relative', className)}>
-      {topRightToolbar}
+  // Collapsible mode — TOC is a slide-in drawer overlay anchored to the
+  // left edge. Trigger button shows when closed; clicking outside,
+  // clicking a TOC item, or pressing Escape closes it. Content stays at
+  // full width regardless of drawer state (drawer floats on top with
+  // backdrop-blur), so the preview never reflows.
+  if (enableTocCollapse) {
+    return (
+      <div className={cn('overflow-hidden relative', className)}>
+        {topRightToolbar}
 
-      {/* Trigger — top-left. Visible whenever the drawer is closed
-          (when collapse is enabled). When collapse is disabled the drawer
-          stays open so no trigger is needed. */}
-      {enableTocCollapse && !isTocOpen && (
-        <TocCollapsedTrigger label={tocLabel} onExpand={() => setIsTocOpen(true)} />
-      )}
-
-      {/* Drawer — overlays the left strip of the content. */}
-      <TocDrawer
-        open={enableTocCollapse ? isTocOpen : true}
-        entries={tocEntries}
-        activeId={activeHeadingId}
-        onSelect={handleTocSelectAndClose}
-        label={tocLabel}
-        onClose={enableTocCollapse ? () => setIsTocOpen(false) : undefined}
-      />
-
-      <div
-        ref={scrollRef}
-        className={cn(
-          'h-full overflow-y-auto px-6 py-4',
-          // Reserve constant top padding whenever the TOC is collapsible —
-          // toggling the trigger / drawer must NOT reflow the content.
-          enableTocCollapse && 'pt-8',
+        {!isTocOpen && (
+          <TocCollapsedTrigger label={resolvedTocLabel} onExpand={() => setIsTocOpen(true)} />
         )}
+
+        <TocDrawer
+          open={isTocOpen}
+          entries={tocEntries}
+          activeId={activeHeadingId}
+          onSelect={handleTocSelectAndClose}
+          label={resolvedTocLabel}
+          onClose={() => setIsTocOpen(false)}
+        />
+
+        <div
+          ref={scrollRef}
+          // Reserve constant top padding so toggling the trigger / drawer
+          // never reflows the content area.
+          className="h-full overflow-y-auto px-6 py-4 pt-8"
+        >
+          <MarkdownContent content={content} />
+        </div>
+      </div>
+    )
+  }
+
+  // Always-on mode — TOC is a docked left column; content takes the
+  // remaining flex space. No overlay, no shadow, no animation.
+  return (
+    <div className={cn('overflow-hidden flex', className)}>
+      <aside
+        className="shrink-0 border-r border-[hsl(var(--border))]"
+        style={{ width: TOC_WIDTH }}
       >
-        <MarkdownContent content={content} />
+        <TocSidebar
+          entries={tocEntries}
+          activeId={activeHeadingId}
+          onSelect={handleTocSelect}
+          label={resolvedTocLabel}
+        />
+      </aside>
+
+      <div className="flex-1 min-w-0 relative overflow-hidden">
+        {topRightToolbar}
+        <div ref={scrollRef} className="h-full overflow-y-auto px-6 py-4">
+          <MarkdownContent content={content} />
+        </div>
       </div>
     </div>
   )
@@ -319,7 +346,9 @@ interface TocDrawerProps {
   onClose?: () => void
 }
 
-const TOC_DRAWER_WIDTH = 240
+/** Fixed TOC width — shared between the docked sidebar and the
+ *  slide-in drawer so both modes feel identical visually. */
+const TOC_WIDTH = 240
 
 const TocDrawer = memo(function TocDrawer({
   open,
@@ -386,7 +415,7 @@ const TocDrawer = memo(function TocDrawer({
         phase === 'enter' && 'toc-drawer-enter',
         phase === 'exit' && 'toc-drawer-exit',
       )}
-      style={{ width: TOC_DRAWER_WIDTH }}
+      style={{ width: TOC_WIDTH }}
       role="dialog"
       aria-label={label}
     >

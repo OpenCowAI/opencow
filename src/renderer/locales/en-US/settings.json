@@ -23,10 +23,6 @@
   },
   "general": {
     "appearance": "Appearance",
-    "colorScheme": "Color Scheme",
-    "neutral": "Neutral",
-    "accent": "Accent",
-    "surfaceTexture": "Surface Texture",
     "modes": {
       "system": "System",
       "systemDesc": "Follow OS preference",

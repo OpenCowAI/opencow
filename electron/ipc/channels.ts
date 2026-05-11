@@ -180,6 +180,10 @@ async function getFileIndex(projectPath: string): Promise<FileEntry[]> {
   const path = await import('node:path')
   const resolvedBase = path.resolve(projectPath)
   const entries: FileEntry[] = []
+  // Track real (symlink-resolved) directory paths we've already walked so
+  // symlinked directories are followed exactly once — protects against
+  // cycles (e.g. `node_modules/.bin -> ..` style links) and double work.
+  const visitedReal = new Set<string>()
 
   async function walk(dir: string, depth: number): Promise<void> {
     if (depth > FILE_INDEX_MAX_DEPTH) return
@@ -190,22 +194,38 @@ async function getFileIndex(projectPath: string): Promise<FileEntry[]> {
         const fullPath = path.join(dir, entry.name)
         const relativePath = path.relative(projectPath, fullPath)
         try {
-          const stat = await fs.stat(fullPath)
+          // `lstat` reports info about the link itself (so we can flag
+          // symlinks); `stat` follows links to discover the target's type
+          // and size. For non-symlinks the two are identical, so we only pay
+          // the extra fs hop for actual links. Broken symlinks (stat throws)
+          // still appear — they fall back to lstat info as non-directory
+          // symlinks rather than vanishing from the tree.
+          const linkStat = await fs.lstat(fullPath)
+          const isSymlink = linkStat.isSymbolicLink()
+          const targetStat = isSymlink
+            ? await fs.stat(fullPath).catch(() => linkStat)
+            : linkStat
+          const isDir = targetStat.isDirectory()
           entries.push({
             name: entry.name,
             path: relativePath,
-            isDirectory: entry.isDirectory(),
-            size: stat.size,
-            modifiedAt: stat.mtimeMs,
+            isDirectory: isDir,
+            isSymlink,
+            size: targetStat.size,
+            modifiedAt: targetStat.mtimeMs,
           })
-        } catch { /* skip unreadable */ }
-        if (entry.isDirectory()) {
-          await walk(fullPath, depth + 1)
-        }
+          if (isDir) {
+            const realPath = await fs.realpath(fullPath).catch(() => fullPath)
+            if (visitedReal.has(realPath)) continue
+            visitedReal.add(realPath)
+            await walk(fullPath, depth + 1)
+          }
+        } catch { /* skip entries whose lstat fails (permissions, races) */ }
       }
     } catch { /* skip unreadable dirs */ }
   }
 
+  visitedReal.add(await fs.realpath(resolvedBase).catch(() => resolvedBase))
   await walk(resolvedBase, 0)
 
   fileIndexCache.set(projectPath, { entries, timestamp: Date.now() })
@@ -306,6 +326,11 @@ export function registerIPCHandlers(deps: IPCDeps): void {
   })
 
   registerHandler('get-hooks-status', () => isHooksInstalled(deps.hookEnv))
+
+  registerHandler('get-home-dir', async () => {
+    const os = await import('node:os')
+    return os.homedir()
+  })
 
   registerHandler('pin-project', async (projectId) => {
     if (!projectService) throw new Error('Not ready')
@@ -418,16 +443,26 @@ export function registerIPCHandlers(deps: IPCDeps): void {
 
         const fullPath = path.join(resolved, entry.name)
         try {
-          const stat = await fs.stat(fullPath)
+          // `lstat` describes the link itself (so we can mark symlinks);
+          // `stat` follows the link to learn the target's type and size.
+          // For ordinary entries the two return identical info, so the
+          // extra fs hop only applies to actual symlinks. Broken symlinks
+          // gracefully fall back to lstat info instead of disappearing.
+          const linkStat = await fs.lstat(fullPath)
+          const isSymlink = linkStat.isSymbolicLink()
+          const targetStat = isSymlink
+            ? await fs.stat(fullPath).catch(() => linkStat)
+            : linkStat
           results.push({
             name: entry.name,
             path: path.relative(projectPath, fullPath),
-            isDirectory: entry.isDirectory(),
-            size: stat.size,
-            modifiedAt: stat.mtimeMs
+            isDirectory: targetStat.isDirectory(),
+            isSymlink,
+            size: targetStat.size,
+            modifiedAt: targetStat.mtimeMs
           })
         } catch {
-          // Skip files we can't stat (permission issues, broken symlinks)
+          // Skip entries whose lstat fails (permissions, races)
         }
       }
 

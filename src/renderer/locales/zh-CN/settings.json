@@ -23,10 +23,6 @@
   },
   "general": {
     "appearance": "外观",
-    "colorScheme": "配色方案",
-    "neutral": "中性色",
-    "accent": "强调色",
-    "surfaceTexture": "表面纹理",
     "modes": {
       "system": "跟随系统",
       "systemDesc": "跟随操作系统偏好",

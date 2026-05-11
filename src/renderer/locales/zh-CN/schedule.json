@@ -251,6 +251,17 @@
     "unknownIssue": "未知 Issue",
     "closeViewer": "关闭查看器",
     "loadingPreview": "加载预览中…",
-    "issuePreviewAria": "Issue 详情预览"
+    "issuePreviewAria": "Issue 详情预览",
+    "searchPlaceholder": "搜索标题 / 文件 / Issue",
+    "filterByProject": "按项目筛选",
+    "allProjects": "全部项目",
+    "noStarredFiltered": "没有匹配的收藏内容",
+    "title": "收藏",
+    "subtitle": "已收藏的会话产物",
+    "bucketToday": "今天",
+    "bucketYesterday": "昨天",
+    "bucketDayBeforeYesterday": "前天",
+    "noIssue": "无关联 Issue",
+    "noProject": "无关联项目"
   }
 }

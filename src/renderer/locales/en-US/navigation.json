@@ -3,14 +3,15 @@
     "issues": "Issues",
     "chat": "Chat",
     "files": "Files",
-    "dashboard": "Dashboard",
-    "starredArtifacts": "Starred Artifacts",
+    "dashboard": "Overview",
+    "starredArtifacts": "Starred",
     "capabilities": "Capabilities",
     "memories": "Memories",
     "market": "Skills Market",
     "schedule": "Schedule"
   },
   "sidebar": {
+    "chat": "Chat",
     "allProjects": "Projects",
     "projectList": "Project list",
     "addProject": "Add project",

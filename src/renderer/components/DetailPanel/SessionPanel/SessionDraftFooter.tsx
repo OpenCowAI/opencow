@@ -56,7 +56,7 @@ export function SessionDraftFooter({
   const { t: ti } = useTranslation('issues')
   const { t: ts } = useTranslation('schedule')
   const { t: tSession } = useTranslation('sessions')
-  const openDetail = useAppStore((s) => s.openDetail)
+  const navigateToSchedule = useAppStore((s) => s.navigateToSchedule)
   const { applyIssueDraft, applyScheduleDraft } = useDraftApplyActions()
   const lifecycle = useSessionLifecycleOperations(
     lifecycleSource === 'lifecycle-operation' ? sessionId : null
@@ -187,9 +187,9 @@ export function SessionDraftFooter({
 
   const handleNavigateToSchedule = useCallback(
     (scheduleId: string) => {
-      openDetail({ type: 'schedule', scheduleId })
+      navigateToSchedule(scheduleId)
     },
-    [openDetail]
+    [navigateToSchedule]
   )
 
   const handleIssueCreatedFromForm = useCallback(
@@ -215,11 +215,11 @@ export function SessionDraftFooter({
       toast(`${ts('aiCreator.scheduleCreated')}: ${created.name}`, {
         action: {
           label: ts('aiCreator.card.view'),
-          onClick: () => openDetail({ type: 'schedule', scheduleId: created.id }),
+          onClick: () => navigateToSchedule(created.id),
         },
       })
     },
-    [ts, openDetail, markScheduleCreated]
+    [ts, navigateToSchedule, markScheduleCreated]
   )
 
   const effectiveCreatedIssueRef = useMemo(

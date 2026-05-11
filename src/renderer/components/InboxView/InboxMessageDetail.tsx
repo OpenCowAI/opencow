@@ -20,39 +20,49 @@ import {
 import { cn } from '@/lib/utils'
 import { MarkdownContent } from '../ui/MarkdownContent'
 
+// Same palette as `InboxMessageItem.PRIORITY_BADGE` — keep the two
+// surfaces in lockstep so a priority chip reads identically whether
+// it appears in the list or the detail header.
 const PRIORITY_LABELS: Record<InboxPriority, { labelKey: string; className: string }> = {
   high: {
     labelKey: 'priority.high',
-    className: 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200'
+    className: 'bg-[hsl(var(--destructive)/0.12)] text-[hsl(var(--destructive))]'
   },
   normal: {
     labelKey: 'priority.normal',
-    className: 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200'
+    className: 'bg-[hsl(var(--accent))] text-[hsl(var(--accent-foreground))]'
   },
   low: {
     labelKey: 'priority.low',
-    className: 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300'
+    className: 'bg-[hsl(var(--muted))] text-[hsl(var(--muted-foreground))]'
   }
 }
 
+// Status icon palette is intentionally minimal:
+//   - error  → `--destructive` (warm vermilion, on-theme)
+//   - success → emerald-600 (toned green; brighter would clash with cream)
+//   - warning → amber-600 (toned amber; matches the warm family)
+//   - info / default / summary → muted-foreground (neutral)
+// Avoiding the bright 500 hues that fight the warm palette, while
+// keeping enough semantic differentiation for status at a glance.
 function MessageIcon({ message }: { message: InboxMessage }): React.JSX.Element {
   if (message.category === 'hook_event') {
     switch (message.eventType) {
       case 'session_error':
-        return <AlertTriangle className="h-5 w-5 text-red-500" aria-hidden="true" />
+        return <AlertTriangle className="h-5 w-5 text-[hsl(var(--destructive))]" aria-hidden="true" />
       case 'task_completed':
-        return <CheckCircle2 className="h-5 w-5 text-green-500" aria-hidden="true" />
+        return <CheckCircle2 className="h-5 w-5 text-emerald-600" aria-hidden="true" />
       default:
-        return <Bell className="h-5 w-5 text-blue-500" aria-hidden="true" />
+        return <Bell className="h-5 w-5 text-[hsl(var(--muted-foreground))]" aria-hidden="true" />
     }
   }
   switch (message.reminderType) {
     case 'idle_session':
-      return <Clock className="h-5 w-5 text-orange-500" aria-hidden="true" />
+      return <Clock className="h-5 w-5 text-amber-600" aria-hidden="true" />
     case 'error_spike':
-      return <AlertTriangle className="h-5 w-5 text-red-500" aria-hidden="true" />
+      return <AlertTriangle className="h-5 w-5 text-[hsl(var(--destructive))]" aria-hidden="true" />
     case 'daily_summary':
-      return <Bell className="h-5 w-5 text-gray-500" aria-hidden="true" />
+      return <Bell className="h-5 w-5 text-[hsl(var(--muted-foreground))]" aria-hidden="true" />
   }
 }
 
@@ -127,10 +137,17 @@ export function InboxMessageDetail({
 
   return (
     <div className="h-full flex flex-col">
-      {/* Header */}
-      <div className="border-b border-[hsl(var(--border))] px-4 py-3">
+      {/* Header — no bottom border; layout breathing carries the
+          visual separation, matching the rest of the app's pages. */}
+      <div className="px-4 py-3">
         <div className="flex items-start gap-3">
-          <MessageIcon message={message} />
+          {/* Icon is h-5 (20px); title is text-base (~24px line-height).
+              `items-start` would top-align the icon, leaving its visual
+              center ~2px above the title's. The wrapper's `pt-0.5`
+              nudges it down so icon center ≈ title center. */}
+          <div className="pt-0.5 shrink-0">
+            <MessageIcon message={message} />
+          </div>
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2">
               <h2 className="text-base font-semibold truncate">
@@ -145,18 +162,25 @@ export function InboxMessageDetail({
                 {t(priorityConfig.labelKey)}
               </span>
             </div>
-            <div className="flex items-center gap-2 mt-1 text-xs text-[hsl(var(--muted-foreground))]">
-              {project && <span>{project.name}</span>}
-              {project && <span aria-hidden="true">|</span>}
+            {/* Meta row — separator unified to `·` (a small dim dot)
+                matching all other "title meta" rows in the app
+                instead of the harsher `|` pipe. */}
+            <div className="flex items-center gap-1.5 mt-1 text-xs text-[hsl(var(--muted-foreground))]">
+              {project && (
+                <>
+                  <span>{project.name}</span>
+                  <span className="text-[hsl(var(--muted-foreground)/0.4)]" aria-hidden="true">·</span>
+                </>
+              )}
               <span>{formatRelativeTime(message.createdAt)}</span>
-              <span aria-hidden="true">|</span>
+              <span className="text-[hsl(var(--muted-foreground)/0.4)]" aria-hidden="true">·</span>
               <span className="capitalize">{message.status}</span>
             </div>
           </div>
           {navigationTarget && navigationCopy && (
             <button
               onClick={handleNavigateFromInbox}
-              className="shrink-0 flex items-center gap-1.5 px-2.5 py-1.5 text-xs rounded-md text-[hsl(var(--muted-foreground))] hover:bg-[hsl(var(--muted))] hover:text-[hsl(var(--foreground))] transition-colors"
+              className="shrink-0 flex items-center gap-1.5 px-2.5 py-1.5 text-xs rounded-md text-[hsl(var(--muted-foreground))] hover:bg-[hsl(var(--foreground)/0.04)] hover:text-[hsl(var(--foreground))] transition-colors"
               aria-label={t(navigationCopy.ariaKey)}
             >
               <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />

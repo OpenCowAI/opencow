@@ -676,6 +676,9 @@ export interface IPCChannels {
   'delete-project': { args: [id: string]; return: boolean }
   // Directory picker (native OS dialog)
   'select-directory': { args: []; return: string | null }
+  // User home directory — used by the sidebar "Chat" entry to identify
+  // (or lazily create) a default project rooted at `$HOME`.
+  'get-home-dir': { args: []; return: string }
   // Session Notes
   'list-session-notes': { args: [issueId: string]; return: SessionNote[] }
   'count-session-notes-by-issue': { args: []; return: Record<string, number> }
@@ -890,6 +893,12 @@ export interface FileEntry {
   name: string
   path: string
   isDirectory: boolean
+  /**
+   * True when this entry is a symbolic link (the resolved target may be a
+   * file or directory — see `isDirectory`). Renderers use this to surface a
+   * subtle alias indicator so users can tell a link apart from a real entry.
+   */
+  isSymlink?: boolean
   size: number
   modifiedAt: number
 }
@@ -2721,7 +2730,9 @@ export const ALL_VIEW: IssueView = {
   name: 'All',
   icon: '',
   filters: {},
-  display: { groupBy: null, sort: { field: 'updatedAt', order: 'desc' } },
+  // Default the All-issues view to "group by status" — users typically open
+  // the global list to triage what's actionable, and a flat list buries it.
+  display: { groupBy: 'status', sort: { field: 'updatedAt', order: 'desc' } },
   position: -1,
   createdAt: 0,
   updatedAt: 0
@@ -3434,37 +3445,19 @@ export interface StartSessionInput {
 
 export type ThemeMode = 'light' | 'dark' | 'system'
 
-/** Available color schemes — maps 1:1 to `.theme-{scheme}` CSS class.
- *  Neutral group: gray-scale palettes with different hue tints.
- *  Accent group: vibrant primary color palettes. */
-export type ThemeScheme =
-  | 'zinc'
-  | 'slate'
-  | 'stone'
-  | 'gray'
-  | 'neutral'
-  | 'blue'
-  | 'green'
-  | 'violet'
-  | 'rose'
-  | 'orange'
-
-/** Surface texture style — maps 1:1 to `.texture-{id}` CSS class on `<html>`. */
-export type ThemeTexture = 'plain' | 'glass'
-
-/** Surface elevation level for the texture system.
- *  Higher elevation = stronger glass effect in glass mode. */
+/** Surface elevation level — retained as a structural marker on raised
+ *  surfaces (cards / popovers / modals / overlays). Currently it produces
+ *  no visual effect; kept so future surface treatments can opt in without
+ *  re-tagging the entire component tree. */
 export type SurfaceElevation = 'ground' | 'raised' | 'floating' | 'modal' | 'overlay'
 
 /** Semantic color variable name (without `--` prefix) used by a surface element.
  *  Maps to the CSS custom property that defines the surface's base color. */
 export type SurfaceSemanticColor = 'card' | 'popover' | 'background' | 'sidebar-background'
 
-/** Structured theme configuration — mode × scheme × texture (three-axis). */
+/** Structured theme configuration. */
 export interface ThemeConfig {
   mode: ThemeMode
-  scheme: ThemeScheme
-  texture: ThemeTexture
 }
 
 export type PermissionMode = 'bypassPermissions' | 'default'

@@ -1,6 +1,5 @@
 @import "tailwindcss";
 @import "./themes.css";
-@import "./textures.css";
 @import "./hljs-theme.css";
 @import "./git-decorations.css";
 
@@ -15,29 +14,47 @@
   :root {
     --radius: 0.75rem;
     --modal-exit-duration: 150ms;
-    --heatmap-empty: 210 17% 93%;
+
+    /* --- Activity heatmap (kept green so contribution density reads
+           consistently across themes; empty slot tinted warm to match
+           the canvas instead of the old cool grey). --- */
+    --heatmap-empty: 45 26% 92%;
     --heatmap-l1: 138 55% 72%;
     --heatmap-l2: 138 55% 51%;
     --heatmap-l3: 138 56% 40%;
     --heatmap-l4: 138 58% 27%;
-    --sidebar-background: 0 0% 98%;
-    --sidebar-foreground: 240 5.3% 26.1%;
-    --sidebar-primary: 240 5.9% 10%;
-    --sidebar-primary-foreground: 0 0% 98%;
-    --sidebar-accent: 240 4.8% 95.9%;
-    --sidebar-accent-foreground: 240 5.9% 10%;
-    --sidebar-border: 220 13% 91%;
+
+    /* --- Sidebar — distinct tonal layer that sits *above* the canvas in
+           lightness (so the sidebar reads as a sheet of warm paper hovering
+           over a slightly darker mat). Saturation stays close to the
+           canvas's warm family so the sidebar never reads as desaturated
+           grey. The right detail panel shares this token, giving the app
+           two symmetric flanking layers around the main canvas. --- */
+    --sidebar-background: 45 37% 95%;
+    --sidebar-foreground: 30 22% 13%;
+    --sidebar-primary: 30 22% 13%;
+    --sidebar-primary-foreground: 45 50% 97%;
+    --sidebar-accent: 45 26% 91%;
+    --sidebar-accent-foreground: 30 22% 13%;
+    --sidebar-border: 45 22% 88%;
   }
 
   .dark {
-    --sidebar-background: 240 5.9% 10%;
-    --sidebar-foreground: 240 4.8% 95.9%;
-    --sidebar-primary: 224.3 76.3% 48%;
-    --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 240 3.7% 15.9%;
-    --sidebar-accent-foreground: 240 4.8% 95.9%;
-    --sidebar-border: 240 3.7% 15.9%;
-    --heatmap-empty: 215 14% 13%;
+    /* --- Sidebar — shares its surface tone with the app canvas
+           (`--background`) so the two flanks blend into the centre as
+           one continuous warm charcoal sheet. Accent / border lift in
+           lockstep to keep nav-item hover and structural lines
+           legible against the lifted sidebar tone. */
+    --sidebar-background: 30 12% 10%;
+    --sidebar-foreground: 45 30% 85%;
+    --sidebar-primary: 45 39% 73%;           /* 缥缃 — golden primary */
+    --sidebar-primary-foreground: 30 12% 8%;
+    --sidebar-accent: 30 11% 18%;
+    --sidebar-accent-foreground: 45 30% 90%;
+    --sidebar-border: 30 10% 22%;
+
+    /* --- Activity heatmap --------------------------------------- */
+    --heatmap-empty: 30 10% 14%;
     --heatmap-l1: 150 60% 16%;
     --heatmap-l2: 152 100% 21%;
     --heatmap-l3: 135 55% 40%;
@@ -55,6 +72,83 @@
     color: hsl(var(--foreground));
     font-feature-settings: "rlig" 1, "calt" 1;
   }
+}
+
+/* ── Custom scrollbars ────────────────────────────────────────────────
+ * Geometry is strictly constant across rest / hover / active states —
+ * only the thumb's opacity steps. All three states use the same colour
+ * family (--muted-foreground), so the visual character stays uniform
+ * and the thumb never *appears* to widen on hover (the previous design
+ * stepped from --border to a much darker token, which read as a width
+ * change even though the pixels were identical).
+ *
+ * The transparent border + `background-clip: padding-box` keeps the
+ * thumb from touching the track edges; tracks stay transparent so the
+ * underlying panel surface reads through.
+ * ─────────────────────────────────────────────────────────────────────── */
+
+/* Firefox */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: hsl(var(--muted-foreground) / 0.3) transparent;
+}
+
+/* WebKit / Blink */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background-color: hsl(var(--muted-foreground) / 0.25);
+  background-clip: padding-box;
+  border: 2px solid transparent;
+  border-radius: 999px;
+  /* Animate only colour — never width — so hovering never reflows the bar. */
+  transition: background-color 120ms ease-out;
+}
+::-webkit-scrollbar-thumb:hover {
+  background-color: hsl(var(--muted-foreground) / 0.4);
+}
+::-webkit-scrollbar-thumb:active {
+  background-color: hsl(var(--muted-foreground) / 0.55);
+}
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+/* Suppress end-cap arrow buttons (visible when the OS scroll-bar
+   preference is set to "Always", and they wreck the thumb's visual
+   width by adding fixed-size blocks at each end). */
+::-webkit-scrollbar-button {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
+/* Visually hide the scrollbar while keeping the element scrollable.
+   Used by tab strips and filter rows where wheel / shift+wheel / touch
+   horizontal scroll is enough and the bar itself adds visual noise. */
+.no-scrollbar {
+  scrollbar-width: none;            /* Firefox */
+  -ms-overflow-style: none;          /* legacy Edge / IE */
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;                     /* WebKit / Blink */
+}
+
+/* CJK serif (宋体) font stack for prose / headings. Mac and Windows
+   each ship a different default Songti — declare both so the chain
+   resolves without relying on bundled web fonts. */
+.font-cjk-serif {
+  font-family:
+    "Source Han Serif SC",
+    "Noto Serif CJK SC",
+    "Songti SC",
+    "STSong",
+    SimSun,
+    serif;
 }
 
 /* Native <select> — hide browser chrome, add custom chevron with controlled position */

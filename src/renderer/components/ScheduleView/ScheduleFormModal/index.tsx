@@ -70,7 +70,7 @@ export function ScheduleFormModal({ onClose, editSchedule, defaultValues, onCrea
         if (onCreated) {
           onCreated(created)
         } else {
-          useAppStore.getState().openDetail({ type: 'schedule', scheduleId: created.id })
+          useAppStore.getState().navigateToSchedule(created.id)
         }
       }
       requestClose()

@@ -70,12 +70,26 @@ let lastTerminalHeight = TERMINAL_DEFAULT_HEIGHT
 
 // ── Components ───────────────────────────────────────────────────────
 
-function ResizeHandle({ disabled = false }: { disabled?: boolean }): React.JSX.Element {
+/**
+ * `transparent` — when both adjacent panels share the same surface (e.g.
+ * inbox list and inbox detail, both sitting on the same `muted/0.5` mat),
+ * the resting separator line reads as visual noise. Pass `transparent`
+ * to drop the resting bg; hover / active states still light up to keep
+ * the drag affordance discoverable.
+ */
+function ResizeHandle({
+  disabled = false,
+  transparent = false,
+}: {
+  disabled?: boolean
+  transparent?: boolean
+}): React.JSX.Element {
   return (
     <Separator
       disabled={disabled}
       className={cn(
-        'w-px bg-[hsl(var(--border)/0.5)] relative data-[separator=active]:bg-[hsl(var(--ring)/0.7)] hover:bg-[hsl(var(--ring)/0.3)] transition-colors',
+        'w-px relative data-[separator=active]:bg-[hsl(var(--ring)/0.7)] hover:bg-[hsl(var(--ring)/0.3)] transition-colors',
+        transparent ? 'bg-transparent' : 'bg-[hsl(var(--border)/0.5)]',
         disabled && 'opacity-0 pointer-events-none',
       )}
     >
@@ -225,16 +239,31 @@ function AppLayout(): React.JSX.Element {
   const leftSidebarExpanded = useAppStore((s) => s.leftSidebarExpanded)
   const detailContext = useAppStore((s) => s.detailContext)
   const navigateToInbox = useAppStore((s) => s.navigateToInbox)
+  const navigateToChatHome = useAppStore((s) => s.navigateToChatHome)
   const terminalOverlay = useTerminalOverlayStore((s) => s.terminalOverlay)
+
+  // On cold launch, default the workspace to the Chat home project. The
+  // ref guard makes this a single-shot effect — running it on every
+  // re-mount (e.g. dev StrictMode double-invoke) would clobber whatever
+  // view the user has since navigated to.
+  const didBootstrapChatHome = useRef(false)
+  useEffect(() => {
+    if (didBootstrapChatHome.current) return
+    didBootstrapChatHome.current = true
+    void navigateToChatHome()
+  }, [navigateToChatHome])
 
   const isInbox = appView.mode === 'inbox'
   const inboxMessageId = isInbox ? appView.selectedMessageId : null
 
-  // Issue details now render inline in IssuesView (matches the Evose
-  // prototype) — the right detail panel is reserved for sessions, memories,
-  // capabilities, schedules, and inbox.
+  // Issue + Schedule details render inline within their respective tab
+  // views (matches the Evose prototype) — the right detail panel is
+  // reserved for sessions, memories, capabilities, pipelines, and inbox.
   const showDetail =
-    isInbox || (detailContext !== null && detailContext.type !== 'issue')
+    isInbox ||
+    (detailContext !== null &&
+      detailContext.type !== 'issue' &&
+      detailContext.type !== 'schedule')
   const sidebarPanelRef = usePanelRef()
   const detailPanelRef = usePanelRef()
   const lastSidebarExpandedSizeRef = useRef(SIDEBAR_EXPANDED_DEFAULT_PCT)
@@ -345,16 +374,29 @@ function AppLayout(): React.JSX.Element {
 
         <Panel id="main" minSize="20%">
           {isInbox ? (
-            <InboxMessageList
-              selectedMessageId={inboxMessageId}
-              onSelectMessage={(id) => navigateToInbox(id)}
-            />
+            // Inbox list — mirrors the project workspace's "mat + card"
+            // pattern so the two flanking inbox panels read as floating
+            // panels on a shared desktop instead of raw full-bleed lists.
+            // No `pl` here: the card sits flush with the sidebar's resize
+            // handle, matching the project Tree panel's geometry exactly
+            // (MainPanel uses `py-2 pr-2`, no left padding). Inner-edge
+            // `pr-1` keeps the gap toward the inbox detail tight; the
+            // separator between them is rendered transparent —
+            // see `<ResizeHandle transparent />` below.
+            <div className="relative h-full min-h-0 bg-[hsl(var(--muted)/0.5)] py-2 pr-1">
+              <div className="h-full overflow-hidden rounded-xl bg-[hsl(var(--card))] border border-[hsl(var(--border)/0.5)]">
+                <InboxMessageList
+                  selectedMessageId={inboxMessageId}
+                  onSelectMessage={(id) => navigateToInbox(id)}
+                />
+              </div>
+            </div>
           ) : (
             <MainPanel />
           )}
         </Panel>
 
-        <ResizeHandle />
+        <ResizeHandle transparent={isInbox} />
 
         <Panel
           id="detail"
@@ -366,9 +408,20 @@ function AppLayout(): React.JSX.Element {
           collapsedSize={0}
         >
           {isInbox ? (
-            <InboxMessageDetail selectedMessageId={inboxMessageId} />
+            // Inbox detail — mirror of the list mat (`pl-1` on the inner
+            // edge, `pr-2` on the outer).
+            <div className="relative h-full min-h-0 bg-[hsl(var(--muted)/0.5)] py-2 pl-1 pr-2">
+              <div className="h-full overflow-hidden rounded-xl bg-[hsl(var(--card))] border border-[hsl(var(--border)/0.5)]">
+                <InboxMessageDetail selectedMessageId={inboxMessageId} />
+              </div>
+            </div>
           ) : (
-            <DetailPanel />
+            // Right detail panel surface — matches the left sidebar's tonal
+            // layer so the two flanking panels read as a symmetric pair
+            // around the main canvas.
+            <div className="h-full bg-[hsl(var(--sidebar-background))]">
+              <DetailPanel />
+            </div>
           )}
         </Panel>
       </Group>

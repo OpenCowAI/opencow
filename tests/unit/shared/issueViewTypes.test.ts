@@ -21,7 +21,7 @@ describe('IssueView types', () => {
   it('ALL_VIEW is a valid IssueView constant', () => {
     expect(ALL_VIEW.id).toBe('__all__')
     expect(ALL_VIEW.filters).toEqual({})
-    expect(ALL_VIEW.display.groupBy).toBeNull()
+    expect(ALL_VIEW.display.groupBy).toBe('status')
     expect(ALL_VIEW.display.sort).toEqual({ field: 'updatedAt', order: 'desc' })
     expect(ALL_VIEW.position).toBe(-1)
   })

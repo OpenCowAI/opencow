@@ -40,7 +40,9 @@
     "unableToRead": "Unable to read file"
   },
   "tree": {
-    "aria": "File tree"
+    "aria": "File tree",
+    "symlinkLabel": "Symbolic link",
+    "symlinkTitle": "Symbolic link"
   },
   "view": {
     "modeSwitchAria": "Files view mode",

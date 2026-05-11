@@ -32,7 +32,7 @@ export function AppInfoWidget({ collapsed = false }: { collapsed?: boolean }): R
         aria-label={t('openSettings')}
       >
         <Settings className="h-4 w-4 shrink-0" aria-hidden="true" />
-        <span className="text-[10px] leading-none">{t('openSettings')}</span>
+        <span className="text-[10px] leading-none">{t('settings')}</span>
       </button>
     )
   }

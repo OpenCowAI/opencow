@@ -134,7 +134,7 @@ export const SessionInputBar = memo(forwardRef<SessionInputBarHandle, SessionInp
       className={`flex flex-col border-t transition-colors ${
         isDragOver
           ? 'border-t-[hsl(var(--ring))] bg-[hsl(var(--accent)/0.3)]'
-          : 'border-t-[hsl(var(--border))] bg-[hsl(var(--card))] focus-within:border-t-[hsl(var(--ring))]'
+          : 'border-t-[hsl(var(--border))] focus-within:border-t-[hsl(var(--ring))]'
       }`}
       {...dragHandlers}
     >

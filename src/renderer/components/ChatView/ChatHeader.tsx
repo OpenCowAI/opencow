@@ -116,8 +116,8 @@ const SessionItem = memo(function SessionItem({
           aria-hidden="true"
         />
         <div className="min-w-0 flex-1">
-          <p className="text-xs leading-snug line-clamp-2 break-words pr-5">{title}</p>
-          <p className="text-[10px] text-[hsl(var(--muted-foreground)/0.6)] mt-0.5">
+          <p className="text-sm leading-snug line-clamp-2 break-words pr-5">{title}</p>
+          <p className="text-[11px] text-[hsl(var(--muted-foreground)/0.6)] mt-0.5">
             {formatRelativeTime(session.lastActivity)}
           </p>
         </div>
@@ -222,19 +222,37 @@ export function ChatHeader({
     if (!mounted) setPos(null)
   }, [mounted])
 
-  // ── Project filter (only when no sidebar project is selected) ──
+  // ── Session filter ─────────────────────────────────────────────
+  //
+  // Three modes:
+  //   1. Chat home (path === $HOME) → show only sessions with no
+  //      associated project (project_id IS NULL). These are claude
+  //      runs that happened in `$HOME` outside OpenCow's project model.
+  //      The project filter chip is hidden — the filter is implicit.
+  //   2. Specific project selected → restrict to that project's
+  //      sessions (no manual filter chip, scope is unambiguous).
+  //   3. Project list mode (no project) → show all sessions across
+  //      projects, with a ProjectPicker chip to narrow manually.
   const sidebarProjectId = useAppStore(selectProjectId)
+  const homeDir = useAppStore((s) => s.homeDir)
+  const currentProject = useAppStore((s) =>
+    sidebarProjectId ? s.projects.find((p) => p.id === sidebarProjectId) ?? null : null,
+  )
+  const isChatHome =
+    homeDir !== null && currentProject !== null && currentProject.path === homeDir
+
   const [localProjectFilter, setLocalProjectFilter] = useState<string | null>(null)
-  const showProjectFilter = !sidebarProjectId
+  // Manual filter chip is only useful in the "no project" landing case.
+  const showProjectFilter = !sidebarProjectId && !isChatHome
   const effectiveProjectFilter = sidebarProjectId ?? localProjectFilter
 
-  const filteredSessions = useMemo(
-    () =>
-      effectiveProjectFilter
-        ? sessions.filter((s) => s.projectId === effectiveProjectFilter)
-        : sessions,
-    [sessions, effectiveProjectFilter],
-  )
+  const filteredSessions = useMemo(() => {
+    if (isChatHome) return sessions.filter((s) => !s.projectId)
+    if (effectiveProjectFilter) {
+      return sessions.filter((s) => s.projectId === effectiveProjectFilter)
+    }
+    return sessions
+  }, [sessions, effectiveProjectFilter, isChatHome])
 
   // ── Delete state ────────────────────────────────────────────────
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null)
@@ -264,7 +282,7 @@ export function ChatHeader({
   }, [onSelectSession])
 
   return (
-    <div className="shrink-0 flex items-center justify-between gap-2 px-3 h-10 border-b border-[hsl(var(--border)/0.4)]">
+    <div className="shrink-0 flex items-center justify-between gap-2 px-3 h-10">
       {/* Left — session title dropdown trigger */}
       <button
         ref={triggerRef}
@@ -335,7 +353,7 @@ export function ChatHeader({
           }}
         >
           <div className="flex items-center justify-between px-2 pb-1.5">
-            <span className="text-[10px] font-semibold uppercase tracking-wider text-[hsl(var(--muted-foreground)/0.7)]">
+            <span className="text-[11px] font-semibold uppercase tracking-wider text-[hsl(var(--muted-foreground)/0.7)]">
               {t('agentSidebar.sessions')}
             </span>
             {showProjectFilter && (
@@ -344,7 +362,7 @@ export function ChatHeader({
                 onChange={setLocalProjectFilter}
                 placeholder={t('agentSidebar.allProjects')}
                 ariaLabel={t('agentSidebar.filterByProject')}
-                triggerClassName="!border-0 !px-1.5 !py-0.5 !text-[10px] !text-[hsl(var(--muted-foreground)/0.7)]"
+                triggerClassName="!border-0 !px-1.5 !py-0.5 !text-[11px] !text-[hsl(var(--muted-foreground)/0.7)]"
                 portal
               />
             )}
@@ -352,7 +370,7 @@ export function ChatHeader({
 
           <div className="flex-1 min-h-0 overflow-y-auto space-y-0.5">
             {filteredSessions.length === 0 ? (
-              <p className="px-3 py-4 text-xs text-[hsl(var(--muted-foreground)/0.5)] text-center">
+              <p className="px-3 py-4 text-sm text-[hsl(var(--muted-foreground)/0.5)] text-center">
                 {t('agentSidebar.noSessionsYet')}
               </p>
             ) : (

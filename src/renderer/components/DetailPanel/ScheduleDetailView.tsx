@@ -6,7 +6,7 @@ import { useAppStore } from '@/stores/appStore'
 import { useScheduleStore } from '@/stores/scheduleStore'
 import { useScheduleCountdown } from '@/hooks/useScheduleCountdown'
 import {
-  Pencil, Play, Pause, Trash2, Zap, Loader2,
+  Pencil, Play, Pause, Trash2, Zap, Loader2, X,
   Clock, CalendarClock, Bolt, Bell, GitBranch, Repeat2,
   ChevronRight, Calendar,
 } from 'lucide-react'
@@ -223,7 +223,21 @@ function SectionLabel({ children }: { children: React.ReactNode }): React.JSX.El
 
 // ─── ScheduleDetailView ──────────────────────────────────────────────────────
 
-export function ScheduleDetailView({ scheduleId }: { scheduleId: string }): React.JSX.Element {
+interface ScheduleDetailViewProps {
+  scheduleId: string
+  /**
+   * Optional close handler. When provided, the header renders a close
+   * button that calls this back. Used by inline rendering inside
+   * `ScheduleView` to dismiss the detail without depending on the right
+   * detail panel's collapse animation.
+   */
+  onClose?: () => void
+}
+
+export function ScheduleDetailView({
+  scheduleId,
+  onClose,
+}: ScheduleDetailViewProps): React.JSX.Element {
   const { t } = useTranslation('schedule')
 
   const schedule = useScheduleStore((s) => s.schedules.find((sc) => sc.id === scheduleId))
@@ -354,12 +368,29 @@ export function ScheduleDetailView({ scheduleId }: { scheduleId: string }): Reac
                 className="p-1.5 rounded-lg text-[hsl(var(--muted-foreground))] hover:text-red-500 hover:bg-red-500/8 transition-colors"
                 onClick={async () => {
                   await useScheduleStore.getState().deleteSchedule(schedule.id)
-                  useAppStore.getState().closeDetail()
+                  if (onClose) {
+                    onClose()
+                  } else {
+                    useAppStore.getState().closeDetail()
+                  }
                 }}
               >
                 <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
               </button>
             </Tooltip>
+
+            {onClose && (
+              <Tooltip content={t('detail.close', { defaultValue: 'Close' })} position="bottom" align="end">
+                <button
+                  type="button"
+                  className="p-1.5 rounded-lg text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] hover:bg-[hsl(var(--foreground)/0.06)] transition-colors"
+                  onClick={onClose}
+                  aria-label={t('detail.close', { defaultValue: 'Close' })}
+                >
+                  <X className="h-3.5 w-3.5" aria-hidden="true" />
+                </button>
+              </Tooltip>
+            )}
           </div>
         </div>
 

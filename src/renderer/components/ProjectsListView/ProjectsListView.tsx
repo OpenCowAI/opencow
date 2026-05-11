@@ -2,7 +2,7 @@
 
 import { useCallback, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Activity, Archive, FolderGit2, MoreVertical, Pin, Search, X } from 'lucide-react'
+import { Activity, Archive, Folder, MoreVertical, Pin, Search, X } from 'lucide-react'
 import type { Project, ProjectGroup } from '@shared/types'
 import { useAppStore } from '@/stores/appStore'
 import { useLiveSessionCounts } from '@/stores/commandStore'
@@ -142,7 +142,7 @@ function PinTile({
             'group-hover/pin-tile:-translate-y-[3px] group-hover/pin-tile:scale-110',
           )}
         >
-          <FolderGit2 className="h-5 w-5 text-[hsl(var(--foreground))]" aria-hidden="true" />
+          <Folder className="h-5 w-5 text-[hsl(var(--foreground))]" aria-hidden="true" />
         </div>
       </div>
 
@@ -275,7 +275,7 @@ function ProjectCard({
             'group-hover/proj-card:-translate-y-[5px] group-hover/proj-card:scale-110',
           )}
         >
-          <FolderGit2 className="h-6 w-6 text-[hsl(var(--foreground))]" aria-hidden="true" />
+          <Folder className="h-6 w-6 text-[hsl(var(--foreground))]" aria-hidden="true" />
         </div>
       </div>
 
@@ -419,10 +419,10 @@ export function ProjectsListView(): React.JSX.Element {
   const showEmpty = mainVisible.length === 0
 
   return (
-    <div className="flex h-full min-h-0 flex-col bg-[hsl(var(--background))]">
+    <div className="flex h-full min-h-0 flex-col">
       {/* Header */}
       <div className="shrink-0">
-        <div className="drag-region flex items-start justify-between gap-4 px-5 pt-10 pb-3">
+        <div className="drag-region flex items-start justify-between gap-4 px-5 pt-3 pb-3">
           <div className="flex min-w-0 flex-col gap-1">
             <div className="flex items-baseline gap-2.5">
               <h1 className="text-base font-semibold tracking-tight text-[hsl(var(--foreground))]">
@@ -474,7 +474,7 @@ export function ProjectsListView(): React.JSX.Element {
         )}
 
         {/* Filter row — sticky at top of scroll area when grid scrolls */}
-        <div className="sticky top-0 z-10 mt-4 flex items-center gap-1.5 bg-[hsl(var(--background))] px-5 py-2">
+        <div className="sticky top-0 z-10 mt-4 flex items-center gap-1.5 bg-[hsl(var(--card))] px-5 py-2">
           <div className="relative w-[260px]">
             <Search
               className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[hsl(var(--muted-foreground))]"
@@ -679,7 +679,7 @@ function EmptyState({
   return (
     <div className="flex h-full min-h-[320px] flex-col items-center justify-center gap-3 px-8 text-center">
       <div className="flex h-12 w-12 items-center justify-center rounded-full bg-[hsl(var(--muted)/0.6)] text-[hsl(var(--muted-foreground))]">
-        <FolderGit2 className="h-5 w-5" aria-hidden="true" />
+        <Folder className="h-5 w-5" aria-hidden="true" />
       </div>
       <div className="text-sm text-[hsl(var(--foreground)/0.85)]">
         {hasKeyword

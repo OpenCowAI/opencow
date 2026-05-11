@@ -45,7 +45,7 @@ export function useDraftApplyActions(): DraftApplyActions {
   const { t: ts } = useTranslation('schedule')
   const createIssue = useIssueStore((s) => s.createIssue)
   const createSchedule = useScheduleStore((s) => s.createSchedule)
-  const openDetail = useAppStore((s) => s.openDetail)
+  const navigateToSchedule = useAppStore((s) => s.navigateToSchedule)
 
   const applyIssueDraft = useCallback(
     async ({ parsed, projectId, parentIssueId, providerId, onApplied }: ApplyIssueDraftParams): Promise<Issue> => {
@@ -83,13 +83,13 @@ export function useDraftApplyActions(): DraftApplyActions {
       toast(`${ts('aiCreator.scheduleCreated')}: ${created.name}`, {
         action: {
           label: ts('aiCreator.card.view'),
-          onClick: () => openDetail({ type: 'schedule', scheduleId: created.id }),
+          onClick: () => navigateToSchedule(created.id),
         },
       })
 
       return created
     },
-    [createSchedule, openDetail, ts]
+    [createSchedule, navigateToSchedule, ts]
   )
 
   return { applyIssueDraft, applyScheduleDraft }

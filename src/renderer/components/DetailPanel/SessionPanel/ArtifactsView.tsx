@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-import { memo, useState, useCallback, lazy, Suspense } from 'react'
+import { memo, useState, useEffect, useCallback, lazy, Suspense } from 'react'
 import { useTranslation } from 'react-i18next'
 import { FileText, GitBranch, Globe, Download, Clock, Loader2, X, Star, FileCode2 } from 'lucide-react'
 import { Badge } from '../../ui/badge'
@@ -15,6 +15,7 @@ import { NotePopoverTrigger } from './NotesView/NotePopoverTrigger'
 import { getAppAPI } from '@/windowAPI'
 import { wrapHtmlForSafePreview } from '@/lib/htmlSandbox'
 import { useArtifactViewerContext, getArtifactStableId } from './ArtifactViewerContext'
+import { useAppStore, selectProjectPath } from '@/stores/appStore'
 
 // Direct import — MarkdownContent is used in ArtifactCard list items where
 // lazy + Suspense would cause per-card "Loading..." flicker during scrolling.
@@ -22,11 +23,21 @@ import { MarkdownContent } from '../../ui/MarkdownContent'
 
 // Lazy-load Dialog-level components — only loaded when the user opens a viewer.
 // This is the correct granularity for lazy(): user-triggered, single-instance views.
+//
+// Module factories are extracted so we can both `lazy()` them AND `preload()`
+// the chunks eagerly from inside the dialog (see `useEffect` below). The bundler
+// deduplicates in-flight import promises, so calling these factories twice
+// resolves to the same module instance.
+const loadMarkdownPreview = (): Promise<typeof import('../../ui/MarkdownPreviewWithToc')> =>
+  import('../../ui/MarkdownPreviewWithToc')
+const loadCodeViewer = (): Promise<typeof import('../../ui/code-viewer')> =>
+  import('../../ui/code-viewer')
+
 const MarkdownPreviewWithToc = lazy(() =>
-  import('../../ui/MarkdownPreviewWithToc').then((m) => ({ default: m.MarkdownPreviewWithToc }))
+  loadMarkdownPreview().then((m) => ({ default: m.MarkdownPreviewWithToc }))
 )
 const CodeViewer = lazy(() =>
-  import('../../ui/code-viewer').then((m) => ({ default: m.CodeViewer }))
+  loadCodeViewer().then((m) => ({ default: m.CodeViewer }))
 )
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -297,8 +308,70 @@ export const ArtifactViewerDialog = memo(function ArtifactViewerDialog({
   onClose,
 }: ArtifactViewerDialogProps): React.JSX.Element {
   const { t } = useTranslation('sessions')
-  const { kind, title, mimeType, filePath, content, lastModifiedAt, stats } = artifact
+  const { kind, title, mimeType, filePath, content: recordedContent, lastModifiedAt, stats } = artifact
+  const projectPath = useAppStore(selectProjectPath)
+
+  // Disk-first content resolution.
+  //
+  // Resolution order:
+  //   1. Live file on disk (`read-file-content` under the current project's
+  //      path). This is the freshest source — captures edits made after the
+  //      original Write was recorded.
+  //   2. Recorded in-memory snapshot (`artifact.content`, from the latest
+  //      Write tool_use). Used when the file no longer exists on disk
+  //      (moved / deleted) or when the artifact has no filePath
+  //      (e.g. in-memory `gen_html`).
+  //
+  // Without (1) an artifact that was only edited (no Write op recorded)
+  // would surface "content unavailable" even though its file is sitting
+  // right there on disk.
+  const [liveContent, setLiveContent] = useState<string | null>(null)
+  const [diskLoading, setDiskLoading] = useState(false)
+
+  // Warm the lazy preview chunks in parallel with the disk read.
+  //
+  // For Write-recorded artifacts the preview branch renders synchronously on
+  // first paint, so the lazy chunk starts loading the moment the dialog
+  // mounts.  For edit-only artifacts the preview branch is gated by the disk
+  // read, so without preloading the lazy chunk would only begin loading
+  // *after* the read completes — stacking Suspense fallback time on top of
+  // disk latency and producing the "Loading preview…" flash that resolves
+  // only as the dialog closes.  Triggering the imports here breaks the
+  // serial dependency.
+  useEffect(() => {
+    void loadMarkdownPreview()
+    void loadCodeViewer()
+  }, [])
+
+  useEffect(() => {
+    if (!filePath || !projectPath) {
+      setLiveContent(null)
+      setDiskLoading(false)
+      return
+    }
+    let cancelled = false
+    setDiskLoading(true)
+    setLiveContent(null)
+    ;(async () => {
+      try {
+        const result = await getAppAPI()['read-file-content'](projectPath, filePath)
+        if (cancelled) return
+        if (result.ok) setLiveContent(result.data.content)
+      } finally {
+        if (!cancelled) setDiskLoading(false)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [filePath, projectPath, artifact.contentHash])
+
+  const content = liveContent ?? recordedContent
   const hasContent = content != null && content.length > 0
+  // Spinner only when we have no in-memory snapshot to show in the meantime —
+  // otherwise we render the recorded content immediately and silently swap to
+  // disk once the read resolves.
+  const showLoading = diskLoading && recordedContent == null && !hasContent
   const isDiagram = kind === 'diagram'
   const isMarkdown = mimeType === 'text/markdown'
   const isHtml = mimeType === 'text/html'
@@ -442,7 +515,11 @@ export const ArtifactViewerDialog = memo(function ArtifactViewerDialog({
 
       {/* Content area — polymorphic by kind + MIME type */}
       <div className="relative">
-        {!hasContent ? (
+        {showLoading ? (
+          <div className="h-[82vh] flex items-center justify-center">
+            <Loader2 className="w-5 h-5 motion-safe:animate-spin text-[hsl(var(--muted-foreground))]" aria-hidden="true" />
+          </div>
+        ) : !hasContent ? (
           <div className="h-[82vh] flex flex-col items-center justify-center gap-2 text-[hsl(var(--muted-foreground))]">
             <FileText className="w-6 h-6 opacity-30" aria-hidden="true" />
             <p className="text-xs text-center leading-relaxed">

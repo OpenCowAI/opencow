@@ -31,6 +31,17 @@ interface FileTreeProps {
   projectPath: string
   projectName: string
   projectId: string
+  /**
+   * When true, dot-prefixed entries (`.git`, `.ssh`, `.config`, ...) are
+   * filtered out at directory load time. Used by the Chat home project
+   * where the tree is rooted at `$HOME` — without this filter the tree
+   * would surface every config dotfile under the user's home dir and
+   * bury the actual content.
+   *
+   * NOTE: regular projects intentionally show dotfiles (`.gitignore`,
+   * `.env`, etc. are meaningful in a code repo). The default is `false`.
+   */
+  hideDotFiles?: boolean
 }
 
 const EMPTY_FILE_ENTRIES: FileEntry[] = []
@@ -81,7 +92,12 @@ function parentPath(path: string): string | null {
 
 // ── Component ──────────────────────────────────────────────────────
 
-export function FileTree({ projectPath, projectName, projectId }: FileTreeProps): React.JSX.Element {
+export function FileTree({
+  projectPath,
+  projectName,
+  projectId,
+  hideDotFiles = false,
+}: FileTreeProps): React.JSX.Element {
   const { t } = useTranslation('files')
   const expandedDirs = useFileStore((s) => s.expandedTreeDirsByProject[projectId] ?? EMPTY_EXPANDED_DIRS)
   const fileStructureVersion = useFileStore((s) => s.fileStructureVersionByProject[projectId] ?? 0)
@@ -121,7 +137,11 @@ export function FileTree({ projectPath, projectName, projectId }: FileTreeProps)
     setLoadingDirs((prev) => new Set(prev).add(key))
     try {
       const entries = await getAppAPI()['list-project-files'](projectPath, key || undefined)
-      setDirCache((prev) => ({ ...prev, [key]: entries }))
+      // Filter at the cache boundary so every downstream consumer
+      // (rendering, expansion intent matching, git decorations) sees
+      // the same set of entries.
+      const filtered = hideDotFiles ? entries.filter((e) => !e.name.startsWith('.')) : entries
+      setDirCache((prev) => ({ ...prev, [key]: filtered }))
     } finally {
       setLoadingDirs((prev) => {
         const next = new Set(prev)
@@ -129,7 +149,7 @@ export function FileTree({ projectPath, projectName, projectId }: FileTreeProps)
         return next
       })
     }
-  }, [projectPath])
+  }, [projectPath, hideDotFiles])
 
   const refreshDirectories = useCallback(async (subPaths: string[]) => {
     const uniqueSubPaths = Array.from(new Set(subPaths.map((subPath) => subPath || '')))

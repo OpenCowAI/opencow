@@ -3,14 +3,15 @@
     "issues": "任务",
     "chat": "对话",
     "files": "文件",
-    "dashboard": "仪表板",
-    "starredArtifacts": "收藏产物",
+    "dashboard": "概览",
+    "starredArtifacts": "收藏",
     "capabilities": "能力",
     "memories": "记忆",
     "market": "技能市场",
     "schedule": "计划"
   },
   "sidebar": {
+    "chat": "对话",
     "allProjects": "项目",
     "projectList": "项目列表",
     "addProject": "添加项目",

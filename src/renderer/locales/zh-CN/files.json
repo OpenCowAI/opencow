@@ -40,7 +40,9 @@
     "unableToRead": "无法读取文件"
   },
   "tree": {
-    "aria": "文件树"
+    "aria": "文件树",
+    "symlinkLabel": "软链接",
+    "symlinkTitle": "软链接"
   },
   "view": {
     "modeSwitchAria": "文件视图模式",

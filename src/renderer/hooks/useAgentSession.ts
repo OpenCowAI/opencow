@@ -110,20 +110,37 @@ export function useAgentSession(): AgentSessionHandle {
     onSessionIdClear: clearSessionId
   })
 
-  // Chat-eligible sessions: agent (UI) + all IM bots, scoped to selected project.
+  // Chat-eligible sessions: agent (UI) + all IM bots, scoped per view.
+  //
+  // Three scoping modes:
+  //   1. Chat home (current project's path === `$HOME`)  →  only
+  //      orphan sessions (`!projectId`). These are claude runs that
+  //      happened in `$HOME` outside OpenCow's project model, and the
+  //      Chat home tab is their dedicated landing place.
+  //   2. Specific project selected  →  sessions belonging to that
+  //      project (`ms.projectId === selectedProjectId`).
+  //   3. No project selected (project list view)  →  all chat-eligible.
+  //
   // Uses a structural equality comparator (id + state) so the component
-  // only re-renders when sessions are added/removed or their state transitions —
-  // NOT on every metadata flush (cost, tokens, context) during streaming.
+  // only re-renders when sessions are added/removed or their state
+  // transitions — NOT on every metadata flush (cost, tokens, context)
+  // during streaming.
   const selectedProjectId = base.selectedProjectId
+  const isChatHome = useAppStore((s) => {
+    if (!selectedProjectId || !s.homeDir) return false
+    const proj = s.projects.find((p) => p.id === selectedProjectId)
+    return proj?.path === s.homeDir
+  })
   const sessions: SessionSnapshot[] = useStoreWithEqualityFn(
     useCommandStore,
     (s) =>
       s.managedSessions
-        .filter(
-          (ms) =>
-            CHAT_ELIGIBLE_SOURCES.has(ms.origin.source) &&
-            (!selectedProjectId || ms.projectId === selectedProjectId)
-        )
+        .filter((ms) => {
+          if (!CHAT_ELIGIBLE_SOURCES.has(ms.origin.source)) return false
+          if (isChatHome) return !ms.projectId
+          if (selectedProjectId) return ms.projectId === selectedProjectId
+          return true
+        })
         .sort((a, b) => b.createdAt - a.createdAt),
     sessionListEqual,
   )

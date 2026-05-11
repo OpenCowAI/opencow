@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-import { useState, useCallback, useEffect, useRef } from 'react'
+import { useState, useCallback, useEffect, useLayoutEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Group, Panel, Separator, usePanelRef } from 'react-resizable-panels'
 import { useAppStore, selectMainTab, selectProjectId } from '@/stores/appStore'
@@ -159,11 +159,18 @@ function MainPanelTabs(): React.JSX.Element {
               aria-selected={activeTab === tab.value}
               onClick={() => setActiveTab(tab.value)}
               className={cn(
+                // Three-state scale aligned with the editor tabs:
+                //   inactive  → transparent + muted text
+                //   hover     → 0.04 ink wash (only on inactive tabs)
+                //   active    → 0.08 ink wash + foreground text + medium
+                // The hover class is intentionally scoped to the inactive
+                // branch so hovering the active tab doesn't push it deeper
+                // than necessary, and so an inactive tab's hover never
+                // matches the active tab's depth.
                 'no-drag px-3 py-1.5 text-sm flex items-center gap-1.5 rounded-full transition-colors',
-                'hover:bg-[hsl(var(--foreground)/0.06)]',
                 activeTab === tab.value
-                  ? 'text-[hsl(var(--foreground))] font-medium bg-[hsl(var(--foreground)/0.06)]'
-                  : 'text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))]',
+                  ? 'text-[hsl(var(--foreground))] font-medium bg-[hsl(var(--foreground)/0.08)]'
+                  : 'text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] hover:bg-[hsl(var(--foreground)/0.04)]',
               )}
             >
               <Icon className="h-3.5 w-3.5" aria-hidden="true" />
@@ -279,13 +286,34 @@ const TREE_W = '240px' as const
 /** Editor's target size when a file is open (~520px on a 1280px viewport). */
 const EDITOR_OPEN_SIZE = '40%' as const
 
+/**
+ * Tabs that have their own globally-scoped view when no project is
+ * selected. The default "no project" landing is the project list, but
+ * these tabs explicitly carve themselves out and render their own
+ * content. Add to this set when introducing future global tabs.
+ */
+const GLOBAL_TABS: ReadonlySet<MainTab> = new Set(['schedule', 'starred'])
+
 export function MainPanel(): React.JSX.Element {
   const activeTab = useAppStore(selectMainTab)
   const projectId = useAppStore(selectProjectId)
   const previousTabRef = useRef<MainTab>(activeTab)
   const editorPanelRef = usePanelRef()
 
-  const showProjectsList = projectId === null && activeTab !== 'schedule'
+  // Defer enabling `layout-animated` by one frame on mount so the
+  // editor panel snaps to its initial `defaultSize` without playing
+  // through a 280 ms `flex-grow` transition. Without this, returning
+  // to MainPanel from Inbox would briefly animate the editor expanding
+  // and collapsing before settling — the library's two-tick
+  // imperative resize fires after first paint and the CSS transition
+  // turns the intermediate state into a visible flash.
+  const [layoutAnimated, setLayoutAnimated] = useState(false)
+  useEffect(() => {
+    const id = requestAnimationFrame(() => setLayoutAnimated(true))
+    return () => cancelAnimationFrame(id)
+  }, [])
+
+  const showProjectsList = projectId === null && !GLOBAL_TABS.has(activeTab)
   const showFilesPanel = projectId !== null
 
   const project = useAppStore((s) =>
@@ -303,7 +331,14 @@ export function MainPanel(): React.JSX.Element {
   // target size. Layout-animated CSS smooths the flex-grow transition. Tree
   // is locked at 240px so the editor's expansion only steals space from the
   // main panel — tree never resizes.
-  useEffect(() => {
+  //
+  // `useLayoutEffect` (not `useEffect`) — the resize must commit *before*
+  // paint. Otherwise on a fresh MainPanel mount (e.g. returning from the
+  // Inbox tab), the panel can briefly render at a non-zero flex-grow during
+  // the layout-animated transition window, making the editor flash visible
+  // even with no files open. Running synchronously before paint pins the
+  // size to the correct value from the first frame.
+  useLayoutEffect(() => {
     const panel = editorPanelRef.current
     if (!panel) return
     panel.resize(hasOpenFiles ? EDITOR_OPEN_SIZE : '0%')
@@ -342,7 +377,30 @@ export function MainPanel(): React.JSX.Element {
   }, [activeTab])
 
   if (showProjectsList) {
-    return <ProjectsListView />
+    // Mirror the project-detail layout: a darker "desktop" mat hosting
+    // a rounded card panel. Keeps the projects list visually consistent
+    // with the rest of the project workspace.
+    return (
+      <div className="relative h-full min-h-0 bg-[hsl(var(--muted)/0.5)] py-2 pr-2">
+        <div className="h-full overflow-hidden rounded-xl bg-[hsl(var(--card))] border border-[hsl(var(--border)/0.5)]">
+          <ProjectsListView />
+        </div>
+      </div>
+    )
+  }
+
+  // Global Starred — sidebar shortcut to a project-less view. Renders the
+  // Starred page directly inside the same mat+card frame as the project
+  // list, skipping the per-project tab bar. The tab bar makes no sense
+  // here because the user isn't inside any project.
+  if (projectId === null && activeTab === 'starred') {
+    return (
+      <div className="relative h-full min-h-0 bg-[hsl(var(--muted)/0.5)] py-2 pr-2">
+        <div className="h-full overflow-hidden rounded-xl bg-[hsl(var(--card))] border border-[hsl(var(--border)/0.5)]">
+          <StarredArtifactsView />
+        </div>
+      </div>
+    )
   }
 
   if (!showFilesPanel || !project) {
@@ -372,7 +430,7 @@ export function MainPanel(): React.JSX.Element {
       <Group
         id="opencow-project-layout"
         orientation="horizontal"
-        className="h-full min-h-0 layout-animated"
+        className={cn('h-full min-h-0', layoutAnimated && 'layout-animated')}
       >
         {/* Tree — locked at 240px. Library auto-reclamps as group resizes. */}
         <Panel
@@ -389,11 +447,15 @@ export function MainPanel(): React.JSX.Element {
             sits directly against the editor|main splitter so the visual
             gap to main stays a single 8px rather than two stacked gaps. */}
 
-        {/* Editor — collapsible to 0%, expands to EDITOR_OPEN_SIZE on file open. */}
+        {/* Editor — collapsible to 0%, expands to EDITOR_OPEN_SIZE on file open.
+            `defaultSize` is derived from the current open-files state so a
+            fresh remount (e.g. returning from Inbox) starts at the correct
+            geometry without depending on a post-paint effect to correct it.
+            The `useLayoutEffect` above keeps later dynamic changes in sync. */}
         <Panel
           id="project-editor"
           panelRef={editorPanelRef}
-          defaultSize="0%"
+          defaultSize={hasOpenFiles ? EDITOR_OPEN_SIZE : '0%'}
           minSize="0%"
           maxSize="70%"
         >
@@ -404,7 +466,7 @@ export function MainPanel(): React.JSX.Element {
 
         {/* Main — takes remaining space; user-draggable via the splitter. */}
         <Panel id="project-main" minSize="30%">
-          <div className="h-full overflow-hidden rounded-xl bg-[hsl(var(--background))] border border-[hsl(var(--border)/0.5)]">
+          <div className="h-full overflow-hidden rounded-xl bg-[hsl(var(--card))] border border-[hsl(var(--border)/0.5)]">
             <MainContent activeTab={activeTab} />
           </div>
         </Panel>

@@ -9,6 +9,7 @@ import { useScheduleCountdown } from '@/hooks/useScheduleCountdown'
 import { formatFrequencySummary } from '@/lib/scheduleFormatters'
 import { groupProjects } from '@shared/projectGrouping'
 import { PillDropdown } from '@/components/ui/PillDropdown'
+import { ScheduleDetailView } from '../DetailPanel/ScheduleDetailView'
 import { ScheduleFormModal } from './ScheduleFormModal'
 import { ScheduleAICreatorModal } from '../ScheduleAICreator'
 import { EVENT_TRIGGER_OPTIONS } from './ScheduleFormModal/constants'
@@ -49,14 +50,14 @@ function ScheduleListItem({
 }): React.JSX.Element {
   const { t } = useTranslation('schedule')
   const countdown = useScheduleCountdown(schedule.nextRunAt)
-  const openDetail = useAppStore((s) => s.openDetail)
+  const navigateToSchedule = useAppStore((s) => s.navigateToSchedule)
 
   const subtitle = schedule.description || formatFrequencySummary(schedule, t, EVENT_TRIGGER_OPTIONS)
 
   return (
     <div
       className="flex items-center gap-3 p-3 rounded-lg border border-[hsl(var(--border)/0.5)] hover:border-[hsl(var(--border))] cursor-pointer transition-colors"
-      onClick={() => openDetail({ type: 'schedule', scheduleId: schedule.id })}
+      onClick={() => navigateToSchedule(schedule.id)}
     >
       <div className="flex-1 min-w-0">
         <div className="font-medium text-sm truncate">{schedule.name}</div>
@@ -222,6 +223,14 @@ function ProjectFilterBar({
 export function ScheduleView(): React.JSX.Element {
   const { t } = useTranslation('schedule')
 
+  // Inline schedule detail: when `detailContext.type === 'schedule'`,
+  // render the detail view in place of the list (mirrors the issue
+  // pattern; the right detail panel skips 'schedule' context — see App.tsx).
+  const detailContext = useAppStore((s) => s.detailContext)
+  const closeDetail = useAppStore((s) => s.closeDetail)
+  const inlineScheduleId =
+    detailContext?.type === 'schedule' ? detailContext.scheduleId : null
+
   // Schedule list follows the current sidebar project context:
   // - All Projects (projectId = null): global list + local filter bar
   // - Specific project: project-scoped list, filter bar hidden
@@ -283,6 +292,14 @@ export function ScheduleView(): React.JSX.Element {
     scope.kind === 'all-projects' &&
     scope.filterProjectId === null &&
     projects.length > 1
+
+  if (inlineScheduleId) {
+    return (
+      <div className="h-full flex flex-col min-w-0 overflow-hidden">
+        <ScheduleDetailView scheduleId={inlineScheduleId} onClose={closeDetail} />
+      </div>
+    )
+  }
 
   return (
     <div className="h-full flex flex-col">

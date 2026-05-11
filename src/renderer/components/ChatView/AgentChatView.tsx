@@ -15,7 +15,7 @@ import type { UserMessageContent } from '@shared/types'
  * Used by both EmptyChat (hero landing) and ActiveChat (message stream)
  * to ensure visual continuity when transitioning between states.
  */
-const CONTENT_MAX_W = 'max-w-[640px]'
+const CONTENT_MAX_W = 'max-w-[680px]'
 
 // ════════════════════════════════════════════════════════════════════
 // AgentChatView — Root

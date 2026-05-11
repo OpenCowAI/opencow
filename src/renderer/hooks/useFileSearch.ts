@@ -15,6 +15,7 @@
 import { useCallback, useRef, useEffect } from 'react'
 import type { FileEntry, FileSearchMatch } from '@shared/types'
 import { useProjectScope } from '../contexts/ProjectScopeContext'
+import { useAppStore } from '@/stores/appStore'
 import { createLogger } from '@/lib/logger'
 import { getAppAPI } from '@/windowAPI'
 
@@ -49,6 +50,16 @@ export function useFileSearch(): UseFileSearchResult {
   const projectPathRef = useRef(projectPath)
   projectPathRef.current = projectPath
 
+  // The Chat home project is rooted at `$HOME`. Without filtering, `@`
+  // would surface every dotfile under home (`.ssh`, `.cache`, …) and
+  // bury the user's actual documents — same problem we already handle
+  // in the file tree. Mirror that filter here so `@` shows the same
+  // entries the tree shows.
+  const homeDir = useAppStore((s) => s.homeDir)
+  const isHomeProject = homeDir !== null && projectPath === homeDir
+  const isHomeProjectRef = useRef(isHomeProject)
+  isHomeProjectRef.current = isHomeProject
+
   /** Flat file list: root entries + one level of sub-entries for common dirs */
   const fileItemsRef = useRef<FileEntry[]>([])
   const fileItemsLoadedRef = useRef(false)
@@ -59,15 +70,18 @@ export function useFileSearch(): UseFileSearchResult {
     const pp = projectPathRef.current
     if (!pp || fileItemsLoadedRef.current) return
     fileItemsLoadedRef.current = true
+    const hideDotFiles = isHomeProjectRef.current
+    const dropDotFiles = (entries: FileEntry[]): FileEntry[] =>
+      hideDotFiles ? entries.filter((e) => !e.name.startsWith('.')) : entries
     try {
-      const entries = await getAppAPI()['list-project-files'](pp)
+      const entries = dropDotFiles(await getAppAPI()['list-project-files'](pp))
       // Flatten: include root entries and one level of sub-entries for common dirs
       const flat: FileEntry[] = [...entries]
       const commonDirs = entries.filter((e) => e.isDirectory).slice(0, 8)
       await Promise.all(
         commonDirs.map(async (dir) => {
           try {
-            const children = await getAppAPI()['list-project-files'](pp, dir.path)
+            const children = dropDotFiles(await getAppAPI()['list-project-files'](pp, dir.path))
             flat.push(...children)
           } catch { /* ignore */ }
         }),
@@ -84,7 +98,10 @@ export function useFileSearch(): UseFileSearchResult {
     fileItemsLoadedRef.current = false
     fileItemsRef.current = []
     if (projectPath) loadFileItems()
-  }, [projectPath, loadFileItems])
+    // `isHomeProject` is included so the index is rebuilt when the user
+    // navigates between Chat home and a regular project — without this
+    // they'd see (or not see) dotfiles based on the previous project.
+  }, [projectPath, isHomeProject, loadFileItems])
 
   /* -- Filter / search -- */
 
@@ -96,6 +113,9 @@ export function useFileSearch(): UseFileSearchResult {
   const filterFileItems = useCallback(async (query: string): Promise<FileEntry[]> => {
     const pp = projectPathRef.current
     if (!pp) return []
+    const hideDotFiles = isHomeProjectRef.current
+    const dropDotFiles = (entries: FileEntry[]): FileEntry[] =>
+      hideDotFiles ? entries.filter((e) => !e.name.startsWith('.')) : entries
 
     // Empty query: show pre-loaded items (root + shallow children) — no IPC needed
     if (!query) return fileItemsRef.current.slice(0, 20)
@@ -109,7 +129,7 @@ export function useFileSearch(): UseFileSearchResult {
       const nameFilter = query.substring(lastSlash + 1).toLowerCase()
 
       try {
-        const entries = await getAppAPI()['list-project-files'](pp, dirPath || undefined)
+        const entries = dropDotFiles(await getAppAPI()['list-project-files'](pp, dirPath || undefined))
         if (generation !== searchGenerationRef.current) return [] // stale
         if (!nameFilter) return entries.slice(0, 30)
         return entries
@@ -124,7 +144,11 @@ export function useFileSearch(): UseFileSearchResult {
     try {
       const results = await getAppAPI()['search-project-files'](pp, query)
       if (generation !== searchGenerationRef.current) return [] // stale
-      return (results as FileSearchMatch[]).map((match) => match.entry)
+      const entries = (results as FileSearchMatch[]).map((match) => match.entry)
+      // Fuzzy search runs on the full index — for the Chat home project
+      // also filter the result list, otherwise `.cache/...` style paths
+      // resurface even though we hid them from the empty-query view.
+      return dropDotFiles(entries)
     } catch {
       // Fallback to local filter on the pre-loaded flat list
       const q = query.toLowerCase()

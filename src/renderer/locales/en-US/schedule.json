@@ -251,6 +251,17 @@
     "unknownIssue": "Unknown Issue",
     "closeViewer": "Close viewer",
     "loadingPreview": "Loading preview…",
-    "issuePreviewAria": "Issue detail preview"
+    "issuePreviewAria": "Issue detail preview",
+    "searchPlaceholder": "Search title / file / issue",
+    "filterByProject": "Filter by project",
+    "allProjects": "All projects",
+    "noStarredFiltered": "No starred artifacts match your filter",
+    "title": "Starred",
+    "subtitle": "Starred conversation artifacts",
+    "bucketToday": "Today",
+    "bucketYesterday": "Yesterday",
+    "bucketDayBeforeYesterday": "2 days ago",
+    "noIssue": "No linked issue",
+    "noProject": "No linked project"
   }
 }

@@ -2,12 +2,11 @@
 
 import { useState, useCallback, useMemo, useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
-import { X, Pencil, Trash2, Check, ArrowUpRight, Link, FileText, ExternalLink, FolderCode } from 'lucide-react'
+import { X, Pencil, Trash2, Check, ArrowUpRight, Link, FileText, ExternalLink } from 'lucide-react'
 import { useBlockBrowserView } from '@/hooks/useBlockBrowserView'
 import type { Artifact } from '@shared/types'
 import { useAppStore } from '../../stores/appStore'
 import { useIssueStore } from '../../stores/issueStore'
-import { useIssueFileOverlayStore } from '@/stores/issueFileOverlayStore'
 import { selectIssue, deleteIssue } from '../../actions/issueActions'
 import { cn } from '../../lib/utils'
 import { IssueStatusIcon, IssuePriorityIcon } from '../IssuesView/IssueIcons'
@@ -146,7 +145,6 @@ interface IssueDetailViewProps {
 
 export function IssueDetailView({ issueId, onClose, onNavigateToIssue }: IssueDetailViewProps): React.JSX.Element {
   const { t } = useTranslation('issues')
-  const openIssueFileOverlay = useIssueFileOverlayStore((s) => s.openIssueFileOverlay)
   // Block browser view when delete confirmation modal is open
   const [confirmDelete, setConfirmDelete] = useState(false)
   useBlockBrowserView('delete-confirm-modal', confirmDelete)
@@ -479,15 +477,6 @@ export function IssueDetailView({ issueId, onClose, onNavigateToIssue }: IssueDe
         <div className="no-drag flex items-center gap-1">
           {issue ? (
             <>
-              <Tooltip content={t('detail.openIssueFileSheet')} position="bottom">
-                <button
-                  onClick={() => openIssueFileOverlay(issue.id)}
-                  className="p-1.5 rounded-md text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] hover:bg-[hsl(var(--foreground)/0.04)] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--ring))]"
-                  aria-label={t('detail.openIssueFileSheetAria')}
-                >
-                  <FolderCode className="w-3.5 h-3.5" aria-hidden="true" />
-                </button>
-              </Tooltip>
               <Tooltip content={t('detail.editIssue')} position="bottom">
                 <button
                   onClick={() => setShowEditModal(true)}
@@ -510,7 +499,6 @@ export function IssueDetailView({ issueId, onClose, onNavigateToIssue }: IssueDe
           ) : (
             <>
               {/* Invisible placeholders to keep header width constant while loading */}
-              <span className="invisible p-1.5" aria-hidden="true"><FolderCode className="w-3.5 h-3.5" /></span>
               <span className="invisible p-1.5" aria-hidden="true"><Pencil className="w-3.5 h-3.5" /></span>
               <span className="invisible p-1.5" aria-hidden="true"><Trash2 className="w-3.5 h-3.5" /></span>
             </>

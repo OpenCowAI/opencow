@@ -2,7 +2,7 @@
 
 import { useCallback, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
-import { ChevronRight, ChevronDown } from 'lucide-react'
+import { ChevronRight, ChevronDown, CornerUpRight } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { FileIcon } from './FileIcon'
 import type { FileEntry } from '@shared/types'
@@ -50,6 +50,16 @@ export function FileTreeNode({
   const paddingLeft = 12 + depth * 16
   const skipSubmitOnBlurRef = useRef(false)
 
+  // Surface symlink status in the row tooltip so hovering anywhere on the
+  // row — not just the badge — reveals it. Combine with a git decoration
+  // tooltip when both apply.
+  const rowTitle = ((): string | undefined => {
+    const parts: string[] = []
+    if (entry.isSymlink) parts.push(t('tree.symlinkTitle'))
+    if (decoration?.tooltip) parts.push(decoration.tooltip)
+    return parts.length > 0 ? parts.join(' • ') : undefined
+  })()
+
   /**
    * Native HTML5 dragstart handler.
    *
@@ -85,7 +95,7 @@ export function FileTreeNode({
         draggable
         onDragStart={handleDragStart}
         className={cn(
-          'flex items-center gap-1 py-1 pr-2 mx-1.5 rounded-md text-[13px] cursor-pointer select-none',
+          'flex items-center gap-1 py-1 pr-2 mx-1.5 rounded-md text-[14px] cursor-pointer select-none',
           'hover:bg-[hsl(var(--foreground)/0.04)] transition-colors',
           'outline-none focus-visible:ring-1 focus-visible:ring-[hsl(var(--ring))] focus-visible:ring-inset',
           isActive && 'bg-[hsl(var(--primary)/0.08)] text-[hsl(var(--foreground))]'
@@ -93,7 +103,7 @@ export function FileTreeNode({
         style={{ paddingLeft }}
         onClick={() => onClick(entry)}
         onContextMenu={(event) => onContextMenu?.(event, entry)}
-        title={decoration?.tooltip ?? undefined}
+        title={rowTitle}
       >
         {entry.isDirectory ? (
           isExpanded ? (
@@ -137,11 +147,17 @@ export function FileTreeNode({
               }
               onRenameConfirm?.()
             }}
-            className="min-w-0 flex-1 rounded border border-[hsl(var(--ring)/0.5)] bg-[hsl(var(--background))] px-1.5 py-0 text-[12px] outline-none focus-visible:ring-1 focus-visible:ring-[hsl(var(--ring))]"
+            className="min-w-0 flex-1 rounded border border-[hsl(var(--ring)/0.5)] bg-[hsl(var(--background))] px-1.5 py-0 text-[13px] outline-none focus-visible:ring-1 focus-visible:ring-[hsl(var(--ring))]"
             aria-label={entry.isDirectory ? t('actions.renameFolder') : t('actions.renameFile')}
           />
         ) : (
           <span className={cn('truncate', decoration?.colorClass)}>{entry.name}</span>
+        )}
+        {entry.isSymlink && !isRenaming && (
+          <CornerUpRight
+            className="h-3 w-3 shrink-0 text-[hsl(var(--muted-foreground)/0.7)]"
+            aria-label={t('tree.symlinkLabel')}
+          />
         )}
         {decoration?.badge && (
           <span

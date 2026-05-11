@@ -51,12 +51,15 @@ export function EditorTabs({ projectId, projectPath, rightSafeInset = 0 }: Edito
     }
   }, [contextMenu, openFiles])
 
-  if (openFiles.length === 0) return <div className="h-9 border-b border-[hsl(var(--border))]" />
+  if (openFiles.length === 0) return <div className="h-9" />
 
   return (
-    <div className="relative h-9 border-b border-[hsl(var(--border))] bg-[hsl(var(--muted)/0.2)]">
+    <div className="relative h-9 bg-[hsl(var(--muted)/0.2)]">
       <div
-        className="flex items-center h-full overflow-x-auto"
+        // `no-scrollbar` keeps `overflow-x-auto`'s wheel / touch scroll
+        // behaviour but hides the scrollbar chrome, matching the look of
+        // editor tab strips elsewhere in the app.
+        className="flex items-center h-full overflow-x-auto no-scrollbar"
         role="tablist"
         aria-label={t('editor.openFilesAria')}
         style={{ paddingRight: rightSafeInset > 0 ? `${rightSafeInset}px` : undefined }}
@@ -65,18 +68,18 @@ export function EditorTabs({ projectId, projectPath, rightSafeInset = 0 }: Edito
           const isActive = file.path === activeFilePath
           const decoration = getFileDecoration(gitSnapshot, file.path)
           return (
+            // Each tab is split into two layers:
+            //   * outer — full-height click target, only contributes a
+            //     small horizontal gap (px-0.5) between adjacent pills
+            //   * inner — the actual visible pill: rounded, inset
+            //     vertically (py-1) so the highlight reads as a chip
+            //     rather than a full-bleed block.
             <div
               key={file.path}
               role="tab"
               aria-selected={isActive}
               tabIndex={0}
-              className={cn(
-                'flex items-center gap-1.5 px-3 h-full text-[13px] cursor-pointer select-none shrink-0',
-                'border-r border-[hsl(var(--border)/0.5)] transition-colors',
-                isActive
-                  ? 'bg-[hsl(var(--background))] text-[hsl(var(--foreground))]'
-                  : 'text-[hsl(var(--muted-foreground))] hover:bg-[hsl(var(--foreground)/0.04)]'
-              )}
+              className="group flex items-center h-full px-0.5 cursor-pointer select-none shrink-0"
               onClick={() => setActiveFile(projectId, file.path)}
               onContextMenu={(e) => {
                 e.preventDefault()
@@ -91,25 +94,52 @@ export function EditorTabs({ projectId, projectPath, rightSafeInset = 0 }: Edito
               }}
               title={decoration.tooltip ?? undefined}
             >
-              {file.isDirty && (
-                <span className="w-2 h-2 rounded-full bg-[hsl(var(--foreground))] shrink-0" aria-label={t('editor.unsavedChanges')} />
-              )}
-              <span className={cn('truncate max-w-[160px]', decoration.colorClass)}>{file.name}</span>
-              {decoration.badge && (
-                <span className={cn('text-[10px] font-mono shrink-0', decoration.colorClass)}>
-                  {decoration.badge}
-                </span>
-              )}
-              <button
-                className="p-0.5 rounded hover:bg-[hsl(var(--foreground)/0.04)] transition-colors shrink-0"
-                onClick={(e) => {
-                  e.stopPropagation()
-                  closeFile(projectId, file.path)
-                }}
-                aria-label={t('editor.closeFile', { name: file.name })}
+              <span
+                className={cn(
+                  'flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[13px] transition-colors',
+                  isActive
+                    // "Pressed" pill — a subtle ink wash sitting *deeper*
+                    // than the strip so the active tab reads as the
+                    // selected chip rather than a bright cut-out.
+                    ? 'bg-[hsl(var(--foreground)/0.08)] text-[hsl(var(--foreground))]'
+                    : 'text-[hsl(var(--muted-foreground))] group-hover:bg-[hsl(var(--foreground)/0.04)]',
+                )}
               >
-                <X className="h-3 w-3" />
-              </button>
+                {file.isDirty && (
+                  <span
+                    className="w-2 h-2 rounded-full bg-[hsl(var(--foreground))] shrink-0"
+                    aria-label={t('editor.unsavedChanges')}
+                  />
+                )}
+                <span className={cn('truncate max-w-[160px]', decoration.colorClass)}>
+                  {file.name}
+                </span>
+                {decoration.badge && (
+                  <span className={cn('text-[10px] font-mono shrink-0', decoration.colorClass)}>
+                    {decoration.badge}
+                  </span>
+                )}
+                <button
+                  className={cn(
+                    'p-0.5 rounded shrink-0 transition-opacity hover:bg-[hsl(var(--foreground)/0.06)]',
+                    // Keep the button in the layout (opacity, not display)
+                    // so the pill width stays constant whether or not the
+                    // user is hovering. `focus-within` ensures keyboard
+                    // focus also reveals the button.
+                    'opacity-0 pointer-events-none',
+                    'group-hover:opacity-100 group-hover:pointer-events-auto',
+                    'group-focus-within:opacity-100 group-focus-within:pointer-events-auto',
+                  )}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    closeFile(projectId, file.path)
+                  }}
+                  aria-label={t('editor.closeFile', { name: file.name })}
+                  tabIndex={-1}
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              </span>
             </div>
           )
         })}
