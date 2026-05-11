@@ -140,50 +140,6 @@ export function ChatLayoutPreview({ mode }: { mode: 'default' | 'files' }): Reac
   )
 }
 
-export function FilesLayoutPreview({ mode }: { mode: 'ide' | 'browser' }): React.JSX.Element {
-  if (mode === 'ide') {
-    return (
-      <div aria-hidden="true">
-        <FilesIdeSkeleton />
-      </div>
-    )
-  }
-
-  return (
-    <div className="space-y-1.5" aria-hidden="true">
-      <div className="flex items-center gap-1">
-        <MiniDot tone="soft" />
-        <MiniBlock tone="soft" className="h-1.5 w-9 rounded-full" />
-        <MiniBlock tone="faint" className="h-1.5 w-1.5 rounded-full" />
-        <MiniBlock tone="faint" className="h-1.5 w-8 rounded-full" />
-        <MiniBlock tone="faint" className="h-1.5 w-1.5 rounded-full" />
-        <MiniBlock tone="base" className="h-1.5 w-8 rounded-full" />
-        <MiniBlock tone="soft" className="ml-auto h-1.5 w-14 rounded-full" />
-      </div>
-      <div className="grid grid-cols-3 gap-1">
-        <div className="space-y-1 rounded-md border border-[hsl(var(--foreground)/0.07)] p-1">
-          <MiniBlock tone="faint" className="mx-auto h-4.5 w-4.5 rounded-sm" />
-          <MiniBlock tone="soft" className="h-1.5 w-[92%] rounded-full" />
-          <MiniBlock tone="faint" className="h-1.5 w-[70%] rounded-full" />
-        </div>
-        <div className="space-y-1 rounded-md border border-[hsl(var(--foreground)/0.07)] p-1">
-          <MiniBlock tone="soft" className="mx-auto h-4.5 w-4.5 rounded-sm" />
-          <MiniBlock tone="base" className="h-1.5 w-[88%] rounded-full" />
-          <MiniBlock tone="faint" className="h-1.5 w-[66%] rounded-full" />
-        </div>
-        <div className="space-y-1 rounded-md border border-[hsl(var(--foreground)/0.07)] p-1">
-          <MiniBlock tone="faint" className="mx-auto h-4.5 w-4.5 rounded-sm" />
-          <MiniBlock tone="soft" className="h-1.5 w-[84%] rounded-full" />
-          <MiniBlock tone="faint" className="h-1.5 w-[62%] rounded-full" />
-        </div>
-      </div>
-      <div className="grid grid-cols-2 gap-1">
-        <MiniBlock tone="faint" className="h-1.5 w-full rounded-full" />
-        <MiniBlock tone="soft" className="h-1.5 w-[78%] rounded-full" />
-      </div>
-    </div>
-  )
-}
 
 export function BrowserBehaviorPreview({
   policy,

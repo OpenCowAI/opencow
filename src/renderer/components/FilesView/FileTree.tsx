@@ -31,7 +31,6 @@ interface FileTreeProps {
   projectPath: string
   projectName: string
   projectId: string
-  onOpenSearch?: () => void
 }
 
 const EMPTY_FILE_ENTRIES: FileEntry[] = []
@@ -82,7 +81,7 @@ function parentPath(path: string): string | null {
 
 // ── Component ──────────────────────────────────────────────────────
 
-export function FileTree({ projectPath, projectName, projectId, onOpenSearch }: FileTreeProps): React.JSX.Element {
+export function FileTree({ projectPath, projectName, projectId }: FileTreeProps): React.JSX.Element {
   const { t } = useTranslation('files')
   const expandedDirs = useFileStore((s) => s.expandedTreeDirsByProject[projectId] ?? EMPTY_EXPANDED_DIRS)
   const fileStructureVersion = useFileStore((s) => s.fileStructureVersionByProject[projectId] ?? 0)
@@ -445,21 +444,6 @@ export function FileTree({ projectPath, projectName, projectId, onOpenSearch }: 
 
   return (
     <div className="h-full flex flex-col min-w-0">
-      <div className="px-3 h-9 flex items-center text-xs font-semibold uppercase tracking-wider text-[hsl(var(--muted-foreground))] border-b border-[hsl(var(--border))]">
-        <span className="truncate">{projectName}</span>
-        {onOpenSearch && (
-          <button
-            type="button"
-            className="ml-auto inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-normal normal-case tracking-normal text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] hover:bg-[hsl(var(--foreground)/0.05)] transition-colors"
-            onClick={onOpenSearch}
-            aria-label={t('search.openButtonAria', { defaultValue: 'Search files' })}
-            title={t('search.shortcutHint', { defaultValue: 'Search files (⌘/Ctrl+F)' })}
-          >
-            <span>{t('search.openButton', { defaultValue: 'Search' })}</span>
-            <kbd className="font-mono text-[9px]">⌘F</kbd>
-          </button>
-        )}
-      </div>
       <div
         ref={treeContainerRef}
         className="flex-1 overflow-y-auto"

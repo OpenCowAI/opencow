@@ -2,7 +2,7 @@
 
 import { useCallback, useMemo, useRef, useState, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
-import { FileText, FolderOpen, Globe, ImageIcon } from 'lucide-react'
+import { FolderOpen } from 'lucide-react'
 import Editor, { loader, type OnMount } from '@monaco-editor/react'
 import type { editor } from 'monaco-editor'
 import * as monaco from 'monaco-editor'
@@ -154,57 +154,57 @@ export function EditorPane({ projectPath, projectId }: EditorPaneProps): React.J
     setViewModeByPath((prev) => ({ ...prev, [activeFilePath]: mode }))
   }
 
+  // The preview/source toggle has two homes depending on the active view:
+  //   - Markdown preview: passed into MarkdownPreviewWithToc's topRightSlot
+  //     so it shares the same flex toolbar as the search (gap-2, no manual
+  //     offset math).
+  //   - All other cases (image preview, html preview, markdown source view
+  //     via Monaco): rendered as an absolute pill at top-right of this pane.
+  const previewToggle = hasPreviewToggle ? (
+    <div
+      className="flex rounded-md border border-[hsl(var(--border))] bg-[hsl(var(--background))/0.85] backdrop-blur-sm overflow-hidden shadow-sm"
+      role="tablist"
+      aria-label={t('editor.previewModeAria')}
+    >
+      <button
+        role="tab"
+        aria-selected={activeViewMode === 'preview'}
+        onClick={() => setViewMode('preview')}
+        className={cn(
+          'px-2.5 py-1 text-xs font-medium transition-colors',
+          'focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[hsl(var(--ring))]',
+          activeViewMode === 'preview'
+            ? 'bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))]'
+            : 'text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] hover:bg-[hsl(var(--foreground)/0.04)]',
+        )}
+      >
+        {t('common:preview')}
+      </button>
+      {activeFile.viewKind !== 'image' && (
+        <button
+          role="tab"
+          aria-selected={activeViewMode === 'source'}
+          onClick={() => setViewMode('source')}
+          className={cn(
+            'px-2.5 py-1 text-xs font-medium transition-colors',
+            'focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[hsl(var(--ring))]',
+            activeViewMode === 'source'
+              ? 'bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))]'
+              : 'text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] hover:bg-[hsl(var(--foreground)/0.04)]',
+          )}
+        >
+          {t('common:source')}
+        </button>
+      )}
+    </div>
+  ) : null
+
+  const showInlineToggle = hasPreviewToggle && !(isMarkdown && activeViewMode === 'preview')
+
   return (
-    <div className="h-full flex flex-col min-h-0">
-      {hasPreviewToggle && (
-        <div className="h-9 border-b border-[hsl(var(--border))] bg-[hsl(var(--muted)/0.2)] px-3 flex items-center justify-between">
-          <div className="flex items-center gap-1.5 text-xs text-[hsl(var(--muted-foreground))]">
-            {activeFile.viewKind === 'image' ? (
-              <ImageIcon className="h-3.5 w-3.5" />
-            ) : isHtml ? (
-              <Globe className="h-3.5 w-3.5" />
-            ) : (
-              <FileText className="h-3.5 w-3.5" />
-            )}
-            <span className="truncate max-w-[280px]">{activeFile.name}</span>
-          </div>
-          <div
-            className="flex rounded-md border border-[hsl(var(--border))] overflow-hidden"
-            role="tablist"
-            aria-label={t('editor.previewModeAria')}
-          >
-            <button
-              role="tab"
-              aria-selected={activeViewMode === 'preview'}
-              onClick={() => setViewMode('preview')}
-              className={cn(
-                'px-2.5 py-1 text-xs font-medium transition-colors',
-                'focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[hsl(var(--ring))]',
-                activeViewMode === 'preview'
-                  ? 'bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))]'
-                  : 'text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] hover:bg-[hsl(var(--foreground)/0.04)]',
-              )}
-            >
-              {t('common:preview')}
-            </button>
-            {activeFile.viewKind !== 'image' && (
-              <button
-                role="tab"
-                aria-selected={activeViewMode === 'source'}
-                onClick={() => setViewMode('source')}
-                className={cn(
-                  'px-2.5 py-1 text-xs font-medium transition-colors',
-                  'focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[hsl(var(--ring))]',
-                  activeViewMode === 'source'
-                    ? 'bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))]'
-                    : 'text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] hover:bg-[hsl(var(--foreground)/0.04)]',
-                )}
-              >
-                {t('common:source')}
-              </button>
-            )}
-          </div>
-        </div>
+    <div className="relative h-full flex flex-col min-h-0">
+      {showInlineToggle && (
+        <div className="absolute top-2 right-2 z-20">{previewToggle}</div>
       )}
       <div className="flex-1 min-h-0">
         {activeFile.viewKind === 'image' && activeViewMode === 'preview' ? (
@@ -234,6 +234,7 @@ export function EditorPane({ projectPath, projectId }: EditorPaneProps): React.J
             tocLabel={t('editor.markdownContents')}
             enableTocCollapse
             defaultTocCollapsed
+            topRightSlot={previewToggle}
           />
         ) : isHtml && activeViewMode === 'preview' ? (
           <iframe

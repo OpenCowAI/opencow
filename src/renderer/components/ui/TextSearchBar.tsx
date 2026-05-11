@@ -52,6 +52,10 @@ interface SearchTriggerProps {
 /**
  * Compact search icon button visible when the search bar is closed.
  * Shows the keyboard shortcut badge for discoverability.
+ *
+ * Positioning is the caller's responsibility — render inside a positioned
+ * container (e.g. an absolute toolbar) so this button can sit beside other
+ * controls without absolute-positioning conflicts.
  */
 export const SearchTrigger = memo(function SearchTrigger({
   onOpen,
@@ -62,10 +66,10 @@ export const SearchTrigger = memo(function SearchTrigger({
       type="button"
       onClick={onOpen}
       className={cn(
-        // Positioning: same top-right slot as TextSearchBar
-        'absolute top-2 right-4 z-20',
-        // Visual: ghost button, becomes visible on hover
-        'flex items-center gap-1.5 px-2 py-1 rounded-lg',
+        // Visual: ghost button, becomes visible on hover. Match TextSearchBar's
+        // height (h-8) so swapping between trigger/expanded states doesn't
+        // resize the flex row and shift sibling controls vertically.
+        'flex items-center gap-1.5 px-2 h-8 rounded-lg',
         'text-[hsl(var(--muted-foreground)/0.4)]',
         'hover:text-[hsl(var(--muted-foreground))]',
         'hover:bg-[hsl(var(--foreground)/0.04)]',
@@ -138,10 +142,9 @@ export const TextSearchBar = memo(function TextSearchBar({
   return (
     <div
       className={cn(
-        // Positioning: absolute top-right with slight offset
-        'absolute top-2 right-4 z-20',
-        // Visual style: glass card with border
-        'flex items-center gap-1 px-2 py-1.5 rounded-lg',
+        // Visual style: glass card with border. Fixed h-8 so swapping with
+        // SearchTrigger (same height) leaves the flex row's height stable.
+        'flex items-center gap-1 px-2 h-8 rounded-lg',
         'bg-[hsl(var(--card)/0.95)] backdrop-blur-sm',
         'border border-[hsl(var(--border))]',
         'shadow-md',

@@ -11,7 +11,7 @@
     "schedule": "Schedule"
   },
   "sidebar": {
-    "allProjects": "Home",
+    "allProjects": "Projects",
     "projectList": "Project list",
     "addProject": "Add project",
     "pinned": "Pinned",
@@ -22,6 +22,20 @@
     "inbox": "Inbox",
     "schedule": "Schedule",
     "dev": "DEV"
+  },
+  "projectsList": {
+    "title": "Projects",
+    "subtitle": "AI-driven progress, from idea to result",
+    "searchPlaceholder": "Search project name",
+    "tabActive": "Active",
+    "tabArchived": "Archived",
+    "emptyActive": "No projects yet — click \"+\" to create or import",
+    "emptyArchived": "No archived projects",
+    "noSearchMatch": "No projects match",
+    "sessionCount_one": "{{count}} active session",
+    "sessionCount_other": "{{count}} active sessions",
+    "pinned": "Pinned",
+    "pinnedSection": "Pinned"
   },
   "addProject": {
     "create": "New project…",

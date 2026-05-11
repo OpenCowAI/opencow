@@ -11,7 +11,7 @@
     "schedule": "计划"
   },
   "sidebar": {
-    "allProjects": "首页",
+    "allProjects": "项目",
     "projectList": "项目列表",
     "addProject": "添加项目",
     "pinned": "置顶",
@@ -22,6 +22,20 @@
     "inbox": "收件箱",
     "schedule": "计划",
     "dev": "DEV"
+  },
+  "projectsList": {
+    "title": "项目",
+    "subtitle": "AI 自驱推进，从想法到结果",
+    "searchPlaceholder": "搜索项目名称",
+    "tabActive": "活跃中",
+    "tabArchived": "已归档",
+    "emptyActive": "还没有项目，点击「+」创建或导入",
+    "emptyArchived": "暂无已归档项目",
+    "noSearchMatch": "没有匹配的项目",
+    "sessionCount_one": "{{count}} 个活跃会话",
+    "sessionCount_other": "{{count}} 个活跃会话",
+    "pinned": "已置顶",
+    "pinnedSection": "置顶"
   },
   "addProject": {
     "create": "新建项目…",

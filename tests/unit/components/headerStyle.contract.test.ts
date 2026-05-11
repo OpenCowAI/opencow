@@ -13,7 +13,13 @@ function readSource(relativePath: string): string {
 describe('Main/detail header style contract', () => {
   it('keeps MainPanel tab header on fixed 48px height with full border color token', () => {
     const source = readSource('src/renderer/components/MainPanel/MainPanel.tsx')
-    expect(source).toContain('className="drag-region shrink-0 h-12 border-b border-[hsl(var(--border)/0.5)] px-2 flex gap-1 items-center"')
+    // The header className may carry layout tweaks (e.g. justify-between for the
+    // primary-tabs / more-menu split), but the height + border token contract
+    // must be preserved literally.
+    const headerMatch = source.match(
+      /className="drag-region shrink-0 h-12 border-b border-\[hsl\(var\(--border\)\/0\.5\)\][^"]*"/,
+    )
+    expect(headerMatch).not.toBeNull()
     expect(source).not.toContain('items-center py-2')
   })
 

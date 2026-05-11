@@ -18,6 +18,7 @@ import { EphemeralFilterBar } from './EphemeralFilterBar'
 import { DisplayControlBar } from './DisplayControlBar'
 import { ProviderQuickSwitcher } from './ProviderQuickSwitcher'
 import { IssueGroupedList } from './IssueGroupedList'
+import { IssueDetailView } from '../DetailPanel/IssueDetailView'
 
 export function IssuesView(): React.JSX.Element {
   const { t } = useTranslation('issues')
@@ -25,6 +26,25 @@ export function IssuesView(): React.JSX.Element {
   const loadIssues = useIssueStore((s) => s.loadIssues)
   const loadNoteCountsByIssue = useNoteStore((s) => s.loadNoteCountsByIssue)
   const sidebarProjectId = useAppStore(selectProjectId)
+
+  // Inline issue detail: when detailContext.type === 'issue', render the
+  // detail view in place of the list (mirrors the Evose prototype). The
+  // right Detail panel skips 'issue' context (see App.tsx) so the inline
+  // mode is the single owner of the issue detail experience.
+  const detailContext = useAppStore((s) => s.detailContext)
+  const closeDetail = useAppStore((s) => s.closeDetail)
+  const navigateToIssue = useAppStore((s) => s.navigateToIssue)
+  const inlineIssueId =
+    detailContext?.type === 'issue' ? detailContext.issueId : null
+
+  const handleNavigateToIssue = useCallback(
+    (issueId: string) => {
+      if (sidebarProjectId) {
+        navigateToIssue(sidebarProjectId, issueId)
+      }
+    },
+    [navigateToIssue, sidebarProjectId],
+  )
 
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [showAICreator, setShowAICreator] = useState(false)
@@ -43,6 +63,18 @@ export function IssuesView(): React.JSX.Element {
   useEffect(() => {
     loadNoteCountsByIssue()
   }, [loadNoteCountsByIssue])
+
+  if (inlineIssueId) {
+    return (
+      <div className="h-full flex flex-col min-w-0 overflow-hidden">
+        <IssueDetailView
+          issueId={inlineIssueId}
+          onClose={closeDetail}
+          onNavigateToIssue={handleNavigateToIssue}
+        />
+      </div>
+    )
+  }
 
   return (
     <div className="h-full flex flex-col min-w-0 overflow-hidden">

@@ -8,7 +8,6 @@ import { useAppStore } from '@/stores/appStore'
 import type {
   ProjectDefaultTab,
   ProjectPreferences,
-  FilesDisplayMode,
 } from '@shared/types'
 import { normalizeProjectPreferences } from '@shared/projectPreferences'
 import { getAppAPI } from '@/windowAPI'
@@ -18,7 +17,6 @@ import {
 } from '@/components/ui/SettingOptionCards'
 import {
   ChatLayoutPreview,
-  FilesLayoutPreview,
   TopTabPreview,
 } from './previews/GeneralSettingPreviews'
 
@@ -29,22 +27,19 @@ interface ProjectGeneralSettingsPanelProps {
 interface GeneralPreferencesDraft {
   defaultTab: ProjectDefaultTab
   defaultChatViewMode: 'default' | 'files'
-  defaultFilesDisplayMode: FilesDisplayMode | null
 }
 
 function toGeneralDraft(preferences: ProjectPreferences): GeneralPreferencesDraft {
   return {
     defaultTab: preferences.defaultTab,
     defaultChatViewMode: preferences.defaultChatViewMode,
-    defaultFilesDisplayMode: preferences.defaultFilesDisplayMode,
   }
 }
 
 function sameGeneralPreferences(a: GeneralPreferencesDraft, b: GeneralPreferencesDraft): boolean {
   return (
     a.defaultTab === b.defaultTab &&
-    a.defaultChatViewMode === b.defaultChatViewMode &&
-    a.defaultFilesDisplayMode === b.defaultFilesDisplayMode
+    a.defaultChatViewMode === b.defaultChatViewMode
   )
 }
 
@@ -64,7 +59,6 @@ export function ProjectGeneralSettingsPanel({ projectId }: ProjectGeneralSetting
     setDraft(canonical)
   }, [
     canonical.defaultChatViewMode,
-    canonical.defaultFilesDisplayMode,
     canonical.defaultTab,
   ])
 
@@ -78,7 +72,6 @@ export function ProjectGeneralSettingsPanel({ projectId }: ProjectGeneralSetting
         preferences: {
           defaultTab: draft.defaultTab,
           defaultChatViewMode: draft.defaultChatViewMode,
-          defaultFilesDisplayMode: draft.defaultFilesDisplayMode,
         },
       })
       if (!updated) throw new Error(t('general.saveFailed'))
@@ -96,20 +89,7 @@ export function ProjectGeneralSettingsPanel({ projectId }: ProjectGeneralSetting
   }, [])
 
   const setChatViewMode = useCallback((defaultChatViewMode: 'default' | 'files') => {
-    setDraft((s) => {
-      if (defaultChatViewMode === 'files') {
-        return {
-          ...s,
-          defaultChatViewMode: 'files',
-          defaultFilesDisplayMode: s.defaultFilesDisplayMode ?? 'ide',
-        }
-      }
-      return { ...s, defaultChatViewMode: 'default' }
-    })
-  }, [])
-
-  const setFilesMode = useCallback((defaultFilesDisplayMode: FilesDisplayMode) => {
-    setDraft((s) => ({ ...s, defaultFilesDisplayMode }))
+    setDraft((s) => ({ ...s, defaultChatViewMode }))
   }, [])
 
   const defaultTabOptions = useMemo<readonly SettingOptionCardSpec<ProjectDefaultTab>[]>(
@@ -149,24 +129,6 @@ export function ProjectGeneralSettingsPanel({ projectId }: ProjectGeneralSetting
         label: t('general.chatDefaultMode.options.files'),
         description: t('general.chatDefaultMode.hints.files'),
         preview: <ChatLayoutPreview mode="files" />,
-      },
-    ]),
-    [t],
-  )
-
-  const filesDefaultOptions = useMemo<readonly SettingOptionCardSpec<FilesDisplayMode>[]>(
-    () => ([
-      {
-        value: 'ide',
-        label: t('general.filesDefaultMode.options.ide'),
-        description: t('general.filesDefaultMode.hints.ide'),
-        preview: <FilesLayoutPreview mode="ide" />,
-      },
-      {
-        value: 'browser',
-        label: t('general.filesDefaultMode.options.browser'),
-        description: t('general.filesDefaultMode.hints.browser'),
-        preview: <FilesLayoutPreview mode="browser" />,
       },
     ]),
     [t],
@@ -228,20 +190,6 @@ export function ProjectGeneralSettingsPanel({ projectId }: ProjectGeneralSetting
               columns={2}
             />
           </section>
-
-          {draft.defaultChatViewMode === 'files' && (
-            <section className="space-y-2.5 rounded-xl border border-[hsl(var(--border)/0.7)] bg-[hsl(var(--card)/0.6)] p-3.5">
-              <h3 className="text-sm font-medium">{t('general.filesDefaultMode.title')}</h3>
-              <p className="text-xs text-[hsl(var(--muted-foreground))]">{t('general.filesDefaultMode.description')}</p>
-              <SettingOptionCardGroup
-                ariaLabel={t('general.filesDefaultMode.title')}
-                value={draft.defaultFilesDisplayMode ?? 'ide'}
-                onChange={setFilesMode}
-                options={filesDefaultOptions}
-                columns={2}
-              />
-            </section>
-          )}
 
           <div className="pt-1">
             <button

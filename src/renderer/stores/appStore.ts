@@ -414,9 +414,6 @@ interface UISlice {
   _projectStates: Record<string, ProjectViewState>
   /** Per-project files display mode (auto-detected or user-overridden). */
   filesDisplayModeByProject: Record<string, FilesDisplayMode>
-  /** AgentSidebar expanded/collapsed — persisted across tab switches. */
-  agentSidebarExpanded: boolean
-  setAgentSidebarExpanded: (expanded: boolean) => void
   setSearchQuery: (query: string) => void
   setCommandPaletteOpen: (open: boolean) => void
   openAboutDialog: () => void
@@ -745,7 +742,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
   runtimeVersions: null,
   onboarding: { completed: false, hooksInstalled: false },
   showArchived: false,
-  leftSidebarExpanded: true,
+  leftSidebarExpanded: false,
   setLeftSidebarExpanded: (expanded) => set({ leftSidebarExpanded: expanded }),
   sessionsViewMode: 'list',
   chatSubTab: 'conversation',
@@ -753,8 +750,6 @@ export const useAppStore = create<AppStore>((set, get) => ({
   chatViewMode: 'default',
   _projectStates: {},
   filesDisplayModeByProject: {},
-  agentSidebarExpanded: false,
-  setAgentSidebarExpanded: (expanded) => set({ agentSidebarExpanded: expanded }),
   setSearchQuery: (query) => set({ searchQuery: query }),
   setCommandPaletteOpen: (open) => set({ commandPaletteOpen: open }),
   openAboutDialog: () => set({ aboutDialogOpen: true }),

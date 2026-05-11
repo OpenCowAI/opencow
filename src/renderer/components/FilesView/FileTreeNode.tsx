@@ -85,7 +85,7 @@ export function FileTreeNode({
         draggable
         onDragStart={handleDragStart}
         className={cn(
-          'flex items-center gap-1 py-0.5 pr-2 text-[13px] cursor-pointer select-none',
+          'flex items-center gap-1 py-1 pr-2 mx-1.5 rounded-md text-[13px] cursor-pointer select-none',
           'hover:bg-[hsl(var(--foreground)/0.04)] transition-colors',
           'outline-none focus-visible:ring-1 focus-visible:ring-[hsl(var(--ring))] focus-visible:ring-inset',
           isActive && 'bg-[hsl(var(--primary)/0.08)] text-[hsl(var(--foreground))]'
@@ -104,12 +104,14 @@ export function FileTreeNode({
         ) : (
           <span className="w-3.5 shrink-0" />
         )}
-        <FileIcon
-          filename={entry.name}
-          isDirectory={entry.isDirectory}
-          isExpanded={isExpanded}
-          className={entry.isDirectory ? 'h-3.5 w-3.5 shrink-0' : 'h-4 w-4 shrink-0'}
-        />
+        {!entry.isDirectory && (
+          <FileIcon
+            filename={entry.name}
+            isDirectory={entry.isDirectory}
+            isExpanded={isExpanded}
+            className="h-4 w-4 shrink-0"
+          />
+        )}
         {isRenaming ? (
           <input
             autoFocus

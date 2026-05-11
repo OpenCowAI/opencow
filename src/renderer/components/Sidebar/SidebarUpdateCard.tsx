@@ -14,7 +14,6 @@
 import { useTranslation } from 'react-i18next'
 import { ArrowUpRight, X, ArrowUpCircle } from 'lucide-react'
 import { useUpdateStore } from '@/stores/updateStore'
-import { Tooltip } from '@/components/ui/Tooltip'
 import { cn } from '@/lib/utils'
 
 export function SidebarUpdateCard({ collapsed = false }: { collapsed?: boolean }): React.JSX.Element | null {
@@ -31,24 +30,21 @@ export function SidebarUpdateCard({ collapsed = false }: { collapsed?: boolean }
 
   if (collapsed) {
     return (
-      <div className="w-full flex justify-center mt-1">
-        <Tooltip content={t('update.newVersion', { version: latestVersion })} position="right" align="center">
-          <a
-            href={releaseUrl ?? undefined}
-            target="_blank"
-            rel="noopener noreferrer"
-            className={cn(
-              'relative h-8 w-8 flex items-center justify-center rounded-md transition-colors',
-              'text-[hsl(var(--primary))] hover:bg-[hsl(var(--sidebar-primary)/0.12)]',
-            )}
-            aria-label={t('update.newVersion', { version: latestVersion })}
-          >
-            <ArrowUpCircle className="h-4 w-4 shrink-0" aria-hidden="true" />
-            {/* Pulsing dot indicator */}
-            <span className="absolute right-0.5 top-0.5 h-2 w-2 rounded-full bg-[hsl(var(--primary))] animate-pulse" />
-          </a>
-        </Tooltip>
-      </div>
+      <a
+        href={releaseUrl ?? undefined}
+        target="_blank"
+        rel="noopener noreferrer"
+        className={cn(
+          'relative w-full flex flex-col items-center justify-center gap-1 py-2 rounded-md transition-colors',
+          'text-[hsl(var(--primary))] hover:bg-[hsl(var(--sidebar-primary)/0.08)]',
+        )}
+        aria-label={t('update.newVersion', { version: latestVersion })}
+      >
+        <ArrowUpCircle className="h-4 w-4 shrink-0" aria-hidden="true" />
+        <span className="text-[10px] leading-none">v{latestVersion}</span>
+        {/* Pulsing dot indicator */}
+        <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-[hsl(var(--primary))] animate-pulse" />
+      </a>
     )
   }
 

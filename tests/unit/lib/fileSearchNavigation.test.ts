@@ -43,9 +43,6 @@ function setup() {
     }),
   }
   const writers = {
-    setFilesDisplayMode: vi.fn(),
-    setBrowserSubPath: vi.fn(),
-    setBrowserExternalOpenPath: vi.fn(),
     openFile: vi.fn(),
     enqueueEditorJumpIntent: vi.fn(),
     enqueueTreeRevealIntent: vi.fn(),
@@ -67,42 +64,24 @@ describe('fileSearchNavigation', () => {
     vi.clearAllMocks()
   })
 
-  it('open-current in browser mode opens directory directly', async () => {
-    const { executor, writers } = setup()
-
-    await executor.execute({
-      kind: 'open-current',
-      target: createItem({ isDirectory: true, path: 'src', name: 'src' }),
-      context: { mode: 'browser' },
-      options: { line: null },
-    })
-
-    expect(writers.setBrowserSubPath).toHaveBeenCalledWith('proj-1', 'src')
-    expect(writers.setBrowserExternalOpenPath).toHaveBeenCalledWith(null)
-    expect(writers.enqueueTreeRevealIntent).not.toHaveBeenCalled()
-  })
-
-  it('open-current in ide mode reveals directory in tree', async () => {
+  it('open-current reveals directory in tree', async () => {
     const { executor, writers } = setup()
 
     await executor.execute({
       kind: 'open-current',
       target: createItem({ isDirectory: true, path: 'src/components', name: 'components' }),
-      context: { mode: 'ide' },
       options: { line: null },
     })
 
     expect(writers.enqueueTreeRevealIntent).toHaveBeenCalledWith('proj-1', { path: 'src/components' })
-    expect(writers.setBrowserSubPath).not.toHaveBeenCalled()
   })
 
-  it('open-current routes to editor when :line is provided in browser mode', async () => {
+  it('open-current routes file to editor with optional line jump', async () => {
     const { executor, readers, writers } = setup()
 
     await executor.execute({
       kind: 'open-current',
       target: createItem({ path: 'src/main.ts', name: 'main.ts' }),
-      context: { mode: 'browser' },
       options: { line: 23 },
     })
 
@@ -115,27 +94,10 @@ describe('fileSearchNavigation', () => {
       viewKind: 'text',
       imageDataUrl: null,
     })
-    expect(writers.setFilesDisplayMode).toHaveBeenCalledWith('proj-1', 'ide')
     expect(writers.enqueueEditorJumpIntent).toHaveBeenCalledWith('proj-1', {
       path: 'src/main.ts',
       line: 23,
     })
-    expect(writers.setBrowserExternalOpenPath).not.toHaveBeenCalledWith('src/main.ts')
-  })
-
-  it('open-current in browser mode opens file preview by parent path + external open', async () => {
-    const { executor, writers, readers } = setup()
-
-    await executor.execute({
-      kind: 'open-current',
-      target: createItem({ path: 'src/main.ts', name: 'main.ts' }),
-      context: { mode: 'browser' },
-      options: { line: null },
-    })
-
-    expect(writers.setBrowserSubPath).toHaveBeenCalledWith('proj-1', 'src')
-    expect(writers.setBrowserExternalOpenPath).toHaveBeenCalledWith('src/main.ts')
-    expect(readers.readFileContent).not.toHaveBeenCalled()
   })
 
   it('open-editor opens image file in editor image mode', async () => {
@@ -156,11 +118,10 @@ describe('fileSearchNavigation', () => {
       viewKind: 'image',
       imageDataUrl: 'data:image/png;base64,abc',
     })
-    expect(writers.setFilesDisplayMode).toHaveBeenCalledWith('proj-1', 'ide')
     expect(writers.enqueueEditorJumpIntent).not.toHaveBeenCalled()
   })
 
-  it('open-editor on directory reveals tree node in ide mode', async () => {
+  it('open-editor on directory reveals tree node', async () => {
     const { executor, readers, writers } = setup()
 
     await executor.execute({
@@ -169,38 +130,20 @@ describe('fileSearchNavigation', () => {
       options: { line: null },
     })
 
-    expect(writers.setFilesDisplayMode).toHaveBeenCalledWith('proj-1', 'ide')
     expect(writers.enqueueTreeRevealIntent).toHaveBeenCalledWith('proj-1', { path: 'src/lib' })
     expect(readers.readFileContent).not.toHaveBeenCalled()
     expect(readers.readImagePreview).not.toHaveBeenCalled()
   })
 
-  it('reveal command in browser mode repositions browser and clears external open target', async () => {
+  it('reveal command enqueues tree reveal', async () => {
     const { executor, writers } = setup()
 
     await executor.execute({
       kind: 'reveal',
       target: createItem({ path: 'src/app/main.ts', name: 'main.ts' }),
-      context: { mode: 'browser' },
-    })
-
-    expect(writers.setBrowserSubPath).toHaveBeenCalledWith('proj-1', 'src/app')
-    expect(writers.setBrowserExternalOpenPath).toHaveBeenCalledWith(null)
-    expect(writers.enqueueTreeRevealIntent).not.toHaveBeenCalled()
-  })
-
-  it('reveal command in ide mode only enqueues tree reveal', async () => {
-    const { executor, writers } = setup()
-
-    await executor.execute({
-      kind: 'reveal',
-      target: createItem({ path: 'src/app/main.ts', name: 'main.ts' }),
-      context: { mode: 'ide' },
     })
 
     expect(writers.enqueueTreeRevealIntent).toHaveBeenCalledWith('proj-1', { path: 'src/app/main.ts' })
-    expect(writers.setBrowserSubPath).not.toHaveBeenCalled()
-    expect(writers.setBrowserExternalOpenPath).not.toHaveBeenCalled()
   })
 
   it('builds commands from overlay actions with unified mapping', () => {
@@ -213,19 +156,16 @@ describe('fileSearchNavigation', () => {
     expect(buildFileSearchNavigationCommand({
       action: 'current',
       target,
-      mode: 'browser',
       line: 12,
     })).toEqual({
       kind: 'open-current',
       target,
-      context: { mode: 'browser' },
       options: { line: 12 },
     })
 
     expect(buildFileSearchNavigationCommand({
       action: 'editor',
       target,
-      mode: 'ide',
       line: null,
     })).toEqual({
       kind: 'open-editor',
@@ -236,29 +176,21 @@ describe('fileSearchNavigation', () => {
     expect(buildFileSearchNavigationCommand({
       action: 'reveal',
       target,
-      mode: 'ide',
       line: null,
     })).toEqual({
       kind: 'reveal',
       target,
-      context: { mode: 'ide' },
     })
   })
 
   it('resolves action labels from same navigation semantics', () => {
-    expect(resolveFileSearchActionLabels({ path: 'src/main.ts', name: 'main.ts', isDirectory: false }, 'ide')).toEqual({
+    expect(resolveFileSearchActionLabels({ path: 'src/main.ts', name: 'main.ts', isDirectory: false })).toEqual({
       current: 'open',
       editor: 'openInEditor',
       reveal: 'reveal',
     })
 
-    expect(resolveFileSearchActionLabels({ path: 'src', name: 'src', isDirectory: true }, 'browser')).toEqual({
-      current: 'openFolder',
-      editor: 'revealInTree',
-      reveal: 'revealParent',
-    })
-
-    expect(resolveFileSearchActionLabels({ path: 'src', name: 'src', isDirectory: true }, 'ide')).toEqual({
+    expect(resolveFileSearchActionLabels({ path: 'src', name: 'src', isDirectory: true })).toEqual({
       current: 'revealInTree',
       editor: 'revealInTree',
       reveal: 'revealParent',

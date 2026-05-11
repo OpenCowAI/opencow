@@ -44,17 +44,26 @@ const TERMINAL_ENTER_MS = 250
 /** Exit animation duration (ms) — snappy collapse */
 const TERMINAL_EXIT_MS = 180
 
-/** Left sidebar panel sizes (% of horizontal group width). */
+/** Left sidebar panel sizes.
+ *
+ * The expanded form is percentage-based so it scales with viewport. The
+ * collapsed form uses an absolute pixel width so it consistently covers
+ * the macOS traffic-light region (~78px from the window's left edge)
+ * regardless of viewport size — at narrower windows a percentage-based
+ * collapse would clip below the traffic lights, breaking the drag region.
+ */
 const SIDEBAR_EXPANDED_DEFAULT_PCT = 15
 const SIDEBAR_EXPANDED_MIN_PCT = 12
 const SIDEBAR_EXPANDED_MAX_PCT = 25
-const SIDEBAR_COLLAPSED_PCT = 3.6
-const SIDEBAR_COLLAPSE_GUARD = 0.25
+const SIDEBAR_COLLAPSED_PX = 80
+/** Tolerance (px) when comparing the current sidebar size against the collapsed target. */
+const SIDEBAR_COLLAPSE_GUARD_PX = 8
 
 /** Convert sidebar percentage values to explicit Panel size strings. */
 function sidebarPct(value: number): `${number}%` {
   return `${value}%`
 }
+const SIDEBAR_COLLAPSED_SIZE = `${SIDEBAR_COLLAPSED_PX}px` as const
 
 /** Module-level memory: last user-dragged terminal height (persists across mount/unmount) */
 let lastTerminalHeight = TERMINAL_DEFAULT_HEIGHT
@@ -221,7 +230,11 @@ function AppLayout(): React.JSX.Element {
   const isInbox = appView.mode === 'inbox'
   const inboxMessageId = isInbox ? appView.selectedMessageId : null
 
-  const showDetail = isInbox || detailContext !== null
+  // Issue details now render inline in IssuesView (matches the Evose
+  // prototype) — the right detail panel is reserved for sessions, memories,
+  // capabilities, schedules, and inbox.
+  const showDetail =
+    isInbox || (detailContext !== null && detailContext.type !== 'issue')
   const sidebarPanelRef = usePanelRef()
   const detailPanelRef = usePanelRef()
   const lastSidebarExpandedSizeRef = useRef(SIDEBAR_EXPANDED_DEFAULT_PCT)
@@ -252,7 +265,10 @@ function AppLayout(): React.JSX.Element {
   const handleSidebarResize = useCallback(
     (panelSize: PanelSize) => {
       if (!leftSidebarExpanded) return
-      if (panelSize.asPercentage <= SIDEBAR_COLLAPSED_PCT + SIDEBAR_COLLAPSE_GUARD) return
+      // Ignore size reports near the collapsed-pixel target (the panel can
+      // briefly settle to slightly different percentages depending on the
+      // viewport width).
+      if (panelSize.inPixels <= SIDEBAR_COLLAPSED_PX + SIDEBAR_COLLAPSE_GUARD_PX) return
       if (panelSize.asPercentage < SIDEBAR_EXPANDED_DEFAULT_PCT) return
       lastSidebarExpandedSizeRef.current = panelSize.asPercentage
     },
@@ -265,10 +281,10 @@ function AppLayout(): React.JSX.Element {
 
     if (!leftSidebarExpanded) {
       const current = panel.getSize()
-      if (current.asPercentage > SIDEBAR_COLLAPSED_PCT + SIDEBAR_COLLAPSE_GUARD) {
+      if (current.inPixels > SIDEBAR_COLLAPSED_PX + SIDEBAR_COLLAPSE_GUARD_PX) {
         lastSidebarExpandedSizeRef.current = current.asPercentage
       }
-      panel.resize(SIDEBAR_COLLAPSED_PCT)
+      panel.resize(SIDEBAR_COLLAPSED_SIZE)
       return
     }
 
@@ -318,8 +334,8 @@ function AppLayout(): React.JSX.Element {
           id="sidebar"
           panelRef={sidebarPanelRef}
           defaultSize={sidebarPct(SIDEBAR_EXPANDED_DEFAULT_PCT)}
-          minSize={sidebarPct(leftSidebarExpanded ? SIDEBAR_EXPANDED_MIN_PCT : SIDEBAR_COLLAPSED_PCT)}
-          maxSize={sidebarPct(leftSidebarExpanded ? SIDEBAR_EXPANDED_MAX_PCT : SIDEBAR_COLLAPSED_PCT)}
+          minSize={leftSidebarExpanded ? sidebarPct(SIDEBAR_EXPANDED_MIN_PCT) : SIDEBAR_COLLAPSED_SIZE}
+          maxSize={leftSidebarExpanded ? sidebarPct(SIDEBAR_EXPANDED_MAX_PCT) : SIDEBAR_COLLAPSED_SIZE}
           onResize={handleSidebarResize}
         >
           <Sidebar />

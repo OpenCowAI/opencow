@@ -40,7 +40,7 @@ describe('ProjectGeneralSettingsPanel', () => {
         preferences: {
           defaultTab: 'chat',
           defaultChatViewMode: 'files',
-          defaultFilesDisplayMode: 'browser',
+          defaultFilesDisplayMode: null,
           defaultBrowserStatePolicy: 'isolated-session',
         },
       }),
@@ -60,22 +60,11 @@ describe('ProjectGeneralSettingsPanel', () => {
     })
   })
 
-  it('shows files layout section only when chat mode is files', async () => {
-    render(<ProjectGeneralSettingsPanel projectId="proj-1" />)
-
-    expect(screen.queryByText('Files Default Layout')).not.toBeInTheDocument()
-
-    await userEvent.click(screen.getByRole('radio', { name: 'Files' }))
-
-    expect(await screen.findByText('Files Default Layout')).toBeInTheDocument()
-  })
-
   it('saves updated preferences with selected card options', async () => {
     render(<ProjectGeneralSettingsPanel projectId="proj-1" />)
 
     await userEvent.click(screen.getByRole('radio', { name: 'Chat' }))
     await userEvent.click(screen.getByRole('radio', { name: 'Files' }))
-    await userEvent.click(screen.getByRole('radio', { name: 'Browser' }))
 
     await userEvent.click(screen.getByRole('button', { name: 'Save' }))
 
@@ -84,10 +73,8 @@ describe('ProjectGeneralSettingsPanel', () => {
         preferences: {
           defaultTab: 'chat',
           defaultChatViewMode: 'files',
-          defaultFilesDisplayMode: 'browser',
         },
       })
     })
   })
-
 })

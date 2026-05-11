@@ -499,6 +499,23 @@ select {
   animation: detail-content-enter 0.2s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
+/* TOC drawer — left-anchored slide-in/out for the Markdown preview's
+   floating Table-of-Contents panel. */
+@keyframes toc-drawer-enter {
+  from { transform: translateX(-100%); opacity: 0; }
+  to   { transform: translateX(0);     opacity: 1; }
+}
+@keyframes toc-drawer-exit {
+  from { transform: translateX(0);     opacity: 1; }
+  to   { transform: translateX(-100%); opacity: 0; }
+}
+.toc-drawer-enter {
+  animation: toc-drawer-enter 0.2s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.toc-drawer-exit {
+  animation: toc-drawer-exit var(--modal-exit-duration) ease-in forwards;
+}
+
 /* ── Detail panel slide animation ─────────────────────────────────────────
  *
  * Two-layer animation for a polished "slide-out" effect when
@@ -517,11 +534,14 @@ select {
  * ────────────────────────────────────────────────────────────────────── */
 
 /* Layer 1: panel width via flex-grow transition.
-   All three panels (sidebar, main, detail) participate so that when the
-   detail panel expands/collapses the proportional size redistribution
-   animates consistently — preventing the sidebar from jumping instantly
-   while main/detail transition smoothly (visible as a "shake"). */
-#opencow-layout.layout-animated > #sidebar,
+   Only `main` and `detail` animate. The sidebar is intentionally excluded
+   — its size is meant to be steady, but the library's imperative-api path
+   (`panel.expand()` then `panel.resize()` in sequence) re-normalizes all
+   panels between calls. The sidebar's flex-grow can shift by a fraction
+   of a percent and snap back across those two ticks. Animating that
+   transient with a 280ms transition is what made the sidebar visibly
+   "wobble" on navigation; running it instantly hides the in-between
+   value entirely. */
 #opencow-layout.layout-animated > #main,
 #opencow-layout.layout-animated > #detail {
   transition: flex-grow 0.28s cubic-bezier(0.22, 1, 0.36, 1);
@@ -529,9 +549,43 @@ select {
 
 /* Disable flex transition while any separator is being dragged.
    react-resizable-panels v4.x uses  data-separator="active"  during drag. */
-#opencow-layout.layout-animated:has([data-separator="active"]) > #sidebar,
 #opencow-layout.layout-animated:has([data-separator="active"]) > #main,
 #opencow-layout.layout-animated:has([data-separator="active"]) > #detail {
+  transition: none !important;
+}
+
+/* Files panel · tree | editor flex-grow transition.
+   When the active project has no open files, the editor panel collapses to
+   width 0 and the tree expands to fill the container — drives a smooth
+   widen/narrow animation when the user opens / closes the last file. */
+#files-editor-layout.layout-animated > #file-tree,
+#files-editor-layout.layout-animated > #file-editor {
+  transition: flex-grow 0.28s cubic-bezier(0.22, 1, 0.36, 1);
+}
+#files-editor-layout.layout-animated:has([data-separator="active"]) > #file-tree,
+#files-editor-layout.layout-animated:has([data-separator="active"]) > #file-editor {
+  transition: none !important;
+}
+
+/* Project layout · Tree | Editor | Main flex-grow transition.
+   When a file is opened the editor expands from 0 → 40% (taking space
+   from main). All three panels need the same transition so their flex-grow
+   values stay normalized in proportion at every animation frame — otherwise
+   the *sum* of flex-grow values temporarily diverges from 100, causing
+   flexbox to redistribute by a wrong ratio, which makes the locked tree
+   visually jitter even though its flex-grow value never changes.
+
+   Tree's flex-grow is constant (locked at 240px), so its `transition` is a
+   no-op behaviour-wise — but it MUST share the same transition shape so the
+   browser keeps it in lockstep with the editor/main animation. */
+#opencow-project-layout.layout-animated > #project-tree,
+#opencow-project-layout.layout-animated > #project-editor,
+#opencow-project-layout.layout-animated > #project-main {
+  transition: flex-grow 0.28s cubic-bezier(0.22, 1, 0.36, 1);
+}
+#opencow-project-layout.layout-animated:has([data-separator="active"]) > #project-tree,
+#opencow-project-layout.layout-animated:has([data-separator="active"]) > #project-editor,
+#opencow-project-layout.layout-animated:has([data-separator="active"]) > #project-main {
   transition: none !important;
 }
 
