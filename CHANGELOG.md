@@ -4,6 +4,25 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.5.0] - 2026-05-12
+
+### Added
+- New Projects list view with a dedicated project switcher, project tree, and per-project files panel
+- Detail preview overlay that lets you peek at issues, schedules, and other artifacts without leaving the current view
+- Time picker control and schedule preview overlay for clearer schedule editing
+- Chat folder picker for picking a custom working directory directly when starting a session
+
+### Changed
+- Major UI refactor of the sidebar, main panel, chat header, and detail panels for a cleaner, more focused layout
+- Schedule form rewritten with a dedicated prompt panel and inline info tooltips, replacing the previous action section
+- Files view, editor tabs, and file tree consolidated; legacy file browser retired
+- Issue detail, schedule detail, artifacts, and starred-artifacts views overhauled for consistency
+- Theme stylesheets trimmed and textures stylesheet removed for a lighter, more coherent look
+- File-access policy now uses a lexical bound check for both reads and writes — symlinks pointing outside a workspace, bundle, or project are followed like any other folder, matching the affordance the OS already grants the user. `O_NOFOLLOW` still prevents writes when the final target itself is a symlink
+
+### Fixed
+- Various style and layout regressions across the refactored panels
+
 ## [0.4.2] - 2026-04-21
 
 ### Changed
