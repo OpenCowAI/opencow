@@ -4,6 +4,20 @@
   "searchIssues": "Search issues...",
   "searchIssuesAria": "Search issues",
   "noIssuesFound": "No issues found",
+  "emptyState": {
+    "noneYet": {
+      "title": "No tasks here yet",
+      "subtitle": "Track work, capture ideas, and follow up on agent runs — all in one place.",
+      "createCta": "Create task",
+      "aiCta": "Or describe it to AI"
+    },
+    "filtered": {
+      "title": "No matching tasks",
+      "subtitle": "Try widening the filter or switch back to the All view.",
+      "clearCta": "Clear filters",
+      "allViewCta": "Switch to All"
+    }
+  },
   "noLabel": "No label",
   "noProject": "No project",
   "deleteIssue": "Delete Issue",

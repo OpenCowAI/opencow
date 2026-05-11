@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-import { memo, useState, useCallback, lazy, Suspense } from 'react'
+import { memo, useState, useEffect, useCallback, lazy, Suspense } from 'react'
 import { useTranslation } from 'react-i18next'
 import { FileText, GitBranch, Globe, Download, Clock, Loader2, X, Star, FileCode2 } from 'lucide-react'
 import { Badge } from '../../ui/badge'
@@ -15,18 +15,34 @@ import { NotePopoverTrigger } from './NotesView/NotePopoverTrigger'
 import { getAppAPI } from '@/windowAPI'
 import { wrapHtmlForSafePreview } from '@/lib/htmlSandbox'
 import { useArtifactViewerContext, getArtifactStableId } from './ArtifactViewerContext'
+import { useAppStore, selectProjectPath } from '@/stores/appStore'
+import { useInView } from '@/hooks/useInView'
 
 // Direct import — MarkdownContent is used in ArtifactCard list items where
 // lazy + Suspense would cause per-card "Loading..." flicker during scrolling.
 import { MarkdownContent } from '../../ui/MarkdownContent'
 
-// Lazy-load Dialog-level components — only loaded when the user opens a viewer.
-// This is the correct granularity for lazy(): user-triggered, single-instance views.
-const MarkdownPreviewWithToc = lazy(() =>
-  import('../../ui/MarkdownPreviewWithToc').then((m) => ({ default: m.MarkdownPreviewWithToc }))
-)
+// MarkdownPreviewWithToc is eager: every heavy transitive dep it needs
+// (`react-markdown`, `remark-gfm`, `rehype-highlight`, `rehype-raw`,
+// `MarkdownContent` itself) is already eagerly imported above for the
+// in-card preview path, so splitting it into a lazy chunk saved only a
+// few KB of its own component code while costing a full chunk-load
+// round-trip on the very first dialog open — long enough that the
+// Suspense "Loading preview…" fallback would persist until the dialog
+// was already closing.  Preloading via `useEffect` could narrow the
+// gap but not close it.
+import { MarkdownPreviewWithToc } from '../../ui/MarkdownPreviewWithToc'
+
+// CodeViewer stays lazy: it pulls in Monaco, which is a genuine multi-MB
+// chunk that pays for itself only when the user actually inspects source.
+// We expose the module factory so the dialog can warm the chunk in
+// parallel with its disk-read.  Bundlers deduplicate in-flight import
+// promises, so calling this twice resolves to the same module instance.
+const loadCodeViewer = (): Promise<typeof import('../../ui/code-viewer')> =>
+  import('../../ui/code-viewer')
+
 const CodeViewer = lazy(() =>
-  import('../../ui/code-viewer').then((m) => ({ default: m.CodeViewer }))
+  loadCodeViewer().then((m) => ({ default: m.CodeViewer }))
 )
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -101,7 +117,7 @@ const ArtifactCard = memo(function ArtifactCard({
   onToggleStar,
 }: ArtifactCardProps): React.JSX.Element {
   const { t } = useTranslation('sessions')
-  const { kind, title, mimeType, filePath, fileExtension, lastModifiedAt, content, contentHash, stats } = artifact
+  const { kind, title, mimeType, filePath, fileExtension, lastModifiedAt, content: recordedContent, contentHash, stats } = artifact
   const isDiagram = kind === 'diagram'
   const isMarkdown = mimeType === 'text/markdown'
   const isHtml = mimeType === 'text/html'
@@ -126,11 +142,58 @@ const ArtifactCard = memo(function ArtifactCard({
 
   const Icon = isDiagram ? GitBranch : isHtml ? Globe : FileText
 
+  // Disk-first preview fallback for edit-only artifacts.
+  //
+  // `recordedContent` is the in-memory Write snapshot extracted from
+  // session messages.  Files that Claude only Edited (no Write op) have
+  // `recordedContent === null`, which used to render the "Content
+  // unavailable" placeholder even though the file is sitting on disk.
+  //
+  // We mirror the `StarredArtifactCard` strategy: gate the disk read on
+  // `useInView` so an artifact list with many cards doesn't fan out IPC
+  // reads on mount, and keep the read truncated to match the bounded
+  // preview budget.
+  const projectPath = useAppStore(selectProjectPath)
+  const { ref: previewRef, inView } = useInView()
+  const [livePreview, setLivePreview] = useState<string | null>(null)
+  const hasRecordedContent = recordedContent != null && recordedContent.length > 0
+
+  useEffect(() => {
+    if (!inView) return
+    if (hasRecordedContent) return
+    if (!filePath || !projectPath) return
+    let cancelled = false
+    void (async () => {
+      const result = await getAppAPI()['read-file-content'](projectPath, filePath)
+      if (cancelled || !result.ok) return
+      // Truncate to match the bounded preview render budget — the full
+      // file content is fetched again (uncached) when the user opens the
+      // viewer dialog, where it's actually needed.
+      setLivePreview(result.data.content.slice(0, 2000))
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [inView, hasRecordedContent, filePath, projectPath])
+
+  const content = hasRecordedContent ? recordedContent : livePreview
+  const hasContent = content != null && content.length > 0
+
   return (
     <div
       className={cn(
-        'w-56 rounded-xl border bg-[hsl(var(--card))] text-[hsl(var(--card-foreground))] shadow-sm',
-        'cursor-pointer hover:border-[hsl(var(--primary)/0.5)] transition-colors group',
+        // Card visual + hover treatment mirrors `StarredArtifactCard` so the
+        // two artifact surfaces feel identical: subtle border, rounded-2xl,
+        // lift + soft shadow on hover (the lift replaces the old "Click to
+        // preview" text hint, so the affordance lives entirely in motion).
+        'group relative w-56 cursor-pointer overflow-hidden',
+        'rounded-2xl border border-[hsl(var(--border)/0.55)] bg-[hsl(var(--card))] text-[hsl(var(--card-foreground))]',
+        // `min-h` aligns card bottoms within the flex-wrap grid even when
+        // previews differ in height.
+        'min-h-[220px]',
+        'transition-all duration-200',
+        'hover:-translate-y-[5px] hover:shadow-[0_4px_12px_0_hsl(var(--foreground)/0.06)]',
+        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--ring))]',
       )}
       onClick={handleClick}
       onKeyDown={handleKeyDown}
@@ -191,54 +254,63 @@ const ArtifactCard = memo(function ArtifactCard({
         </div>
       </div>
 
-      {/* Content preview — adapts to artifact kind */}
-      {content ? (
-        isHtml ? (
-          /* HTML — CSS-scaled iframe thumbnail (self-contained, no gradient) */
-          <div className="relative mt-1 mx-2.5 mb-1.5 overflow-hidden rounded-sm pointer-events-none" aria-label="Content preview">
-            <div className="relative aspect-[16/10]" style={{ contain: 'strict' }}>
-              <iframe
-                srcDoc={content}
-                sandbox=""
-                title={`HTML thumbnail: ${title}`}
-                className="absolute top-0 left-0 w-[200%] h-[200%] border-0 bg-white"
-                style={{ transform: 'scale(0.5)', transformOrigin: 'top left' }}
-                tabIndex={-1}
+      {/* Content preview — adapts to artifact kind.
+          The container is observed by `useInView`; heavy children
+          (iframe / Mermaid / Markdown parse / disk fallback fetch)
+          only mount once the card is on screen, keeping mount-time work
+          bounded for long artifact lists. */}
+      <div ref={previewRef}>
+        {hasContent ? (
+          isHtml ? (
+            /* HTML — CSS-scaled iframe thumbnail (self-contained, no gradient) */
+            <div className="relative mt-1 mx-2.5 mb-1.5 overflow-hidden rounded-sm pointer-events-none" aria-label="Content preview">
+              <div className="relative aspect-[16/10]" style={{ contain: 'strict' }}>
+                {inView && (
+                  <iframe
+                    srcDoc={content!}
+                    sandbox=""
+                    title={`HTML thumbnail: ${title}`}
+                    className="absolute top-0 left-0 w-[200%] h-[200%] border-0 bg-white"
+                    style={{ transform: 'scale(0.5)', transformOrigin: 'top left' }}
+                    tabIndex={-1}
+                  />
+                )}
+              </div>
+            </div>
+          ) : (
+            <div className="relative mt-1">
+              <div
+                className="artifact-card-preview px-2.5 py-1.5 max-h-24 overflow-hidden"
+                aria-label={isDiagram ? 'Diagram preview' : 'Content preview'}
+              >
+                {inView && (
+                  isDiagram ? (
+                    <DiagramThumbnail code={content!} />
+                  ) : isMarkdown ? (
+                    <MarkdownContent content={content!} />
+                  ) : (
+                    /* Code / plain text snippet for non-markdown files */
+                    <pre className="text-[9px] font-mono text-[hsl(var(--muted-foreground))] whitespace-pre-wrap break-all leading-snug">
+                      {safeSlice(content!, 0, 500)}
+                    </pre>
+                  )
+                )}
+              </div>
+              <div
+                className="absolute bottom-0 left-0 right-0 h-8 pointer-events-none bg-gradient-to-t from-[hsl(var(--card))] to-transparent"
+                aria-hidden="true"
               />
             </div>
-          </div>
+          )
         ) : (
-          <div className="relative mt-1">
-            <div className="px-2.5 py-1.5 max-h-24 overflow-hidden" aria-label={isDiagram ? 'Diagram preview' : 'Content preview'}>
-              {isDiagram ? (
-                <DiagramThumbnail code={content} />
-              ) : isMarkdown ? (
-                <MarkdownContent content={content} />
-              ) : (
-                /* Code / plain text snippet for non-markdown files */
-                <pre className="text-[10px] font-mono text-[hsl(var(--muted-foreground))] whitespace-pre-wrap break-all leading-relaxed">
-                  {safeSlice(content, 0, 500)}
-                </pre>
-              )}
-            </div>
-            <div
-              className="absolute bottom-0 left-0 right-0 h-8 pointer-events-none bg-gradient-to-t from-[hsl(var(--card))] to-transparent"
-              aria-hidden="true"
-            />
+          <div className="px-2.5 py-1.5 mt-1">
+            <p className="text-[10px] text-[hsl(var(--muted-foreground)/0.5)] italic">
+              Content unavailable (edited only)
+            </p>
           </div>
-        )
-      ) : (
-        <div className="px-2.5 py-1.5 mt-1">
-          <p className="text-[10px] text-[hsl(var(--muted-foreground)/0.5)] italic">
-            Content unavailable (edited only)
-          </p>
-        </div>
-      )}
-
-      {/* Hover hint */}
-      <div className="px-2.5 py-1 text-[10px] text-[hsl(var(--primary))] opacity-0 group-hover:opacity-100 transition-opacity">
-        Click to preview
+        )}
       </div>
+
     </div>
   )
 })
@@ -297,8 +369,64 @@ export const ArtifactViewerDialog = memo(function ArtifactViewerDialog({
   onClose,
 }: ArtifactViewerDialogProps): React.JSX.Element {
   const { t } = useTranslation('sessions')
-  const { kind, title, mimeType, filePath, content, lastModifiedAt, stats } = artifact
+  const { kind, title, mimeType, filePath, content: recordedContent, lastModifiedAt, stats } = artifact
+  const projectPath = useAppStore(selectProjectPath)
+
+  // Disk-first content resolution.
+  //
+  // Resolution order:
+  //   1. Live file on disk (`read-file-content` under the current project's
+  //      path). This is the freshest source — captures edits made after the
+  //      original Write was recorded.
+  //   2. Recorded in-memory snapshot (`artifact.content`, from the latest
+  //      Write tool_use). Used when the file no longer exists on disk
+  //      (moved / deleted) or when the artifact has no filePath
+  //      (e.g. in-memory `gen_html`).
+  //
+  // Without (1) an artifact that was only edited (no Write op recorded)
+  // would surface "content unavailable" even though its file is sitting
+  // right there on disk.
+  const [liveContent, setLiveContent] = useState<string | null>(null)
+  const [diskLoading, setDiskLoading] = useState(false)
+
+  // Warm the lazy CodeViewer (Monaco) chunk in parallel with the disk
+  // read.  The Source-view branch only mounts after content arrives, so
+  // without this warm-up the multi-MB Monaco chunk would start loading
+  // only when the user flips to Source, stacking its cost on top of the
+  // disk read.
+  useEffect(() => {
+    void loadCodeViewer()
+  }, [])
+
+  useEffect(() => {
+    if (!filePath || !projectPath) {
+      setLiveContent(null)
+      setDiskLoading(false)
+      return
+    }
+    let cancelled = false
+    setDiskLoading(true)
+    setLiveContent(null)
+    ;(async () => {
+      try {
+        const result = await getAppAPI()['read-file-content'](projectPath, filePath)
+        if (cancelled) return
+        if (result.ok) setLiveContent(result.data.content)
+      } finally {
+        if (!cancelled) setDiskLoading(false)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [filePath, projectPath, artifact.contentHash])
+
+  const content = liveContent ?? recordedContent
   const hasContent = content != null && content.length > 0
+  // Spinner only when we have no in-memory snapshot to show in the meantime —
+  // otherwise we render the recorded content immediately and silently swap to
+  // disk once the read resolves.
+  const showLoading = diskLoading && recordedContent == null && !hasContent
   const isDiagram = kind === 'diagram'
   const isMarkdown = mimeType === 'text/markdown'
   const isHtml = mimeType === 'text/html'
@@ -442,7 +570,11 @@ export const ArtifactViewerDialog = memo(function ArtifactViewerDialog({
 
       {/* Content area — polymorphic by kind + MIME type */}
       <div className="relative">
-        {!hasContent ? (
+        {showLoading ? (
+          <div className="h-[82vh] flex items-center justify-center">
+            <Loader2 className="w-5 h-5 motion-safe:animate-spin text-[hsl(var(--muted-foreground))]" aria-hidden="true" />
+          </div>
+        ) : !hasContent ? (
           <div className="h-[82vh] flex flex-col items-center justify-center gap-2 text-[hsl(var(--muted-foreground))]">
             <FileText className="w-6 h-6 opacity-30" aria-hidden="true" />
             <p className="text-xs text-center leading-relaxed">
@@ -454,9 +586,7 @@ export const ArtifactViewerDialog = memo(function ArtifactViewerDialog({
             <MermaidBlock code={content!} />
           </div>
         ) : viewMode === 'preview' && isMarkdown ? (
-          <Suspense fallback={<LoadingFallback label="Loading preview..." />}>
-            <MarkdownPreviewWithToc content={content!} className="h-[82vh]" />
-          </Suspense>
+          <MarkdownPreviewWithToc content={content!} className="h-[82vh]" />
         ) : viewMode === 'preview' && isHtml ? (
           <iframe
             srcDoc={wrapHtmlForSafePreview(content!)}

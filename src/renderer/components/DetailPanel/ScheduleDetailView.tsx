@@ -6,7 +6,7 @@ import { useAppStore } from '@/stores/appStore'
 import { useScheduleStore } from '@/stores/scheduleStore'
 import { useScheduleCountdown } from '@/hooks/useScheduleCountdown'
 import {
-  Pencil, Play, Pause, Trash2, Zap, Loader2,
+  Pencil, Play, Pause, Trash2, Zap, Loader2, X,
   Clock, CalendarClock, Bolt, Bell, GitBranch, Repeat2,
   ChevronRight, Calendar,
 } from 'lucide-react'
@@ -223,7 +223,21 @@ function SectionLabel({ children }: { children: React.ReactNode }): React.JSX.El
 
 // ─── ScheduleDetailView ──────────────────────────────────────────────────────
 
-export function ScheduleDetailView({ scheduleId }: { scheduleId: string }): React.JSX.Element {
+interface ScheduleDetailViewProps {
+  scheduleId: string
+  /**
+   * Optional close handler. When provided, the header renders a close
+   * button that calls this back. Used by inline rendering inside
+   * `ScheduleView` to dismiss the detail without depending on the right
+   * detail panel's collapse animation.
+   */
+  onClose?: () => void
+}
+
+export function ScheduleDetailView({
+  scheduleId,
+  onClose,
+}: ScheduleDetailViewProps): React.JSX.Element {
   const { t } = useTranslation('schedule')
 
   const schedule = useScheduleStore((s) => s.schedules.find((sc) => sc.id === scheduleId))
@@ -354,12 +368,37 @@ export function ScheduleDetailView({ scheduleId }: { scheduleId: string }): Reac
                 className="p-1.5 rounded-lg text-[hsl(var(--muted-foreground))] hover:text-red-500 hover:bg-red-500/8 transition-colors"
                 onClick={async () => {
                   await useScheduleStore.getState().deleteSchedule(schedule.id)
-                  useAppStore.getState().closeDetail()
+                  if (onClose) {
+                    onClose()
+                  } else {
+                    useAppStore.getState().closeDetail()
+                  }
                 }}
               >
                 <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
               </button>
             </Tooltip>
+
+            {onClose && (
+              <>
+                {/* Divider — visually separates the "close panel" affordance
+                    from the schedule-level actions (edit / run / pause / delete). */}
+                <span
+                  aria-hidden="true"
+                  className="mx-1 h-4 w-px bg-[hsl(var(--border)/0.6)]"
+                />
+                <Tooltip content={t('detail.close', { defaultValue: 'Close' })} position="bottom" align="end">
+                  <button
+                    type="button"
+                    className="p-1.5 rounded-lg text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] hover:bg-[hsl(var(--foreground)/0.06)] transition-colors"
+                    onClick={onClose}
+                    aria-label={t('detail.close', { defaultValue: 'Close' })}
+                  >
+                    <X className="h-3.5 w-3.5" aria-hidden="true" />
+                  </button>
+                </Tooltip>
+              </>
+            )}
           </div>
         </div>
 
@@ -479,7 +518,17 @@ export function ScheduleDetailView({ scheduleId }: { scheduleId: string }): Reac
 
       {/* Modals */}
       {showEditModal && (
-        <ScheduleFormModal editSchedule={schedule} onClose={() => setShowEditModal(false)} />
+        // ScheduleDetailView is hosted inside DetailPreviewOverlay (`z-[150]`),
+        // so the form modal's default `z-50` would render *behind* the popover.
+        // 180 keeps it above the popover while staying below TimePicker /
+        // DateTimePicker popovers (backdrop `z-[199]`, content `z-[200]`) that
+        // open *inside* this modal — otherwise their click-away backdrop
+        // would sit behind the modal and dismiss-on-outside-click would break.
+        <ScheduleFormModal
+          editSchedule={schedule}
+          onClose={() => setShowEditModal(false)}
+          zIndex={180}
+        />
       )}
       {selectedExecution && (
         <ExecutionDetailModal

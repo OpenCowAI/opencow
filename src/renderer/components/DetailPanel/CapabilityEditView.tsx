@@ -127,7 +127,7 @@ export function CapabilityEditView({
   const editLoading = mode === 'edit' && !entry
 
   return (
-    <aside className="h-full flex flex-col bg-[hsl(var(--card))]" aria-label={title}>
+    <aside className="h-full flex flex-col" aria-label={title}>
       {/* Header */}
       <div className="p-4 border-b border-[hsl(var(--border))] flex items-center justify-between gap-2">
         <div className="flex items-center gap-2 min-w-0">

@@ -38,7 +38,12 @@ vi.mock('../../../src/renderer/hooks/useGutterDiff', () => ({
   useGutterDiff: vi.fn(),
 }))
 vi.mock('../../../src/renderer/components/ui/MarkdownPreviewWithToc', () => ({
-  MarkdownPreviewWithToc: () => <div data-testid="md-preview">md preview</div>,
+  MarkdownPreviewWithToc: ({ topRightSlot }: { topRightSlot?: React.ReactNode }) => (
+    <div data-testid="md-preview">
+      md preview
+      {topRightSlot}
+    </div>
+  ),
 }))
 vi.mock('../../../src/renderer/components/DetailPanel/ImageLightbox', () => ({
   ImageLightbox: () => null,

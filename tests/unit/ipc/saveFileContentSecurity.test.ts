@@ -131,7 +131,13 @@ describe('IPC save-file-content security', () => {
     await expect(fs.readFile(outsidePath, 'utf-8')).resolves.toBe('outside-before')
   })
 
-  it('rejects writes when parent directory escapes project via symlink', async () => {
+  it('follows parent-directory symlinks on write (lexical bound only)', async () => {
+    // Writes through a symlinked directory are intentionally allowed: the
+    // lexical bound check treats `project/nested/leak.txt` as inside the
+    // project even though `nested` is a symlink pointing outside. This
+    // mirrors the read policy and the affordance the OS already grants the
+    // user. The O_NOFOLLOW guard only fires when the *final target itself*
+    // is a symlink (see "rejects writing through symbolic link target").
     const projectPath = path.join(tempRoot, 'project')
     const outsideDir = path.join(tempRoot, 'outside-dir')
     await fs.mkdir(projectPath, { recursive: true })
@@ -140,8 +146,10 @@ describe('IPC save-file-content security', () => {
 
     const handler = registerAndGetSaveFileHandler()
 
-    const result = await handler({}, projectPath, 'nested/leak.txt', 'blocked')
-    expectFailure(result, 'access_denied', 'Access denied: path outside project directory')
-    await expect(fs.readFile(path.join(outsideDir, 'leak.txt'), 'utf-8')).rejects.toBeDefined()
+    const result = await handler({}, projectPath, 'nested/leak.txt', 'written-via-link')
+    expect(result).toEqual({ ok: true, data: { saved: true } })
+    await expect(fs.readFile(path.join(outsideDir, 'leak.txt'), 'utf-8')).resolves.toBe(
+      'written-via-link',
+    )
   })
 })

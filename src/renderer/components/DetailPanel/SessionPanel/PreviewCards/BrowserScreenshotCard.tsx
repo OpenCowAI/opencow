@@ -80,8 +80,10 @@ export function BrowserScreenshotCard({
           </div>
         </div>
 
-        {/* Viewport — screenshot image */}
-        <div className="relative aspect-[16/10] overflow-hidden bg-white">
+        {/* Viewport — screenshot image. Background uses `--muted` so the
+            letterboxed area (image is `object-contain`) blends into the
+            warm theme palette instead of a jarring hard-white slab. */}
+        <div className="relative aspect-[16/10] overflow-hidden bg-[hsl(var(--muted))]">
           <img
             src={dataUri}
             alt="Browser screenshot"

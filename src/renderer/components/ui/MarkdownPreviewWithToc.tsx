@@ -1,13 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 
-import { memo, useRef, useMemo, useState, useCallback, useEffect } from 'react'
-import { Group, Panel, Separator } from 'react-resizable-panels'
+import { Fragment, memo, useRef, useMemo, useState, useCallback, useEffect } from 'react'
+import { useTranslation } from 'react-i18next'
 import { ChevronLeft, List } from 'lucide-react'
+import { useModalAnimation } from '@/hooks/useModalAnimation'
 import { cn } from '@/lib/utils'
 import { MarkdownContent } from './MarkdownContent'
 import { TextSearchBar, SearchTrigger } from './TextSearchBar'
 import { extractToc, type TocEntry } from '@/lib/extractToc'
 import { useTextSearch } from '@/hooks/useTextSearch'
+import { parseFrontmatter } from '@/lib/parseFrontmatter'
 
 // ---------------------------------------------------------------------------
 // MarkdownPreviewWithToc
@@ -25,23 +27,40 @@ interface MarkdownPreviewWithTocProps {
   content: string
   /** Passed to the outermost container (typically `h-[82vh]`). */
   className?: string
-  /** Optional TOC title text. */
+  /**
+   * Optional TOC title text. When omitted, falls back to the localised
+   * `common.tableOfContents` key (中:目录 / 英:Contents) — keeps this
+   * generic UI primitive decoupled from any specific business namespace.
+   */
   tocLabel?: string
   /** Enable user-controlled TOC collapse/expand behavior. */
   enableTocCollapse?: boolean
   /** Initial TOC state when collapse is enabled. */
   defaultTocCollapsed?: boolean
+  /** Extra controls rendered alongside the search in the top-right toolbar
+   *  (e.g. preview/source toggle). They sit to the right of the search in
+   *  a `gap-2` flex row — no manual offset math needed. */
+  topRightSlot?: React.ReactNode
 }
 
 export const MarkdownPreviewWithToc = memo(function MarkdownPreviewWithToc({
   content,
   className,
-  tocLabel = 'Contents',
+  tocLabel,
   enableTocCollapse = false,
   defaultTocCollapsed = false,
+  topRightSlot,
 }: MarkdownPreviewWithTocProps): React.JSX.Element {
+  const { t } = useTranslation('common')
+  const resolvedTocLabel = tocLabel ?? t('tableOfContents')
   const scrollRef = useRef<HTMLDivElement>(null)
-  const tocEntries = useMemo(() => extractToc(content), [content])
+
+  // Split off any leading YAML frontmatter once and reuse the body for
+  // both ToC extraction and the markdown render — passing it explicitly
+  // (rather than relying on MarkdownContent's internal strip) keeps the
+  // dataflow obvious and shaves one redundant parse.
+  const { frontmatter, body } = useMemo(() => parseFrontmatter(content), [content])
+  const tocEntries = useMemo(() => extractToc(body), [body])
   const [activeHeadingId, setActiveHeadingId] = useState<string | null>(null)
   const [isTocOpen, setIsTocOpen] = useState<boolean>(() => !defaultTocCollapsed)
 
@@ -65,7 +84,7 @@ export const MarkdownPreviewWithToc = memo(function MarkdownPreviewWithToc({
     return () => document.removeEventListener('keydown', handleKeyDown, { capture: true })
   }, [search.open])
 
-  // ── Click TOC → scroll to heading ────────────────────────────────────────
+  // ── Click TOC → scroll to heading (and close drawer if collapsible) ─────
   const handleTocSelect = useCallback((id: string) => {
     const container = scrollRef.current
     if (!container) return
@@ -78,6 +97,11 @@ export const MarkdownPreviewWithToc = memo(function MarkdownPreviewWithToc({
       block: 'start',
     })
   }, [])
+
+  const handleTocSelectAndClose = useCallback((id: string) => {
+    handleTocSelect(id)
+    if (enableTocCollapse) setIsTocOpen(false)
+  }, [handleTocSelect, enableTocCollapse])
 
   // ── Assign heading IDs + IntersectionObserver ─────────────────────────────
   //
@@ -136,70 +160,92 @@ export const MarkdownPreviewWithToc = memo(function MarkdownPreviewWithToc({
   // the outer div and inject a DOM node before the Group — both of which
   // alter the scroll-ancestor chain that react-resizable-panels' overflow:
   // hidden wrappers rely on.
-  const searchOverlay = search.isOpen ? (
-    <TextSearchBar search={search} />
-  ) : (
-    <SearchTrigger onOpen={search.open} />
+  // Top-right toolbar — single absolute container hosting search + optional
+  // caller-provided controls. Items lay out in a flex row with `gap-2`, so
+  // spacing stays correct as content widths change (no magic numbers).
+  const topRightToolbar = (
+    <div className="absolute top-2 right-2 z-20 flex items-center gap-2">
+      {search.isOpen ? (
+        <TextSearchBar search={search} />
+      ) : (
+        <SearchTrigger onOpen={search.open} />
+      )}
+      {topRightSlot}
+    </div>
   )
 
   // No headings → full-width preview without TOC
   if (tocEntries.length === 0) {
     return (
       <div className={cn('overflow-hidden relative', className)}>
-        {searchOverlay}
+        {topRightToolbar}
         <div ref={scrollRef} className="h-full overflow-y-auto px-6 py-4">
-          <MarkdownContent content={content} />
+          {frontmatter && <FrontmatterBlock data={frontmatter} />}
+          <MarkdownContent content={body} />
         </div>
       </div>
     )
   }
 
-  const showCollapsedToc = enableTocCollapse && !isTocOpen
-  if (showCollapsedToc) {
+  // Collapsible mode — TOC is a slide-in drawer overlay anchored to the
+  // left edge. Trigger button shows when closed; clicking outside,
+  // clicking a TOC item, or pressing Escape closes it. Content stays at
+  // full width regardless of drawer state (drawer floats on top with
+  // backdrop-blur), so the preview never reflows.
+  if (enableTocCollapse) {
     return (
       <div className={cn('overflow-hidden relative', className)}>
-        {searchOverlay}
-        <TocCollapsedTrigger label={tocLabel} onExpand={() => setIsTocOpen(true)} />
-        <div ref={scrollRef} className="h-full overflow-y-auto px-6 pt-8 pb-4">
-          <MarkdownContent content={content} />
+        {topRightToolbar}
+
+        {!isTocOpen && (
+          <TocCollapsedTrigger label={resolvedTocLabel} onExpand={() => setIsTocOpen(true)} />
+        )}
+
+        <TocDrawer
+          open={isTocOpen}
+          entries={tocEntries}
+          activeId={activeHeadingId}
+          onSelect={handleTocSelectAndClose}
+          label={resolvedTocLabel}
+          onClose={() => setIsTocOpen(false)}
+        />
+
+        <div
+          ref={scrollRef}
+          // Reserve constant top padding so toggling the trigger / drawer
+          // never reflows the content area.
+          className="h-full overflow-y-auto px-6 py-4 pt-8"
+        >
+          {frontmatter && <FrontmatterBlock data={frontmatter} />}
+          <MarkdownContent content={body} />
         </div>
       </div>
     )
   }
 
-  // Wrap Group in a fixed-height container because react-resizable-panels
-  // sets `height: 100%` via inline styles on Group, which would override
-  // any Tailwind height class applied directly to Group.
+  // Always-on mode — TOC is a docked left column; content takes the
+  // remaining flex space. No overlay, no shadow, no animation.
   return (
-    <div className={cn('overflow-hidden', className)}>
-      <Group id="md-preview-toc-layout" orientation="horizontal" className="min-h-0">
-        {/* Left: TOC sidebar */}
-        <Panel id="md-toc-panel" defaultSize="28%" minSize="15%" maxSize="40%">
-          <TocSidebar
-            entries={tocEntries}
-            activeId={activeHeadingId}
-            onSelect={handleTocSelect}
-            label={tocLabel}
-            onCollapse={enableTocCollapse ? () => setIsTocOpen(false) : undefined}
-          />
-        </Panel>
+    <div className={cn('overflow-hidden flex', className)}>
+      <aside
+        className="shrink-0 border-r border-[hsl(var(--border))]"
+        style={{ width: TOC_WIDTH }}
+      >
+        <TocSidebar
+          entries={tocEntries}
+          activeId={activeHeadingId}
+          onSelect={handleTocSelect}
+          label={resolvedTocLabel}
+        />
+      </aside>
 
-        <Separator className="w-px bg-[hsl(var(--border))] relative hover:bg-[hsl(var(--ring)/0.5)] transition-colors">
-          <div className="absolute inset-y-0 -left-1 -right-1" />
-        </Separator>
-
-        {/* Right: rendered Markdown content.
-             className="flex flex-col" makes the Panel inner wrapper a column
-             flex container so the scroll area can be sized with flex-1 instead
-             of h-full — avoiding percentage-height resolution issues inside the
-             library's nested flex wrappers. */}
-        <Panel id="md-content-panel" minSize="50%" className="relative flex flex-col">
-          {searchOverlay}
-          <div ref={scrollRef} className="flex-1 min-h-0 overflow-y-auto px-6 py-4">
-            <MarkdownContent content={content} />
-          </div>
-        </Panel>
-      </Group>
+      <div className="flex-1 min-w-0 relative overflow-hidden">
+        {topRightToolbar}
+        <div ref={scrollRef} className="h-full overflow-y-auto px-6 py-4">
+          {frontmatter && <FrontmatterBlock data={frontmatter} />}
+          <MarkdownContent content={body} />
+        </div>
+      </div>
     </div>
   )
 })
@@ -294,6 +340,106 @@ const TocSidebar = memo(function TocSidebar({
   )
 })
 
+// ---------------------------------------------------------------------------
+// TocDrawer — slide-in overlay containing the TocSidebar
+// ---------------------------------------------------------------------------
+
+interface TocDrawerProps {
+  open: boolean
+  entries: TocEntry[]
+  activeId: string | null
+  onSelect: (id: string) => void
+  label: string
+  /** When provided, drawer is dismissible via outside-click, Esc, or its
+   *  internal collapse button. When undefined the drawer stays open (the
+   *  "always visible" mode used when `enableTocCollapse` is false). */
+  onClose?: () => void
+}
+
+/** Fixed TOC width — shared between the docked sidebar and the
+ *  slide-in drawer so both modes feel identical visually. */
+const TOC_WIDTH = 240
+
+const TocDrawer = memo(function TocDrawer({
+  open,
+  entries,
+  activeId,
+  onSelect,
+  label,
+  onClose,
+}: TocDrawerProps): React.JSX.Element | null {
+  const { mounted, phase } = useModalAnimation(open)
+  const drawerRef = useRef<HTMLDivElement>(null)
+
+  // Dismiss on outside click. Delay attach by one frame so the click that
+  // *opened* the drawer (which is still bubbling) doesn't immediately close
+  // it. The handler ignores clicks on the drawer itself or on the trigger
+  // (which has data-toc-trigger).
+  useEffect(() => {
+    if (!open || !onClose) return
+    let attached = false
+    const id = requestAnimationFrame(() => {
+      const handler = (e: MouseEvent): void => {
+        if (!drawerRef.current) return
+        const target = e.target as Node
+        if (drawerRef.current.contains(target)) return
+        const triggerEl = (target instanceof Element ? target.closest('[data-toc-trigger]') : null)
+        if (triggerEl) return
+        onClose()
+      }
+      document.addEventListener('mousedown', handler)
+      attached = true
+      ;(drawerRef.current as HTMLDivElement & { __tocOutsideHandler?: typeof handler }).__tocOutsideHandler = handler
+    })
+    return () => {
+      cancelAnimationFrame(id)
+      if (attached) {
+        const node = drawerRef.current as
+          | (HTMLDivElement & { __tocOutsideHandler?: (e: MouseEvent) => void })
+          | null
+        const handler = node?.__tocOutsideHandler
+        if (handler) document.removeEventListener('mousedown', handler)
+      }
+    }
+  }, [open, onClose])
+
+  // Dismiss on Escape
+  useEffect(() => {
+    if (!open || !onClose) return
+    const handler = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape') onClose()
+    }
+    document.addEventListener('keydown', handler)
+    return () => document.removeEventListener('keydown', handler)
+  }, [open, onClose])
+
+  if (!mounted) return null
+
+  return (
+    <div
+      ref={drawerRef}
+      className={cn(
+        'absolute top-0 bottom-0 left-0 z-20',
+        'bg-[hsl(var(--background)/0.96)] backdrop-blur-sm',
+        'border-r border-[hsl(var(--border))] shadow-lg',
+        phase === 'enter' && 'toc-drawer-enter',
+        phase === 'exit' && 'toc-drawer-exit',
+      )}
+      style={{ width: TOC_WIDTH }}
+      role="dialog"
+      aria-label={label}
+    >
+      <TocSidebar
+        entries={entries}
+        activeId={activeId}
+        onSelect={onSelect}
+        label={label}
+        onCollapse={onClose}
+      />
+    </div>
+  )
+})
+
 interface TocCollapsedTriggerProps {
   label: string
   onExpand: () => void
@@ -307,8 +453,9 @@ const TocCollapsedTrigger = memo(function TocCollapsedTrigger({
     <button
       type="button"
       onClick={onExpand}
+      data-toc-trigger
       className={cn(
-        'absolute top-2 left-4 z-20',
+        'absolute top-2 left-4 z-30',
         'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg',
         'text-[11px] font-medium text-[hsl(var(--muted-foreground))]',
         'bg-[hsl(var(--card)/0.95)] backdrop-blur-sm',
@@ -325,3 +472,66 @@ const TocCollapsedTrigger = memo(function TocCollapsedTrigger({
     </button>
   )
 })
+
+// ---------------------------------------------------------------------------
+// FrontmatterBlock — surfaces parsed YAML frontmatter as a metadata card
+// ---------------------------------------------------------------------------
+
+/**
+ * Renders a YAML frontmatter map as a definition list inside a subtle
+ * card surface, sitting above the markdown body.
+ *
+ * Each entry's value is rendered according to its YAML type:
+ *   - string  → preserved verbatim with `whitespace-pre-wrap` so block
+ *               scalars (`description: |` …) keep their line breaks
+ *   - number / boolean → mono-formatted scalar
+ *   - null    → muted "null" placeholder
+ *   - object / array → pretty-printed JSON in a `<pre>` for inspection
+ *
+ * Returns `null` when the map is empty so the layout doesn't gain a
+ * floating card for a meaningless empty `---\n---` block.
+ */
+const FrontmatterBlock = memo(function FrontmatterBlock({
+  data,
+}: {
+  data: Record<string, unknown>
+}): React.JSX.Element | null {
+  const entries = Object.entries(data)
+  if (entries.length === 0) return null
+  return (
+    <div className="mt-4 mb-5 rounded-lg border border-[hsl(var(--border)/0.6)] bg-[hsl(var(--muted)/0.4)] px-4 py-3">
+      <dl className="grid grid-cols-[minmax(auto,140px)_1fr] gap-x-3 gap-y-1.5 text-sm">
+        {entries.map(([key, value]) => (
+          <Fragment key={key}>
+            <dt className="font-mono text-xs uppercase tracking-wider text-[hsl(var(--muted-foreground))] pt-0.5 truncate">
+              {key}
+            </dt>
+            <dd className="text-[hsl(var(--foreground))] min-w-0">
+              <FrontmatterValue value={value} />
+            </dd>
+          </Fragment>
+        ))}
+      </dl>
+    </div>
+  )
+})
+
+function FrontmatterValue({ value }: { value: unknown }): React.JSX.Element {
+  if (value == null) {
+    return <span className="italic text-[hsl(var(--muted-foreground)/0.6)]">null</span>
+  }
+  if (typeof value === 'string') {
+    return <span className="whitespace-pre-wrap break-words">{value}</span>
+  }
+  if (typeof value === 'number' || typeof value === 'boolean') {
+    return <span className="font-mono">{String(value)}</span>
+  }
+  // Objects / arrays — render as pretty-printed JSON so users can still
+  // inspect structured metadata (skill permissions, tags, etc.) without
+  // dropping out to view the raw source.
+  return (
+    <pre className="m-0 font-mono text-xs whitespace-pre-wrap break-words text-[hsl(var(--muted-foreground))]">
+      {JSON.stringify(value, null, 2)}
+    </pre>
+  )
+}

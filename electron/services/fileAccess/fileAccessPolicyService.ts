@@ -6,7 +6,7 @@ import path from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { detectLanguage, isBinaryFile, MAX_FILE_SIZE_BYTES } from '@shared/fileUtils'
 import type { FileContentResult } from '@shared/types'
-import { isPathWithinBase, isRealPathWithinBase } from '../../security/pathBounds'
+import { isPathWithinBase } from '../../security/pathBounds'
 import { FileAccessServiceError } from './fileAccessError'
 
 export type FileViewMode = 'editor' | 'viewer'
@@ -18,13 +18,23 @@ interface AssertPathWithinBaseInput {
 }
 
 export class FileAccessPolicyService {
+  /**
+   * Lexical bound check — rejects paths that escape the base via `..` or
+   * absolute traversal, but deliberately lets symbolic links through so
+   * users can link sibling repositories or vendored directories into a
+   * project and have them work like any other folder. This applies to
+   * both reads and writes: a symlink anywhere on the path (final target
+   * or intermediate directory) is followed, and operations may legally
+   * land outside the base.
+   *
+   * The one extra guard on the write side is `O_NOFOLLOW` in
+   * `writeTextFileSafely`, which prevents overwriting a file *when the
+   * final target itself is a symlink* — protecting against the
+   * "replace-a-link-with-content" footgun. Intermediate-directory
+   * symlinks are not (and intentionally not) covered by this guard.
+   */
   async assertResolvedPathWithinBase(input: AssertPathWithinBaseInput): Promise<void> {
     if (!isPathWithinBase(input.resolvedPath, input.resolvedBase)) {
-      throw new FileAccessServiceError('access_denied', input.deniedMessage)
-    }
-
-    const withinRealPath = await isRealPathWithinBase(input.resolvedPath, input.resolvedBase)
-    if (!withinRealPath) {
       throw new FileAccessServiceError('access_denied', input.deniedMessage)
     }
   }

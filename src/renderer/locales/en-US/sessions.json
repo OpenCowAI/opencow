@@ -5,7 +5,7 @@
     "newConversation": "New conversation",
     "claudeCapabilities": "Capabilities",
     "openCapabilities": "Open Capabilities",
-    "sessions": "Sessions",
+    "sessions": "Session history",
     "noSessionsYet": "No sessions yet",
     "expand": "Expand sidebar",
     "collapse": "Collapse sidebar",
@@ -40,6 +40,12 @@
       "findBugs": "Find potential bugs",
       "suggestImprovements": "Suggest improvements"
     }
+  },
+  "chatFolder": {
+    "home": "Home",
+    "triggerAria": "Switch chat working folder",
+    "useHome": "Use default folder (Home)",
+    "chooseDifferent": "Choose a different folder…"
   },
   "capabilities": {
     "loadingCapabilities": "Loading capabilities…",
@@ -328,6 +334,10 @@
     "viewingArchived": "Viewing archived session (read-only)",
     "backToCurrent": "Back to current session"
   },
+  "userMessageCollapse": {
+    "showMore": "Show more",
+    "showLess": "Show less"
+  },
   "sessionInput": {
     "placeholder": "Type a message or attach a file…",
     "inputAria": "Type a message to send to Claude Code session",
@@ -401,7 +411,11 @@
   "notes": {
     "sentToChat": "Sent to Chat",
     "notesSentToChat": "{{count}} notes sent to Chat",
-    "switchToChat": "Switch to Chat"
+    "switchToChat": "Switch to Chat",
+    "empty": {
+      "title": "No notes yet",
+      "subtitle": "Jot down questions or context while reviewing the session."
+    }
   },
   "artifacts": {
     "unstar": "Unstar",

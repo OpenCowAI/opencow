@@ -584,7 +584,21 @@ app.whenReady().then(async () => {
     updateChecker.onSystemResume()
   })
 
-  createWindow()
+  const mainWin = createWindow()
+
+  // On renderer reload (Cmd+R, DevTools refresh, location.reload()), the
+  // React tree is wiped and rebuilt — but managed WebContentsViews stay
+  // attached to mainWindow.contentView, leaving a "floating" native browser
+  // pinned at the last sheet bounds with no UI host. Detach every managed
+  // view before the new renderer mounts; sessions / Issue bindings survive
+  // (views remain in managedViews) and the next ensure-source-view call
+  // re-attaches the right one.
+  //
+  // `did-start-loading` fires on initial load too, but at that point
+  // managedViews is empty so detachAllViews() is a no-op.
+  mainWin.webContents.on('did-start-loading', () => {
+    browserService.detachAllViews()
+  })
 
   app.on('activate', () => {
     focusOrCreateMainWindow()

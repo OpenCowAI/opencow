@@ -5,7 +5,6 @@ import { useTranslation } from 'react-i18next'
 import { Virtuoso, type VirtuosoHandle, type ListRange } from 'react-virtuoso'
 import { ArrowDown, GitCompare } from 'lucide-react'
 import {
-  UserMessage,
   ChatBubbleUserMessage,
   ToolResultUserMessage,
   hasVisibleToolResultUserMessageContent,
@@ -755,9 +754,13 @@ function SessionMessageList({
             element = null
             tailMsgId = undefined
           } else {
-            element = variant === 'chat'
-              ? <ChatBubbleUserMessage key={msg.id} id={msg.id} content={msg.content} />
-              : <UserMessage key={msg.id} id={msg.id} content={msg.content} />
+            // User-typed messages always render as a right-aligned bubble
+            // — the same chip used by the Chat view — so the session
+            // transcript and the live chat share one user-message look.
+            // The `variant` prop still drives list-level layout (chat
+            // mode caps the list at 640 px / centers it), but it no
+            // longer affects the message component choice.
+            element = <ChatBubbleUserMessage key={msg.id} id={msg.id} content={msg.content} />
           }
           break
         }

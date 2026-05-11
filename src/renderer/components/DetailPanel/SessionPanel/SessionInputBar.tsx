@@ -129,21 +129,36 @@ export const SessionInputBar = memo(forwardRef<SessionInputBarHandle, SessionInp
   }, [editor])
 
   return (
+    // Card-style chrome shared with `ChatHeroInput` — same rounded-xl
+    // outer surface, focus-within shadow ring, drag-over highlight.
+    // The session-specific surface area (slash command + ref-driven
+    // attachment ingestion) is preserved; only the chrome and action
+    // row composition change.  `mx-3 mb-3 mt-1` lifts the card off the
+    // panel edges so it visually floats over the message list, the
+    // way ChatHeroInput floats inside its parent's `pb-3 pt-1 px-3`
+    // wrapper.
     <div
       data-session-input
-      className={`flex flex-col border-t transition-colors ${
+      onClick={(e) => {
+        // Click on empty area (not buttons / inputs / contenteditable) → focus the editor.
+        if (!(e.target as HTMLElement).closest('button, input, [contenteditable]')) {
+          editor?.commands.focus()
+        }
+      }}
+      className={cn(
+        'chat-hero-editor mx-3 mb-3 mt-1 flex flex-col rounded-xl border bg-[hsl(var(--card))] shadow-sm transition-all',
         isDragOver
-          ? 'border-t-[hsl(var(--ring))] bg-[hsl(var(--accent)/0.3)]'
-          : 'border-t-[hsl(var(--border))] bg-[hsl(var(--card))] focus-within:border-t-[hsl(var(--ring))]'
-      }`}
+          ? 'border-[hsl(var(--ring))] bg-[hsl(var(--accent)/0.15)] shadow-[0_0_0_2px_hsl(var(--ring)/0.15)]'
+          : 'border-[hsl(var(--border))] hover:border-[hsl(var(--border)/0.8)] focus-within:border-[hsl(var(--ring))] focus-within:shadow-[0_0_0_2px_hsl(var(--ring)/0.1)]'
+      )}
       {...dragHandlers}
     >
       <AttachmentPreviewList
         attachments={pendingAttachments}
         onRemove={removeAttachment}
-        size="sm"
+        size="lg"
         image={{ previewMode: 'lightbox' }}
-        className="px-2.5 pt-1.5"
+        className="px-4 pt-3"
         ariaLabel={tCommon('attachedFiles')}
         labels={{
           previewImage: tCommon('previewImage'),
@@ -153,120 +168,139 @@ export const SessionInputBar = memo(forwardRef<SessionInputBarHandle, SessionInp
         }}
       />
 
-      {/* Input row */}
-      <div className="flex items-center gap-1.5 px-2.5 py-2">
-        {/* Slash command trigger icon (click to toggle) */}
-        <div className="relative shrink-0">
-          <button
-            ref={triggerRef}
-            type="button"
-            onClick={handleToggleSlashPopover}
-            className={`p-1 rounded transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--ring))] ${
-              isPopoverOpen
-                ? 'text-[hsl(var(--primary))] bg-[hsl(var(--primary)/0.08)]'
-                : 'text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] hover:bg-[hsl(var(--foreground)/0.04)]'
-            }`}
-            aria-label={t('sessionInput.slashCommandAria')}
-            aria-haspopup="listbox"
-            aria-expanded={isPopoverOpen}
-          >
-            <AlignLeft className="w-3.5 h-3.5" aria-hidden="true" />
-          </button>
-
-          {/* Popover (above the trigger) */}
-          {isPopoverOpen && (
-            <div className="absolute bottom-full left-0 mb-1.5 z-50">
-              <SlashCommandPopover
-                items={slashItems}
-                loading={slashLoading}
-                onSelect={handleSelectCommand}
-                onClose={handleClosePopover}
-              />
-            </div>
-          )}
-        </div>
-
-        {/* @ Context mention trigger — only visible when project is associated */}
-        {projectPath && (
-          <div className="relative shrink-0">
-            <button
-              type="button"
-              onClick={handleToggleContextPopover}
-              className={`p-1 rounded transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--ring))] ${
-                isContextPopoverOpen
-                  ? 'text-[hsl(var(--primary))] bg-[hsl(var(--primary)/0.08)]'
-                  : 'text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] hover:bg-[hsl(var(--foreground)/0.04)]'
-              }`}
-              aria-label={t('contextMention.triggerAria', { defaultValue: 'Add file context' })}
-              aria-haspopup="dialog"
-              aria-expanded={isContextPopoverOpen}
-            >
-              <AtSign className="w-3.5 h-3.5" aria-hidden="true" />
-            </button>
-
-            {/* Context mention popover (above the trigger, aligned to left of panel) */}
-            {isContextPopoverOpen && (
-              <div className="absolute bottom-full left-0 mb-1.5 z-50">
-                <ContextMentionPopover
-                  onClose={handleCloseContextPopover}
-                  onSelectFile={(entry) => {
-                    // Insert fileMention node directly into the editor
-                    editor
-                      ?.chain()
-                      .focus('end')
-                      .insertContent([
-                        {
-                          type: 'fileMention',
-                          attrs: { path: entry.path, name: entry.name, isDirectory: entry.isDirectory },
-                        },
-                        { type: 'text', text: ' ' },
-                      ])
-                      .run()
-                  }}
-                />
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* TipTap plain-text editor with slash command support */}
+      {/* Editor area — its own row, spacious vertical breathing room
+          so multi-line drafts have visible runway. */}
+      <div className="flex items-end gap-2 px-4 py-3">
         <div
-          className={`flex-1 min-w-0 ${isDisabled ? 'opacity-50 cursor-not-allowed pointer-events-none' : ''}`}
+          className={cn(
+            'flex-1 min-w-0',
+            isDisabled && 'opacity-50 cursor-not-allowed pointer-events-none'
+          )}
           aria-haspopup="listbox"
         >
           <EditorContent editor={editor} />
         </div>
+      </div>
 
-        {/* Attach file button */}
-        <button
-          onClick={() => fileInputRef.current?.click()}
-          disabled={isDisabled || pendingAttachments.length >= ATTACHMENT_LIMITS.maxPerMessage}
-          aria-label={tCommon('attachFile')}
-          className="p-1 rounded text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] hover:bg-[hsl(var(--foreground)/0.04)] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--ring))] disabled:opacity-30 disabled:cursor-not-allowed shrink-0"
-        >
-          <Paperclip className="w-3.5 h-3.5" aria-hidden="true" />
-        </button>
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept={FILE_INPUT_ACCEPT}
-          multiple
-          className="hidden"
-          onChange={handleFileSelect}
-          aria-hidden="true"
-          tabIndex={-1}
-        />
+      {/* Action row — sits below the editor.  Left cluster: insertion
+          shortcuts (slash command, file mention, file attach); right:
+          send / stop.  Mirrors the visual hierarchy of ChatHeroInput
+          while keeping the slash-command affordance that only sessions
+          need. */}
+      <div className="flex items-center justify-between px-3 pb-2.5">
+        <div className="flex items-center gap-0.5">
+          {/* Slash command trigger (Session-only) */}
+          <div className="relative">
+            <button
+              ref={triggerRef}
+              type="button"
+              onClick={handleToggleSlashPopover}
+              className={cn(
+                'p-1.5 rounded-lg transition-colors',
+                'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--ring))]',
+                isPopoverOpen
+                  ? 'text-[hsl(var(--primary))] bg-[hsl(var(--primary)/0.08)]'
+                  : 'text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] hover:bg-[hsl(var(--foreground)/0.04)]',
+              )}
+              aria-label={t('sessionInput.slashCommandAria')}
+              aria-haspopup="listbox"
+              aria-expanded={isPopoverOpen}
+            >
+              <AlignLeft className="w-4 h-4" aria-hidden="true" />
+            </button>
+            {/* Popover anchors to bottom-full so it opens UPward into
+                the editor space — same convention used by Chat's @
+                context popover. */}
+            {isPopoverOpen && (
+              <div className="absolute bottom-full left-0 mb-1.5 z-50">
+                <SlashCommandPopover
+                  items={slashItems}
+                  loading={slashLoading}
+                  onSelect={handleSelectCommand}
+                  onClose={handleClosePopover}
+                />
+              </div>
+            )}
+          </div>
+
+          {/* @ Context mention trigger — only when project is associated */}
+          {projectPath && (
+            <div className="relative">
+              <button
+                type="button"
+                onClick={handleToggleContextPopover}
+                className={cn(
+                  'p-1.5 rounded-lg transition-colors',
+                  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--ring))]',
+                  isContextPopoverOpen
+                    ? 'text-[hsl(var(--primary))] bg-[hsl(var(--primary)/0.08)]'
+                    : 'text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] hover:bg-[hsl(var(--foreground)/0.04)]',
+                )}
+                aria-label={t('contextMention.triggerAria', { defaultValue: 'Add file context' })}
+                aria-haspopup="dialog"
+                aria-expanded={isContextPopoverOpen}
+              >
+                <AtSign className="w-4 h-4" aria-hidden="true" />
+              </button>
+              {isContextPopoverOpen && (
+                <div className="absolute bottom-full left-0 mb-1.5 z-50">
+                  <ContextMentionPopover
+                    onClose={handleCloseContextPopover}
+                    onSelectFile={(entry) => {
+                      editor
+                        ?.chain()
+                        .focus('end')
+                        .insertContent([
+                          {
+                            type: 'fileMention',
+                            attrs: { path: entry.path, name: entry.name, isDirectory: entry.isDirectory },
+                          },
+                          { type: 'text', text: ' ' },
+                        ])
+                        .run()
+                    }}
+                  />
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Paperclip — attach file from disk */}
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            disabled={isDisabled || pendingAttachments.length >= ATTACHMENT_LIMITS.maxPerMessage}
+            aria-label={tCommon('attachFile')}
+            className={cn(
+              'p-1.5 rounded-lg transition-colors',
+              'text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] hover:bg-[hsl(var(--foreground)/0.04)]',
+              'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--ring))]',
+              'disabled:opacity-30 disabled:cursor-not-allowed',
+            )}
+          >
+            <Paperclip className="w-4 h-4" aria-hidden="true" />
+          </button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept={FILE_INPUT_ACCEPT}
+            multiple
+            className="hidden"
+            onChange={handleFileSelect}
+            aria-hidden="true"
+            tabIndex={-1}
+          />
+        </div>
 
         {/* Send / Stop button — dual-mode based on session processing state */}
         {isStopMode ? (
-          <StopButtonPopover onStop={sessionControl!.onStop} size="sm" />
+          <StopButtonPopover onStop={sessionControl!.onStop} size="md" />
         ) : (
           <button
             onClick={submit}
             disabled={isDisabled || !hasContent}
             aria-label={t('sessionInput.sendAria')}
             className={cn(
-              'p-1 rounded-md transition-all shrink-0',
+              'p-1.5 rounded-lg transition-all',
               'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--ring))]',
               hasContent && !isDisabled
                 ? 'bg-[hsl(var(--foreground))] text-[hsl(var(--background))] hover:opacity-90 shadow-sm'
@@ -274,9 +308,9 @@ export const SessionInputBar = memo(forwardRef<SessionInputBarHandle, SessionInp
             )}
           >
             {isSending ? (
-              <Loader2 className="w-3.5 h-3.5 motion-safe:animate-spin" aria-hidden="true" />
+              <Loader2 className="w-4 h-4 motion-safe:animate-spin" aria-hidden="true" />
             ) : (
-              <CornerDownLeft className="w-3.5 h-3.5" aria-hidden="true" />
+              <CornerDownLeft className="w-4 h-4" aria-hidden="true" />
             )}
           </button>
         )}

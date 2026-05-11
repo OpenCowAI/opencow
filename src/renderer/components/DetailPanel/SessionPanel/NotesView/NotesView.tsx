@@ -161,9 +161,9 @@ export const NotesView = memo(function NotesView({
         </div>
         <div className="flex-1 flex flex-col items-center justify-center gap-2 text-[hsl(var(--muted-foreground))] px-4">
           <StickyNote className="w-8 h-8 opacity-30" aria-hidden="true" />
-          <p className="text-sm font-medium">No notes yet</p>
+          <p className="text-sm font-medium">{t('notes.empty.title')}</p>
           <p className="text-xs text-center leading-relaxed opacity-70">
-            Jot down questions or context while reviewing the session.
+            {t('notes.empty.subtitle')}
           </p>
         </div>
       </div>

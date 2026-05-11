@@ -50,7 +50,7 @@ export function SessionDetailView({ sessionId }: SessionDetailViewProps): React.
 
   if (!identity) {
     return (
-      <aside className="h-full flex flex-col items-center justify-center gap-3 px-8 text-center bg-[hsl(var(--card))]">
+      <aside className="h-full flex flex-col items-center justify-center gap-3 px-8 text-center">
         <MessageSquareOff className="h-7 w-7 text-[hsl(var(--muted-foreground)/0.4)]" aria-hidden="true" />
         <p className="text-sm text-[hsl(var(--muted-foreground))] leading-relaxed max-w-[320px]">
           {t('sessionDetail.unavailableManagedOnly', {
@@ -62,7 +62,7 @@ export function SessionDetailView({ sessionId }: SessionDetailViewProps): React.
   }
 
   return (
-    <aside className="h-full bg-[hsl(var(--card))]" aria-label="Session detail">
+    <aside className="h-full" aria-label="Session detail">
       <ProjectScopeProvider
         projectPath={identity.projectPath ?? undefined}
         projectId={identity.projectId ?? undefined}

@@ -28,30 +28,6 @@
         "chat": "Chat",
         "schedule": "Schedule"
       }
-    },
-    "chatDefaultMode": {
-      "title": "Chat Default Layout",
-      "description": "Choose whether Chat opens in minimal mode or files mode by default.",
-      "hints": {
-        "default": "Conversation-first with a clean layout.",
-        "files": "Chat + files side-by-side for coding flow."
-      },
-      "options": {
-        "default": "Minimal",
-        "files": "Files"
-      }
-    },
-    "filesDefaultMode": {
-      "title": "Files Default Layout",
-      "description": "When Chat defaults to files mode, choose the Files layout.",
-      "hints": {
-        "ide": "Tree + tabs + editor-first workspace.",
-        "browser": "Explorer-style browsing with quick preview."
-      },
-      "options": {
-        "ide": "Editor",
-        "browser": "Browser"
-      }
     }
   },
   "browser": {

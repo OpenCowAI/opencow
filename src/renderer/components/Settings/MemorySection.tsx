@@ -38,7 +38,7 @@ export function MemorySection(): React.JSX.Element {
   return (
     <div className="space-y-6 p-1">
       <div>
-        <h3 className="text-sm font-semibold text-[hsl(var(--foreground))] mb-1">{t('settings.title')}</h3>
+        <h3 className="text-sm font-medium mb-1">{t('settings.title')}</h3>
         <p className="text-xs text-[hsl(var(--muted-foreground))]">{t('settings.description')}</p>
       </div>
 
@@ -127,8 +127,8 @@ function SettingRow({
   return (
     <div className="flex items-center justify-between">
       <div>
-        <p className="text-xs font-medium text-[hsl(var(--foreground))]">{label}</p>
-        <p className="text-[10px] text-[hsl(var(--muted-foreground))]">{description}</p>
+        <p className="text-sm font-medium text-[hsl(var(--foreground))]">{label}</p>
+        <p className="text-xs text-[hsl(var(--muted-foreground))]">{description}</p>
       </div>
       {children}
     </div>
@@ -149,8 +149,8 @@ function ToggleRow({
   return (
     <div className="flex items-center justify-between">
       <div>
-        <p className="text-xs font-medium text-[hsl(var(--foreground))]">{label}</p>
-        <p className="text-[10px] text-[hsl(var(--muted-foreground))]">{description}</p>
+        <p className="text-sm font-medium text-[hsl(var(--foreground))]">{label}</p>
+        <p className="text-xs text-[hsl(var(--muted-foreground))]">{description}</p>
       </div>
       <Switch
         checked={checked}

@@ -80,6 +80,17 @@ export interface FileStore {
   openFilesByProject: Record<string, OpenFile[]>
   /** Active editor tab path per project. */
   activeFilePathByProject: Record<string, string | null>
+  /**
+   * Per-project editor-pane collapse flag.
+   *
+   * Distinct from `openFilesByProject.length === 0` so the user can
+   * temporarily hide the editor (via the close-editor button in the tab
+   * bar) without losing their open tabs.  Set back to `false`
+   * automatically whenever the user does something that implies "I want
+   * the editor visible" — opening a file, switching the active tab — so
+   * the flag never accumulates as stale state.
+   */
+  editorCollapsedByProject: Record<string, boolean>
   /** Expanded tree directories per project. */
   expandedTreeDirsByProject: Record<string, Set<string>>
   /** Per-project current directory for FileBrowser mode (relative path, '' = root). */
@@ -110,6 +121,11 @@ export interface FileStore {
   closeOtherFiles: (projectId: string, keepPath: string) => void
   closeAllFiles: (projectId: string) => void
   closeFilesToRight: (projectId: string, path: string) => void
+  /**
+   * Hide the editor pane without touching the open-files list.
+   * Re-opening any file (or switching active tab) brings it back.
+   */
+  collapseEditor: (projectId: string) => void
   setActiveFile: (projectId: string, path: string) => void
   updateFileContent: (projectId: string, path: string, content: string) => void
   markFileSaved: (projectId: string, path: string) => void
@@ -156,11 +172,31 @@ export interface FileStore {
   reset: () => void
 }
 
+/**
+ * Returns a copy of `map` with `projectId`'s editor-collapsed entry
+ * removed.  Used by every "user wants the editor visible" path (open
+ * file, switch active tab) to undo a prior `collapseEditor` request.
+ *
+ * Deleting the key (instead of writing `false`) keeps the map sparse —
+ * absence and `false` are semantically identical for this flag.  When
+ * the project isn't in the map at all, we skip the allocation entirely.
+ */
+function clearEditorCollapsed(
+  map: Record<string, boolean>,
+  projectId: string,
+): Record<string, boolean> {
+  if (!map[projectId]) return map
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const { [projectId]: _, ...rest } = map
+  return rest
+}
+
 // ─── Initial State ────────────────────────────────────────────────────
 
 const initialState = {
   openFilesByProject: {} as Record<string, OpenFile[]>,
   activeFilePathByProject: {} as Record<string, string | null>,
+  editorCollapsedByProject: {} as Record<string, boolean>,
   expandedTreeDirsByProject: {} as Record<string, Set<string>>,
   browserSubPathByProject: {} as Record<string, string>,
   fileStructureVersionByProject: {} as Record<string, number>,
@@ -230,6 +266,9 @@ export const useFileStore = create<FileStore>((set, get) => ({
       const normalizedImageDataUrl = viewKind === 'image' ? imageDataUrl : null
       const openFiles = s.openFilesByProject[projectId] ?? []
       const existing = openFiles.find((f) => f.path === path)
+      // Opening any file implies the user wants the editor visible —
+      // clear any prior `collapseEditor` request for this project.
+      const editorCollapsedByProject = clearEditorCollapsed(s.editorCollapsedByProject, projectId)
       if (existing) {
         // Already open → switch tab + refresh content (only when not dirty and content differs)
         if (
@@ -246,6 +285,7 @@ export const useFileStore = create<FileStore>((set, get) => ({
               ...s.activeFilePathByProject,
               [projectId]: path,
             },
+            editorCollapsedByProject,
           }
         }
         return {
@@ -269,6 +309,7 @@ export const useFileStore = create<FileStore>((set, get) => ({
             ...s.activeFilePathByProject,
             [projectId]: path,
           },
+          editorCollapsedByProject,
         }
       }
       return {
@@ -292,6 +333,7 @@ export const useFileStore = create<FileStore>((set, get) => ({
           ...s.activeFilePathByProject,
           [projectId]: path,
         },
+        editorCollapsedByProject,
       }
     }),
 
@@ -379,12 +421,23 @@ export const useFileStore = create<FileStore>((set, get) => ({
       }
     }),
 
+  collapseEditor: (projectId) =>
+    set((s) => ({
+      editorCollapsedByProject: {
+        ...s.editorCollapsedByProject,
+        [projectId]: true,
+      },
+    })),
+
   setActiveFile: (projectId, path) =>
     set((s) => ({
       activeFilePathByProject: {
         ...s.activeFilePathByProject,
         [projectId]: path,
       },
+      // Picking a tab implies the user wants the editor visible — clear
+      // any prior collapse so the pane reappears with the chosen file.
+      editorCollapsedByProject: clearEditorCollapsed(s.editorCollapsedByProject, projectId),
     })),
 
   updateFileContent: (projectId, path, content) =>

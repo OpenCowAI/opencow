@@ -22,7 +22,6 @@ export function mapScheduleDraftToFormDefaults(
     name: parsed.name,
     description: parsed.description,
     projectId: projectId ?? null,
-    triggerMode: 'time',
     timeTrigger: {
       freqType: parsed.frequency,
       timeOfDay: parsed.timeOfDay ?? '09:00',
@@ -32,7 +31,6 @@ export function mapScheduleDraftToFormDefaults(
       executeAt: parsed.executeAt ?? '',
     },
     action: {
-      type: 'start_session',
       promptTemplate: parsed.prompt,
       systemPrompt: parsed.systemPrompt,
     },

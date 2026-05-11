@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-import { memo, useState, useEffect, useRef, useLayoutEffect, createContext, useContext } from 'react'
+import { memo, useState, useEffect, useMemo, useRef, useLayoutEffect, createContext, useContext } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import rehypeHighlight from 'rehype-highlight'
@@ -18,6 +18,7 @@ import {
   MarkdownTd,
 } from './MarkdownTable'
 import { slugify } from '@/lib/extractToc'
+import { parseFrontmatter } from '@/lib/parseFrontmatter'
 
 // ---------------------------------------------------------------------------
 // Streaming Context
@@ -93,7 +94,7 @@ function CollapsiblePre({ children }: { children?: React.ReactNode }): React.JSX
       <pre
         ref={preRef}
         className={cn(
-          'bg-[hsl(var(--muted))] rounded p-1.5 text-sm font-mono overflow-x-auto',
+          'bg-[hsl(var(--muted)/0.5)] rounded p-1.5 text-sm font-mono overflow-x-auto',
           !expanded && 'overflow-y-hidden',
           overflows && !expanded && 'cursor-pointer'
         )}
@@ -146,7 +147,7 @@ function SmartPre({ children }: { children?: React.ReactNode }): React.JSX.Eleme
     if (isStreaming) {
       return (
         <div className="my-2">
-          <pre className="bg-[hsl(var(--muted))] rounded p-1.5 text-sm font-mono overflow-x-auto">
+          <pre className="bg-[hsl(var(--muted)/0.5)] rounded p-1.5 text-sm font-mono overflow-x-auto">
             {children}
           </pre>
         </div>
@@ -163,12 +164,12 @@ function SmartPre({ children }: { children?: React.ReactNode }): React.JSX.Eleme
 // ---------------------------------------------------------------------------
 
 const MARKDOWN_COMPONENTS: React.ComponentProps<typeof ReactMarkdown>['components'] = {
-  h1: makeHeading('h1', 'text-base font-medium mt-4 mb-1 text-[hsl(var(--foreground))]'),
-  h2: makeHeading('h2', 'text-sm font-semibold mt-3 mb-1 text-[hsl(var(--foreground))]'),
-  h3: makeHeading('h3', 'text-sm font-semibold mt-2 mb-1 text-[hsl(var(--foreground))]'),
-  h4: makeHeading('h4', 'text-sm font-medium mt-2 mb-0.5 text-[hsl(var(--foreground))]'),
-  h5: makeHeading('h5', 'text-xs font-semibold mt-2 mb-0.5 text-[hsl(var(--foreground))]'),
-  h6: makeHeading('h6', 'text-xs font-medium mt-1 mb-0.5 text-[hsl(var(--muted-foreground))]'),
+  h1: makeHeading('h1', 'font-cjk-serif text-2xl font-bold mt-5 mb-2 text-[hsl(var(--foreground))]'),
+  h2: makeHeading('h2', 'font-cjk-serif text-xl font-bold mt-4 mb-2 text-[hsl(var(--foreground))]'),
+  h3: makeHeading('h3', 'font-cjk-serif text-lg font-bold mt-3 mb-1.5 text-[hsl(var(--foreground))]'),
+  h4: makeHeading('h4', 'font-cjk-serif text-base font-bold mt-2 mb-1 text-[hsl(var(--foreground))]'),
+  h5: makeHeading('h5', 'font-cjk-serif text-sm font-bold mt-2 mb-1 text-[hsl(var(--foreground))]'),
+  h6: makeHeading('h6', 'font-cjk-serif text-sm font-bold mt-1 mb-0.5 text-[hsl(var(--muted-foreground))]'),
   p: ({ children }) => (
     <p className="text-sm leading-relaxed mb-0.5 text-[hsl(var(--foreground))]">{children}</p>
   ),
@@ -493,7 +494,7 @@ const RawCodeTail = memo(function RawCodeTail({
     <>
       {proseBefore && <LightProseTail content={proseBefore} />}
       <div className="relative my-2 group/code">
-        <pre className="bg-[hsl(var(--muted))] rounded p-1.5 text-sm font-mono overflow-x-auto">
+        <pre className="bg-[hsl(var(--muted)/0.5)] rounded p-1.5 text-sm font-mono overflow-x-auto">
           <code className={lang ? `language-${lang}` : undefined}>
             {codeContent}
           </code>
@@ -557,6 +558,16 @@ export const MarkdownContent = memo(function MarkdownContent({
     return () => clearTimeout(id)
   }, [isStreaming])
 
+  // Strip leading YAML frontmatter once per content change.  Without
+  // this, react-markdown sees `---` as a thematic break followed by a
+  // setext heading, producing a visually broken preview for files that
+  // carry frontmatter (skill manifests, agent prompts, blog posts).
+  //
+  // Frontmatter rendering (when callers want it surfaced as metadata) is
+  // handled one level up in `MarkdownPreviewWithToc` — `MarkdownContent`
+  // is the leaf renderer for the markdown body only.
+  const bodyContent = useMemo(() => parseFrontmatter(content).body, [content])
+
   if (!isStreaming) {
     // Reset streaming state so the next streaming session starts clean.
     scannerRef.current.reset()
@@ -570,7 +581,7 @@ export const MarkdownContent = memo(function MarkdownContent({
               rehypePlugins={rehypePlugins}
               components={MARKDOWN_COMPONENTS}
             >
-              {content}
+              {bodyContent}
             </ReactMarkdown>
           </div>
         </SlugCounterContext.Provider>

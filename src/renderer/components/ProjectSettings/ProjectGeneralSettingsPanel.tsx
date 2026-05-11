@@ -8,7 +8,6 @@ import { useAppStore } from '@/stores/appStore'
 import type {
   ProjectDefaultTab,
   ProjectPreferences,
-  FilesDisplayMode,
 } from '@shared/types'
 import { normalizeProjectPreferences } from '@shared/projectPreferences'
 import { getAppAPI } from '@/windowAPI'
@@ -16,11 +15,7 @@ import {
   SettingOptionCardGroup,
   type SettingOptionCardSpec,
 } from '@/components/ui/SettingOptionCards'
-import {
-  ChatLayoutPreview,
-  FilesLayoutPreview,
-  TopTabPreview,
-} from './previews/GeneralSettingPreviews'
+import { TopTabPreview } from './previews/GeneralSettingPreviews'
 
 interface ProjectGeneralSettingsPanelProps {
   projectId: string
@@ -28,24 +23,16 @@ interface ProjectGeneralSettingsPanelProps {
 
 interface GeneralPreferencesDraft {
   defaultTab: ProjectDefaultTab
-  defaultChatViewMode: 'default' | 'files'
-  defaultFilesDisplayMode: FilesDisplayMode | null
 }
 
 function toGeneralDraft(preferences: ProjectPreferences): GeneralPreferencesDraft {
   return {
     defaultTab: preferences.defaultTab,
-    defaultChatViewMode: preferences.defaultChatViewMode,
-    defaultFilesDisplayMode: preferences.defaultFilesDisplayMode,
   }
 }
 
 function sameGeneralPreferences(a: GeneralPreferencesDraft, b: GeneralPreferencesDraft): boolean {
-  return (
-    a.defaultTab === b.defaultTab &&
-    a.defaultChatViewMode === b.defaultChatViewMode &&
-    a.defaultFilesDisplayMode === b.defaultFilesDisplayMode
-  )
+  return a.defaultTab === b.defaultTab
 }
 
 export function ProjectGeneralSettingsPanel({ projectId }: ProjectGeneralSettingsPanelProps): React.JSX.Element {
@@ -62,11 +49,7 @@ export function ProjectGeneralSettingsPanel({ projectId }: ProjectGeneralSetting
 
   useEffect(() => {
     setDraft(canonical)
-  }, [
-    canonical.defaultChatViewMode,
-    canonical.defaultFilesDisplayMode,
-    canonical.defaultTab,
-  ])
+  }, [canonical.defaultTab])
 
   const dirty = !sameGeneralPreferences(draft, canonical)
 
@@ -77,8 +60,6 @@ export function ProjectGeneralSettingsPanel({ projectId }: ProjectGeneralSetting
       const updated = await getAppAPI()['update-project'](project.id, {
         preferences: {
           defaultTab: draft.defaultTab,
-          defaultChatViewMode: draft.defaultChatViewMode,
-          defaultFilesDisplayMode: draft.defaultFilesDisplayMode,
         },
       })
       if (!updated) throw new Error(t('general.saveFailed'))
@@ -93,23 +74,6 @@ export function ProjectGeneralSettingsPanel({ projectId }: ProjectGeneralSetting
 
   const setDefaultTab = useCallback((defaultTab: ProjectDefaultTab) => {
     setDraft((s) => ({ ...s, defaultTab }))
-  }, [])
-
-  const setChatViewMode = useCallback((defaultChatViewMode: 'default' | 'files') => {
-    setDraft((s) => {
-      if (defaultChatViewMode === 'files') {
-        return {
-          ...s,
-          defaultChatViewMode: 'files',
-          defaultFilesDisplayMode: s.defaultFilesDisplayMode ?? 'ide',
-        }
-      }
-      return { ...s, defaultChatViewMode: 'default' }
-    })
-  }, [])
-
-  const setFilesMode = useCallback((defaultFilesDisplayMode: FilesDisplayMode) => {
-    setDraft((s) => ({ ...s, defaultFilesDisplayMode }))
   }, [])
 
   const defaultTabOptions = useMemo<readonly SettingOptionCardSpec<ProjectDefaultTab>[]>(
@@ -131,42 +95,6 @@ export function ProjectGeneralSettingsPanel({ projectId }: ProjectGeneralSetting
         label: t('general.defaultTab.options.schedule'),
         description: t('general.defaultTab.hints.schedule'),
         preview: <TopTabPreview tab="schedule" />,
-      },
-    ]),
-    [t],
-  )
-
-  const chatDefaultOptions = useMemo<readonly SettingOptionCardSpec<'default' | 'files'>[]>(
-    () => ([
-      {
-        value: 'default',
-        label: t('general.chatDefaultMode.options.default'),
-        description: t('general.chatDefaultMode.hints.default'),
-        preview: <ChatLayoutPreview mode="default" />,
-      },
-      {
-        value: 'files',
-        label: t('general.chatDefaultMode.options.files'),
-        description: t('general.chatDefaultMode.hints.files'),
-        preview: <ChatLayoutPreview mode="files" />,
-      },
-    ]),
-    [t],
-  )
-
-  const filesDefaultOptions = useMemo<readonly SettingOptionCardSpec<FilesDisplayMode>[]>(
-    () => ([
-      {
-        value: 'ide',
-        label: t('general.filesDefaultMode.options.ide'),
-        description: t('general.filesDefaultMode.hints.ide'),
-        preview: <FilesLayoutPreview mode="ide" />,
-      },
-      {
-        value: 'browser',
-        label: t('general.filesDefaultMode.options.browser'),
-        description: t('general.filesDefaultMode.hints.browser'),
-        preview: <FilesLayoutPreview mode="browser" />,
       },
     ]),
     [t],
@@ -216,32 +144,6 @@ export function ProjectGeneralSettingsPanel({ projectId }: ProjectGeneralSetting
               columns={3}
             />
           </section>
-
-          <section className="space-y-2.5 rounded-xl border border-[hsl(var(--border)/0.7)] bg-[hsl(var(--card)/0.6)] p-3.5">
-            <h3 className="text-sm font-medium">{t('general.chatDefaultMode.title')}</h3>
-            <p className="text-xs text-[hsl(var(--muted-foreground))]">{t('general.chatDefaultMode.description')}</p>
-            <SettingOptionCardGroup
-              ariaLabel={t('general.chatDefaultMode.title')}
-              value={draft.defaultChatViewMode}
-              onChange={setChatViewMode}
-              options={chatDefaultOptions}
-              columns={2}
-            />
-          </section>
-
-          {draft.defaultChatViewMode === 'files' && (
-            <section className="space-y-2.5 rounded-xl border border-[hsl(var(--border)/0.7)] bg-[hsl(var(--card)/0.6)] p-3.5">
-              <h3 className="text-sm font-medium">{t('general.filesDefaultMode.title')}</h3>
-              <p className="text-xs text-[hsl(var(--muted-foreground))]">{t('general.filesDefaultMode.description')}</p>
-              <SettingOptionCardGroup
-                ariaLabel={t('general.filesDefaultMode.title')}
-                value={draft.defaultFilesDisplayMode ?? 'ide'}
-                onChange={setFilesMode}
-                options={filesDefaultOptions}
-                columns={2}
-              />
-            </section>
-          )}
 
           <div className="pt-1">
             <button

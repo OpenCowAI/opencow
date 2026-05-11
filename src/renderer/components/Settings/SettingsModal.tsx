@@ -82,7 +82,7 @@ export function SettingsModal(): React.JSX.Element | null {
   return (
     <Dialog open={open} onClose={close} title={t('title')} size="4xl" className="flex flex-col h-[70vh]">
       {/* Header */}
-      <div className="flex items-center justify-between px-5 py-3 border-b border-[hsl(var(--border))]">
+      <div className="flex items-center justify-between px-5 py-3">
         <h2 className="text-base font-semibold">{t('title')}</h2>
         <button
           onClick={close}
@@ -100,7 +100,7 @@ export function SettingsModal(): React.JSX.Element | null {
       ) : (
         <div className="flex flex-1 min-h-0">
           {/* Tab navigation */}
-          <nav className="w-48 shrink-0 border-r border-[hsl(var(--border))] p-3 space-y-3" aria-label="Settings tabs" role="tablist">
+          <nav className="w-48 shrink-0 p-3 space-y-3" aria-label="Settings tabs" role="tablist">
             {TAB_GROUPS.map((group) => (
               <div key={group.labelKey} className="space-y-0.5">
                 <div className="px-3 pt-0.5 pb-1 text-[10px] font-medium uppercase tracking-wider text-[hsl(var(--muted-foreground)/0.5)]">

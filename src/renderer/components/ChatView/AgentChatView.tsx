@@ -4,6 +4,7 @@ import { useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Sparkles, Loader2, Layers, FolderGit2 } from 'lucide-react'
 import { ChatHeroInput } from './ChatHeroInput'
+import { ChatFolderPicker } from './ChatFolderPicker'
 import { SessionChatLayout } from './SessionChatLayout'
 import { ProjectScopeProvider } from '@/contexts/ProjectScopeContext'
 import { cn } from '@/lib/utils'
@@ -15,7 +16,7 @@ import type { UserMessageContent } from '@shared/types'
  * Used by both EmptyChat (hero landing) and ActiveChat (message stream)
  * to ensure visual continuity when transitioning between states.
  */
-const CONTENT_MAX_W = 'max-w-[640px]'
+const CONTENT_MAX_W = 'max-w-[680px]'
 
 // ════════════════════════════════════════════════════════════════════
 // AgentChatView — Root
@@ -24,6 +25,13 @@ const CONTENT_MAX_W = 'max-w-[640px]'
 interface AgentChatViewProps {
   /** Agent session handle — owned by the parent ChatView. */
   agent: AgentSessionHandle
+  /** Selected chat working folder (null = default home dir).  Only meaningful
+   *  in the sidebar Chat panel; ignored in project-detail chat. */
+  chatFolder: string | null
+  /** Setter for {@link chatFolder}. */
+  onSetChatFolder: (path: string | null) => void
+  /** Resolved $HOME, used to decide whether to render the folder picker. */
+  homeDir: string | null
 }
 
 /**
@@ -36,8 +44,21 @@ interface AgentChatViewProps {
  * Both the empty landing and active conversation are laid out as a centered
  * content column with the same max-width, ensuring visual continuity.
  */
-export function AgentChatView({ agent }: AgentChatViewProps): React.JSX.Element {
+export function AgentChatView({
+  agent,
+  chatFolder,
+  onSetChatFolder,
+  homeDir,
+}: AgentChatViewProps): React.JSX.Element {
   const { t } = useTranslation('sessions')
+
+  // Folder picker belongs to the sidebar Chat panel only.  Project
+  // detail chats sit inside a specific project and don't need a way
+  // to retarget the working folder.  We use `projectPath === homeDir`
+  // as the discriminator since `navigateToChatHome` always routes to
+  // the home-dir project.
+  const showFolderPicker =
+    homeDir !== null && agent.projectPath === homeDir
 
   // ─── Render ───────────────────────────────────────────────────────
 
@@ -50,6 +71,10 @@ export function AgentChatView({ agent }: AgentChatViewProps): React.JSX.Element 
           key={agent.projectPath ?? '__all__'}
           onSend={agent.sendOrQueue}
           projectName={agent.projectName}
+          showFolderPicker={showFolderPicker}
+          chatFolder={chatFolder}
+          onSetChatFolder={onSetChatFolder}
+          homeDir={homeDir}
         />
       </ProjectScopeProvider>
     )
@@ -159,10 +184,18 @@ function SuggestionChips({
 
 function EmptyChat({
   onSend,
-  projectName
+  projectName,
+  showFolderPicker,
+  chatFolder,
+  onSetChatFolder,
+  homeDir,
 }: {
   onSend: (message: UserMessageContent) => Promise<boolean>
   projectName: string | null
+  showFolderPicker: boolean
+  chatFolder: string | null
+  onSetChatFolder: (path: string | null) => void
+  homeDir: string | null
 }): React.JSX.Element {
   const { t } = useTranslation('sessions')
   const isGlobal = !projectName
@@ -213,10 +246,39 @@ function EmptyChat({
           </h2>
         </div>
 
-        {/* Hero Input */}
-        <div className="w-full">
-          <ChatHeroInput onSend={onSend} placeholder={placeholder} registerAsChatTabInput />
-        </div>
+        {/* Hero Input + (sidebar Chat only) working-folder picker.
+            When the picker is present we wrap both in a soft outer
+            shell so the picker reads as the footer of the same card
+            unit — the inner ChatHeroInput keeps its own border/shadow,
+            and the picker sits flush below it without competing chrome. */}
+        {showFolderPicker && homeDir ? (
+          <div
+            className={cn(
+              // Outer "tray" — the ChatHeroInput sits flush to the
+              // top/left/right edges; only the bottom carries padding
+              // to host the folder-picker row.  No outer border so the
+              // input's own border stays the only visible chrome on
+              // those three sides.
+              'w-full rounded-2xl bg-[hsl(var(--muted)/0.6)] pb-1.5',
+            )}
+          >
+            <ChatHeroInput onSend={onSend} placeholder={placeholder} registerAsChatTabInput />
+            <div className="flex items-center justify-between px-2 pt-1.5">
+              <ChatFolderPicker
+                homeDir={homeDir}
+                value={chatFolder}
+                onChange={onSetChatFolder}
+              />
+              {/* Right slot reserved for future per-chat metadata
+                  (model / token usage / etc.).  Empty for now. */}
+              <div aria-hidden="true" />
+            </div>
+          </div>
+        ) : (
+          <div className="w-full">
+            <ChatHeroInput onSend={onSend} placeholder={placeholder} registerAsChatTabInput />
+          </div>
+        )}
 
         {/* Suggestion Chips */}
         <SuggestionChips isGlobal={isGlobal} onSelect={handleSuggestion} />

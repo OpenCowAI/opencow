@@ -98,16 +98,26 @@ describe('IPC command:start-session — workspace forwarding', () => {
     )
   })
 
-  it('rejects custom-path workspace from IPC payloads', async () => {
+  it('forwards custom-path workspace to the orchestrator', async () => {
+    // `custom-path` is accepted at the IPC boundary because it originates
+    // from the chat folder picker's native directory dialog. The cwd is
+    // re-validated downstream by SessionWorkspaceResolver before a session
+    // actually starts; the IPC layer only enforces shape, not existence.
     const startSession = vi.fn(async () => 'session-1')
     const handler = registerAndGetStartSessionHandler({
       orchestrator: { startSession } as unknown as IPCDeps['orchestrator'],
     })
 
-    await expect(handler({}, {
+    const result = await handler({}, {
       prompt: 'hello',
       workspace: { scope: 'custom-path', cwd: '/tmp/proj-explicit' },
-    })).rejects.toThrow(/Invalid start-session payload/)
-    expect(startSession).not.toHaveBeenCalled()
+    })
+
+    expect(result).toBe('session-1')
+    expect(startSession).toHaveBeenCalledWith(
+      expect.objectContaining({
+        workspace: { scope: 'custom-path', cwd: '/tmp/proj-explicit' },
+      }),
+    )
   })
 })

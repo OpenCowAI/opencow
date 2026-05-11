@@ -547,7 +547,7 @@ export function QueuedMessageList({
   })()
 
   return (
-    <div className="shrink-0 bg-[hsl(var(--card))]">
+    <div className="shrink-0">
       {/* Header */}
       <div className="flex items-center gap-1.5 px-3 py-1">
         {isSending ? (

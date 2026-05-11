@@ -6,6 +6,7 @@
     "emptyStateHint": "提示：点击左侧文件树中的任意文件即可在这里打开。",
     "modified": "已修改",
     "openFilesAria": "已打开的文件",
+    "closeEditorPreview": "关闭编辑器预览",
     "unsavedChanges": "未保存的更改",
     "previewModeAria": "编辑器预览模式",
     "markdownContents": "目录",
@@ -40,7 +41,9 @@
     "unableToRead": "无法读取文件"
   },
   "tree": {
-    "aria": "文件树"
+    "aria": "文件树",
+    "symlinkLabel": "软链接",
+    "symlinkTitle": "软链接"
   },
   "view": {
     "modeSwitchAria": "文件视图模式",

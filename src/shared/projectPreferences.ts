@@ -3,7 +3,7 @@
 import type { FilesDisplayMode, ProjectPreferences, ProjectPreferencesPatch } from './types'
 
 export const DEFAULT_PROJECT_PREFERENCES: ProjectPreferences = Object.freeze({
-  defaultTab: 'issues',
+  defaultTab: 'chat',
   defaultChatViewMode: 'default',
   defaultFilesDisplayMode: null,
   defaultBrowserStatePolicy: 'shared-global',

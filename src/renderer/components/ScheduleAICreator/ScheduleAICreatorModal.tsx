@@ -70,7 +70,7 @@ export function ScheduleAICreatorModal({
   const { applyScheduleDraft } = useDraftApplyActions()
   const projectId = useAppStore(selectProjectId)
   const projects = useAppStore((s) => s.projects)
-  const openDetail = useAppStore((s) => s.openDetail)
+  const navigateToSchedule = useAppStore((s) => s.navigateToSchedule)
 
   // ── Session config — merge props with current project context ──
   const sessionConfig: ScheduleCreatorSessionConfig = useMemo(
@@ -143,11 +143,11 @@ export function ScheduleAICreatorModal({
       {
         action: {
           label: t('aiCreator.card.view'),
-          onClick: () => openDetail({ type: 'schedule', scheduleId: created.id })
+          onClick: () => navigateToSchedule(created.id)
         }
       }
     )
-  }, [t, openDetail, modal])
+  }, [t, navigateToSchedule, modal])
 
   const handleEditFormClose = useCallback(() => {
     setEditingSchedule(null)
@@ -168,9 +168,9 @@ export function ScheduleAICreatorModal({
 
   const handleNavigateToSchedule = useCallback(
     (scheduleId: string) => {
-      openDetail({ type: 'schedule', scheduleId })
+      navigateToSchedule(scheduleId)
     },
-    [openDetail]
+    [navigateToSchedule]
   )
 
   // ── Footer node: ScheduleConfirmationCard ─────────────────────

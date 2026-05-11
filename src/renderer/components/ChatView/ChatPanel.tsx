@@ -305,7 +305,11 @@ function ChatPanelEmpty({
 // ── Active Conversation ─────────────────────────────────────────────
 // Reuses SessionChatLayout — the shared conversation layout that composes
 // MessageList + StreamingFooter + TodoPill + QueuedMessages + ChatInput.
-// ChatPanel only differs by having no max-width constraint on controls.
+// Inherits the layout's default `max-w-[640px]` controls column so the
+// input box sits in the same vertical rail as the chat-variant message
+// list (also capped at 640 px in `VirtuosoShell`).  Without this match
+// the message list looked like a narrow centered column while the input
+// bar stretched edge-to-edge — visually unaligned.
 
 function ChatPanelActive({ agent }: { agent: AgentSessionHandle }): React.JSX.Element {
   const { t } = useTranslation('sessions')
@@ -317,7 +321,6 @@ function ChatPanelActive({ agent }: { agent: AgentSessionHandle }): React.JSX.El
       messageQueue={agent.messageQueue}
       isProcessing={agent.isProcessing}
       isPaused={agent.isPaused}
-      controlsMaxW={null}
       controlsClassName="px-3"
       pausedPlaceholder={t('agentChat.continueConversation')}
       sessionDraftFooterConfig={{

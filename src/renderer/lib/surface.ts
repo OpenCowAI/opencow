@@ -22,8 +22,8 @@ export interface SurfaceConfig {
 
 /**
  * Props to spread onto a surface element.
- * Includes data attributes for the CSS texture system and the
- * inline style that declares the surface's semantic color.
+ * Includes data attributes that mark elevation/semantic-color, and the
+ * inline style that exposes the surface's base color via `--_surface-color`.
  */
 export interface SurfaceProps {
   'data-surface': SurfaceElevation
@@ -32,25 +32,11 @@ export interface SurfaceProps {
 }
 
 /**
- * Generate data attributes and inline style for a texture-aware surface.
+ * Generate data attributes + inline style for a raised surface.
  *
- * In **plain** mode, these attributes have zero visual effect — no CSS rules
- * match `[data-surface]` outside of `.texture-glass`.
- *
- * In **glass** mode, the CSS in `textures.css` reads `data-surface` and
- * `--_surface-color` to apply the correct elevation-aware glass behavior.
- *
- * @example
- * ```tsx
- * // Card surface (raised elevation, card color)
- * <div {...surfaceProps({ elevation: 'raised', color: 'card' })} className="...">
- *
- * // Dialog surface (modal elevation, card color)
- * <div {...surfaceProps({ elevation: 'modal', color: 'card' })} className="...">
- *
- * // Interactive card with glow on hover
- * <div {...surfaceProps({ elevation: 'raised', color: 'card', glow: true })} className="...">
- * ```
+ * Currently inert — produces structural markers but no visual effect. Kept
+ * so future surface treatments (e.g. a curated highlight) can opt in
+ * without re-tagging every card / popover / modal in the tree.
  */
 export function surfaceProps(config: SurfaceConfig): SurfaceProps {
   const props: SurfaceProps = {

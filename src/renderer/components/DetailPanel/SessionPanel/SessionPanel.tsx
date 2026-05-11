@@ -540,9 +540,9 @@ export const SessionPanel = React.memo(function SessionPanel({
         <ContentViewerProvider>
           {/* Guard: reset to Console tab when artifacts drop to 0 */}
           <ArtifactTabGuard activeTab={activeTab} onResetTab={switchToConsole} />
-          <div className="h-full flex flex-col bg-[hsl(var(--card))]">
+          <div className="h-full flex flex-col">
             {/* Combined Tab + Status Bar — single row */}
-            <div className="flex items-center gap-2 px-2.5 py-1 border-b border-[hsl(var(--border)/0.5)] bg-[hsl(var(--card))] shrink-0">
+            <div className="flex items-center gap-2 px-2.5 py-1 border-b border-[hsl(var(--border)/0.5)] shrink-0">
               {/* Left: Tabs — reads artifactCount from ArtifactViewerContext */}
               <ConnectedTabBar
                 activeTab={activeTab}

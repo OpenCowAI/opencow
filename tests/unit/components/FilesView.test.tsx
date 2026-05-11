@@ -16,6 +16,7 @@ vi.mock('react-resizable-panels', () => ({
   Group: ({ children }: React.PropsWithChildren) => <div>{children}</div>,
   Panel: ({ children }: React.PropsWithChildren) => <div>{children}</div>,
   Separator: ({ children }: React.PropsWithChildren) => <div>{children}</div>,
+  usePanelRef: () => ({ current: null }),
 }))
 
 vi.mock('../../../src/renderer/components/FilesView/EditorTabs', () => ({
@@ -32,10 +33,6 @@ vi.mock('../../../src/renderer/components/FilesView/FileTree', () => ({
 
 vi.mock('../../../src/renderer/components/FilesView/EditorPane', () => ({
   EditorPane: () => <div data-testid="editor-pane">editor-pane</div>,
-}))
-
-vi.mock('../../../src/renderer/components/FilesView/FileBrowser', () => ({
-  FileBrowser: () => <div data-testid="file-browser">file-browser</div>,
 }))
 
 vi.mock('../../../src/renderer/hooks/useFileSync', () => ({
@@ -64,7 +61,7 @@ function makeProject(overrides: Partial<Project> = {}): Project {
     preferences: {
       defaultTab: 'issues',
       defaultChatViewMode: 'default',
-      defaultFilesDisplayMode: 'ide',
+      defaultFilesDisplayMode: null,
       defaultBrowserStatePolicy: 'shared-global',
     },
     ...overrides,
@@ -77,7 +74,6 @@ describe('FilesView search integration', () => {
     useAppStore.setState({
       projects: [makeProject()],
       appView: { mode: 'projects', tab: 'chat', projectId: 'proj-1' },
-      filesDisplayModeByProject: { 'proj-1': 'browser' },
       detailContext: null,
       selectedSessionDetail: null,
       _tabDetails: { ...EMPTY_TAB_DETAILS },
@@ -130,7 +126,7 @@ describe('FilesView search integration', () => {
     }
   })
 
-  it('Cmd/Ctrl+F + :line selection from browser mode opens editor and queues jump', async () => {
+  it('Cmd/Ctrl+F + :line selection opens editor and queues jump', async () => {
     render(<FilesView />)
 
     fireEvent.keyDown(window, { key: 'f', ctrlKey: true })
@@ -143,7 +139,6 @@ describe('FilesView search integration', () => {
     fireEvent.keyDown(input, { key: 'Enter' })
 
     await waitFor(() => {
-      expect(useAppStore.getState().filesDisplayModeByProject['proj-1']).toBe('ide')
       expect(useFileStore.getState().activeFilePathByProject['proj-1']).toBe('src/main.ts')
       const firstJumpIntent = useFileStore.getState().pendingEditorJumpIntentsByProject['proj-1']?.[0]
       expect(firstJumpIntent?.payload).toEqual({

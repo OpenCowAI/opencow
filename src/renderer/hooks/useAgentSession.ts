@@ -6,7 +6,12 @@ import { useAppStore } from '@/stores/appStore'
 import { useCommandStore } from '@/stores/commandStore'
 import { useSessionBase } from '@/hooks/useSessionBase'
 import type { UseMessageQueueReturn } from '@/hooks/useMessageQueue'
-import type { SessionSnapshot, ManagedSessionState, UserMessageContent } from '@shared/types'
+import type {
+  SessionSnapshot,
+  ManagedSessionState,
+  SessionWorkspaceInput,
+  UserMessageContent,
+} from '@shared/types'
 
 /**
  * Session origin sources eligible for the [Chat] tab.
@@ -90,6 +95,20 @@ function sessionListEqual(a: SessionSnapshot[], b: SessionSnapshot[]): boolean {
   return true
 }
 
+export interface UseAgentSessionOptions {
+  /**
+   * Override the session workspace used when starting a NEW chat.  When
+   * provided, takes precedence over the project-derived default from
+   * `useSessionBase` (which binds to `selectedProjectId`).  Used by the
+   * sidebar Chat panel's folder picker to scope new sessions to an
+   * arbitrary directory without mutating project navigation state.
+   *
+   * Has no effect on existing sessions — a started session is bound to
+   * its workspace at creation time.
+   */
+  workspaceOverride?: SessionWorkspaceInput
+}
+
 /**
  * useAgentSession — Encapsulates agent chat session lifecycle.
  *
@@ -99,7 +118,8 @@ function sessionListEqual(a: SessionSnapshot[], b: SessionSnapshot[]): boolean {
  *   - Global session ID persistence (via appStore)
  *   - Session selection / navigation
  */
-export function useAgentSession(): AgentSessionHandle {
+export function useAgentSession(options?: UseAgentSessionOptions): AgentSessionHandle {
+  const workspaceOverride = options?.workspaceOverride
   const chatSessionId = useAppStore((s) => s.agentChatSessionId)
   const setChatSessionId = useAppStore((s) => s.setAgentChatSessionId)
 
@@ -110,20 +130,37 @@ export function useAgentSession(): AgentSessionHandle {
     onSessionIdClear: clearSessionId
   })
 
-  // Chat-eligible sessions: agent (UI) + all IM bots, scoped to selected project.
+  // Chat-eligible sessions: agent (UI) + all IM bots, scoped per view.
+  //
+  // Three scoping modes:
+  //   1. Chat home (current project's path === `$HOME`)  →  only
+  //      orphan sessions (`!projectId`). These are claude runs that
+  //      happened in `$HOME` outside OpenCow's project model, and the
+  //      Chat home tab is their dedicated landing place.
+  //   2. Specific project selected  →  sessions belonging to that
+  //      project (`ms.projectId === selectedProjectId`).
+  //   3. No project selected (project list view)  →  all chat-eligible.
+  //
   // Uses a structural equality comparator (id + state) so the component
-  // only re-renders when sessions are added/removed or their state transitions —
-  // NOT on every metadata flush (cost, tokens, context) during streaming.
+  // only re-renders when sessions are added/removed or their state
+  // transitions — NOT on every metadata flush (cost, tokens, context)
+  // during streaming.
   const selectedProjectId = base.selectedProjectId
+  const isChatHome = useAppStore((s) => {
+    if (!selectedProjectId || !s.homeDir) return false
+    const proj = s.projects.find((p) => p.id === selectedProjectId)
+    return proj?.path === s.homeDir
+  })
   const sessions: SessionSnapshot[] = useStoreWithEqualityFn(
     useCommandStore,
     (s) =>
       s.managedSessions
-        .filter(
-          (ms) =>
-            CHAT_ELIGIBLE_SOURCES.has(ms.origin.source) &&
-            (!selectedProjectId || ms.projectId === selectedProjectId)
-        )
+        .filter((ms) => {
+          if (!CHAT_ELIGIBLE_SOURCES.has(ms.origin.source)) return false
+          if (isChatHome) return !ms.projectId
+          if (selectedProjectId) return ms.projectId === selectedProjectId
+          return true
+        })
         .sort((a, b) => b.createdAt - a.createdAt),
     sessionListEqual,
   )
@@ -142,7 +179,7 @@ export function useAgentSession(): AgentSessionHandle {
       try {
         const sessionId = await base.startSession({
           prompt: message,
-          workspace: base.startWorkspace,
+          workspace: workspaceOverride ?? base.startWorkspace,
         })
         if (sessionId) {
           setChatSessionId(sessionId)
@@ -155,7 +192,7 @@ export function useAgentSession(): AgentSessionHandle {
         base.setIsStarting(false)
       }
     },
-    [base, setChatSessionId]
+    [base, setChatSessionId, workspaceOverride]
   )
 
   // ── Unified send/queue (with start) ───────────────────────────

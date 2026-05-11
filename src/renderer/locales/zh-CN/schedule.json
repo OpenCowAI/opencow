@@ -1,8 +1,20 @@
 {
   "title": "计划",
+  "subtitle": "周期任务、一次性定时器和事件触发器，让 Agent 自动运转。",
   "newSchedule": "新建计划",
-  "noSchedules": "暂无计划",
-  "noSchedulesHint": "创建计划以自动化 Agent 任务",
+  "emptyState": {
+    "noneYet": {
+      "title": "还没有计划",
+      "subtitle": "建一条周期任务、一次性定时器，或事件触发器，让 Agent 自动跑起来。",
+      "createCta": "创建计划",
+      "aiCta": "或者让 AI 帮你创建"
+    },
+    "filtered": {
+      "title": "当前筛选下暂无计划",
+      "subtitle": "清空项目筛选可以查看所有项目下的计划。",
+      "clearCta": "清空筛选"
+    }
+  },
   "active": "活跃",
   "paused": "已暂停",
   "pipelines": "流水线",
@@ -34,8 +46,10 @@
     "projectLabel": "项目",
     "anyProject": "任意项目",
     "selectProject": "选择项目",
-    "promptTemplate": "提示词模板",
+    "promptTemplate": "用户问题",
+    "promptTabsAria": "提示词编辑器选项卡",
     "systemPrompt": "系统提示词",
+    "systemPromptOptional": "（可选）",
     "systemPromptPlaceholder": "可选：为定时会话提供系统行为指引。",
     "variableHint": "支持 {{date}} {{project}} 变量",
     "types": {
@@ -43,8 +57,8 @@
       "startSessionDesc": "使用提示词启动新的 Claude 会话",
       "resumeSession": "恢复会话",
       "resumeSessionDesc": "继续项目中的上一个会话",
-      "createIssue": "创建 Issue",
-      "createIssueDesc": "从模板创建新 Issue",
+      "createIssue": "创建任务",
+      "createIssueDesc": "从模板创建新任务",
       "sendNotification": "发送通知",
       "sendNotificationDesc": "发送收件箱通知"
     }
@@ -65,7 +79,7 @@
     "events": {
       "sessionIdle": "会话变为空闲",
       "sessionError": "会话遇到错误",
-      "issueStatusChange": "Issue 状态变更",
+      "issueStatusChange": "任务状态变更",
       "webhookEvent": "Webhook / 钩子事件"
     },
     "weekdays": {
@@ -107,10 +121,22 @@
   "contextOptions": {
     "gitChanges24h": "Git 变更（24h）",
     "gitLogWeek": "Git 日志（一周）",
-    "openIssues": "未关闭的 Issues",
+    "openIssues": "未关闭的任务",
     "lastResult": "上次结果",
     "todayStats": "今日统计",
     "recentErrors": "最近的错误"
+  },
+  "tooltips": {
+    "project": "指定此 Schedule 关联的项目。\n\n选定后：\n· Agent 将在该项目目录内执行\n· 上下文注入（如 Git 变更、任务列表）会自动限定到该项目\n· 留空表示全局任务，不携带项目上下文",
+    "contextInjections": "在运行 Agent 前，自动将所选项目信息追加到 Prompt 末尾。\n\n这样 Agent 可以基于项目的实际状态给出更精准的分析，而不是泛泛而谈。",
+    "injections": {
+      "gitChanges24h": "将过去 24 小时内的文件变更摘要（git diff --stat）注入 Prompt。\n适合：自动生成每日「今天改了什么」进度日报。",
+      "gitLogWeek": "将本周的提交历史（git log --oneline）注入 Prompt。\n适合：周报场景，让 Agent 自动汇总本周开发进展。",
+      "openIssues": "将项目中所有未关闭的任务列表注入 Prompt。\n适合：让 Agent 基于真实待办列表来排期或规划。",
+      "lastResult": "将该 Schedule 上次执行的输出注入 Prompt。\n适合：连续跟踪类任务，让 Agent 在上次结果之上推进。",
+      "todayStats": "将今日的统计数据（会话数、完成的任务等）注入 Prompt。\n适合：当日复盘，快速概括当天工作量。",
+      "recentErrors": "将最近会话的错误信息注入 Prompt。\n适合：周期性健康巡检，让 Agent 自动分析并给出修复建议。"
+    }
   },
   "detail": {
     "notFound": "未找到该计划",
@@ -248,9 +274,20 @@
     "downloadFile": "下载 {{title}}",
     "starred": "已收藏",
     "ungrouped": "未分组",
-    "unknownIssue": "未知 Issue",
+    "unknownIssue": "未知任务",
     "closeViewer": "关闭查看器",
     "loadingPreview": "加载预览中…",
-    "issuePreviewAria": "Issue 详情预览"
+    "issuePreviewAria": "任务详情预览",
+    "searchPlaceholder": "搜索标题 / 文件 / 任务",
+    "filterByProject": "按项目筛选",
+    "allProjects": "全部项目",
+    "noStarredFiltered": "没有匹配的收藏内容",
+    "title": "收藏",
+    "subtitle": "已收藏的会话产物",
+    "bucketToday": "今天",
+    "bucketYesterday": "昨天",
+    "bucketDayBeforeYesterday": "前天",
+    "noIssue": "无关联任务",
+    "noProject": "无关联项目"
   }
 }

@@ -2,10 +2,12 @@
 
 import { forwardRef, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { ListChecks, Plus, SearchX, Sparkles } from 'lucide-react'
 import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso'
 import { useAppStore, selectProjectId } from '../../stores/appStore'
 import { useIssueStore, selectIssuesArray } from '../../stores/issueStore'
-import { selectIssue, deleteIssue } from '../../actions/issueActions'
+import { selectIssue, deleteIssue, setActiveView, setEphemeralFilters } from '../../actions/issueActions'
+import { cn } from '../../lib/utils'
 import { useListKeyboardNav } from '../../hooks/useListKeyboardNav'
 import {
   ISSUE_STATUS_THEME,
@@ -260,7 +262,16 @@ function groupByProject(issues: IssueSummary[], projectNames: Map<string, string
 // IssueGroupedList
 // ---------------------------------------------------------------------------
 
-export function IssueGroupedList(): React.JSX.Element {
+interface IssueGroupedListProps {
+  /** Opens the manual create-issue modal — wired from `IssuesView`'s
+   *  toolbar handler so the empty state's "Create task" CTA shares the
+   *  same entry point as the `+` button in the header. */
+  onCreateIssue?: () => void
+  /** Opens the AI Issue Creator modal — same rationale as `onCreateIssue`. */
+  onAICreateIssue?: () => void
+}
+
+export function IssueGroupedList({ onCreateIssue, onAICreateIssue }: IssueGroupedListProps = {}): React.JSX.Element {
   const { t } = useTranslation('issues')
   const { t: tc } = useTranslation('common')
   const issues = useIssueStore(selectIssuesArray)
@@ -457,6 +468,7 @@ export function IssueGroupedList(): React.JSX.Element {
       <div
         key={entry.issue.id}
         data-item-id={entry.issue.id}
+        data-issue-row=""
       >
         <DraggableIssueRow
           issue={entry.issue}
@@ -536,11 +548,11 @@ export function IssueGroupedList(): React.JSX.Element {
   // --- Empty state ---
   if (issues.length === 0) {
     return (
-      <div
-        ref={listContainerRef}
-        className="flex-1 flex items-center justify-center text-[hsl(var(--muted-foreground))] text-sm"
-      >
-        {t('noIssuesFound')}
+      <div ref={listContainerRef} className="flex-1 min-h-0 flex">
+        <EmptyState
+          onCreateIssue={onCreateIssue}
+          onAICreateIssue={onAICreateIssue}
+        />
       </div>
     )
   }
@@ -592,7 +604,11 @@ export function IssueGroupedList(): React.JSX.Element {
   // --- Flat mode: virtualized with react-virtuoso ---
   if (!groupBy) {
     return (
-      <div className="relative flex-1 min-h-0 py-1">
+      // `px-3` (combined with `IssueRow`'s own `px-3`) puts row content
+      // ~24 px from the panel edge — slightly *more* inset than the
+      // toolbar above (16 px), so rows read as visually nested children
+      // of the toolbar rather than fighting for the same vertical rail.
+      <div className="relative flex-1 min-h-0 py-1 px-3">
         <Virtuoso
           ref={virtuosoRef}
           data={flatEntries}
@@ -634,13 +650,162 @@ export function IssueGroupedList(): React.JSX.Element {
 
   return (
     <div className="relative flex-1 min-h-0">
-      <div ref={listContainerRef} className="h-full overflow-y-auto py-1 px-1">
+      {/* `px-3` keeps grouped-mode row insets in lock-step with the
+          flat-mode wrapper above — ~24 px from the panel edge in both
+          modes, so the list left/right rails don't shift when the user
+          toggles groupBy. */}
+      <div ref={listContainerRef} className="h-full overflow-y-auto py-1 px-3">
         {groupedContent}
         {contextMenuOverlay}
       </div>
 
       <ScrollToTopButton containerRef={listContainerRef} />
       <IssueBatchToolbar selectedIds={multiSelectedIds} onClearSelection={clearMultiSelection} />
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// EmptyState
+//
+// Two visual modes share the same wrapper so the empty surface feels like
+// a single, coherent design language regardless of cause:
+//
+//   - `noneYet`  : no issues exist in the current project scope at all.
+//                  Encourages creation via the manual + AI entry points.
+//   - `filtered` : issues exist but the active view / ephemeral filters
+//                  hide everything.  Offers one-click recovery
+//                  (clear filters, switch to All) instead of leaving the
+//                  user to hunt the filter chrome.
+//
+// "Truly empty" is detected via `viewIssueCounts[ALL_VIEW.id]` — the
+// unfiltered all-view count under the current project scope.  When that
+// count hasn't loaded yet (mount race) we fall back to "noneYet" so the
+// initial paint encourages action rather than blaming filters.
+// ---------------------------------------------------------------------------
+
+interface EmptyStateProps {
+  onCreateIssue?: () => void
+  onAICreateIssue?: () => void
+}
+
+function EmptyState({ onCreateIssue, onAICreateIssue }: EmptyStateProps): React.JSX.Element {
+  const { t } = useTranslation('issues')
+  const activeViewId = useAppStore((s) => s.activeViewId)
+  const ephemeralFilters = useAppStore((s) => s.ephemeralFilters)
+  const allViewCount = useIssueStore((s) => s.viewIssueCounts[ALL_VIEW.id] ?? 0)
+
+  // "Filtered to zero" only makes sense when there *are* issues to filter
+  // and the user has either picked a non-All view or has ephemeral filters
+  // active.  Otherwise the surface is genuinely fresh.
+  const hasFilters =
+    activeViewId !== ALL_VIEW.id || Object.keys(ephemeralFilters).length > 0
+  const mode: 'noneYet' | 'filtered' = allViewCount > 0 && hasFilters ? 'filtered' : 'noneYet'
+
+  const handleClearFilters = useCallback(() => {
+    if (Object.keys(ephemeralFilters).length > 0) setEphemeralFilters({})
+  }, [ephemeralFilters])
+
+  const handleSwitchToAll = useCallback(() => {
+    setActiveView(ALL_VIEW.id)
+  }, [])
+
+  if (mode === 'filtered') {
+    return (
+      <div className="flex-1 flex flex-col items-center justify-center gap-3 px-8 text-center text-[hsl(var(--muted-foreground))]">
+        {/* Plain icon @ 30% opacity, no surrounding chip — matches the
+            minimalism used by the Schedule view's empty state so both
+            surfaces feel cut from the same cloth. */}
+        <SearchX className="h-12 w-12 opacity-30" aria-hidden="true" />
+        <div className="space-y-1">
+          <h3 className="text-sm font-medium text-[hsl(var(--foreground))]">
+            {t('emptyState.filtered.title')}
+          </h3>
+          <p className="text-xs text-[hsl(var(--muted-foreground))] max-w-sm leading-relaxed">
+            {t('emptyState.filtered.subtitle')}
+          </p>
+        </div>
+        <div className="flex items-center gap-2 mt-1">
+          {Object.keys(ephemeralFilters).length > 0 && (
+            <button
+              type="button"
+              onClick={handleClearFilters}
+              className={cn(
+                'inline-flex items-center gap-1 px-3 py-1.5 rounded-md text-xs font-medium',
+                'border border-[hsl(var(--border))] text-[hsl(var(--foreground))]',
+                'hover:bg-[hsl(var(--foreground)/0.04)] transition-colors',
+                'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--ring))]',
+              )}
+            >
+              {t('emptyState.filtered.clearCta')}
+            </button>
+          )}
+          {activeViewId !== ALL_VIEW.id && (
+            <button
+              type="button"
+              onClick={handleSwitchToAll}
+              className={cn(
+                'inline-flex items-center gap-1 px-3 py-1.5 rounded-md text-xs font-medium',
+                'bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))]',
+                'hover:bg-[hsl(var(--primary)/0.9)] transition-colors',
+                'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--ring))]',
+              )}
+            >
+              {t('emptyState.filtered.allViewCta')}
+            </button>
+          )}
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex-1 flex flex-col items-center justify-center gap-3 px-8 text-center text-[hsl(var(--muted-foreground))]">
+      {/* Plain icon @ 30% opacity, no surrounding chip — matches the
+          minimalism used by the Schedule view's empty state so both
+          surfaces feel cut from the same cloth. */}
+      <ListChecks className="h-12 w-12 opacity-30" aria-hidden="true" />
+      <div className="space-y-1">
+        <h3 className="text-sm font-medium text-[hsl(var(--foreground))]">
+          {t('emptyState.noneYet.title')}
+        </h3>
+        <p className="text-xs text-[hsl(var(--muted-foreground))] max-w-sm leading-relaxed">
+          {t('emptyState.noneYet.subtitle')}
+        </p>
+      </div>
+      {(onCreateIssue || onAICreateIssue) && (
+        <div className="flex items-center gap-2 mt-1">
+          {onCreateIssue && (
+            <button
+              type="button"
+              onClick={onCreateIssue}
+              className={cn(
+                'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium',
+                'bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))]',
+                'hover:bg-[hsl(var(--primary)/0.9)] transition-colors',
+                'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--ring))]',
+              )}
+            >
+              <Plus className="w-3.5 h-3.5" aria-hidden="true" />
+              {t('emptyState.noneYet.createCta')}
+            </button>
+          )}
+          {onAICreateIssue && (
+            <button
+              type="button"
+              onClick={onAICreateIssue}
+              className={cn(
+                'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium',
+                'text-[hsl(var(--ai))] hover:bg-[hsl(var(--ai)/0.1)] transition-colors',
+                'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--ring))]',
+              )}
+            >
+              <Sparkles className="w-3.5 h-3.5" aria-hidden="true" />
+              {t('emptyState.noneYet.aiCta')}
+            </button>
+          )}
+        </div>
+      )}
     </div>
   )
 }

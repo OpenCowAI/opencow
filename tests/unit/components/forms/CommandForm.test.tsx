@@ -17,7 +17,9 @@ vi.mock('@monaco-editor/react', () => ({
   },
   loader: { config: vi.fn() }
 }))
-vi.mock('monaco-editor', () => ({}))
+vi.mock('monaco-editor', () => ({
+  editor: { defineTheme: vi.fn() },
+}))
 
 import { CommandForm } from '../../../../src/renderer/components/DetailPanel/forms/CommandForm'
 

@@ -3,30 +3,30 @@
 /**
  * scheduleActions — Cross-store schedule coordination.
  *
- * `selectSchedule` needs to update both the scheduleStore
- * (selectedScheduleId) and the appStore (detailContext, _tabDetails).
- * This coordinator is the ONLY place that "knows" both stores.
+ * Plain navigation lives on `useAppStore.navigateToSchedule`. This module
+ * adds the deselect variant (passing `null`) used by the inbox and search
+ * surfaces; the appStore action only handles "open a specific schedule"
+ * because that's the path that needs cross-project routing.
  *
- * Pure schedule CRUD operations live in scheduleStore — consumers
- * call those directly. Only cross-store coordination lives here.
+ * Pure schedule CRUD operations live in scheduleStore — call those
+ * directly. Only cross-store coordination lives here.
  */
 
 import { useScheduleStore } from '@/stores/scheduleStore'
 import { useAppStore } from '@/stores/appStore'
-import type { DetailContext } from '@shared/types'
 
 /**
- * Select a schedule and open its detail panel.
+ * Select a schedule (`id`), or clear the current selection (`null`).
  *
- * - Updates selectedScheduleId in scheduleStore
- * - Updates detailContext + _tabDetails.schedule in appStore
+ * Selecting routes the user to the schedule tab (in the owning project)
+ * and opens the inline detail view. Clearing closes the detail and drops
+ * `selectedScheduleId` from the schedule store.
  */
 export function selectSchedule(id: string | null): void {
-  useScheduleStore.getState().setSelectedScheduleId(id)
-
-  const ctx: DetailContext | null = id ? { type: 'schedule' as const, scheduleId: id } : null
-  useAppStore.setState((s) => ({
-    detailContext: ctx,
-    _tabDetails: { ...s._tabDetails, schedule: ctx },
-  }))
+  if (id) {
+    useAppStore.getState().navigateToSchedule(id)
+    return
+  }
+  useScheduleStore.getState().setSelectedScheduleId(null)
+  useAppStore.getState().closeDetail()
 }

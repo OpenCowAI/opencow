@@ -58,6 +58,7 @@ import { getAppAPI } from '@/windowAPI'
 // etc.) has been extracted to '@/actions/issueActions' — only navigation
 // side-effects remain as direct imports.
 import { useIssueStore } from './issueStore'
+import { useScheduleStore } from './scheduleStore'
 import { fireAndForget } from '@/lib/asyncUtils'
 
 // ─── Project Memory Key ──────────────────────────────────────────────
@@ -385,6 +386,17 @@ interface NavigationSlice {
   navigateToSession: (projectId: string, sessionId: string) => void
   navigateToChatSession: (projectId: string, sessionId: string) => void
   navigateToIssue: (projectId: string, issueId: string) => void
+  navigateToSchedule: (scheduleId: string) => void
+  navigateToStarred: () => void
+  navigateToChatHome: () => Promise<void>
+  /** User's home directory (`os.homedir()`), fetched once on app init.
+   *  Backs the sidebar "Chat" entry — both for the navigation target
+   *  (a project rooted at `$HOME`) and for highlighting the entry when
+   *  the active project IS that home project. */
+  homeDir: string | null
+  /** Idempotently resolve `homeDir`; safe to call from multiple mount
+   *  points without producing duplicate IPC traffic after the first run. */
+  ensureHomeDir: () => Promise<string>
   navigateToInbox: (selectedMessageId?: string | null) => void
   setMainTab: (tab: MainTab) => void
 }
@@ -397,9 +409,6 @@ interface UISlice {
   runtimeVersions: RuntimeVersions | null
   onboarding: OnboardingState
   showArchived: boolean
-  /** Left Sidebar expanded/collapsed — controls icon-only navigation mode. */
-  leftSidebarExpanded: boolean
-  setLeftSidebarExpanded: (expanded: boolean) => void
   sessionsViewMode: SessionsViewMode
   chatSubTab: ChatSubTab
   /** Active chat session ID for Agent Chat — persisted across tab switches. */
@@ -414,9 +423,6 @@ interface UISlice {
   _projectStates: Record<string, ProjectViewState>
   /** Per-project files display mode (auto-detected or user-overridden). */
   filesDisplayModeByProject: Record<string, FilesDisplayMode>
-  /** AgentSidebar expanded/collapsed — persisted across tab switches. */
-  agentSidebarExpanded: boolean
-  setAgentSidebarExpanded: (expanded: boolean) => void
   setSearchQuery: (query: string) => void
   setCommandPaletteOpen: (open: boolean) => void
   openAboutDialog: () => void
@@ -531,8 +537,17 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
   navigateToProject: (projectId) => {
     const prev = get()
+    const prevTab = prev.appView.mode === 'projects' ? prev.appView.tab : null
+    // Clicking the "Projects" sidebar entry while on a globally-scoped
+    // tab (`starred` / `schedule`) is a meaningful transition even
+    // though `projectId` already equals null — otherwise the no-op
+    // branch keeps the user stuck on the global view.
+    const isLeavingGlobalView =
+      projectId === null && (prevTab === 'starred' || prevTab === 'schedule')
     const isSameProject =
-      prev.appView.mode === 'projects' && prev.appView.projectId === projectId
+      !isLeavingGlobalView &&
+      prev.appView.mode === 'projects' &&
+      prev.appView.projectId === projectId
     // Determine cross-project transition BEFORE set() for issueStore side-effect
     const isCrossProject = !isSameProject
 
@@ -559,7 +574,16 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
       // For return visits, restore the saved tab.
       // For first-visit projects, use project preference when available.
-      const tab = hasSavedState ? target.lastTab : firstVisit.lastTab
+      let tab = hasSavedState ? target.lastTab : firstVisit.lastTab
+      // The "project list" pseudo-project (projectId === null) shares
+      // its slot in `_projectStates` with whatever was last shown there,
+      // which can be a global tab (Starred / Schedule). When the user
+      // explicitly navigates to the project list, snap the tab back to
+      // a list-compatible default so MainPanel renders the gallery
+      // instead of bouncing back into the global view.
+      if (projectId === null && (tab === 'starred' || tab === 'schedule')) {
+        tab = 'issues'
+      }
 
       // Use the target project's chatSubTab (not the current global one)
       // so that the detail slot resolves to the correct sub-tab context.
@@ -698,6 +722,122 @@ export const useAppStore = create<AppStore>((set, get) => ({
     fireAndForget(useIssueStore.getState().loadIssueDetail(issueId), 'navigateToIssue.loadIssueDetail')
   },
 
+  navigateToSchedule: (scheduleId) => {
+    // Schedule details render inline within ScheduleView (mirrors the
+    // issue pattern), so the user must land on the schedule tab — and
+    // on the schedule's owning project — before the inline view picks
+    // up `detailContext`. The schedule's `projectId` may be `null` for
+    // a global / unscoped schedule, in which case we use the All
+    // Projects scope.
+    const schedule = useScheduleStore.getState().schedules.find((sc) => sc.id === scheduleId)
+    const targetProjectId = schedule?.projectId ?? null
+
+    const prev = get()
+    const isCrossProject =
+      prev.appView.mode !== 'projects' || prev.appView.projectId !== targetProjectId
+
+    const ctx: DetailContext = { type: 'schedule', scheduleId }
+    set((s) => {
+      let projectSwitch: Partial<AppStore>
+      if (isCrossProject) {
+        const updatedStates = saveCurrentProjectState(s)
+        const target = getProjectState(updatedStates, targetProjectId)
+        projectSwitch = {
+          _projectStates: updatedStates,
+          ...projectStateToStore(target),
+          _tabDetails: { ...target.tabDetails, schedule: ctx },
+        }
+      } else {
+        projectSwitch = {
+          _tabDetails: { ...s._tabDetails, schedule: ctx },
+        }
+      }
+
+      return {
+        ...projectSwitch,
+        appView: { mode: 'projects', tab: 'schedule', projectId: targetProjectId },
+        detailContext: ctx,
+      }
+    })
+
+    onCrossProjectTransition(isCrossProject)
+    // Keep scheduleStore's selectedScheduleId in sync so consumers
+    // that watch it (e.g. the global-search dialog) stay aligned.
+    useScheduleStore.getState().setSelectedScheduleId(scheduleId)
+  },
+
+  navigateToStarred: () => {
+    // Starred is a globally-scoped view (`projectId: null`) — switching
+    // to it is just a project-list-level state change, no cross-project
+    // bookkeeping. Saving current project state mirrors the schedule
+    // carve-out so revisiting the prior project restores it cleanly.
+    const prev = get()
+    const wasInProject =
+      prev.appView.mode === 'projects' && prev.appView.projectId !== null
+    set((s) => ({
+      ...(wasInProject ? { _projectStates: saveCurrentProjectState(s) } : {}),
+      appView: { mode: 'projects', tab: 'starred', projectId: null },
+    }))
+    onCrossProjectTransition(wasInProject)
+  },
+
+  homeDir: null,
+
+  ensureHomeDir: async (): Promise<string> => {
+    const cached = get().homeDir
+    if (cached) return cached
+    const dir = await getAppAPI()['get-home-dir']()
+    set({ homeDir: dir })
+    return dir
+  },
+
+  navigateToChatHome: async () => {
+    // The sidebar "Chat" entry is a shortcut to a project rooted at the
+    // user's home directory. Look it up by path; create it if missing.
+    // The chat tab is forced because the entry's whole purpose is to
+    // land the user in chat — preserving the previous tab would defeat
+    // the affordance.
+    //
+    // Wrapped in try/catch so transient IPC failures (e.g. main process
+    // restart pending, store not ready) surface in DevTools instead of
+    // looking like "the button does nothing".
+    try {
+      const homeDir = await get().ensureHomeDir()
+      let project = get().projects.find((p) => p.path === homeDir) ?? null
+      if (!project) {
+        project = await getAppAPI()['create-project']({ path: homeDir })
+      }
+      const projectId = project.id
+
+      const prev = get()
+      const isCrossProject =
+        prev.appView.mode !== 'projects' || prev.appView.projectId !== projectId
+
+      set((s) => {
+        let projectSwitch: Partial<AppStore>
+        if (isCrossProject) {
+          const updatedStates = saveCurrentProjectState(s)
+          const target = getProjectState(updatedStates, projectId)
+          projectSwitch = {
+            _projectStates: updatedStates,
+            ...projectStateToStore(target),
+          }
+        } else {
+          projectSwitch = {}
+        }
+        return {
+          ...projectSwitch,
+          appView: { mode: 'projects', tab: 'chat', projectId },
+        }
+      })
+
+      onCrossProjectTransition(isCrossProject)
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('[navigateToChatHome] failed', err)
+    }
+  },
+
   navigateToInbox: (selectedMessageId = null) =>
     set((s) => ({
       _projectStates: saveCurrentProjectState(s),
@@ -745,16 +885,12 @@ export const useAppStore = create<AppStore>((set, get) => ({
   runtimeVersions: null,
   onboarding: { completed: false, hooksInstalled: false },
   showArchived: false,
-  leftSidebarExpanded: true,
-  setLeftSidebarExpanded: (expanded) => set({ leftSidebarExpanded: expanded }),
   sessionsViewMode: 'list',
   chatSubTab: 'conversation',
   agentChatSessionId: null,
   chatViewMode: 'default',
   _projectStates: {},
   filesDisplayModeByProject: {},
-  agentSidebarExpanded: false,
-  setAgentSidebarExpanded: (expanded) => set({ agentSidebarExpanded: expanded }),
   setSearchQuery: (query) => set({ searchQuery: query }),
   setCommandPaletteOpen: (open) => set({ commandPaletteOpen: open }),
   openAboutDialog: () => set({ aboutDialogOpen: true }),

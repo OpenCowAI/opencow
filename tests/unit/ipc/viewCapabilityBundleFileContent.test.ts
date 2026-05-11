@@ -171,11 +171,15 @@ describe('IPC capability:view-bundle-file-content', () => {
     expectFailure(result, 'access_denied', 'Access denied: path outside capability bundle')
   })
 
-  it('rejects symlink escape outside bundle root', async () => {
+  it('follows symlinks that point outside bundle root', async () => {
+    // Reads go through a lexical bound check only — symlinks pointing at
+    // sibling directories or vendored repos are intentionally followed, so
+    // bundle authors can link shared assets into a bundle and have them
+    // viewable. Writes remain protected via O_NOFOLLOW in the policy layer.
     const outsideDir = path.join(tempRoot, 'outside')
     await fs.mkdir(outsideDir, { recursive: true })
-    const outsideFile = path.join(outsideDir, 'secret.md')
-    await fs.writeFile(outsideFile, '# outside secret', 'utf-8')
+    const outsideFile = path.join(outsideDir, 'shared.md')
+    await fs.writeFile(outsideFile, '# shared bundle asset', 'utf-8')
     await fs.symlink(outsideFile, path.join(path.dirname(skillFilePath), 'linked.md'))
 
     const handler = registerAndGetBundleViewerHandler({
@@ -190,8 +194,13 @@ describe('IPC capability:view-bundle-file-content', () => {
         skillFilePath,
         relativePath: 'linked.md',
       },
-    })
-    expectFailure(result, 'access_denied', 'Access denied: path outside capability bundle')
+    }) as {
+      ok: true
+      data: { content: string }
+    }
+
+    expect(result.ok).toBe(true)
+    expect(result.data.content).toBe('# shared bundle asset')
   })
 
   it('rejects absolute relativePath input', async () => {

@@ -7,7 +7,6 @@ import { cn } from '@/lib/utils'
 import { useFilesQuickSearch, type FilesQuickSearchItem } from '@/hooks/useFilesQuickSearch'
 import { useFileStore } from '@/stores/fileStore'
 import { parseFileSearchQuery } from '@/lib/fileSearchQuery'
-import type { FilesDisplayMode } from '@shared/types'
 import { useModalAnimation } from '@/hooks/useModalAnimation'
 import {
   buildFileSearchNavigationCommand,
@@ -20,7 +19,6 @@ interface FileSearchOverlayProps {
   open: boolean
   projectId: string
   projectPath: string
-  currentMode: FilesDisplayMode
   openFiles: readonly { path: string; name: string }[]
   onClose: () => void
   onExecuteCommand: (command: FileSearchNavigationCommand) => void
@@ -50,7 +48,6 @@ export function FileSearchOverlay({
   open,
   projectId,
   projectPath,
-  currentMode,
   openFiles,
   onClose,
   onExecuteCommand,
@@ -109,7 +106,7 @@ export function FileSearchOverlay({
   if (!mounted) return null
 
   const activeItem = items[selectedIndex] ?? null
-  const actionLabels = resolveFileSearchActionLabels(activeItem, currentMode)
+  const actionLabels = resolveFileSearchActionLabels(activeItem)
 
   const closeAndReset = (): void => {
     onClose()
@@ -139,7 +136,6 @@ export function FileSearchOverlay({
           name: activeItem.name,
           isDirectory: activeItem.isDirectory,
         },
-        mode: currentMode,
         line: parsed.line,
       }),
     )

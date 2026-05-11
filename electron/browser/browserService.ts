@@ -1567,6 +1567,22 @@ export class BrowserService {
   }
 
   /**
+   * Detach every currently-attached managed view from any parent window.
+   *
+   * Used by the main process on renderer reload: when the React tree is wiped
+   * and rebuilt, any WebContentsView still attached to `mainWindow.contentView`
+   * would linger at its last bounds with no React host to control it. Views
+   * stay alive in `managedViews` so sessions / Issue bindings survive — the
+   * next `browser:ensure-source-view` call will re-attach the right one.
+   */
+  detachAllViews(): void {
+    const ids = Array.from(this.managedViews.keys())
+    if (ids.length === 0) return
+    for (const id of ids) this.detachView(id)
+    log.info(`detachAllViews: detached ${ids.length} view(s)`)
+  }
+
+  /**
    * Re-attach a previously detached view to a window.
    *
    * Bounds will be re-established by NativeViewport's ResizeObserver via

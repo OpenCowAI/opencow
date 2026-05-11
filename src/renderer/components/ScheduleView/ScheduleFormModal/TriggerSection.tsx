@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 
-import { useEffect, useState, useRef, useCallback } from 'react'
+import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Clock, Zap, ChevronDown, ChevronUp } from 'lucide-react'
+import { Clock } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { DateTimePicker } from '@/components/ui/DateTimePicker'
+import { TimePicker } from '@/components/ui/TimePicker'
 import {
   FREQ_PRESETS,
-  EVENT_TRIGGER_OPTIONS,
   WEEKDAY_LABEL_KEYS,
 } from './constants'
 import {
@@ -21,16 +21,12 @@ import type { FormAction, TimeFreqState } from './useScheduleForm'
 // ---------------------------------------------------------------------------
 
 interface TriggerSectionProps {
-  triggerMode: 'time' | 'event'
   timeTrigger: TimeFreqState
-  eventMatcherType: string
   dispatch: React.Dispatch<FormAction>
 }
 
 export function TriggerSection({
-  triggerMode,
   timeTrigger,
-  eventMatcherType,
   dispatch,
 }: TriggerSectionProps): React.JSX.Element {
   const { t } = useTranslation('schedule')
@@ -40,32 +36,7 @@ export function TriggerSection({
         {t('trigger.label')}
       </label>
 
-      {/* Mode toggle */}
-      <div className="flex gap-1 p-1 rounded-lg bg-[hsl(var(--muted)/0.4)] w-fit">
-        {(['time', 'event'] as const).map((mode) => (
-          <button
-            key={mode}
-            type="button"
-            onClick={() => dispatch({ type: 'SET_TRIGGER_MODE', payload: mode })}
-            className={cn(
-              'flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-md font-medium transition-colors',
-              triggerMode === mode
-                ? 'bg-[hsl(var(--background))] text-[hsl(var(--foreground))] shadow-sm'
-                : 'text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))]'
-            )}
-          >
-            {mode === 'time' ? <Clock className="h-3 w-3" /> : <Zap className="h-3 w-3" />}
-            {mode === 'time' ? t('trigger.timeBased') : t('trigger.eventBased')}
-          </button>
-        ))}
-      </div>
-
-      {triggerMode === 'time'  && (
-        <TimeTriggerConfig timeTrigger={timeTrigger} dispatch={dispatch} />
-      )}
-      {triggerMode === 'event' && (
-        <EventTriggerConfig matcherType={eventMatcherType} dispatch={dispatch} />
-      )}
+      <TimeTriggerConfig timeTrigger={timeTrigger} dispatch={dispatch} />
     </div>
   )
 }
@@ -173,11 +144,10 @@ function TimeTriggerConfig({
         timeTrigger.freqType === 'monthly') && (
         <div className="flex items-center gap-2">
           <span className="text-xs text-[hsl(var(--muted-foreground))]">{t('trigger.at')}</span>
-          <input
-            type="time"
+          <TimePicker
             value={timeTrigger.timeOfDay}
-            onChange={(e) => dispatch({ type: 'SET_TIME_OF_DAY', payload: e.target.value })}
-            className="px-2 py-1 text-xs rounded-md border border-[hsl(var(--border))] bg-transparent focus:outline-none focus:ring-1 focus:ring-[hsl(var(--ring))]"
+            onChange={(v) => dispatch({ type: 'SET_TIME_OF_DAY', payload: v })}
+            ariaLabel={t('trigger.at')}
           />
         </div>
       )}
@@ -240,92 +210,3 @@ function TimeTriggerConfig({
   )
 }
 
-// ---------------------------------------------------------------------------
-// EventTriggerConfig — custom dropdown replacing native <select> (P1)
-// ---------------------------------------------------------------------------
-
-const EVENT_DROPDOWN_ANIM_MS = 100
-
-function EventTriggerConfig({
-  matcherType,
-  dispatch,
-}: {
-  matcherType: string
-  dispatch: React.Dispatch<FormAction>
-}): React.JSX.Element {
-  const { t } = useTranslation('schedule')
-  const [open, setOpen]           = useState(false)
-  const [isClosing, setIsClosing] = useState(false)
-  const closeTimer                = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const selected = EVENT_TRIGGER_OPTIONS.find((o) => o.value === matcherType) ?? EVENT_TRIGGER_OPTIONS[0]!
-
-  const closeDropdown = useCallback((): void => {
-    if (closeTimer.current) clearTimeout(closeTimer.current)
-    setIsClosing(true)
-    closeTimer.current = setTimeout(() => {
-      setOpen(false)
-      setIsClosing(false)
-    }, EVENT_DROPDOWN_ANIM_MS)
-  }, [])
-
-  const handleToggle = (): void => {
-    if (open || isClosing) {
-      closeDropdown()
-    } else {
-      setOpen(true)
-    }
-  }
-
-  return (
-    <div className="rounded-xl border border-[hsl(var(--border)/0.6)] bg-[hsl(var(--muted)/0.12)] p-3 space-y-2">
-      <label className="block text-[11px] font-medium text-[hsl(var(--muted-foreground))]">
-        {t('trigger.eventType')}
-      </label>
-
-      <div className="relative">
-        <button
-          type="button"
-          onClick={handleToggle}
-          className="w-full flex items-center justify-between px-3 py-1.5 text-xs rounded-md border border-[hsl(var(--border))] bg-[hsl(var(--background))] hover:border-[hsl(var(--border)/0.8)] focus:outline-none focus:ring-1 focus:ring-[hsl(var(--ring))] transition-colors"
-        >
-          <span>{t(selected.labelKey)}</span>
-          {open && !isClosing
-            ? <ChevronUp   className="h-3.5 w-3.5 text-[hsl(var(--muted-foreground))]" />
-            : <ChevronDown className="h-3.5 w-3.5 text-[hsl(var(--muted-foreground))]" />
-          }
-        </button>
-
-        {/* Stays mounted during isClosing so exit animation can play */}
-        {(open || isClosing) && (
-          <>
-            {/* Click-away overlay */}
-            <div className="fixed inset-0 z-10" onClick={closeDropdown} aria-hidden="true" />
-            <div className={cn(
-              'absolute z-20 top-full mt-1 w-full rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--popover))] shadow-lg py-1 overflow-hidden',
-              isClosing ? 'dropdown-exit' : 'dropdown-enter',
-            )}>
-              {EVENT_TRIGGER_OPTIONS.map((opt) => (
-                <button
-                  key={opt.value}
-                  type="button"
-                  onClick={() => {
-                    dispatch({ type: 'SET_EVENT_MATCHER', payload: opt.value })
-                    closeDropdown()
-                  }}
-                  className={cn(
-                    'w-full text-left px-3 py-2 text-xs transition-colors',
-                    opt.value === matcherType
-                      ? 'bg-[hsl(var(--primary)/0.08)] text-[hsl(var(--foreground))] font-medium'
-                      : 'text-[hsl(var(--foreground))] hover:bg-[hsl(var(--foreground)/0.04)]'
-                  )}
-                >
-                  {t(opt.labelKey)}
-                </button>
-              ))}
-            </div>
-          </>
-        )}
-      </div>
-    </div>
-  )
-}

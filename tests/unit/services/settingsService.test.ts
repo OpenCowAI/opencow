@@ -22,7 +22,7 @@ afterEach(async () => {
 describe('SettingsService', () => {
   it('returns default settings when file does not exist', async () => {
     const settings = await service.load()
-    expect(settings.theme).toEqual({ mode: 'system', scheme: 'zinc', texture: 'plain' })
+    expect(settings.theme).toEqual({ mode: 'system' })
     expect(settings.proxy.httpsProxy).toBe('')
     expect(settings.proxy.httpProxy).toBe('')
     expect(settings.proxy.noProxy).toBe('')
@@ -54,16 +54,16 @@ describe('SettingsService', () => {
 
   it('saves and loads settings', async () => {
     const settings = await service.load()
-    settings.theme = { mode: 'dark', scheme: 'blue', texture: 'plain' }
+    settings.theme = { mode: 'dark' }
     settings.proxy.httpsProxy = 'http://127.0.0.1:7890'
     const updated = await service.update(settings)
-    expect(updated.theme).toEqual({ mode: 'dark', scheme: 'blue', texture: 'plain' })
+    expect(updated.theme).toEqual({ mode: 'dark' })
     expect(updated.proxy.httpsProxy).toBe('http://127.0.0.1:7890')
 
     // Reload from disk
     const fresh = new SettingsService(join(tempDir, 'settings.json'))
     const reloaded = await fresh.load()
-    expect(reloaded.theme).toEqual({ mode: 'dark', scheme: 'blue', texture: 'plain' })
+    expect(reloaded.theme).toEqual({ mode: 'dark' })
     expect(reloaded.proxy.httpsProxy).toBe('http://127.0.0.1:7890')
   })
 
@@ -82,7 +82,6 @@ describe('SettingsService', () => {
     const parsed = JSON.parse(raw)
     expect(parsed).toHaveProperty('theme')
     expect(parsed.theme).toHaveProperty('mode')
-    expect(parsed.theme).toHaveProperty('scheme')
     expect(parsed).toHaveProperty('proxy')
     expect(parsed).toHaveProperty('command')
     expect(parsed).toHaveProperty('eventSubscriptions')
@@ -180,7 +179,7 @@ describe('SettingsService', () => {
   it('handles corrupted JSON gracefully', async () => {
     await writeFile(join(tempDir, 'settings.json'), '{ broken json', 'utf-8')
     const settings = await service.load()
-    expect(settings.theme).toEqual({ mode: 'system', scheme: 'zinc', texture: 'plain' })
+    expect(settings.theme).toEqual({ mode: 'system' })
   })
 
   // --- Theme migration tests ---
@@ -192,7 +191,7 @@ describe('SettingsService', () => {
       'utf-8'
     )
     const settings = await service.load()
-    expect(settings.theme).toEqual({ mode: 'dark', scheme: 'zinc', texture: 'plain' })
+    expect(settings.theme).toEqual({ mode: 'dark' })
   })
 
   it('migrates legacy "light" string theme format', async () => {
@@ -202,7 +201,7 @@ describe('SettingsService', () => {
       'utf-8'
     )
     const settings = await service.load()
-    expect(settings.theme).toEqual({ mode: 'light', scheme: 'zinc', texture: 'plain' })
+    expect(settings.theme).toEqual({ mode: 'light' })
   })
 
   it('falls back to defaults for invalid theme values', async () => {
@@ -212,7 +211,7 @@ describe('SettingsService', () => {
       'utf-8'
     )
     const settings = await service.load()
-    expect(settings.theme).toEqual({ mode: 'system', scheme: 'zinc', texture: 'plain' })
+    expect(settings.theme).toEqual({ mode: 'system' })
   })
 
   it('preserves valid new-format theme config', async () => {
@@ -222,7 +221,7 @@ describe('SettingsService', () => {
       'utf-8'
     )
     const settings = await service.load()
-    expect(settings.theme).toEqual({ mode: 'dark', scheme: 'violet', texture: 'plain' })
+    expect(settings.theme).toEqual({ mode: 'dark' })
   })
 
   // --- Messaging connection config tests ---

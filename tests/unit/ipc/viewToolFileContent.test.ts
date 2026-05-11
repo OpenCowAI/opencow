@@ -179,13 +179,17 @@ describe('IPC view-tool-file-content', () => {
     expectFailure(result, 'access_denied', 'Access denied: path outside session workspace')
   })
 
-  it('rejects symlink escape outside the session workspace', async () => {
+  it('follows symlinks that point outside the session workspace', async () => {
+    // Reads go through a lexical bound check only — symlinks pointing at
+    // sibling directories or vendored repos are intentionally followed, so
+    // users can link such locations into a workspace and read them like any
+    // other file. Writes remain protected via O_NOFOLLOW in the policy layer.
     const workspace = path.join(tempRoot, 'workspace')
     const outsideDir = path.join(tempRoot, 'outside')
     await fs.mkdir(workspace, { recursive: true })
     await fs.mkdir(outsideDir, { recursive: true })
-    const outsideFile = path.join(outsideDir, 'secret.md')
-    await fs.writeFile(outsideFile, '# secret', 'utf-8')
+    const outsideFile = path.join(outsideDir, 'linked.md')
+    await fs.writeFile(outsideFile, '# linked content', 'utf-8')
     await fs.symlink(outsideFile, path.join(workspace, 'link.md'))
 
     const handler = registerAndGetViewToolHandler({
@@ -197,8 +201,13 @@ describe('IPC view-tool-file-content', () => {
       } as unknown as IPCDeps['orchestrator'],
     })
 
-    const result = await handler({}, { sessionId: 'sess-1', filePath: 'link.md' })
-    expectFailure(result, 'access_denied', 'Access denied: path outside session workspace')
+    const result = await handler({}, { sessionId: 'sess-1', filePath: 'link.md' }) as {
+      ok: true
+      data: { content: string }
+    }
+
+    expect(result.ok).toBe(true)
+    expect(result.data.content).toBe('# linked content')
   })
 
   it('rejects directory targets', async () => {

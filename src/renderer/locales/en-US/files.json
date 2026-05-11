@@ -6,6 +6,7 @@
     "emptyStateHint": "Tip: click any file in the left tree to open it here.",
     "modified": "Modified",
     "openFilesAria": "Open files",
+    "closeEditorPreview": "Close editor preview",
     "unsavedChanges": "Unsaved changes",
     "previewModeAria": "Editor preview mode",
     "markdownContents": "Contents",
@@ -40,7 +41,9 @@
     "unableToRead": "Unable to read file"
   },
   "tree": {
-    "aria": "File tree"
+    "aria": "File tree",
+    "symlinkLabel": "Symbolic link",
+    "symlinkTitle": "Symbolic link"
   },
   "view": {
     "modeSwitchAria": "Files view mode",

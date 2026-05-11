@@ -70,22 +70,35 @@ export function InboxMessageList({
 
   return (
     <div className="h-full flex flex-col" role="listbox" aria-label="Inbox messages">
-      {/* Header */}
-      <div className="drag-region border-b border-[hsl(var(--border))] px-4 py-2 flex items-center">
-        <h1 className="text-sm font-semibold no-drag">{t('title')}</h1>
-        {unreadCount > 0 && (
-          <button
-            onClick={() => markAllInboxRead()}
-            className="no-drag ml-auto flex items-center gap-1.5 px-2.5 py-1 text-xs rounded-md text-[hsl(var(--muted-foreground))] hover:bg-[hsl(var(--muted))] hover:text-[hsl(var(--foreground))] transition-colors"
-            aria-label={t('markAllReadAria')}
-          >
-            <CheckCheck className="h-3.5 w-3.5" aria-hidden="true" />
-            {t('markAllRead')}
-          </button>
-        )}
+      {/* Page header — mirrors ProjectsListView / StarredArtifactsView
+          (drag-region + title + count + optional action row). No bottom
+          border; visual separation comes from padding alone. */}
+      <div className="shrink-0">
+        <div className="drag-region flex items-start justify-between gap-4 px-5 pt-3 pb-3">
+          <div className="flex min-w-0 flex-col gap-1">
+            <div className="flex items-baseline gap-2.5">
+              <h1 className="text-base font-semibold tracking-tight text-[hsl(var(--foreground))]">
+                {t('title')}
+              </h1>
+              <span className="text-xs text-[hsl(var(--muted-foreground))] tabular-nums">
+                {filteredMessages.length}
+              </span>
+            </div>
+          </div>
+          {unreadCount > 0 && (
+            <button
+              onClick={() => markAllInboxRead()}
+              className="no-drag flex shrink-0 items-center gap-1.5 px-2.5 py-1 text-xs rounded-md text-[hsl(var(--muted-foreground))] hover:bg-[hsl(var(--foreground)/0.04)] hover:text-[hsl(var(--foreground))] transition-colors"
+              aria-label={t('markAllReadAria')}
+            >
+              <CheckCheck className="h-3.5 w-3.5" aria-hidden="true" />
+              {t('markAllRead')}
+            </button>
+          )}
+        </div>
       </div>
       <InboxSearchBar />
-      <div className="flex-1 overflow-y-auto">
+      <div className="flex-1 overflow-y-auto px-2 py-1">
         {filteredMessages.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full text-[hsl(var(--muted-foreground))] px-4 py-8">
             <Inbox className="h-8 w-8 mb-2 opacity-50" aria-hidden="true" />
@@ -94,7 +107,7 @@ export function InboxMessageList({
             </p>
           </div>
         ) : (
-          <div className="divide-y divide-[hsl(var(--border))]">
+          <div className="space-y-0.5">
             {filteredMessages.map((msg) => (
               <InboxMessageItem
                 key={msg.id}

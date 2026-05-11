@@ -3,26 +3,14 @@
 import { useTranslation } from 'react-i18next'
 import { useSettingsStore } from '@/stores/settingsStore'
 import { cn } from '@/lib/utils'
-import type { ThemeMode, ThemeScheme, ThemeTexture } from '@shared/types'
-import { THEME_SCHEMES, THEME_TEXTURES, type ThemeSchemeInfo, type ThemeTextureInfo } from '@shared/themeRegistry'
+import type { ThemeMode } from '@shared/types'
 import { LanguageSelector } from './LanguageSelector'
 
-// ---------------------------------------------------------------------------
-// Constants
-// ---------------------------------------------------------------------------
-
-const MODE_OPTIONS: { value: ThemeMode; labelKey: string; descKey: string }[] = [
-  { value: 'system', labelKey: 'general.modes.system', descKey: 'general.modes.systemDesc' },
-  { value: 'light', labelKey: 'general.modes.light', descKey: 'general.modes.lightDesc' },
-  { value: 'dark', labelKey: 'general.modes.dark', descKey: 'general.modes.darkDesc' },
+const MODE_OPTIONS: { value: ThemeMode; labelKey: string }[] = [
+  { value: 'system', labelKey: 'general.modes.system' },
+  { value: 'light', labelKey: 'general.modes.light' },
+  { value: 'dark', labelKey: 'general.modes.dark' },
 ]
-
-const neutralSchemes = THEME_SCHEMES.filter((s) => s.group === 'neutral')
-const accentSchemes = THEME_SCHEMES.filter((s) => s.group === 'accent')
-
-// ---------------------------------------------------------------------------
-// GeneralSection
-// ---------------------------------------------------------------------------
 
 export function GeneralSection(): React.JSX.Element {
   const { t } = useTranslation('settings')
@@ -35,165 +23,140 @@ export function GeneralSection(): React.JSX.Element {
     updateSettings({ ...settings, theme: { ...themeConfig, mode } })
   }
 
-  const handleSchemeChange = (scheme: ThemeScheme): void => {
-    updateSettings({ ...settings, theme: { ...themeConfig, scheme } })
-  }
-
-  const handleTextureChange = (texture: ThemeTexture): void => {
-    updateSettings({ ...settings, theme: { ...themeConfig, texture } })
-  }
-
   return (
     <div className="space-y-6">
-      {/* Mode selector */}
       <div>
         <h3 className="text-sm font-medium mb-3">{t('general.appearance')}</h3>
-        <div className="grid grid-cols-3 gap-2">
-          {MODE_OPTIONS.map((opt) => (
-            <button
-              key={opt.value}
-              onClick={() => handleModeChange(opt.value)}
-              className={cn(
-                'flex flex-col items-center gap-1 rounded-lg border p-3 text-sm transition-colors',
-                themeConfig.mode === opt.value
-                  ? 'border-[hsl(var(--ring))] bg-[hsl(var(--primary)/0.08)]'
-                  : 'border-[hsl(var(--border))] hover:border-[hsl(var(--ring)/0.5)]'
-              )}
-              aria-pressed={themeConfig.mode === opt.value}
-            >
-              <span className="font-medium">{t(opt.labelKey)}</span>
-              <span className="text-[10px] text-[hsl(var(--muted-foreground))]">
-                {t(opt.descKey)}
-              </span>
-            </button>
-          ))}
+        <div className="flex items-start gap-4">
+          {MODE_OPTIONS.map((opt) => {
+            const isActive = themeConfig.mode === opt.value
+            return (
+              <button
+                key={opt.value}
+                type="button"
+                onClick={() => handleModeChange(opt.value)}
+                className="group flex flex-col items-center gap-2 focus:outline-none"
+                aria-pressed={isActive}
+                aria-label={t(opt.labelKey)}
+              >
+                <span
+                  className={cn(
+                    'rounded-xl p-0.5 transition-all',
+                    isActive
+                      // Solid dark ring for the active card — matches the
+                      // prototype's "selected" affordance.
+                      ? 'ring-2 ring-[hsl(var(--foreground))]'
+                      : 'ring-1 ring-[hsl(var(--border))] group-hover:ring-[hsl(var(--ring)/0.4)]',
+                  )}
+                >
+                  <ThemeModeMockup mode={opt.value} />
+                </span>
+                <span
+                  className={cn(
+                    'text-xs transition-colors',
+                    isActive
+                      ? 'font-semibold text-[hsl(var(--foreground))]'
+                      : 'text-[hsl(var(--muted-foreground))]',
+                  )}
+                >
+                  {t(opt.labelKey)}
+                </span>
+              </button>
+            )
+          })}
         </div>
       </div>
 
-      {/* Language selector */}
       <LanguageSelector />
-
-      {/* Scheme selector */}
-      <div>
-        <h3 className="text-sm font-medium mb-3">{t('general.colorScheme')}</h3>
-
-        <p className="text-xs text-[hsl(var(--muted-foreground))] mb-2">{t('general.neutral')}</p>
-        <div className="flex gap-2 mb-3">
-          {neutralSchemes.map((scheme) => (
-            <SchemeButton
-              key={scheme.id}
-              scheme={scheme}
-              isActive={themeConfig.scheme === scheme.id}
-              onClick={() => handleSchemeChange(scheme.id)}
-            />
-          ))}
-        </div>
-
-        <p className="text-xs text-[hsl(var(--muted-foreground))] mb-2">{t('general.accent')}</p>
-        <div className="flex gap-2">
-          {accentSchemes.map((scheme) => (
-            <SchemeButton
-              key={scheme.id}
-              scheme={scheme}
-              isActive={themeConfig.scheme === scheme.id}
-              onClick={() => handleSchemeChange(scheme.id)}
-            />
-          ))}
-        </div>
-      </div>
-
-      {/* Texture selector */}
-      <div>
-        <h3 className="text-sm font-medium mb-3">{t('general.surfaceTexture')}</h3>
-        <div className="grid grid-cols-2 gap-3">
-          {THEME_TEXTURES.map((texture) => (
-            <TextureButton
-              key={texture.id}
-              texture={texture}
-              isActive={themeConfig.texture === texture.id}
-              onClick={() => handleTextureChange(texture.id)}
-            />
-          ))}
-        </div>
-      </div>
     </div>
   )
 }
 
 // ---------------------------------------------------------------------------
-// TextureButton
+// ThemeModeMockup — mini app-window preview for the mode picker.
+//
+// Each card shows a credible miniature of the app (sidebar with nav items +
+// content lines) using palette-appropriate colors. The "system" card renders
+// a single window split vertically with the left half in the light palette
+// and the right half in the dark palette — communicating "follows OS theme"
+// at a glance.
+//
+// Colors are hardcoded hex rather than CSS vars so the preview reads
+// the *target* palette, not the currently-active one (a dark-mode user
+// previewing the light option should still see the light tones).
 // ---------------------------------------------------------------------------
 
-function TextureButton({
-  texture,
-  isActive,
-  onClick,
-}: {
-  texture: ThemeTextureInfo
-  isActive: boolean
-  onClick: () => void
-}): React.JSX.Element {
-  return (
-    <button
-      onClick={onClick}
-      className={cn(
-        'flex items-center gap-3 rounded-lg border p-3 text-left transition-colors',
-        isActive
-          ? 'border-[hsl(var(--ring))] bg-[hsl(var(--primary)/0.08)]'
-          : 'border-[hsl(var(--border))] hover:border-[hsl(var(--ring)/0.5)]'
-      )}
-      aria-pressed={isActive}
-      title={texture.description}
-    >
-      {/* Mini swatch preview */}
-      <span
-        className={cn(
-          'h-8 w-8 shrink-0 rounded-md border border-[hsl(var(--border))]',
-          texture.previewClass,
-        )}
+const MOCKUP_W = 130
+const MOCKUP_H = 80
+
+function ThemeModeMockup({ mode }: { mode: ThemeMode }): React.JSX.Element {
+  if (mode === 'system') {
+    return (
+      <div
+        className="relative overflow-hidden rounded-md"
+        style={{ width: MOCKUP_W, height: MOCKUP_H }}
         aria-hidden="true"
-      />
-      <span className="flex flex-col gap-0.5 min-w-0">
-        <span className="text-sm font-medium">{texture.label}</span>
-        <span className="text-[10px] text-[hsl(var(--muted-foreground))] leading-tight">
-          {texture.description}
-        </span>
-      </span>
-    </button>
+      >
+        {/* Left half — light palette, anchored to the left so the sidebar
+            stays visible. */}
+        <div className="absolute inset-y-0 left-0 w-1/2 overflow-hidden">
+          <div
+            className="absolute top-0 left-0"
+            style={{ width: MOCKUP_W, height: MOCKUP_H }}
+          >
+            <MockupPanel palette="light" />
+          </div>
+        </div>
+        {/* Right half — dark palette, anchored to the right so the content
+            lines line up against the right edge. */}
+        <div className="absolute inset-y-0 right-0 w-1/2 overflow-hidden">
+          <div
+            className="absolute top-0 right-0"
+            style={{ width: MOCKUP_W, height: MOCKUP_H }}
+          >
+            <MockupPanel palette="dark" />
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div
+      className="relative overflow-hidden rounded-md"
+      style={{ width: MOCKUP_W, height: MOCKUP_H }}
+      aria-hidden="true"
+    >
+      <MockupPanel palette={mode === 'dark' ? 'dark' : 'light'} />
+    </div>
   )
 }
 
-// ---------------------------------------------------------------------------
-// SchemeButton
-// ---------------------------------------------------------------------------
+function MockupPanel({ palette }: { palette: 'light' | 'dark' }): React.JSX.Element {
+  const c =
+    palette === 'light'
+      ? { canvas: '#FEFDFB', sidebar: '#EFE9DC', accent: '#C8BFA8' }
+      : { canvas: '#28231F', sidebar: '#1F1C19', accent: '#4A4239' }
 
-function SchemeButton({
-  scheme,
-  isActive,
-  onClick,
-}: {
-  scheme: ThemeSchemeInfo
-  isActive: boolean
-  onClick: () => void
-}): React.JSX.Element {
   return (
-    <button
-      onClick={onClick}
-      className={cn(
-        'flex flex-col items-center gap-1.5 rounded-lg border p-2 text-xs transition-colors min-w-[52px]',
-        isActive
-          ? 'border-[hsl(var(--ring))] bg-[hsl(var(--primary)/0.08)]'
-          : 'border-[hsl(var(--border))] hover:border-[hsl(var(--ring)/0.5)]'
-      )}
-      aria-pressed={isActive}
-      title={scheme.label}
+    <div
+      className="relative h-full w-full"
+      style={{ background: c.canvas }}
     >
-      <span
-        className="h-5 w-5 rounded-full border border-[hsl(var(--border))]"
-        style={{ backgroundColor: `hsl(${scheme.swatch})` }}
-        aria-hidden="true"
-      />
-      <span className="font-medium">{scheme.label}</span>
-    </button>
+      {/* Sidebar strip — 3 stacked nav rows. */}
+      <div
+        className="absolute top-0 left-0 bottom-0 flex flex-col gap-[3px] pt-2.5 pl-2"
+        style={{ width: 32, background: c.sidebar }}
+      >
+        <span style={{ height: 2, width: 16, borderRadius: 1, background: c.accent }} />
+        <span style={{ height: 2, width: 16, borderRadius: 1, background: c.accent }} />
+        <span style={{ height: 2, width: 16, borderRadius: 1, background: c.accent }} />
+      </div>
+      {/* Content lines, right-aligned along the bottom. */}
+      <div className="absolute right-2.5 bottom-3 flex flex-col items-end gap-1.5">
+        <span style={{ height: 3, width: 58, borderRadius: 1.5, background: c.accent }} />
+        <span style={{ height: 3, width: 34, borderRadius: 1.5, background: c.accent }} />
+      </div>
+    </div>
   )
 }

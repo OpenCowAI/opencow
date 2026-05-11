@@ -73,7 +73,9 @@ export function ConfirmDialog({
   if (!mounted) return null
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center overscroll-contain no-drag">
+    // `z-[180]` matches `<Dialog>` so confirm dialogs sit above the
+    // `DetailPreviewOverlay` (`z-[150]`) when invoked from inside it.
+    <div className="fixed inset-0 z-[180] flex items-center justify-center overscroll-contain no-drag">
       <div
         className={cn(
           'absolute inset-0 bg-black/50 surface-backdrop-isolate',

@@ -208,7 +208,7 @@ export function CapabilityDetailView({
   if (!liveEntry) {
     return (
       <aside
-        className="h-full flex flex-col bg-[hsl(var(--card))] items-center justify-center"
+        className="h-full flex flex-col items-center justify-center"
         aria-label={`${config?.titleKey ?? identifier.category} detail: ${identifier.name}`}
       >
         <p className="text-sm text-[hsl(var(--muted-foreground))]">Loading...</p>
@@ -218,7 +218,7 @@ export function CapabilityDetailView({
 
   return (
     <aside
-      className="h-full flex flex-col bg-[hsl(var(--card))]"
+      className="h-full flex flex-col"
       aria-label={`${config?.titleKey ?? identifier.category} detail: ${identifier.name}`}
     >
       {/* Header */}

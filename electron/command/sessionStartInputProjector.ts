@@ -114,6 +114,12 @@ const startSessionPolicySchema = z.object({
 const startSessionInputSchema = z.object({
   prompt: userMessageContentSchema,
   origin: sessionOriginSchema.optional(),
+  // `custom-path` is accepted here because the chat folder picker hands
+  // the user a native directory dialog — the resulting cwd is then
+  // re-validated by SessionWorkspaceResolver (absolute / exists /
+  // isDirectory) before any session starts.  We deliberately keep this
+  // scope out of `UserConfigurableWorkspaceInput` so it still cannot
+  // appear in free-text settings fields.
   workspace: z.discriminatedUnion('scope', [
     z.object({
       scope: z.literal('project'),
@@ -121,6 +127,10 @@ const startSessionInputSchema = z.object({
     }).strict(),
     z.object({
       scope: z.literal('global'),
+    }).strict(),
+    z.object({
+      scope: z.literal('custom-path'),
+      cwd: z.string().min(1),
     }).strict(),
   ]).optional(),
   model: z.string().optional(),

@@ -2,25 +2,21 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Group, Panel, Separator } from 'react-resizable-panels'
+import { Group, Panel, usePanelRef } from 'react-resizable-panels'
+import { Search } from 'lucide-react'
+import { cn } from '@/lib/utils'
 import { useAppStore, selectProjectId } from '@/stores/appStore'
 import { useFileSync } from '@/hooks/useFileSync'
 import { useGitStatus } from '@/hooks/useGitStatus'
 import { useFileStore } from '@/stores/fileStore'
 import { useProjectFileOperations } from '@/hooks/useProjectFileOperations'
+import { getAppAPI } from '@/windowAPI'
 import { FileTree } from './FileTree'
 import { EditorTabs } from './EditorTabs'
 import { EditorPane } from './EditorPane'
 import { EditorStatusBar } from './EditorStatusBar'
-import { FileBrowser } from './FileBrowser'
-import { Code2, FolderOpen, Search } from 'lucide-react'
-import { cn } from '@/lib/utils'
-import { inferDisplayModeFromFiles } from '@shared/projectTypeDetection'
-import type { FilesDisplayMode } from '@shared/types'
-import { getAppAPI } from '@/windowAPI'
 import { FileSearchOverlay } from './FileSearchOverlay'
 import { createFileSearchNavigationExecutor } from '@/lib/fileSearchNavigation'
-import { normalizeProjectPreferences } from '@shared/projectPreferences'
 import { isInsideEditor } from '@/lib/domUtils'
 
 const EMPTY_OPEN_FILES: ReadonlyArray<{ path: string; name: string }> = []
@@ -38,120 +34,105 @@ interface FilesViewLayoutConfig {
 
 interface FilesViewCoreProps {
   project: FilesViewProjectContext
-  projectPreferencesSource?: {
-    defaultFilesDisplayMode: import('@shared/types').ProjectPreferences['defaultFilesDisplayMode'] | null
-  } | null
   layout?: FilesViewLayoutConfig
 }
 
-// === Mode Toggle Button ===
+// === IDE Layout (tree + editor) ===
+//
+// Tree is **locked** at TREE_W (240px) via min=max constraints.
+//
+// Why px and why locked:
+//
+// react-resizable-panels stores all sizes internally as percentages of the
+// containing Group element. When the parent (outer Files panel) animates,
+// the inner Group element resizes too — and the library has a ResizeObserver
+// on the Group that re-derives the panel constraints (px → %) against the
+// new groupSize on every frame. With `minSize === maxSize === '240px'`,
+// each frame the library re-clamps the tree's stored % to `240/groupSize`,
+// which means tree's *absolute* width stays at exactly 240px throughout the
+// outer's animation. The editor naturally takes `groupSize - 240` and
+// animates smoothly from 0 → ~520px.
+//
+// The bow we previously had (256 → 340 → 253 mid-transition) came from two
+// linear flex-grow animations multiplying. With tree pinned, only the
+// editor's flex-grow animates → no multiplication → no bow.
+//
+// Trade-off: the tree column can't be drag-resized (the library would
+// re-clamp any drag back to 240px). Matches the VSCode convention of a
+// fixed default-width Explorer column. The inner splitter is removed.
 
-function ModeToggle({
-  mode,
-  onChange
-}: {
-  mode: FilesDisplayMode
-  onChange: (mode: FilesDisplayMode) => void
-}): React.JSX.Element {
-  const { t } = useTranslation('files')
-  return (
-    <div
-      className="inline-flex items-center gap-0.5 rounded-lg bg-[hsl(var(--background))] p-0.5"
-      role="radiogroup"
-      aria-label={t('view.modeSwitchAria')}
-    >
-      <button
-        type="button"
-        onClick={() => onChange('ide')}
-        role="radio"
-        aria-checked={mode === 'ide'}
-        title={t('view.editorTab')}
-        className={cn(
-          'inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors',
-          'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--ring))]',
-          mode === 'ide'
-            ? 'bg-[hsl(var(--background))] text-[hsl(var(--foreground))] shadow-sm'
-            : 'text-[hsl(var(--muted-foreground))] hover:bg-[hsl(var(--foreground)/0.04)] hover:text-[hsl(var(--foreground))]'
-        )}
-        aria-label={t('view.editorMode')}
-      >
-        <Code2 className="h-3.5 w-3.5" />
-        <span>{t('view.editorTab')}</span>
-      </button>
-      <button
-        type="button"
-        onClick={() => onChange('browser')}
-        role="radio"
-        aria-checked={mode === 'browser'}
-        title={t('view.browserTab')}
-        className={cn(
-          'inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors',
-          'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--ring))]',
-          mode === 'browser'
-            ? 'bg-[hsl(var(--background))] text-[hsl(var(--foreground))] shadow-sm'
-            : 'text-[hsl(var(--muted-foreground))] hover:bg-[hsl(var(--foreground)/0.04)] hover:text-[hsl(var(--foreground))]'
-        )}
-        aria-label={t('view.browserMode')}
-      >
-        <FolderOpen className="h-3.5 w-3.5" />
-        <span>{t('view.browserTab')}</span>
-      </button>
-    </div>
-  )
-}
+const TREE_W = '240px' as const
 
-// === IDE Mode (existing layout) ===
-
-function EditorResizeHandle(): React.JSX.Element {
-  return (
-    <Separator
-      className="w-px bg-[hsl(var(--border)/0.5)] relative data-[state=drag]:bg-[hsl(var(--ring))] hover:bg-[hsl(var(--ring)/0.5)] transition-colors"
-    >
-      <div className="absolute inset-y-0 -left-1 -right-1" />
-    </Separator>
-  )
-}
-
-function IDEMode({
-  projectPath,
-  projectName,
-  projectId,
-  modeToggleSafeInset,
-  onOpenSearch,
-}: {
+interface IDELayoutProps {
   projectPath: string
   projectName: string
   projectId: string
-  modeToggleSafeInset: number
-  onOpenSearch: () => void
-}): React.JSX.Element {
+  /** When `false` the editor panel collapses to width 0. */
+  hasOpenFiles: boolean
+}
+
+function IDELayout({
+  projectPath,
+  projectName,
+  projectId,
+  hasOpenFiles,
+}: IDELayoutProps): React.JSX.Element {
+  const editorPanelRef = usePanelRef()
+
+  // Editor is the only panel that needs explicit driving: collapse to 0%
+  // when no files, restore on file open. Tree is locked via min/max so the
+  // library re-clamps it automatically as the outer Group animates.
+  useEffect(() => {
+    const panel = editorPanelRef.current
+    if (!panel) return
+    panel.resize(hasOpenFiles ? '100%' : '0%')
+  }, [hasOpenFiles, editorPanelRef])
+
+  // Enable layout animation only after first paint to avoid the editor
+  // briefly appearing then collapsing on initial mount.
+  const [layoutAnimated, setLayoutAnimated] = useState(false)
+  useEffect(() => {
+    let id2 = 0
+    const id1 = requestAnimationFrame(() => {
+      id2 = requestAnimationFrame(() => setLayoutAnimated(true))
+    })
+    return () => {
+      cancelAnimationFrame(id1)
+      cancelAnimationFrame(id2)
+    }
+  }, [])
+
   return (
     <Group
       id="files-editor-layout"
       orientation="horizontal"
-      className="flex-1 min-h-0"
+      className={cn('flex-1 min-h-0', layoutAnimated && 'layout-animated')}
     >
-      {/* Left: Directory Tree */}
+      {/* Tree — locked at 240px (see file header for rationale). */}
       <Panel
         id="file-tree"
-        defaultSize="25%"
-        minSize="15%"
-        maxSize="40%"
+        defaultSize={TREE_W}
+        minSize={TREE_W}
+        maxSize={TREE_W}
       >
         <FileTree
           projectPath={projectPath}
           projectName={projectName}
           projectId={projectId}
-          onOpenSearch={onOpenSearch}
         />
       </Panel>
 
-      <EditorResizeHandle />
-
-      {/* Right: Editor */}
-      <Panel id="file-editor" minSize="40%">
+      {/* Editor — flexible, takes whatever's left after tree's locked 240px.
+          When the outer Files panel auto-grows (driven by MainPanel), the
+          new space lands entirely on the editor since tree is pinned. */}
+      <Panel
+        id="file-editor"
+        panelRef={editorPanelRef}
+        defaultSize="0%"
+        minSize="0%"
+      >
         <div className="h-full flex flex-col min-w-0">
-          <EditorTabs projectId={projectId} projectPath={projectPath} rightSafeInset={modeToggleSafeInset} />
+          <EditorTabs projectId={projectId} projectPath={projectPath} />
           <div className="flex-1 min-h-0">
             <EditorPane projectPath={projectPath} projectId={projectId} />
           </div>
@@ -164,39 +145,25 @@ function IDEMode({
 
 // === Main FilesView ===
 
-function FilesViewCore({
-  project,
-  projectPreferencesSource = null,
-  layout,
-}: FilesViewCoreProps): React.JSX.Element {
+function FilesViewCore({ project, layout }: FilesViewCoreProps): React.JSX.Element {
   const { t } = useTranslation('files')
   const projectId = project.id
-  const filesDisplayModeByProject = useAppStore((s) => s.filesDisplayModeByProject)
-  const setFilesDisplayMode = useAppStore((s) => s.setFilesDisplayMode)
   const openFiles = useFileStore((s) => {
     if (!projectId) return EMPTY_OPEN_FILES
     return s.openFilesByProject[projectId] ?? EMPTY_OPEN_FILES
   })
   const openFile = useFileStore((s) => s.openFile)
-  const setBrowserSubPath = useFileStore((s) => s.setBrowserSubPath)
   const enqueueEditorJumpIntent = useFileStore((s) => s.enqueueEditorJumpIntent)
   const enqueueTreeRevealIntent = useFileStore((s) => s.enqueueTreeRevealIntent)
   const peekLatestDeleteUndo = useFileStore((s) => s.peekLatestDeleteUndo)
-  const {
-    undoLatestDelete,
-  } = useProjectFileOperations({
+  const { undoLatestDelete } = useProjectFileOperations({
     projectId,
     projectPath: project.path,
   })
 
-  const mode = filesDisplayModeByProject[projectId]
-  const preferredMode = projectPreferencesSource?.defaultFilesDisplayMode ?? null
   const searchFabBottomOffsetPx = layout?.searchFabBottomOffsetPx ?? 12
-  const modeToggleWrapRef = useRef<HTMLDivElement>(null)
   const filesViewRootRef = useRef<HTMLDivElement>(null)
-  const [modeToggleSafeInset, setModeToggleSafeInset] = useState(180)
   const [searchOpen, setSearchOpen] = useState(false)
-  const [browserExternalOpenPath, setBrowserExternalOpenPath] = useState<string | null>(null)
 
   const searchNavigation = useMemo(() => {
     return createFileSearchNavigationExecutor({
@@ -209,9 +176,6 @@ function FilesViewCore({
         readImagePreview: getAppAPI()['read-image-preview'],
       },
       writers: {
-        setFilesDisplayMode,
-        setBrowserSubPath,
-        setBrowserExternalOpenPath,
         openFile: (request) => openFile(projectId, request),
         enqueueEditorJumpIntent,
         enqueueTreeRevealIntent,
@@ -223,8 +187,6 @@ function FilesViewCore({
     openFile,
     projectId,
     project.path,
-    setBrowserSubPath,
-    setFilesDisplayMode,
   ])
 
   // Coordinate file content sync (Agent writes, external edits, view switches)
@@ -232,55 +194,6 @@ function FilesViewCore({
 
   // Initialise git status — cold-start IPC, subsequent updates via DataBus
   useGitStatus(project.path)
-
-  // Auto-detect project type once (only when no cached mode exists)
-  useEffect(() => {
-    if (mode) return
-
-    // Project preference comes before heuristic detection.
-    if (preferredMode) {
-      setFilesDisplayMode(projectId, preferredMode)
-      return
-    }
-
-    let cancelled = false
-    async function detect(): Promise<void> {
-      try {
-        const rootFiles = await getAppAPI()['list-project-files'](project.path)
-        if (cancelled) return
-        const detected = inferDisplayModeFromFiles(
-          rootFiles.filter((f) => !f.isDirectory).map((f) => f.name)
-        )
-        setFilesDisplayMode(projectId, detected)
-      } catch {
-        if (!cancelled) setFilesDisplayMode(projectId, 'browser')
-      }
-    }
-    detect()
-    return () => { cancelled = true }
-  }, [mode, preferredMode, project.path, projectId, setFilesDisplayMode])
-
-  // Reserve space on the editor tabs row so tabs never render beneath
-  // the top-right floating mode switch.
-  useEffect(() => {
-    const el = modeToggleWrapRef.current
-    if (!el) return
-
-    const updateSafeInset = (): void => {
-      const next = Math.ceil(el.getBoundingClientRect().width) + 8
-      setModeToggleSafeInset((prev) => (prev === next ? prev : next))
-    }
-
-    updateSafeInset()
-    const ro = new ResizeObserver(updateSafeInset)
-    ro.observe(el)
-    window.addEventListener('resize', updateSafeInset)
-
-    return () => {
-      ro.disconnect()
-      window.removeEventListener('resize', updateSafeInset)
-    }
-  }, [])
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent): void => {
@@ -316,47 +229,19 @@ function FilesViewCore({
     return () => document.removeEventListener('keydown', onKeyDown)
   }, [peekLatestDeleteUndo, projectId, undoLatestDelete])
 
-  // Default to 'ide' while detection is pending
-  const effectiveMode = mode ?? 'ide'
-
   return (
     <div ref={filesViewRootRef} className="relative h-full flex flex-col min-h-0">
-      {/* Top-right header-height overlay for mode switch */}
-      <div
-        ref={modeToggleWrapRef}
-        className="absolute top-0 right-0 z-20 h-[34px] px-3 flex items-center bg-[hsl(var(--background))]"
-      >
-        <ModeToggle
-          mode={effectiveMode}
-          onChange={(newMode) => setFilesDisplayMode(projectId, newMode)}
-        />
-      </div>
-
-      {/* Mode content */}
-      {effectiveMode === 'ide' ? (
-        <IDEMode
-          projectPath={project.path}
-          projectName={project.name}
-          projectId={projectId}
-          modeToggleSafeInset={modeToggleSafeInset}
-          onOpenSearch={() => setSearchOpen(true)}
-        />
-      ) : (
-        <FileBrowser
-          projectPath={project.path}
-          projectName={project.name}
-          projectId={projectId}
-          onOpenSearch={() => setSearchOpen(true)}
-          externalOpenPath={browserExternalOpenPath}
-          onExternalOpenConsumed={() => setBrowserExternalOpenPath(null)}
-        />
-      )}
+      <IDELayout
+        projectPath={project.path}
+        projectName={project.name}
+        projectId={projectId}
+        hasOpenFiles={openFiles.length > 0}
+      />
 
       <FileSearchOverlay
         open={searchOpen}
         projectId={projectId}
         projectPath={project.path}
-        currentMode={effectiveMode}
         openFiles={openFiles}
         onClose={() => setSearchOpen(false)}
         onExecuteCommand={(command) => {
@@ -399,14 +284,7 @@ export function FilesViewForSelectedProject({
     )
   }
 
-  const normalizedPreferences = normalizeProjectPreferences(selectedProject.preferences)
-  return (
-    <FilesViewCore
-      project={selectedProject}
-      projectPreferencesSource={{ defaultFilesDisplayMode: normalizedPreferences.defaultFilesDisplayMode }}
-      layout={layout}
-    />
-  )
+  return <FilesViewCore project={selectedProject} layout={layout} />
 }
 
 export function FilesViewForProject({

@@ -120,6 +120,8 @@ const invokeChannels: (keyof IPCChannels)[] = [
   'import-discovered-projects',
   // Directory picker
   'select-directory',
+  // User home directory (drives sidebar "Chat" navigation)
+  'get-home-dir',
   // Session Notes
   'list-session-notes',
   'count-session-notes-by-issue',

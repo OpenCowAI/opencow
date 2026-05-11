@@ -8,7 +8,9 @@
  * scroll, virtualization, or data pipeline concerns.
  */
 
-import { memo } from 'react'
+import { memo, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
+import { useTranslation } from 'react-i18next'
+import { cn } from '@/lib/utils'
 import { LinkifiedText } from '@/components/ui/LinkifiedText'
 import { ContentBlockRenderer } from './ContentBlockRenderer'
 import { useToolLifecycleMap, type ToolLifecycleMap } from './ToolLifecycleContext'
@@ -85,37 +87,10 @@ function renderUserContentBlocks(
 }
 
 // ---------------------------------------------------------------------------
-// CLI variant — monospace with "> " prefix
-// ---------------------------------------------------------------------------
-
-export const UserMessage = memo(function UserMessage({ id, content }: { id: string; content: ContentBlock[] }) {
-  const hasRichContent = content.some((b) => b.type === 'slash_command' || b.type === 'image' || b.type === 'document')
-  const plainText = hasRichContent ? '' : extractUserText(content)
-
-  return (
-    <div data-msg-id={id} data-msg-role="user" className="relative flex gap-2 py-1 -ml-3 pl-3 before:absolute before:left-0 before:top-[6px] before:bottom-[6px] before:w-0.5 before:bg-[hsl(var(--primary)/0.2)]">
-      <span className="text-[hsl(var(--muted-foreground))] font-mono text-sm shrink-0 select-none leading-5" aria-hidden="true">{'>'}</span>
-      <div className="min-w-0">
-        {hasRichContent ? (
-          <div className="text-sm font-mono text-[hsl(var(--foreground))] break-words min-w-0 leading-5">
-            {renderUserContentBlocks(content)}
-          </div>
-        ) : (
-          <>
-            {plainText && (
-              <div className="text-sm font-mono text-[hsl(var(--foreground))] break-words min-w-0 leading-5">
-                <UserTextWithContext text={plainText} />
-              </div>
-            )}
-          </>
-        )}
-      </div>
-    </div>
-  )
-})
-
-// ---------------------------------------------------------------------------
-// Chat variant — right-aligned bubble
+// User message — right-aligned chat bubble.  (The legacy CLI "> " prefix
+// variant was retired — every consumer renders the same chat-bubble
+// chip now, so the session transcript and the live Chat share one
+// user-message look.)
 // ---------------------------------------------------------------------------
 
 const CHAT_LINK_CLASS = '[&_a]:text-[hsl(var(--primary))] [&_a]:underline [&_a]:decoration-[hsl(var(--primary)/0.4)]'
@@ -152,6 +127,70 @@ export const ToolResultUserMessage = memo(function ToolResultUserMessage({
   )
 })
 
+/**
+ * Wraps user message content with a 3-line clamp + "Show more / less"
+ * toggle.  Long prompts (multi-paragraph instructions, pasted context)
+ * are otherwise visually dominant in the transcript; clamping by default
+ * keeps the message list scannable.
+ *
+ * Detection model: measure the content's `scrollHeight` against its
+ * `clientHeight` *while line-clamp is active*.  When `scrollHeight`
+ * overflows, the toggle is revealed.  We measure once on mount AND
+ * track resize (container width shifts can change wrap counts), but
+ * skip measurement while expanded — otherwise the unclamped element's
+ * `scrollHeight === clientHeight` would wipe the toggle out.
+ */
+function CollapsibleUserText({ children }: { children: ReactNode }): React.JSX.Element {
+  const { t } = useTranslation('sessions')
+  const [isExpanded, setIsExpanded] = useState(false)
+  const [showToggle, setShowToggle] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+
+  useLayoutEffect(() => {
+    if (isExpanded) return
+    const el = ref.current
+    if (!el) return
+    const measure = (): void => {
+      // +1 to absorb sub-pixel rounding — the line-clamp utility uses
+      // `display: -webkit-box` with a line count, so scrollHeight is
+      // the natural height and clientHeight is the clamped height.
+      setShowToggle(el.scrollHeight > el.clientHeight + 1)
+    }
+    measure()
+    // Guard for environments without ResizeObserver (jsdom in tests).
+    // Production browsers all have it; we degrade gracefully to a
+    // single mount-time measurement when absent.
+    if (typeof ResizeObserver === 'undefined') return
+    const ro = new ResizeObserver(measure)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [isExpanded])
+
+  return (
+    <>
+      <div
+        ref={ref}
+        className={cn(
+          'text-sm break-words min-w-0 leading-relaxed',
+          !isExpanded && 'line-clamp-3',
+        )}
+      >
+        {children}
+      </div>
+      {showToggle && (
+        <button
+          type="button"
+          onClick={() => setIsExpanded((v) => !v)}
+          aria-expanded={isExpanded}
+          className="mt-1 text-xs text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] hover:underline transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[hsl(var(--ring))] rounded-sm"
+        >
+          {isExpanded ? t('userMessageCollapse.showLess') : t('userMessageCollapse.showMore')}
+        </button>
+      )}
+    </>
+  )
+}
+
 export const ChatBubbleUserMessage = memo(function ChatBubbleUserMessage({ id, content }: { id: string; content: ContentBlock[] }) {
   const hasRichContent = content.some((b) => b.type === 'slash_command' || b.type === 'image' || b.type === 'document')
   const plainText = hasRichContent ? '' : extractUserText(content)
@@ -160,15 +199,15 @@ export const ChatBubbleUserMessage = memo(function ChatBubbleUserMessage({ id, c
     <div data-msg-id={id} data-msg-role="user" className="flex justify-end py-1.5">
       <div className="max-w-[80%] px-4 py-2.5 rounded-2xl bg-[hsl(var(--foreground)/0.06)] dark:bg-white/10 text-[hsl(var(--foreground))]">
         {hasRichContent ? (
-          <div className="text-sm break-words min-w-0 leading-relaxed">
+          <CollapsibleUserText>
             {renderUserContentBlocks(content, CHAT_LINK_CLASS)}
-          </div>
+          </CollapsibleUserText>
         ) : (
           <>
             {plainText && (
-              <div className="text-sm break-words min-w-0 leading-relaxed">
+              <CollapsibleUserText>
                 <UserTextWithContext text={plainText} className={CHAT_LINK_CLASS} />
-              </div>
+              </CollapsibleUserText>
             )}
           </>
         )}

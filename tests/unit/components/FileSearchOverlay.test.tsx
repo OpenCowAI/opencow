@@ -2,7 +2,7 @@
 
 // @vitest-environment jsdom
 import React from 'react'
-import { describe, expect, it, beforeEach, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import '@testing-library/jest-dom/vitest'
@@ -68,7 +68,6 @@ describe('FileSearchOverlay', () => {
         open
         projectId="project-1"
         projectPath="/tmp/project"
-        currentMode="ide"
         openFiles={[]}
         onClose={onClose}
         onExecuteCommand={onExecuteCommand}
@@ -87,7 +86,6 @@ describe('FileSearchOverlay', () => {
         name: 'App.tsx',
         isDirectory: false,
       },
-      context: { mode: 'ide' },
       options: { line: null },
     })
     expect(onClose).toHaveBeenCalled()
@@ -102,7 +100,6 @@ describe('FileSearchOverlay', () => {
         open
         projectId="project-1"
         projectPath="/tmp/project"
-        currentMode="ide"
         openFiles={[]}
         onClose={onClose}
         onExecuteCommand={onExecuteCommand}
@@ -132,11 +129,10 @@ describe('FileSearchOverlay', () => {
         name: 'App.tsx',
         isDirectory: false,
       },
-      context: { mode: 'ide' },
     })
   })
 
-  it('shows directory-specific action labels in browser mode', async () => {
+  it('shows directory-specific action labels', async () => {
     useFilesQuickSearchMock.mockReturnValue({
       loading: false,
       items: [
@@ -157,14 +153,13 @@ describe('FileSearchOverlay', () => {
         open
         projectId="project-1"
         projectPath="/tmp/project"
-        currentMode="browser"
         openFiles={[]}
         onClose={vi.fn()}
         onExecuteCommand={vi.fn()}
       />,
     )
 
-    expect(await screen.findByText('Open folder')).toBeInTheDocument()
+    expect(await screen.findByText('Reveal in tree')).toBeInTheDocument()
     expect(screen.getByText('⌘/Ctrl+Enter Reveal in tree')).toBeInTheDocument()
     expect(screen.getByText('Alt+Enter Reveal parent')).toBeInTheDocument()
   })
@@ -176,7 +171,6 @@ describe('FileSearchOverlay', () => {
         open
         projectId="project-1"
         projectPath="/tmp/project"
-        currentMode="ide"
         openFiles={[]}
         onClose={vi.fn()}
         onExecuteCommand={onExecuteCommand}

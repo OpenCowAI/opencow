@@ -10,6 +10,7 @@ import { useNoteStore } from '../../stores/noteStore'
 import { cn } from '../../lib/utils'
 import { UNPARENT_DROPPABLE_ID } from '../../constants/droppableIds'
 import { useIssueShortcuts } from '../../hooks/useIssueShortcuts'
+import { selectIssue } from '../../actions/issueActions'
 import { IssueFormModal } from '../IssueForm/IssueFormModal'
 import { IssueAICreatorModal } from '../IssueAICreator'
 import { IssueDndProvider, useIssueDndContext } from './IssueDndProvider'
@@ -18,6 +19,7 @@ import { EphemeralFilterBar } from './EphemeralFilterBar'
 import { DisplayControlBar } from './DisplayControlBar'
 import { ProviderQuickSwitcher } from './ProviderQuickSwitcher'
 import { IssueGroupedList } from './IssueGroupedList'
+import { IssuePreviewOverlay } from '../StarredArtifactsView/IssuePreviewOverlay'
 
 export function IssuesView(): React.JSX.Element {
   const { t } = useTranslation('issues')
@@ -25,6 +27,17 @@ export function IssuesView(): React.JSX.Element {
   const loadIssues = useIssueStore((s) => s.loadIssues)
   const loadNoteCountsByIssue = useNoteStore((s) => s.loadNoteCountsByIssue)
   const sidebarProjectId = useAppStore(selectProjectId)
+
+  // Issue detail is shown as a non-modal right-side popover.  The list
+  // stays visible and clickable underneath — picking another row swaps
+  // the popover content without first closing it (driven by the store's
+  // `selectedIssueId`, which `selectIssue` updates on every row click).
+  const selectedIssueId = useAppStore((s) => s.selectedIssueId)
+  const handleClosePreview = useCallback(() => selectIssue(null), [])
+  const handleNavigateInPopover = useCallback(
+    (issueId: string) => selectIssue(issueId),
+    [],
+  )
 
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [showAICreator, setShowAICreator] = useState(false)
@@ -49,8 +62,13 @@ export function IssuesView(): React.JSX.Element {
       {/* View Tab Bar — All + custom views + drag reorder + create */}
       <ViewTabBar />
 
-      {/* Filter + Search + Display controls — single row */}
-      <div className="flex-none flex items-center gap-2 px-4 py-2 border-b border-[hsl(var(--border)/0.5)]">
+      {/* Filter + Search + Display controls — single row.
+          No bottom border: the implicit gap to the list below is the
+          intentional separator, matching the Inbox filter bar pattern.
+          Tight `pt-1` keeps the gap to the ViewTabBar above compact
+          (the tab strip is `h-10` and already contributes its own
+          centering bottom whitespace). */}
+      <div className="flex-none flex items-center gap-2 px-4 pt-1 pb-2">
         {/* Left: Filter + Search (flexible) */}
         <div className="flex-1 min-w-0">
           <EphemeralFilterBar />
@@ -69,7 +87,7 @@ export function IssuesView(): React.JSX.Element {
           {/* AI Create issue button */}
           <button
             onClick={() => setShowAICreator(true)}
-            className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-violet-500 hover:bg-violet-500/10 transition-colors text-xs font-medium"
+            className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[hsl(var(--ai))] hover:bg-[hsl(var(--ai)/0.1)] transition-colors text-xs font-medium"
             aria-label={t('aiCreator.title')}
           >
             <Sparkles className="w-3.5 h-3.5" aria-hidden />
@@ -90,7 +108,10 @@ export function IssuesView(): React.JSX.Element {
       {/* Issue list — wrapped in DnD provider for drag-to-parent functionality */}
       <IssueDndProvider issues={issues}>
         <UnparentDropZone />
-        <IssueGroupedList />
+        <IssueGroupedList
+          onCreateIssue={() => setShowCreateModal(true)}
+          onAICreateIssue={() => setShowAICreator(true)}
+        />
       </IssueDndProvider>
 
       {/* Create modal */}
@@ -106,6 +127,19 @@ export function IssuesView(): React.JSX.Element {
         open={showAICreator}
         onClose={() => setShowAICreator(false)}
       />
+
+      {/* Non-modal issue detail popover.  The list underneath stays
+          interactive, so the user can pick another row and the popover
+          content swaps in place (the conditional render keeps the panel
+          mounted because `selectedIssueId` stays truthy across swaps). */}
+      {selectedIssueId && (
+        <IssuePreviewOverlay
+          issueId={selectedIssueId}
+          onClose={handleClosePreview}
+          onNavigateToIssue={handleNavigateInPopover}
+          modal={false}
+        />
+      )}
     </div>
   )
 }

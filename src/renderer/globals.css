@@ -1,6 +1,5 @@
 @import "tailwindcss";
 @import "./themes.css";
-@import "./textures.css";
 @import "./hljs-theme.css";
 @import "./git-decorations.css";
 
@@ -15,29 +14,47 @@
   :root {
     --radius: 0.75rem;
     --modal-exit-duration: 150ms;
-    --heatmap-empty: 210 17% 93%;
+
+    /* --- Activity heatmap (kept green so contribution density reads
+           consistently across themes; empty slot tinted warm to match
+           the canvas instead of the old cool grey). --- */
+    --heatmap-empty: 45 26% 92%;
     --heatmap-l1: 138 55% 72%;
     --heatmap-l2: 138 55% 51%;
     --heatmap-l3: 138 56% 40%;
     --heatmap-l4: 138 58% 27%;
-    --sidebar-background: 0 0% 98%;
-    --sidebar-foreground: 240 5.3% 26.1%;
-    --sidebar-primary: 240 5.9% 10%;
-    --sidebar-primary-foreground: 0 0% 98%;
-    --sidebar-accent: 240 4.8% 95.9%;
-    --sidebar-accent-foreground: 240 5.9% 10%;
-    --sidebar-border: 220 13% 91%;
+
+    /* --- Sidebar — distinct tonal layer that sits *above* the canvas in
+           lightness (so the sidebar reads as a sheet of warm paper hovering
+           over a slightly darker mat). Saturation stays close to the
+           canvas's warm family so the sidebar never reads as desaturated
+           grey. The right detail panel shares this token, giving the app
+           two symmetric flanking layers around the main canvas. --- */
+    --sidebar-background: 45 37% 95%;
+    --sidebar-foreground: 30 22% 13%;
+    --sidebar-primary: 30 22% 13%;
+    --sidebar-primary-foreground: 45 50% 97%;
+    --sidebar-accent: 45 26% 91%;
+    --sidebar-accent-foreground: 30 22% 13%;
+    --sidebar-border: 45 22% 88%;
   }
 
   .dark {
-    --sidebar-background: 240 5.9% 10%;
-    --sidebar-foreground: 240 4.8% 95.9%;
-    --sidebar-primary: 224.3 76.3% 48%;
-    --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 240 3.7% 15.9%;
-    --sidebar-accent-foreground: 240 4.8% 95.9%;
-    --sidebar-border: 240 3.7% 15.9%;
-    --heatmap-empty: 215 14% 13%;
+    /* --- Sidebar — shares its surface tone with the app canvas
+           (`--background`) so the two flanks blend into the centre as
+           one continuous warm charcoal sheet. Accent / border lift in
+           lockstep to keep nav-item hover and structural lines
+           legible against the lifted sidebar tone. */
+    --sidebar-background: 30 12% 10%;
+    --sidebar-foreground: 45 30% 85%;
+    --sidebar-primary: 45 39% 73%;           /* 缥缃 — golden primary */
+    --sidebar-primary-foreground: 30 12% 8%;
+    --sidebar-accent: 30 11% 18%;
+    --sidebar-accent-foreground: 45 30% 90%;
+    --sidebar-border: 30 10% 22%;
+
+    /* --- Activity heatmap --------------------------------------- */
+    --heatmap-empty: 30 10% 14%;
     --heatmap-l1: 150 60% 16%;
     --heatmap-l2: 152 100% 21%;
     --heatmap-l3: 135 55% 40%;
@@ -55,6 +72,83 @@
     color: hsl(var(--foreground));
     font-feature-settings: "rlig" 1, "calt" 1;
   }
+}
+
+/* ── Custom scrollbars ────────────────────────────────────────────────
+ * Geometry is strictly constant across rest / hover / active states —
+ * only the thumb's opacity steps. All three states use the same colour
+ * family (--muted-foreground), so the visual character stays uniform
+ * and the thumb never *appears* to widen on hover (the previous design
+ * stepped from --border to a much darker token, which read as a width
+ * change even though the pixels were identical).
+ *
+ * The transparent border + `background-clip: padding-box` keeps the
+ * thumb from touching the track edges; tracks stay transparent so the
+ * underlying panel surface reads through.
+ * ─────────────────────────────────────────────────────────────────────── */
+
+/* Firefox */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: hsl(var(--muted-foreground) / 0.3) transparent;
+}
+
+/* WebKit / Blink */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background-color: hsl(var(--muted-foreground) / 0.25);
+  background-clip: padding-box;
+  border: 2px solid transparent;
+  border-radius: 999px;
+  /* Animate only colour — never width — so hovering never reflows the bar. */
+  transition: background-color 120ms ease-out;
+}
+::-webkit-scrollbar-thumb:hover {
+  background-color: hsl(var(--muted-foreground) / 0.4);
+}
+::-webkit-scrollbar-thumb:active {
+  background-color: hsl(var(--muted-foreground) / 0.55);
+}
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+/* Suppress end-cap arrow buttons (visible when the OS scroll-bar
+   preference is set to "Always", and they wreck the thumb's visual
+   width by adding fixed-size blocks at each end). */
+::-webkit-scrollbar-button {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
+/* Visually hide the scrollbar while keeping the element scrollable.
+   Used by tab strips and filter rows where wheel / shift+wheel / touch
+   horizontal scroll is enough and the bar itself adds visual noise. */
+.no-scrollbar {
+  scrollbar-width: none;            /* Firefox */
+  -ms-overflow-style: none;          /* legacy Edge / IE */
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;                     /* WebKit / Blink */
+}
+
+/* CJK serif (宋体) font stack for prose / headings. Mac and Windows
+   each ship a different default Songti — declare both so the chain
+   resolves without relying on bundled web fonts. */
+.font-cjk-serif {
+  font-family:
+    "Source Han Serif SC",
+    "Noto Serif CJK SC",
+    "Songti SC",
+    "STSong",
+    SimSun,
+    serif;
 }
 
 /* Native <select> — hide browser chrome, add custom chevron with controlled position */
@@ -499,6 +593,23 @@ select {
   animation: detail-content-enter 0.2s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
+/* TOC drawer — left-anchored slide-in/out for the Markdown preview's
+   floating Table-of-Contents panel. */
+@keyframes toc-drawer-enter {
+  from { transform: translateX(-100%); opacity: 0; }
+  to   { transform: translateX(0);     opacity: 1; }
+}
+@keyframes toc-drawer-exit {
+  from { transform: translateX(0);     opacity: 1; }
+  to   { transform: translateX(-100%); opacity: 0; }
+}
+.toc-drawer-enter {
+  animation: toc-drawer-enter 0.2s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.toc-drawer-exit {
+  animation: toc-drawer-exit var(--modal-exit-duration) ease-in forwards;
+}
+
 /* ── Detail panel slide animation ─────────────────────────────────────────
  *
  * Two-layer animation for a polished "slide-out" effect when
@@ -517,11 +628,14 @@ select {
  * ────────────────────────────────────────────────────────────────────── */
 
 /* Layer 1: panel width via flex-grow transition.
-   All three panels (sidebar, main, detail) participate so that when the
-   detail panel expands/collapses the proportional size redistribution
-   animates consistently — preventing the sidebar from jumping instantly
-   while main/detail transition smoothly (visible as a "shake"). */
-#opencow-layout.layout-animated > #sidebar,
+   Only `main` and `detail` animate. The sidebar is intentionally excluded
+   — its size is meant to be steady, but the library's imperative-api path
+   (`panel.expand()` then `panel.resize()` in sequence) re-normalizes all
+   panels between calls. The sidebar's flex-grow can shift by a fraction
+   of a percent and snap back across those two ticks. Animating that
+   transient with a 280ms transition is what made the sidebar visibly
+   "wobble" on navigation; running it instantly hides the in-between
+   value entirely. */
 #opencow-layout.layout-animated > #main,
 #opencow-layout.layout-animated > #detail {
   transition: flex-grow 0.28s cubic-bezier(0.22, 1, 0.36, 1);
@@ -529,9 +643,43 @@ select {
 
 /* Disable flex transition while any separator is being dragged.
    react-resizable-panels v4.x uses  data-separator="active"  during drag. */
-#opencow-layout.layout-animated:has([data-separator="active"]) > #sidebar,
 #opencow-layout.layout-animated:has([data-separator="active"]) > #main,
 #opencow-layout.layout-animated:has([data-separator="active"]) > #detail {
+  transition: none !important;
+}
+
+/* Files panel · tree | editor flex-grow transition.
+   When the active project has no open files, the editor panel collapses to
+   width 0 and the tree expands to fill the container — drives a smooth
+   widen/narrow animation when the user opens / closes the last file. */
+#files-editor-layout.layout-animated > #file-tree,
+#files-editor-layout.layout-animated > #file-editor {
+  transition: flex-grow 0.28s cubic-bezier(0.22, 1, 0.36, 1);
+}
+#files-editor-layout.layout-animated:has([data-separator="active"]) > #file-tree,
+#files-editor-layout.layout-animated:has([data-separator="active"]) > #file-editor {
+  transition: none !important;
+}
+
+/* Project layout · Tree | Editor | Main flex-grow transition.
+   When a file is opened the editor expands from 0 → 40% (taking space
+   from main). All three panels need the same transition so their flex-grow
+   values stay normalized in proportion at every animation frame — otherwise
+   the *sum* of flex-grow values temporarily diverges from 100, causing
+   flexbox to redistribute by a wrong ratio, which makes the locked tree
+   visually jitter even though its flex-grow value never changes.
+
+   Tree's flex-grow is constant (locked at 240px), so its `transition` is a
+   no-op behaviour-wise — but it MUST share the same transition shape so the
+   browser keeps it in lockstep with the editor/main animation. */
+#opencow-project-layout.layout-animated > #project-tree,
+#opencow-project-layout.layout-animated > #project-editor,
+#opencow-project-layout.layout-animated > #project-main {
+  transition: flex-grow 0.28s cubic-bezier(0.22, 1, 0.36, 1);
+}
+#opencow-project-layout.layout-animated:has([data-separator="active"]) > #project-tree,
+#opencow-project-layout.layout-animated:has([data-separator="active"]) > #project-editor,
+#opencow-project-layout.layout-animated:has([data-separator="active"]) > #project-main {
   transition: none !important;
 }
 
@@ -1690,4 +1838,71 @@ h1[id], h2[id], h3[id], h4[id], h5[id], h6[id] {
   68%      { transform: translate(calc(var(--dx1) * -0.4), var(--dy2)); opacity: var(--peak, 0.6); }
   88%      { transform: translate(calc(var(--dx2) * 0.6), calc(var(--dy2) * 0.5)); opacity: calc(var(--peak, 0.6) * 0.35); }
   100%     { transform: translate(0, 0); opacity: 0; }
+}
+
+/* ── Artifact card content preview — compact typography scope ──────────
+ *
+ * `MarkdownContent` ships reading-grade typography (h1 → 24px, p → 14px)
+ * sized for full-page preview dialogs.  Inside an artifact card the
+ * preview area is roughly 200px wide × 96px tall, where a single 24px H1
+ * dominates two thirds of the visible region and a long heading wraps
+ * out of view entirely.
+ *
+ * The class scopes a smaller, denser typography to the card preview
+ * surface only, leaving the global markdown styling intact.  Specificity
+ * `.artifact-card-preview <el>` (0,1,1) beats Tailwind utility classes
+ * (0,1,0), so no `!important` is needed.
+ */
+.artifact-card-preview h1,
+.artifact-card-preview h2 {
+  font-size: 12px;
+  line-height: 1.25;
+  font-weight: 600;
+  margin: 0 0 2px;
+}
+.artifact-card-preview h3,
+.artifact-card-preview h4,
+.artifact-card-preview h5,
+.artifact-card-preview h6 {
+  font-size: 11px;
+  line-height: 1.25;
+  font-weight: 600;
+  margin: 0 0 2px;
+}
+.artifact-card-preview p,
+.artifact-card-preview li,
+.artifact-card-preview blockquote {
+  font-size: 10px;
+  line-height: 1.35;
+  margin: 0 0 2px;
+}
+.artifact-card-preview ul,
+.artifact-card-preview ol {
+  margin: 0 0 2px;
+  padding-left: 14px;
+}
+.artifact-card-preview code {
+  font-size: 9.5px;
+  padding: 0 2px;
+}
+.artifact-card-preview pre {
+  font-size: 9.5px;
+  line-height: 1.3;
+  margin: 2px 0;
+  padding: 4px;
+}
+.artifact-card-preview pre code {
+  font-size: 9.5px;
+  padding: 0;
+}
+.artifact-card-preview hr {
+  margin: 3px 0;
+}
+.artifact-card-preview img,
+.artifact-card-preview video {
+  max-height: 80px;
+  margin: 2px 0;
+}
+.artifact-card-preview table {
+  font-size: 9.5px;
 }

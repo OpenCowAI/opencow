@@ -39,7 +39,7 @@ export interface CapabilityCreatorConfig {
   category: AICreatableCategory
   /** Icon rendered in header and empty state */
   icon: LucideIcon
-  /** Tailwind text color class for the icon (e.g. 'text-violet-500') */
+  /** Tailwind text color class for the icon (e.g. 'text-[hsl(var(--ai))]') */
   iconColor: string
   /** CSS gradient for the empty-state branding box */
   iconGradient: string

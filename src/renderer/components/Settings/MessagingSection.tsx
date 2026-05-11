@@ -289,7 +289,7 @@ export function MessagingSection(): React.JSX.Element {
             type="button"
             onClick={() => setShowBotCreator(true)}
             title={t('messaging.botCreator.aiSetupTooltip')}
-            className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs text-violet-600 hover:text-violet-700 hover:bg-violet-500/5 transition-colors outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--ring))] whitespace-nowrap"
+            className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs text-[hsl(var(--ai))] hover:bg-[hsl(var(--ai)/0.08)] transition-colors outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--ring))] whitespace-nowrap"
           >
             <Sparkles className="h-3.5 w-3.5" aria-hidden="true" />
             {t('messaging.botCreator.aiSetup')}

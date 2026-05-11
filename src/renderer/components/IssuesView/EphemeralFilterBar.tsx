@@ -461,10 +461,12 @@ export function EphemeralFilterBar(): React.JSX.Element {
                 })
               }}
               className={cn(
-                'flex items-center gap-1 px-2 py-1 text-xs rounded-lg transition-colors',
-                'border border-[hsl(var(--border)/0.5)]',
-                'text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] hover:bg-[hsl(var(--foreground)/0.04)]',
-                menuOpen && 'bg-[hsl(var(--foreground)/0.04)] text-[hsl(var(--foreground))]'
+                // Inbox-style soft-fill affordance: no outline; the
+                // resting state is a flat label, hover/active surface
+                // as a muted wash instead of a bordered chip.
+                'flex items-center gap-1 px-2.5 py-1 text-xs rounded-md transition-colors',
+                'text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] hover:bg-[hsl(var(--muted))]',
+                menuOpen && 'bg-[hsl(var(--foreground)/0.06)] text-[hsl(var(--foreground))]'
               )}
               aria-label={tc('addFilter')}
               aria-expanded={menuOpen}
@@ -516,7 +518,9 @@ export function EphemeralFilterBar(): React.JSX.Element {
             onChange={(e) => setSearchInput(e.target.value)}
             placeholder={t('searchIssues')}
             className={cn(
-              'w-full pl-8 py-1.5 text-xs rounded-lg border border-[hsl(var(--border)/0.5)] bg-transparent placeholder:text-[hsl(var(--muted-foreground))] focus:outline-none focus:ring-1 focus:ring-[hsl(var(--ring)/0.7)]',
+              // Inbox-style: solid muted fill, no border, focus ring
+              // takes over the role of "this control is active".
+              'w-full pl-8 py-1.5 text-xs rounded-md border-none bg-[hsl(var(--muted))] placeholder:text-[hsl(var(--muted-foreground))] focus:outline-none focus:ring-2 focus:ring-[hsl(var(--ring))]',
               searchInput ? 'pr-7' : 'pr-3'
             )}
             aria-label={t('searchIssuesAria')}
