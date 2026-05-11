@@ -103,7 +103,7 @@ export function InboxMessageItem({
           {subtitle}
         </span>
         {isUnread && (
-          <span className="h-1.5 w-1.5 rounded-full bg-blue-500 shrink-0" aria-label="unread" />
+          <span className="h-1.5 w-1.5 rounded-full bg-[hsl(var(--primary))] shrink-0" aria-label="unread" />
         )}
       </div>
     </button>

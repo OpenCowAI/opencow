@@ -60,11 +60,10 @@ describe('ProjectGeneralSettingsPanel', () => {
     })
   })
 
-  it('saves updated preferences with selected card options', async () => {
+  it('saves updated default tab from the card options', async () => {
     render(<ProjectGeneralSettingsPanel projectId="proj-1" />)
 
     await userEvent.click(screen.getByRole('radio', { name: 'Chat' }))
-    await userEvent.click(screen.getByRole('radio', { name: 'Files' }))
 
     await userEvent.click(screen.getByRole('button', { name: 'Save' }))
 
@@ -72,7 +71,6 @@ describe('ProjectGeneralSettingsPanel', () => {
       expect(updateProjectMock).toHaveBeenCalledWith('proj-1', {
         preferences: {
           defaultTab: 'chat',
-          defaultChatViewMode: 'files',
         },
       })
     })

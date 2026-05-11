@@ -28,30 +28,6 @@
         "chat": "Chat",
         "schedule": "Schedule"
       }
-    },
-    "chatDefaultMode": {
-      "title": "Chat 默认版面",
-      "description": "选择默认使用极简模式或文件模式。",
-      "hints": {
-        "default": "对话优先，界面更专注。",
-        "files": "Chat 与 Files 并排，适合开发流。"
-      },
-      "options": {
-        "default": "极简",
-        "files": "文件"
-      }
-    },
-    "filesDefaultMode": {
-      "title": "文件默认陈列方式",
-      "description": "当 Chat 默认是文件模式时，选择 Files 的默认形态。",
-      "hints": {
-        "ide": "树形 + 标签 + 编辑器优先。",
-        "browser": "浏览器式文件探索与预览。"
-      },
-      "options": {
-        "ide": "编辑器",
-        "browser": "浏览器"
-      }
     }
   },
   "browser": {

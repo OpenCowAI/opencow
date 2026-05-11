@@ -3,12 +3,34 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Activity, Archive, Folder, MoreVertical, Pin, Search, X } from 'lucide-react'
+import {
+  DndContext,
+  DragOverlay,
+  KeyboardSensor,
+  PointerSensor,
+  closestCenter,
+  useDroppable,
+  useSensor,
+  useSensors,
+} from '@dnd-kit/core'
+import {
+  SortableContext,
+  horizontalListSortingStrategy,
+  rectSortingStrategy,
+  useSortable,
+} from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
 import type { Project, ProjectGroup } from '@shared/types'
 import { useAppStore } from '@/stores/appStore'
 import { useLiveSessionCounts } from '@/stores/commandStore'
 import { useGroupedProjects } from '@/hooks/useGroupedProjects'
 import { useDeleteProject } from '@/hooks/useDeleteProject'
 import { useRenameProject } from '@/hooks/useRenameProject'
+import {
+  DROPPABLE_PINNED,
+  DROPPABLE_PROJECTS,
+  useProjectDnd,
+} from '@/hooks/useProjectDnd'
 import { cn } from '@/lib/utils'
 import { AddProjectPopover } from '@/components/Sidebar/AddProjectPopover'
 import { CreateProjectDialog } from '@/components/Sidebar/CreateProjectDialog'
@@ -98,6 +120,8 @@ interface PinTileProps {
   onRenameCancel: () => void
   sessionLabel: string
   displayPath: string
+  /** When false, sortable wiring is disabled (e.g. archived tab). */
+  dndEnabled: boolean
 }
 
 function PinTile({
@@ -111,9 +135,33 @@ function PinTile({
   onRenameCancel,
   sessionLabel,
   displayPath,
+  dndEnabled,
 }: PinTileProps): React.JSX.Element {
+  // Sortable wiring — `disabled` short-circuits when DnD is off or while
+  // the user is renaming inline (otherwise small mouse movement during
+  // text editing could accidentally pick the card up).  Activation
+  // distance (5 px) lives at the sensor level in the parent DndContext,
+  // so a click-release still passes through as a click.
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: project.id, disabled: !dndEnabled || isRenaming })
+
+  const dndStyle: React.CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+  }
+
   return (
     <div
+      ref={setNodeRef}
+      style={dndStyle}
+      {...attributes}
+      {...listeners}
       role="button"
       tabIndex={0}
       onClick={onSelect}
@@ -129,7 +177,13 @@ function PinTile({
         'group/pin-tile relative flex h-[180px] w-[200px] shrink-0 cursor-pointer flex-col overflow-hidden',
         'rounded-2xl border border-[hsl(var(--border)/0.55)] bg-[hsl(var(--card))]',
         'transition-all duration-200',
-        'hover:-translate-y-[5px] hover:shadow-[0_4px_12px_0_hsl(var(--foreground)/0.06)]',
+        // Suppress hover lift while dragging — the DragOverlay handles the
+        // visual "lift", and double-stacking transforms makes the card
+        // jitter at the original slot.
+        !isDragging && 'hover:-translate-y-[5px] hover:shadow-[0_4px_12px_0_hsl(var(--foreground)/0.06)]',
+        // Hollow out the original slot during drag so the user sees their
+        // pickup point cleanly.
+        isDragging && 'opacity-40',
         'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--ring))]',
       )}
       aria-label={project.name}
@@ -221,6 +275,8 @@ interface ProjectCardProps {
   pinnedLabel: string
   sessionLabel: string
   displayPath: string
+  /** When false, sortable wiring is disabled (e.g. archived tab). */
+  dndEnabled: boolean
 }
 
 function ProjectCard({
@@ -236,11 +292,30 @@ function ProjectCard({
   pinnedLabel,
   sessionLabel,
   displayPath,
+  dndEnabled,
 }: ProjectCardProps): React.JSX.Element {
   const isPinned = group === 'pinned'
 
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: project.id, disabled: !dndEnabled || isRenaming })
+
+  const dndStyle: React.CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+  }
+
   return (
     <div
+      ref={setNodeRef}
+      style={dndStyle}
+      {...attributes}
+      {...listeners}
       role="button"
       tabIndex={0}
       onClick={onSelect}
@@ -256,7 +331,8 @@ function ProjectCard({
         'group/proj-card relative cursor-pointer overflow-hidden',
         'rounded-2xl border border-[hsl(var(--border)/0.55)] bg-[hsl(var(--card))]',
         'transition-all duration-200',
-        'hover:-translate-y-[5px] hover:shadow-[0_4px_12px_0_hsl(var(--foreground)/0.06)]',
+        !isDragging && 'hover:-translate-y-[5px] hover:shadow-[0_4px_12px_0_hsl(var(--foreground)/0.06)]',
+        isDragging && 'opacity-40',
         'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--ring))]',
       )}
       aria-label={`${project.name}${isPinned ? `, ${pinnedLabel}` : ''}`}
@@ -447,6 +523,35 @@ export function ProjectsListView(): React.JSX.Element {
   // strip lives above the filter and has its own visibility logic.
   const showEmpty = mainVisible.length === 0
 
+  // ── Drag-and-drop wiring ─────────────────────────────────────────
+  //
+  // DnD is enabled only on the Active tab; the Archived tab is
+  // read-only territory and `useProjectDnd` has no reorder action for
+  // archived projects (graceful no-op even if a drag fires there).
+  //
+  // While search is active, the visible cards are a filtered subset of
+  // the full lists — `useProjectDnd` operates against the unfiltered
+  // `grouped` lists, so drops still produce sensible reorders even when
+  // intervening rows are hidden.  No special "disable while filtering"
+  // branch is needed.
+  const projectDnd = useProjectDnd(grouped)
+  const dndEnabled = tab === 'active'
+  const sensors = useSensors(
+    // 5 px activation distance keeps quick clicks and scroll gestures
+    // from accidentally triggering a drag.
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(KeyboardSensor),
+  )
+  const pinnedIds = useMemo(() => pinnedVisible.map((p) => p.id), [pinnedVisible])
+  const mainIds = useMemo(() => mainVisible.map((p) => p.id), [mainVisible])
+
+  // Drop-target highlight: only light up the *other* group while
+  // dragging, so the user gets a hint that "drop here = pin/unpin".
+  const dragSource = projectDnd.state.sourceGroup
+  const dragOver = projectDnd.state.overGroup
+  const pinnedDropHover = dragSource === 'projects' && dragOver === 'pinned'
+  const projectsDropHover = dragSource === 'pinned' && dragOver === 'projects'
+
   return (
     <div className="flex h-full min-h-0 flex-col">
       {/* Header */}
@@ -474,7 +579,18 @@ export function ProjectsListView(): React.JSX.Element {
         </div>
       </div>
 
-      {/* Scroll container — pinned strip + sticky filter + grid */}
+      {/* Scroll container — pinned strip + sticky filter + grid.
+          Wrapped in a single DndContext so pinned-strip and main-grid
+          share one drag session — that's what enables cross-group
+          pin/unpin via drag (see `useProjectDnd.onDragEnd`). */}
+      <DndContext
+        sensors={sensors}
+        collisionDetection={closestCenter}
+        onDragStart={projectDnd.onDragStart}
+        onDragOver={projectDnd.onDragOver}
+        onDragEnd={projectDnd.onDragEnd}
+        onDragCancel={projectDnd.onDragCancel}
+      >
       <div className="min-h-0 flex-1 overflow-auto">
         {/* Pinned strip */}
         {pinnedVisible.length > 0 && (
@@ -483,22 +599,28 @@ export function ProjectsListView(): React.JSX.Element {
             title={t('projectsList.pinnedSection')}
             count={pinnedVisible.length}
           >
-            <HorizontalStrip>
-              {pinnedVisible.map((project) => (
-                <PinTile
-                  key={project.id}
-                  project={project}
-                  liveSessionCount={liveCounts[project.id] ?? 0}
-                  isRenaming={renamingProjectId === project.id}
-                  onSelect={() => navigateToProject(project.id)}
-                  onContextMenu={(e) => handleCardContextMenu(e, project)}
-                  onMoreOpen={(rect) => handleMoreOpen(rect, project)}
-                  onRenameConfirm={(name) => void confirmRename(name)}
-                  onRenameCancel={cancelRename}
-                  sessionLabel={t('projectsList.sessionCount', { count: liveCounts[project.id] ?? 0 })}
-                  displayPath={tildify(project.path, homeDir)}
-                />
-              ))}
+            <HorizontalStrip
+              droppableId={dndEnabled ? DROPPABLE_PINNED : undefined}
+              isDropTarget={pinnedDropHover}
+            >
+              <SortableContext items={pinnedIds} strategy={horizontalListSortingStrategy}>
+                {pinnedVisible.map((project) => (
+                  <PinTile
+                    key={project.id}
+                    project={project}
+                    liveSessionCount={liveCounts[project.id] ?? 0}
+                    isRenaming={renamingProjectId === project.id}
+                    onSelect={() => navigateToProject(project.id)}
+                    onContextMenu={(e) => handleCardContextMenu(e, project)}
+                    onMoreOpen={(rect) => handleMoreOpen(rect, project)}
+                    onRenameConfirm={(name) => void confirmRename(name)}
+                    onRenameCancel={cancelRename}
+                    sessionLabel={t('projectsList.sessionCount', { count: liveCounts[project.id] ?? 0 })}
+                    displayPath={tildify(project.path, homeDir)}
+                    dndEnabled={dndEnabled}
+                  />
+                ))}
+              </SortableContext>
             </HorizontalStrip>
           </Section>
         )}
@@ -571,27 +693,46 @@ export function ProjectsListView(): React.JSX.Element {
             onClearKeyword={() => setQuery('')}
           />
         ) : (
-          <div className="grid grid-cols-1 gap-4 px-5 py-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
-            {mainVisible.map((project) => (
-              <ProjectCard
-                key={project.id}
-                project={project}
-                group={groupForProject(project)}
-                liveSessionCount={liveCounts[project.id] ?? 0}
-                isRenaming={renamingProjectId === project.id}
-                onSelect={() => navigateToProject(project.id)}
-                onContextMenu={(e) => handleCardContextMenu(e, project)}
-                onMoreOpen={(rect) => handleMoreOpen(rect, project)}
-                onRenameConfirm={(name) => void confirmRename(name)}
-                onRenameCancel={cancelRename}
-                pinnedLabel={t('projectsList.pinned')}
-                sessionLabel={t('projectsList.sessionCount', { count: liveCounts[project.id] ?? 0 })}
-                displayPath={tildify(project.path, homeDir)}
-              />
-            ))}
-          </div>
+          <DroppableGrid
+            droppableId={DROPPABLE_PROJECTS}
+            isDropTarget={projectsDropHover}
+          >
+            <SortableContext items={mainIds} strategy={rectSortingStrategy}>
+              {mainVisible.map((project) => (
+                <ProjectCard
+                  key={project.id}
+                  project={project}
+                  group={groupForProject(project)}
+                  liveSessionCount={liveCounts[project.id] ?? 0}
+                  isRenaming={renamingProjectId === project.id}
+                  onSelect={() => navigateToProject(project.id)}
+                  onContextMenu={(e) => handleCardContextMenu(e, project)}
+                  onMoreOpen={(rect) => handleMoreOpen(rect, project)}
+                  onRenameConfirm={(name) => void confirmRename(name)}
+                  onRenameCancel={cancelRename}
+                  pinnedLabel={t('projectsList.pinned')}
+                  sessionLabel={t('projectsList.sessionCount', { count: liveCounts[project.id] ?? 0 })}
+                  displayPath={tildify(project.path, homeDir)}
+                  dndEnabled={dndEnabled}
+                />
+              ))}
+            </SortableContext>
+          </DroppableGrid>
         )}
       </div>
+
+      {/* Drag overlay — floats above the scroll container so the lifted
+          card stays visible while scrolling, and lives outside any
+          stacking context that would clip it. */}
+      <DragOverlay dropAnimation={{ duration: 180, easing: 'cubic-bezier(0.22, 1, 0.36, 1)' }}>
+        {projectDnd.state.activeProject && (
+          <DragPreviewCard
+            project={projectDnd.state.activeProject}
+            isPinned={projectDnd.state.sourceGroup === 'pinned'}
+          />
+        )}
+      </DragOverlay>
+      </DndContext>
 
       {/* Modals & menus */}
       {contextMenu && (
@@ -652,15 +793,97 @@ function Section({
   )
 }
 
-function HorizontalStrip({ children }: { children: React.ReactNode }): React.JSX.Element {
+function HorizontalStrip({
+  children,
+  droppableId,
+  isDropTarget,
+}: {
+  children: React.ReactNode
+  /** When provided, the strip becomes a `useDroppable` target so cards
+   *  dragged from another group can be dropped here to auto-pin /
+   *  reorder.  Used by `useProjectDnd`'s container-id resolution. */
+  droppableId?: string
+  /** When true, paints a subtle ring to indicate the strip is being
+   *  hovered over by an active drag. */
+  isDropTarget?: boolean
+}): React.JSX.Element {
   // overflow-x-auto implicitly clips overflow-y; pt-2 reserves room for the
   // -5px hover lift so the upper edge of cards isn't trimmed.
+  const { setNodeRef } = useDroppable({ id: droppableId ?? '__noop_pin__', disabled: !droppableId })
   return (
     <div
-      className="flex gap-3 overflow-x-auto pt-2 pb-3"
+      ref={droppableId ? setNodeRef : undefined}
+      className={cn(
+        'flex gap-3 overflow-x-auto pt-2 pb-3 transition-colors rounded-lg',
+        isDropTarget && 'ring-2 ring-[hsl(var(--ring)/0.4)] ring-offset-2 ring-offset-[hsl(var(--card))]',
+      )}
       style={{ scrollbarWidth: 'thin' }}
     >
       {children}
+    </div>
+  )
+}
+
+/**
+ * Grid container that doubles as a drop target.  Mirrors `HorizontalStrip`
+ * for the main-list `ProjectCard` grid — accepts cross-group drops so
+ * the user can drag a pinned card into the grid to auto-unpin.
+ */
+function DroppableGrid({
+  children,
+  droppableId,
+  isDropTarget,
+}: {
+  children: React.ReactNode
+  droppableId: string
+  isDropTarget?: boolean
+}): React.JSX.Element {
+  const { setNodeRef } = useDroppable({ id: droppableId })
+  return (
+    <div
+      ref={setNodeRef}
+      className={cn(
+        'grid grid-cols-1 gap-4 px-5 py-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 transition-colors rounded-lg',
+        isDropTarget && 'ring-2 ring-[hsl(var(--ring)/0.4)] ring-inset',
+      )}
+    >
+      {children}
+    </div>
+  )
+}
+
+/**
+ * Lightweight visual stand-in rendered inside `<DragOverlay>` while the
+ * user is actively dragging a project card.  Deliberately a stripped-
+ * down chip rather than the full `PinTile` / `ProjectCard` — we want a
+ * "this is what you're moving" indicator, not a perfect clone that
+ * could compete visually with the sortable ghost in the strip / grid.
+ */
+function DragPreviewCard({
+  project,
+  isPinned,
+}: {
+  project: Project
+  isPinned: boolean
+}): React.JSX.Element {
+  return (
+    <div
+      className={cn(
+        'flex items-center gap-2 rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] px-3 py-2',
+        'shadow-lg cursor-grabbing',
+      )}
+      style={{ width: 240 }}
+    >
+      {isPinned && (
+        <Pin
+          className="h-3.5 w-3.5 shrink-0 fill-current text-amber-500"
+          aria-hidden="true"
+        />
+      )}
+      <Folder className="h-4 w-4 shrink-0 text-[hsl(var(--foreground))]" aria-hidden="true" />
+      <span className="truncate text-sm font-medium text-[hsl(var(--foreground))]">
+        {project.name}
+      </span>
     </div>
   )
 }

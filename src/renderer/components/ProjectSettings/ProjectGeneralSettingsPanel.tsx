@@ -23,21 +23,16 @@ interface ProjectGeneralSettingsPanelProps {
 
 interface GeneralPreferencesDraft {
   defaultTab: ProjectDefaultTab
-  defaultChatViewMode: 'default' | 'files'
 }
 
 function toGeneralDraft(preferences: ProjectPreferences): GeneralPreferencesDraft {
   return {
     defaultTab: preferences.defaultTab,
-    defaultChatViewMode: preferences.defaultChatViewMode,
   }
 }
 
 function sameGeneralPreferences(a: GeneralPreferencesDraft, b: GeneralPreferencesDraft): boolean {
-  return (
-    a.defaultTab === b.defaultTab &&
-    a.defaultChatViewMode === b.defaultChatViewMode
-  )
+  return a.defaultTab === b.defaultTab
 }
 
 export function ProjectGeneralSettingsPanel({ projectId }: ProjectGeneralSettingsPanelProps): React.JSX.Element {
@@ -54,10 +49,7 @@ export function ProjectGeneralSettingsPanel({ projectId }: ProjectGeneralSetting
 
   useEffect(() => {
     setDraft(canonical)
-  }, [
-    canonical.defaultChatViewMode,
-    canonical.defaultTab,
-  ])
+  }, [canonical.defaultTab])
 
   const dirty = !sameGeneralPreferences(draft, canonical)
 
@@ -68,7 +60,6 @@ export function ProjectGeneralSettingsPanel({ projectId }: ProjectGeneralSetting
       const updated = await getAppAPI()['update-project'](project.id, {
         preferences: {
           defaultTab: draft.defaultTab,
-          defaultChatViewMode: draft.defaultChatViewMode,
         },
       })
       if (!updated) throw new Error(t('general.saveFailed'))
@@ -83,10 +74,6 @@ export function ProjectGeneralSettingsPanel({ projectId }: ProjectGeneralSetting
 
   const setDefaultTab = useCallback((defaultTab: ProjectDefaultTab) => {
     setDraft((s) => ({ ...s, defaultTab }))
-  }, [])
-
-  const setChatViewMode = useCallback((defaultChatViewMode: 'default' | 'files') => {
-    setDraft((s) => ({ ...s, defaultChatViewMode }))
   }, [])
 
   const defaultTabOptions = useMemo<readonly SettingOptionCardSpec<ProjectDefaultTab>[]>(
@@ -108,24 +95,6 @@ export function ProjectGeneralSettingsPanel({ projectId }: ProjectGeneralSetting
         label: t('general.defaultTab.options.schedule'),
         description: t('general.defaultTab.hints.schedule'),
         preview: <TopTabPreview tab="schedule" />,
-      },
-    ]),
-    [t],
-  )
-
-  const chatDefaultOptions = useMemo<readonly SettingOptionCardSpec<'default' | 'files'>[]>(
-    () => ([
-      {
-        value: 'default',
-        label: t('general.chatDefaultMode.options.default'),
-        description: t('general.chatDefaultMode.hints.default'),
-        preview: <ChatLayoutPreview mode="default" />,
-      },
-      {
-        value: 'files',
-        label: t('general.chatDefaultMode.options.files'),
-        description: t('general.chatDefaultMode.hints.files'),
-        preview: <ChatLayoutPreview mode="files" />,
       },
     ]),
     [t],
@@ -173,18 +142,6 @@ export function ProjectGeneralSettingsPanel({ projectId }: ProjectGeneralSetting
               onChange={setDefaultTab}
               options={defaultTabOptions}
               columns={3}
-            />
-          </section>
-
-          <section className="space-y-2.5 rounded-xl border border-[hsl(var(--border)/0.7)] bg-[hsl(var(--card)/0.6)] p-3.5">
-            <h3 className="text-sm font-medium">{t('general.chatDefaultMode.title')}</h3>
-            <p className="text-xs text-[hsl(var(--muted-foreground))]">{t('general.chatDefaultMode.description')}</p>
-            <SettingOptionCardGroup
-              ariaLabel={t('general.chatDefaultMode.title')}
-              value={draft.defaultChatViewMode}
-              onChange={setChatViewMode}
-              options={chatDefaultOptions}
-              columns={2}
             />
           </section>
 
