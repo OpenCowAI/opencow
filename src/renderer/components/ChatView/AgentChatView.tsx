@@ -15,8 +15,16 @@ import type { UserMessageContent } from '@shared/types'
  * Shared max-width for the centered conversation column.
  * Used by both EmptyChat (hero landing) and ActiveChat (message stream)
  * to ensure visual continuity when transitioning between states.
+ *
+ * Locked to 640 px so it matches `VirtuosoShell`'s chat-variant message
+ * list (also 640 px, hardcoded inside `VirtuosoList`).  Previously the
+ * AgentChatView column was 680 px, which left the bottom input bar
+ * 40 px wider than the rendered messages — a visible mismatch in the
+ * sidebar Chat view.  The rest of the chat surfaces (ChatPanel,
+ * SessionChatLayout default, CapabilityCreatorView, ReviewChatPanel)
+ * already use 640, so this brings AgentChatView in line.
  */
-const CONTENT_MAX_W = 'max-w-[680px]'
+const CONTENT_MAX_W = 'max-w-[640px]'
 
 // ════════════════════════════════════════════════════════════════════
 // AgentChatView — Root

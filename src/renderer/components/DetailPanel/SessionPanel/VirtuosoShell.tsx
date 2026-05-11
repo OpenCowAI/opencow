@@ -85,11 +85,18 @@ type VirtuosoSubComponentProps = React.ComponentPropsWithoutRef<'div'> & {
 }
 
 const VirtuosoScroller = forwardRef<HTMLDivElement, VirtuosoSubComponentProps>(
-  function VirtuosoScroller({ style, context, ...props }, ref) {
+  function VirtuosoScroller({ style, context, className, ...props }, ref) {
     return (
       <div
         ref={ref}
         style={style}
+        // `no-scrollbar` hides the native scrollbar chrome.  Without it the
+        // OS-reserved scrollbar gutter (~12-15px on Win/Linux, overlay on
+        // macOS) steals width from the message list, so the rightmost
+        // message edge sits a scrollbar-width *short* of the bottom
+        // input bar's right edge.  Scroll behaviour itself (wheel,
+        // trackpad, touch, keyboard) is unaffected.
+        className={`no-scrollbar${className ? ` ${className}` : ''}`}
         {...props}
       />
     )
@@ -109,7 +116,14 @@ const VirtuosoList = forwardRef<HTMLDivElement, VirtuosoSubComponentProps>(
           marginLeft: 'auto',
           marginRight: 'auto',
         } : style}
-        className="py-2 space-y-0.5 px-3"
+        // Chat variant centers the list at `max-w-640` via the inline
+        // style above — the column itself already has whitespace on
+        // both sides of the viewport, so `px-3` would eat 24 px of
+        // *content* width and leave messages narrower than the input
+        // bar (which has no internal padding inside its 640 wrapper).
+        // CLI / non-chat variant still needs `px-3` because the list
+        // spans the full panel and would otherwise touch the edges.
+        className={isChat ? 'py-2 space-y-0.5' : 'py-2 space-y-0.5 px-3'}
         role="list"
         aria-label="Session messages"
         {...props}
